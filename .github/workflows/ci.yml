@@ -1,0 +1,136 @@
+# Iris CI: the merge gate (spec section 16, S16/ci-pipeline-merge-gate).
+#
+# Per push to the integration lines and per pull request, run every stage the
+# spec fixes: the traceability gate, golangci-lint, database-free unit +
+# integration on a Go 1.25/1.26 matrix, cross-compile build, and the conformance
+# suite against a Postgres service container whose admin role carries CREATEDB.
+# Green across all stages (the gate included) is the merge gate. Windows is
+# deferred from v1 (unix socket, service wrapper, process-group kill need
+# Windows-specific answers); every runner is Ubuntu.
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - development
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Floor 1.25, target 1.26; the unit+integration matrix proves both.
+  GO_TARGET: "1.26"
+  GOLANGCI_LINT_VERSION: v2.12.2
+
+jobs:
+  gate:
+    name: Traceability gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_TARGET }}
+          cache: true
+      - name: Gate (backlog mode, merge-blocking)
+        # The gate runs inside go test; a lint violation or spec delta fails it.
+        run: go test ./internal/trace/...
+      - name: Strict gate readout (informational, non-blocking)
+        # The full unclaimed backlog is a deliverable, not a failure during
+        # buildout: surface it without blocking the merge.
+        continue-on-error: true
+        run: IRIS_TRACE_STRICT=1 go test -run TestTraceabilityGateStrict -v ./internal/trace/...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_TARGET }}
+          cache: true
+      - name: Install golangci-lint (pinned)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
+
+  test:
+    name: unit + integration (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25", "1.26"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: Unit + integration (database-free)
+        run: go test -race ./...
+
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_TARGET }}
+          cache: true
+      - name: Cross-compile build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
+
+  conformance:
+    name: conformance (real binary + Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # E02 resolves this chain (--pg-dsn > IRIS_PG_DSN > iris.toml); the
+      # conformance engine creates both databases inside this cluster itself.
+      IRIS_PG_DSN: postgres://iris_admin:iris@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_TARGET }}
+          cache: true
+      - name: Provision the admin role (CREATEDB + CREATEROLE, not superuser)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres \
+            -c "CREATE ROLE iris_admin LOGIN PASSWORD 'iris' CREATEDB CREATEROLE;"
+      - name: Conformance suite (real binary over the socket, real Postgres)
+        # -tags conformance drives the actual shipped binary; the failover leg
+        # and every acceptance step join this suite as later epics fill it in.
+        run: go test -race -tags conformance ./internal/conformance/...

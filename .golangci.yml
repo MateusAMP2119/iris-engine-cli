@@ -1,0 +1,66 @@
+# golangci-lint configuration for Iris (schema v2).
+#
+# The CI merge gate (spec section 16, S16/ci-pipeline-merge-gate) runs this over
+# the whole tree. The enabled set is the one the task fixes: govet, staticcheck,
+# errcheck, revive, gosec, ineffassign, gocritic, misspell. gosec exclusions
+# below are tuned to the repo's accepted style, not to silence real findings:
+# the engine reads fixtures/goldens/manifests by path and the conformance runner
+# launches the built binary by design.
+version: "2"
+
+run:
+  # The conformance-tagged files (the runner's end-to-end tests) are linted too.
+  build-tags:
+    - conformance
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+  settings:
+    gosec:
+      excludes:
+        # Subprocess launched with variable arguments: the conformance runner
+        # drives the built iris binary with caller-supplied args by design.
+        - G204
+        # Directory permissions (0o755): the repo's accepted style for the
+        # test-support directories the golden harness creates.
+        - G301
+        # File path from a variable: spec, trace, golden, fixtures and the
+        # runner all read files by path by design (manifests, goldens, sockets).
+        - G304
+        # File permissions (0o644): the repo's accepted style for goldens and
+        # the spec lockfile.
+        - G306
+        # WalkDir/ReadFile in a callback: the trace gate and fixture walkers
+        # read every file under a trusted repo tree; the symlink-TOCTOU rule is
+        # noise here and fights the established gate walkers.
+        - G122
+        # Bounded slice index inside a length-checked loop: a false positive in
+        # the pre-existing equalStrings test helper.
+        - G602
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Pre-existing test-support code that predates this config; accepted
+      # style, out of this task's scope to change.
+      - path: internal/roundtrip/roundtrip_test.go
+        linters:
+          - revive
+        text: unused-parameter
+      - path: internal/spec/manifest_test.go
+        linters:
+          - revive
+        text: redefines-builtin-id

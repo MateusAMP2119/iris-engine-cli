@@ -10,9 +10,9 @@ Worktrees: `../iris-worktrees/EXX.Y` on branch `issue/EXX.Y-short-name`.
 
 - [x] E00.1 Manifest seed and doctrine — done (PR #1: https://github.com/MateusAMP2119/iris-engine-cli/pull/1)
 - [x] E00.2 Traceability gate — done (PR #2: https://github.com/MateusAMP2119/iris-engine-cli/pull/2)
-- [ ] E00.3 Golden files and fixtures — in-progress (worktree .worktrees/E00.3, branch issue/E00.3-golden-fixtures)
-- [ ] E00.4 Fakes and process IO — todo (needs E00.3)
-- [ ] E00.5 Conformance runner and CI — todo (needs E00.2, E00.3)
+- [x] E00.3 Golden files and fixtures — done (PR #3: https://github.com/MateusAMP2119/iris-engine-cli/pull/3)
+- [ ] E00.4 Fakes and process IO — in-progress (worktree .worktrees/E00.4, branch issue/E00.4-fakes-process-io)
+- [ ] E00.5 Conformance runner and CI — in-progress (worktree .worktrees/E00.5, branch issue/E00.5-conformance-ci)
 
 ## E01 Repo Skeleton, CLI Frame and Config — epic PR: —
 
