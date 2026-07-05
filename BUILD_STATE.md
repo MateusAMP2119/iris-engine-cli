@@ -8,7 +8,7 @@ Worktrees: `../iris-worktrees/EXX.Y` on branch `issue/EXX.Y-short-name`.
 
 ## E00 Conformance Harness and Traceability Gate — epic PR: —
 
-- [ ] E00.1 Manifest seed and doctrine — todo
+- [ ] E00.1 Manifest seed and doctrine — in-progress (worktree .worktrees/E00.1, branch issue/E00.1-manifest-seed)
 - [ ] E00.2 Traceability gate — todo (needs E00.1)
 - [ ] E00.3 Golden files and fixtures — todo (needs E00.1)
 - [ ] E00.4 Fakes and process IO — todo (needs E00.3)
