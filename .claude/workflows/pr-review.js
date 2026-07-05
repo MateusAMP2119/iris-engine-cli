@@ -85,7 +85,7 @@ Dimension: conventions + architecture vs CLAUDE.md and spec section 10. Hunt in 
 
 const results = await pipeline(
   DIMENSIONS,
-  (d) => agent(d.prompt, { label: `review:${d.key}`, phase: 'Review', schema: FINDINGS_SCHEMA }),
+  (d) => agent(d.prompt, { label: `review:${d.key}`, phase: 'Review', schema: FINDINGS_SCHEMA, model: 'opus' }),
   (review, d) => {
     if (!review || !review.findings || review.findings.length === 0) return []
     const capped = review.findings.slice(0, 12)
@@ -103,7 +103,7 @@ Lens ${lens}: ${lens === 'correctness' ? 'trace the code path concretely — can
 Finding: [${f.severity}] ${f.file}${f.line ? ':' + f.line : ''} — ${f.summary}
 Detail: ${f.detail}
 Claimed failure scenario: ${f.failure_scenario}`,
-              { label: `verify:${f.file.split('/').pop()}`, phase: 'Verify', schema: VERDICT_SCHEMA },
+              { label: `verify:${f.file.split('/').pop()}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: 'opus' },
             ),
           ),
         ).then((votes) => {
