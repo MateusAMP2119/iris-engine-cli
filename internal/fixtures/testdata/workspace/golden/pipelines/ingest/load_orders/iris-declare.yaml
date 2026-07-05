@@ -1,0 +1,14 @@
+name: load_orders
+run: [python, main.py]
+lane: ingest                               # joins the ingest lane; order lives in the composer
+env:
+  LOG_LEVEL: info            # literal
+  REGION: ${REGION}          # interpolated from the daemon environment at run time
+env_file: ./secrets.env      # loaded at run time, never stored
+reads:
+  - table: raw.orders_staging
+    fields: [id, customer_id, amount, created_at]
+writes:
+  - table: analytics.orders
+    fields: [id, customer_id, amount, created_at]   # fields are required
+depends_on: [extract_orders]               # data gate (eligibility + propagation)

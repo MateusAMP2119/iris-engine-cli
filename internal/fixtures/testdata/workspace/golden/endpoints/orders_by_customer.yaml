@@ -1,0 +1,7 @@
+endpoint: orders_by_customer
+source: analytics.orders
+fields: [id, customer_id, amount, created_at]
+filters:
+  customer_id: eq
+  created_at: range
+sort: id

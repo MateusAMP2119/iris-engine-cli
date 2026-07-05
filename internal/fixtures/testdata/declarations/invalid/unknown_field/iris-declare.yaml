@@ -1,0 +1,3 @@
+name: unknown_field
+run: [python, main.py]
+schedule: "0 * * * *"   # invalid: `schedule` is not one of the eight allowed fields

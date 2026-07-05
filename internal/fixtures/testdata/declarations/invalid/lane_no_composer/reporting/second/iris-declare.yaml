@@ -1,0 +1,3 @@
+name: second
+run: [python, main.py]
+lane: reporting   # invalid: 2+ pipelines in lane `reporting` with no composer iris-declare.yaml

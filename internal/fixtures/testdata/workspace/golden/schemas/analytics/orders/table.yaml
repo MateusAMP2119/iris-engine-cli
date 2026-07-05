@@ -1,0 +1,14 @@
+schema: analytics
+table: orders
+columns:
+  - name: id
+    type: uuid
+    primary_key: true
+  - name: customer_id
+    type: uuid
+    nullable: false
+  - name: amount
+    type: numeric
+  - name: created_at
+    type: timestamptz
+    default: now()

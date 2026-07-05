@@ -1,0 +1,9 @@
+name: extract_orders
+run: [python, main.py]
+lane: ingest
+reads:
+  - table: raw.orders_staging
+    fields: [id, customer_id, amount, created_at]
+writes:
+  - table: raw.orders_staging
+    fields: [id, customer_id, amount, created_at]

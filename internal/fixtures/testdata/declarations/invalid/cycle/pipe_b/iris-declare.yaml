@@ -1,0 +1,3 @@
+name: pipe_b
+run: [python, main.py]
+depends_on: [pipe_a]   # invalid: pipe_b -> pipe_a -> pipe_b is a cycle
