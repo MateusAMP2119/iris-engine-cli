@@ -82,6 +82,12 @@ type DiscoveredTable struct {
 	Dir string
 	// Spec is the parsed table.yaml desired state.
 	Spec *Table
+	// Raw is the verbatim table.yaml bytes the folder was read from, hashed as-is by
+	// ChecksumTableYAML to pin the create head recorded when a table is created from
+	// its head with no migration files on disk. It is the authoritative source of that
+	// checksum -- always present for a discovered table -- so provisioning never
+	// checksums an absent ledger's nil bytes.
+	Raw []byte
 	// HasMigrations reports whether a migrations/ ledger directory is present.
 	HasMigrations bool
 }
@@ -160,6 +166,7 @@ func validateTableFolder(schemaName, tableName, dir string) (DiscoveredTable, er
 		Table:         tableName,
 		Dir:           dir,
 		Spec:          spec,
+		Raw:           data,
 		HasMigrations: hasMigrations,
 	}, nil
 }
