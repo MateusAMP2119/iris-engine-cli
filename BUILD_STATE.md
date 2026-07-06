@@ -54,8 +54,8 @@ Opus, never downgrade.
 
 ## E04 Roles, Grants and Credentials — epic PR: —
 
-- [ ] E04.1 Access declaration validation — in-progress (worktree .worktrees/E04.1, Sonnet)
-- [ ] E04.2 Role and credential lifecycle — todo (needs E02, E03)
+- [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
+- [ ] E04.2 Role and credential lifecycle — parked (worktree ready; waits on E03.10 — store.Writer overlap)
 - [ ] E04.3 Grant reconcile and drift — todo (needs E04.1, E04.2)
 - [ ] E04.4 Connection injection and enforcement — todo (needs E04.2, E04.3)
 
