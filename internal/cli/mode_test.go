@@ -102,6 +102,11 @@ func TestJSONModeMatchesPflagConsumption(t *testing.T) {
 		{"--json swallowed by global --token", []string{"--token", "--json", "pipeline", "list"}, false},
 		{"--json swallowed by per-command --after", []string{"run", "list", "--after", "--json"}, false},
 		{"--json after a bad flag resolves via probe", []string{"pipeline", "list", "--bogus", "--json"}, true},
+		// The probe must honor per-command value flags too: here --after swallows
+		// --json in the real parse and a later --bogus makes it the flag-error path,
+		// so the probe (not the parsed flag) resolves the mode -- and must still see
+		// --json as consumed, not set.
+		{"--json swallowed by --after even when a later flag errors", []string{"run", "list", "--after", "--json", "--bogus"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

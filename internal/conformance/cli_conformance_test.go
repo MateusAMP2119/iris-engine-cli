@@ -142,13 +142,21 @@ func TestCLIExitCodesAndJSON(t *testing.T) {
 
 		// A --json swallowed as the value of a value-taking flag is not JSON mode:
 		// stdout stays clean and the error is human on stderr (the output mode
-		// honors exactly how pflag consumed the token).
-		swallowed := bin.Run(t, RunOptions{Args: []string{"--token", "--json", "pipeline", "list"}})
-		if got := strings.TrimSpace(string(swallowed.Stdout)); got != "" {
-			t.Errorf("--json swallowed by --token still wrote to stdout: %q", got)
-		}
-		if len(swallowed.Stderr) == 0 {
-			t.Errorf("--json swallowed by --token wrote no human message to stderr")
+		// honors exactly how each command's flags -- global or per-command --
+		// consumed the token). The second case takes the flag-parse-error path
+		// (--after swallows --json, then --bogus errors), which the probe resolves
+		// against the real command tree.
+		for _, swallowedArgs := range [][]string{
+			{"--token", "--json", "pipeline", "list"},
+			{"run", "list", "--after", "--json", "--bogus"},
+		} {
+			res := bin.Run(t, RunOptions{Args: swallowedArgs})
+			if got := strings.TrimSpace(string(res.Stdout)); got != "" {
+				t.Errorf("iris %s: --json was swallowed but stdout got %q", strings.Join(swallowedArgs, " "), got)
+			}
+			if len(res.Stderr) == 0 {
+				t.Errorf("iris %s: --json was swallowed but no human message reached stderr", strings.Join(swallowedArgs, " "))
+			}
 		}
 	})
 }

@@ -79,7 +79,7 @@ func (a *app) run(args []string) int {
 	if err == nil {
 		return exitOK
 	}
-	a.jsonMode = jsonModeAfterError(cmd, err, args)
+	a.jsonMode = a.jsonModeAfterError(cmd, err, args)
 	return a.renderError(err)
 }
 
@@ -181,33 +181,37 @@ func (a *app) renderError(err error) int {
 // error. After a clean parse the parsed flag is authoritative: it reflects
 // exactly what pflag consumed, so a --json that a value-taking flag swallowed
 // (iris --token --json ...) correctly reads as unset. Only a flag-parse error --
-// which may have stopped before --json was reached -- falls back to a pflag probe
-// with matching consumption semantics.
-func jsonModeAfterError(cmd *cobra.Command, err error, args []string) bool {
+// which may have stopped before --json was reached -- falls back to a probe that
+// re-parses against the real command tree.
+func (a *app) jsonModeAfterError(cmd *cobra.Command, err error, args []string) bool {
 	var fe *flagError
 	if !errors.As(err, &fe) && cmd != nil {
 		if b, gerr := cmd.Flags().GetBool("json"); gerr == nil {
 			return b
 		}
 	}
-	return probeJSONMode(args)
+	return a.probeJSONMode(args)
 }
 
-// probeJSONMode reports whether --json is set by parsing args with a throwaway
-// flag set that mirrors pflag's consumption exactly: the global value-taking
-// flags are registered so a --json they swallow is not mistaken for the bool, and
-// unknown flags are whitelisted so parsing does not stop early. It is the
-// fallback for the flag-parse-error path, where cobra's own parse did not finish.
-func probeJSONMode(args []string) bool {
-	probe := &cobra.Command{FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true}}
-	fs := probe.Flags()
-	fs.SetOutput(io.Discard)
-	fs.Bool("json", false, "")
-	fs.String("socket", "", "")
-	fs.String("host", "", "")
-	fs.String("token", "", "")
-	_ = probe.ParseFlags(args)
-	b, _ := fs.GetBool("json")
+// probeJSONMode reports whether --json is set by re-resolving it against a fresh
+// instance of the real command tree, parse-only. It finds the target command for
+// args (cobra Find), then parses that command's flags with unknown flags
+// whitelisted so parsing does not stop early. Reusing the real tree makes the
+// probe consume every flag -- global and per-command alike -- exactly as the real
+// parse would, so a --json swallowed as another flag's value (iris run list
+// --after --json ...) is never mistaken for the bool, and the set stays correct
+// as the tree grows. It is the fallback for the flag-parse-error path, where
+// cobra's own parse did not finish.
+func (a *app) probeJSONMode(args []string) bool {
+	root := a.newRootCommand()
+	target, rest, err := root.Find(args)
+	if err != nil || target == nil {
+		target, rest = root, args
+	}
+	target.FParseErrWhitelist.UnknownFlags = true
+	target.Flags().SetOutput(io.Discard)
+	_ = target.ParseFlags(rest)
+	b, _ := target.Flags().GetBool("json")
 	return b
 }
 
