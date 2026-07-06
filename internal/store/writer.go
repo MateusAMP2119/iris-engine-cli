@@ -54,3 +54,40 @@ func (w *Writer) EnsureSchema(ctx context.Context) error {
 	}
 	return nil
 }
+
+// The run-record write statements crash reconciliation submits through the single
+// writer. deleteQueuedRunSQL is guarded on the queued state so it can only ever
+// remove a never-started run (never one that has since progressed).
+const (
+	updateRunStateSQL   = "UPDATE runs SET state = $1 WHERE id = $2"
+	insertDeadLetterSQL = "INSERT INTO dead_letters (run_id, reason, error) VALUES ($1, $2, $3)"
+	deleteQueuedRunSQL  = "DELETE FROM runs WHERE id = $1 AND state = $2"
+)
+
+// DeadLetterRun dead-letters a leftover run: it transitions the run to the
+// dead_lettered terminal state and records its dead_letters worklist row with the
+// given reason and human error detail. Crash reconciliation calls it for a run left
+// running when the daemon died (reason ReasonStopped, detail "daemon terminated
+// while run was in flight" -- specification section 2 crash recovery). It is a
+// leader-only meta write, so it rides the single Writer like every other.
+func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetterReason, detail string) error {
+	if err := w.conn.Exec(ctx, updateRunStateSQL, RunDeadLettered, id); err != nil {
+		return fmt.Errorf("store: writer dead-letter run %s: %w", id, err)
+	}
+	if err := w.conn.Exec(ctx, insertDeadLetterSQL, id, reason, detail); err != nil {
+		return fmt.Errorf("store: writer record dead-letter for run %s: %w", id, err)
+	}
+	return nil
+}
+
+// DeleteQueuedRun deletes a queued never-started run so the next dispatch pass
+// recreates it (specification section 2 crash recovery: queued runs consumed
+// nothing, so they are deleted, not dead-lettered). The DELETE is guarded on the
+// queued state: it can never remove a run that has since started. It is a
+// leader-only meta write, riding the single Writer.
+func (w *Writer) DeleteQueuedRun(ctx context.Context, id string) error {
+	if err := w.conn.Exec(ctx, deleteQueuedRunSQL, id, RunQueued); err != nil {
+		return fmt.Errorf("store: writer delete queued run %s: %w", id, err)
+	}
+	return nil
+}
