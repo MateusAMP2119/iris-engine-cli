@@ -1,10 +1,16 @@
 package declare
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 )
+
+// ErrNilDeclaredTable is returned by the schema and ledger drift classifiers when
+// the declared table head is nil: a programming error the caller must fix, not a
+// drift. Both classifiers surface it identically, never a silent empty report.
+var ErrNilDeclaredTable = errors.New("declare: classify drift: nil declared table")
 
 // This file holds drift classification as pure diffing logic under the
 // additive-only doctrine of specification section 5. Three comparisons -- schema
@@ -240,7 +246,7 @@ func ClassifySchema(declared []*Table, live []LiveTable) (DriftReport, error) {
 // returns an error naming the table and column (apply refuses on it separately).
 func ClassifySchemaDrift(declared *Table, live LiveTable) (DriftReport, error) {
 	if declared == nil {
-		return DriftReport{}, fmt.Errorf("declare: classify schema drift: nil declared table")
+		return DriftReport{}, ErrNilDeclaredTable
 	}
 	qualified := declared.Schema + "." + declared.Table
 
@@ -333,10 +339,11 @@ type LedgerState struct {
 // the ledger is an additive gap: the next migration is generated to add it (E03.7
 // executes). A ledger column absent from the declared head -- a column removed from
 // table.yaml -- is non-additive and refused, never dropped. A column whose declared
-// YAML type differs from the ledger's is a non-additive retype, also refused.
-func ClassifyLedgerDrift(declared *Table, ledger LedgerState) DriftReport {
+// YAML type differs from the ledger's is a non-additive retype, also refused. A nil
+// declared head returns ErrNilDeclaredTable, consistent with ClassifySchemaDrift.
+func ClassifyLedgerDrift(declared *Table, ledger LedgerState) (DriftReport, error) {
 	if declared == nil {
-		return DriftReport{}
+		return DriftReport{}, ErrNilDeclaredTable
 	}
 	qualified := declared.Schema + "." + declared.Table
 
@@ -383,7 +390,7 @@ func ClassifyLedgerDrift(declared *Table, ledger LedgerState) DriftReport {
 			Detail: fmt.Sprintf("column %q is in the ledger head but removed from table.yaml; a removal is non-additive, apply refuses (never dropped)", name),
 		})
 	}
-	return report
+	return report, nil
 }
 
 // Grant is one Postgres grant, as the grant-drift comparison sees it: a role, the
@@ -444,15 +451,21 @@ func ClassifyGrantDrift(view GrantView) DriftReport {
 			})
 		}
 	}
-	// Stray grants (live but beyond bounds), in live order: non-additive/report.
+	// Stray grants (live but beyond bounds), sorted by name for a deterministic
+	// report -- like the schema/ledger extras: non-additive/report.
+	var strays []Grant
 	for _, g := range view.Live {
 		if _, ok := boundKeys[g.key()]; !ok {
-			report.Drifts = append(report.Drifts, Drift{
-				Domain: DomainGrant, Subject: SubjectGrant, Name: grantName(g),
-				Kind: DriftNonAdditive, Action: ActionReport,
-				Detail: fmt.Sprintf("Postgres holds grant %s beyond the ledger bounds; a stray grant is non-additive, reported, never silently fixed", grantName(g)),
-			})
+			strays = append(strays, g)
 		}
+	}
+	sort.Slice(strays, func(i, j int) bool { return grantName(strays[i]) < grantName(strays[j]) })
+	for _, g := range strays {
+		report.Drifts = append(report.Drifts, Drift{
+			Domain: DomainGrant, Subject: SubjectGrant, Name: grantName(g),
+			Kind: DriftNonAdditive, Action: ActionReport,
+			Detail: fmt.Sprintf("Postgres holds grant %s beyond the ledger bounds; a stray grant is non-additive, reported, never silently fixed", grantName(g)),
+		})
 	}
 	return report
 }

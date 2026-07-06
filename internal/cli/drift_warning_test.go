@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
@@ -22,12 +23,24 @@ reads:
     fields: [id]
 `
 
+// applyEnvelope is the shape apply's --json output takes: the terminal envelope
+// (an error envelope here, since no daemon is reachable yet) with any advisory
+// warnings riding alongside as a first-class array.
+type applyEnvelope struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+	Warnings []declare.Warning `json:"warnings"`
+}
+
 // TestCrossModeWarningRidesJSON proves the cross-mode read warning is carried in
-// apply's --json output (specification section 5). The CLI apply path computes
-// advisory warnings through an injected seam and, under --json, surfaces them in
-// the success envelope's warnings array. The seam stands in for the meta-backed
-// data-mode facts apply reads once it runs against the daemon (E03.10); here it
-// runs the real declare.CheckCrossModeReads over the parsed declaration, so what
+// apply's --json output (specification section 5), and that the warning
+// accompanies the apply rather than replacing it: apply still falls through to the
+// daemon dial (exit 3, no daemon reachable), and the warning rides the single
+// terminal --json envelope. The applyWarnings seam stands in for the meta-backed
+// data-mode facts apply reads once it runs against the daemon (E03.9/E03.10); here
+// it runs the real declare.CheckCrossModeReads over the parsed declaration, so what
 // is proven is the warning structure riding the --json envelope end to end.
 func TestCrossModeWarningRidesJSON(t *testing.T) {
 	// spec: S05/cross-mode-warning-rides-json
@@ -37,6 +50,7 @@ func TestCrossModeWarningRidesJSON(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
+	sock := shortSocket(t)
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)
 	// Inject the meta-backed data-mode facts: this reader is permanent-data, and
@@ -52,17 +66,16 @@ func TestCrossModeWarningRidesJSON(t *testing.T) {
 		return declare.CheckCrossModeReads(declare.DataPermanent, ups)
 	}
 
-	code := a.run([]string{"--json", "declare", "apply", target})
-	if code != exitOK {
-		t.Fatalf("exit = %d, want %d (apply surfaces its warnings and succeeds)\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
+	code := a.run([]string{"--socket", sock, "--json", "declare", "apply", target})
+	// The warning accompanies apply; it never blocks it. Apply still dials the
+	// daemon and reports no-daemon (exit 3) -- proof the warning did not short-circuit
+	// the actual apply.
+	if code != exitNoDaemon {
+		t.Fatalf("exit = %d, want %d (warning accompanies apply, never replaces the daemon dial)\nstdout: %s\nstderr: %s", code, exitNoDaemon, out.String(), errb.String())
 	}
 
-	// stdout is exactly one JSON document -- the success envelope carrying warnings.
-	var env struct {
-		Data struct {
-			Warnings []declare.Warning `json:"warnings"`
-		} `json:"data"`
-	}
+	// stdout is exactly one JSON document -- the terminal envelope carrying warnings.
+	var env applyEnvelope
 	dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
 	if err := dec.Decode(&env); err != nil {
 		t.Fatalf("stdout is not one JSON document: %v\nstdout: %q", err, out.String())
@@ -71,10 +84,14 @@ func TestCrossModeWarningRidesJSON(t *testing.T) {
 		t.Fatalf("stdout carries content after the single JSON envelope: %q", out.String())
 	}
 
-	if len(env.Data.Warnings) != 1 {
-		t.Fatalf("envelope warnings = %d, want 1\nstdout: %s", len(env.Data.Warnings), out.String())
+	// The terminal outcome is still the no-daemon error, proving apply proceeded.
+	if env.Error.Message == "" {
+		t.Errorf("terminal envelope has no error; apply must still report the daemon dial\nstdout: %s", out.String())
 	}
-	w := env.Data.Warnings[0]
+	if len(env.Warnings) != 1 {
+		t.Fatalf("envelope warnings = %d, want 1\nstdout: %s", len(env.Warnings), out.String())
+	}
+	w := env.Warnings[0]
 	if w.Kind != declare.WarnCrossModeRead {
 		t.Errorf("warning kind = %q, want cross_mode_read", w.Kind)
 	}
@@ -88,9 +105,10 @@ func TestCrossModeWarningRidesJSON(t *testing.T) {
 
 // TestApplyNoWarningsUnchanged proves the warning seam never disturbs the ordinary
 // apply path: with no cross-mode warning to surface, apply resolves its target and
-// reaches the daemon-dial stub exactly as before (exit 3, no daemon reachable).
-// This pins that the --json warning surface is additive, not a behavior change to
-// apply's existing single-file resolution contract.
+// reaches the daemon-dial stub exactly as before (exit 3, no daemon reachable),
+// and its --json envelope carries no warnings array. This pins that the --json
+// warning surface is additive, not a behavior change to apply's existing single-
+// file resolution contract.
 func TestApplyNoWarningsUnchanged(t *testing.T) {
 	// spec: S05/cross-mode-warning-rides-json
 	dir := t.TempDir()
@@ -109,5 +127,8 @@ func TestApplyNoWarningsUnchanged(t *testing.T) {
 	code := a.run([]string{"--socket", sock, "--json", "declare", "apply", target})
 	if code != exitNoDaemon {
 		t.Fatalf("exit = %d, want %d (no warning: apply reaches the daemon-dial stub)\nstdout: %s\nstderr: %s", code, exitNoDaemon, out.String(), errb.String())
+	}
+	if strings.Contains(out.String(), "warnings") {
+		t.Errorf("no-warning apply emitted a warnings field: %q", out.String())
 	}
 }

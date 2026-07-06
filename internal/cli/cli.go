@@ -74,6 +74,11 @@ type app struct {
 	// computes no local warnings and proceeds unchanged. Tests inject it to drive the
 	// --json warning surface, proving the warning structure rides the envelope.
 	applyWarnings func(*declare.Declaration) []declare.Warning
+	// warnings are the advisory warnings a handler computed for the current
+	// invocation. They accompany the terminal outcome (they never replace it): the
+	// terminal --json envelope carries them as a warnings array, and human output
+	// prints them to stderr. Set per invocation, so the app holds no global state.
+	warnings []declare.Warning
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -153,9 +158,12 @@ func (a *app) usage(msg string) error {
 }
 
 // errEnvelope is the --json error document: the read-API error envelope shape of
-// specification section 7, {"error":{"code":...,"message":...}}.
+// specification section 7, {"error":{"code":...,"message":...}}, plus any advisory
+// warnings that accompany the outcome (omitted when there are none). A warning
+// never blocks a command; it rides the terminal envelope alongside the error.
 type errEnvelope struct {
-	Error errBody `json:"error"`
+	Error    errBody           `json:"error"`
+	Warnings []declare.Warning `json:"warnings,omitempty"`
 }
 
 // errBody is the error object inside errEnvelope.
@@ -190,8 +198,14 @@ func (a *app) renderError(err error) int {
 		f = &fault{code: exitUsage, codeStr: "usage", message: err.Error()}
 	}
 	if a.jsonMode {
-		_ = json.NewEncoder(a.out).Encode(errEnvelope{Error: errBody{Code: f.codeStr, Message: f.message}})
+		_ = json.NewEncoder(a.out).Encode(errEnvelope{
+			Error:    errBody{Code: f.codeStr, Message: f.message},
+			Warnings: a.warnings,
+		})
 	} else {
+		for _, w := range a.warnings {
+			fmt.Fprintf(a.errOut, "iris: warning: %s\n", w.Message)
+		}
 		fmt.Fprintf(a.errOut, "iris: %s\n", f.message)
 	}
 	return f.code

@@ -1,7 +1,9 @@
 package declare_test
 
 import (
+	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -65,18 +67,36 @@ func TestDriftAdditiveOnlyAutofix(t *testing.T) {
 
 		// Ledger drift: one column added in table.yaml but absent from the ledger
 		// head (additive gap) and one column removed from table.yaml (non-additive).
-		ledgerRep := declare.ClassifyLedgerDrift(
+		ledgerRep, err := declare.ClassifyLedgerDrift(
 			tbl("analytics", "orders", [2]string{"id", "uuid"}, [2]string{"status", "text"}),
 			declare.LedgerState{Columns: []declare.LedgerColumn{{Name: "id", Type: "uuid"}, {Name: "amount", Type: "numeric"}}},
 		)
+		if err != nil {
+			t.Fatalf("ClassifyLedgerDrift: %v", err)
+		}
 
 		// Grant drift: one grant the ledger asserts but Postgres lacks (additive
-		// gap) and one stray grant Postgres holds beyond the ledger bounds
-		// (non-additive).
+		// gap) and several stray grants Postgres holds beyond the ledger bounds
+		// (non-additive), supplied out of name order to exercise the report's
+		// deterministic ordering.
 		grantRep := declare.ClassifyGrantDrift(declare.GrantView{
 			Bounds: []declare.Grant{{Role: "reader", Schema: "public", Object: "orders", Privilege: "SELECT"}},
-			Live:   []declare.Grant{{Role: "reader", Schema: "meta", Object: "meta", Privilege: "CONNECT"}},
+			Live: []declare.Grant{
+				{Role: "reader", Schema: "meta", Object: "meta", Privilege: "CONNECT"},
+				{Role: "reader", Schema: "public", Object: "zzz", Privilege: "SELECT"},
+				{Role: "reader", Schema: "public", Object: "aaa", Privilege: "SELECT"},
+			},
 		})
+
+		// Stray grants ride the report in deterministic sorted order, like the
+		// schema/ledger extras the DriftReport doc promises.
+		var strayNames []string
+		for _, d := range grantRep.NonAdditive() {
+			strayNames = append(strayNames, d.Name)
+		}
+		if !sort.StringsAreSorted(strayNames) {
+			t.Errorf("stray grant drifts are not in deterministic sorted order: %v", strayNames)
+		}
 
 		for _, dom := range []struct {
 			name string
@@ -119,12 +139,21 @@ func TestDriftAdditiveOnlyAutofix(t *testing.T) {
 // longer declares it.
 func TestLedgerDriftRemovalRefused(t *testing.T) {
 	t.Run("S05/ledger-drift-removal-refused", func(t *testing.T) {
-		rep := declare.ClassifyLedgerDrift(
+		rep, err := declare.ClassifyLedgerDrift(
 			tbl("analytics", "orders", [2]string{"id", "uuid"}, [2]string{"customer_id", "uuid"}),
 			declare.LedgerState{Columns: []declare.LedgerColumn{
 				{Name: "id", Type: "uuid"}, {Name: "customer_id", Type: "uuid"}, {Name: "amount", Type: "numeric"},
 			}},
 		)
+		if err != nil {
+			t.Fatalf("ClassifyLedgerDrift: %v", err)
+		}
+
+		// A nil declared head is a sentinel error, consistent with ClassifySchemaDrift
+		// (both classifiers refuse a nil head identically, never a silent empty report).
+		if _, nerr := declare.ClassifyLedgerDrift(nil, declare.LedgerState{}); !errors.Is(nerr, declare.ErrNilDeclaredTable) {
+			t.Errorf("ClassifyLedgerDrift(nil) err = %v, want ErrNilDeclaredTable", nerr)
+		}
 
 		d, ok := findDrift(rep.Drifts, declare.SubjectColumn, "amount")
 		if !ok {
@@ -218,6 +247,11 @@ func TestSchemaDriftExcludesEngineOwned(t *testing.T) {
 // (old-name) live column, which is the refusing discrepancy.
 func TestSchemaDriftNonAdditiveRefused(t *testing.T) {
 	t.Run("S05/schema-drift-nonadditive-refused", func(t *testing.T) {
+		// A nil declared head is a sentinel error, consistent with ClassifyLedgerDrift.
+		if _, err := declare.ClassifySchemaDrift(nil, declare.LiveTable{}); !errors.Is(err, declare.ErrNilDeclaredTable) {
+			t.Errorf("ClassifySchemaDrift(nil) err = %v, want ErrNilDeclaredTable", err)
+		}
+
 		cases := []struct {
 			name       string
 			declared   *declare.Table
