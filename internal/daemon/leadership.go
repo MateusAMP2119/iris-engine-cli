@@ -39,16 +39,57 @@ type Candidate struct {
 	role      *api.RoleState
 	writeConn store.MetaWriteConn
 	logger    *slog.Logger
+
+	// Startup reconciliation, run once on winning the lock before any lane dispatch
+	// (specification section 2 crash recovery). reader is nil when reconciliation is
+	// not configured (the election-only wiring E02.6 tests use), in which case the
+	// leader skips reconciliation entirely.
+	reader    store.Reader
+	killer    dispatch.GroupKiller
+	hostMatch dispatch.HostMatcher
+	// onDispatchReady is the dispatch-ready latch fired once reconciliation completes,
+	// before the leader role is reported: the seam the E05 lane dispatcher waits on so
+	// no lane is dispatched until crash reconciliation is done. Nil until E05 wires it.
+	onDispatchReady func()
+}
+
+// CandidateOption configures a Candidate at construction.
+type CandidateOption func(*Candidate)
+
+// WithReconciliation configures the leader's startup crash reconciliation: the meta
+// reader it draws leftover run records from, the process-group killer it SIGKILLs
+// survivors through, and the host-identity predicate that decides which survivors
+// are killable here (a nil matcher defaults to single-host). Absent this option, a
+// leader performs no reconciliation.
+func WithReconciliation(reader store.Reader, killer dispatch.GroupKiller, matcher dispatch.HostMatcher) CandidateOption {
+	return func(c *Candidate) {
+		c.reader = reader
+		c.killer = killer
+		c.hostMatch = matcher
+	}
+}
+
+// WithDispatchReady sets the dispatch-ready latch, fired once reconciliation
+// completes and before the leader role is reported: the hook the E05 lane
+// dispatcher consumes to hold every lane until crash reconciliation is done. A nil
+// hook is ignored.
+func WithDispatchReady(hook func()) CandidateOption {
+	return func(c *Candidate) { c.onDispatchReady = hook }
 }
 
 // NewCandidate builds a leadership candidate over the leader lock, the role state
 // its listeners consult, and the leader's meta write connection (which the
 // dispatcher wraps in the single Writer on winning). A nil logger discards output.
-func NewCandidate(lock store.LeaderLock, role *api.RoleState, writeConn store.MetaWriteConn, logger *slog.Logger) *Candidate {
+// Options add startup reconciliation and the dispatch-ready latch.
+func NewCandidate(lock store.LeaderLock, role *api.RoleState, writeConn store.MetaWriteConn, logger *slog.Logger, opts ...CandidateOption) *Candidate {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Candidate{lock: lock, role: role, writeConn: writeConn, logger: logger}
+	c := &Candidate{lock: lock, role: role, writeConn: writeConn, logger: logger}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // Serve runs the candidate: it reports the standby role, blocks acquiring the
@@ -74,8 +115,10 @@ func (c *Candidate) Serve(ctx context.Context) error {
 }
 
 // lead runs the leader loop: start the dispatcher, re-check the meta schema through
-// it (a leader-only meta write), report the leader role, and block until ctx is
-// cancelled or the lock session dies -- then tear down and release the lock.
+// it (a leader-only meta write), run startup crash reconciliation before any lane
+// dispatch (release the dispatch-ready latch once it completes), report the leader
+// role, and block until ctx is cancelled or the lock session dies -- then tear down
+// and release the lock.
 func (c *Candidate) lead(ctx context.Context) error {
 	d := dispatch.New(c.writeConn)
 	d.Start(ctx)
@@ -89,6 +132,27 @@ func (c *Candidate) lead(ctx context.Context) error {
 		// can try, rather than lead with an unverified meta.
 		c.role.SetStandby("")
 		return errors.Join(err, c.release())
+	}
+
+	// Startup reconciliation, before any lane dispatch and identical on cold start
+	// and failover (specification section 2 crash recovery): dead-letter leftover
+	// running runs, delete queued never-started ones, and SIGKILL same-host
+	// survivors first. Disposals ride the single-writer dispatcher.
+	if c.reader != nil {
+		rec := dispatch.NewReconciler(c.reader, d, c.killer, c.hostMatch, c.logger)
+		if err := rec.Reconcile(ctx); err != nil {
+			// Reconciliation failed: relinquish leadership rather than dispatch on an
+			// unreconciled meta.
+			c.role.SetStandby("")
+			return errors.Join(err, c.release())
+		}
+	}
+
+	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
+	// dispatcher waits on it) before reporting the leader role, so no lane is ever
+	// dispatched ahead of reconciliation.
+	if c.onDispatchReady != nil {
+		c.onDispatchReady()
 	}
 
 	c.role.SetLeader()

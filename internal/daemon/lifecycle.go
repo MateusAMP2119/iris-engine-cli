@@ -14,6 +14,7 @@ import (
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -106,8 +107,13 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	defer func() { _ = RemovePIDFile(s) }()
 
 	// Run the election in the background: it flips the role and drives the single
-	// dispatcher. It returns when ctx is cancelled (having released the lock).
-	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger)
+	// dispatcher. It returns when ctx is cancelled (having released the lock). On
+	// winning, the leader runs startup crash reconciliation before any lane dispatch:
+	// it reads leftover run records through the plain-MVCC reader, best-effort
+	// SIGKILLs same-host survivors through the exec seam, and disposes of their runs
+	// through the single writer (specification section 2 crash recovery).
+	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
+		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

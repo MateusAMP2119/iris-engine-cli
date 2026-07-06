@@ -42,6 +42,26 @@ const (
 	RunDeadLettered RunState = "dead_lettered"
 )
 
+// DeadLetterReason is the reason a run landed in the dead-letter worklist
+// (dead_letters.reason, specification sections 2 and 4). It is the closed enum the
+// meta CHECK constraint pins; crash reconciliation uses ReasonStopped.
+type DeadLetterReason string
+
+// The dead-letter reasons (the dead_letters.reason CHECK value set).
+const (
+	// ReasonFailed is a run that exited non-zero on its own.
+	ReasonFailed DeadLetterReason = "failed"
+	// ReasonStopped is a run the engine stopped rather than one that failed on its
+	// own: a cancelled run, or -- the crash-reconciliation case -- a run left in
+	// flight when the daemon terminated (specification section 2 crash recovery).
+	// The enum value is `stopped`; the human detail ("daemon terminated while run
+	// was in flight") rides the dead_letters.error column, not this enum.
+	ReasonStopped DeadLetterReason = "stopped"
+	// ReasonUpstreamDeadLettered is a run dead-lettered because an upstream it
+	// depended on was dead-lettered (failure propagation).
+	ReasonUpstreamDeadLettered DeadLetterReason = "upstream_dead_lettered"
+)
+
 // Run is one execution record in meta: a minimal slice of the runs table
 // (section 4) carrying only what the dispatch seam needs today.
 type Run struct {
