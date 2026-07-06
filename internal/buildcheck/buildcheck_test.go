@@ -19,6 +19,26 @@ const irisPkg = "github.com/MateusAMP2119/iris-engine-cli/cmd/iris"
 // from where they drive `go build ./...`.
 func repoRoot() string { return filepath.Join("..", "..") }
 
+// hardcodedGoVersionWorkflow is a drift fixture: a test job that still declares
+// the {1.25, 1.26} matrix but pins its setup-go to a literal version, so both
+// cells would run the target and the floor would never compile. The
+// matrix-consumption check must reject it.
+const hardcodedGoVersionWorkflow = `
+jobs:
+  test:
+    strategy:
+      matrix:
+        go: ["1.25", "1.26"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: unit + integration
+        run: go test ./...
+`
+
 // TestCGOFreeStaticBinary proves that building the engine with cgo disabled
 // succeeds and yields a portable, statically linked binary. The build-settings
 // leg (the recorded CGO_ENABLED=0) and the running binary are asserted on every
@@ -119,6 +139,25 @@ func TestGoVersionFloorAndTarget(t *testing.T) {
 	if !equalStringSet(test.Strategy.Matrix.Go, []string{floorGoVersion, targetGoVersion}) {
 		t.Errorf("CI test matrix Go = %v, want exactly {%s, %s}",
 			test.Strategy.Matrix.Go, floorGoVersion, targetGoVersion)
+	}
+
+	// The declared matrix is inert unless the setup-go step consumes it: the step
+	// must take go-version from ${{ matrix.go }}. Otherwise a hardcoded version
+	// would run every matrix cell on one toolchain and the floor would never
+	// compile in CI, even though the matrix still declared it.
+	if !test.setupGoConsumesMatrix() {
+		t.Error("CI test job's setup-go does not consume the matrix (want go-version: ${{ matrix.go }}); a hardcoded version would leave the floor uncompiled in CI")
+	}
+
+	// Negative guard: the same check must REJECT a workflow that still declares the
+	// {1.25, 1.26} matrix but pins setup-go to a literal version -- the exact drift
+	// vector the positive assertion defends against -- so the check has teeth.
+	drifted, err := parseCIWorkflow([]byte(hardcodedGoVersionWorkflow))
+	if err != nil {
+		t.Fatalf("parse drift fixture: %v", err)
+	}
+	if drifted.Jobs["test"].setupGoConsumesMatrix() {
+		t.Error("setupGoConsumesMatrix accepted a hardcoded go-version; the matrix-consumption check has no teeth")
 	}
 
 	// A real compile under the toolchain that is running: the whole module builds.

@@ -96,9 +96,17 @@ type ciJob struct {
 			Go []string `yaml:"go"`
 		} `yaml:"matrix"`
 	} `yaml:"strategy"`
-	Steps []struct {
-		Env map[string]string `yaml:"env"`
-	} `yaml:"steps"`
+	Steps []ciStep `yaml:"steps"`
+}
+
+// ciStep is one job step: the action it invokes (uses), the inputs passed to that
+// action (with), and its env -- the fields the build contracts inspect.
+type ciStep struct {
+	Uses string `yaml:"uses"`
+	With struct {
+		GoVersion string `yaml:"go-version"`
+	} `yaml:"with"`
+	Env map[string]string `yaml:"env"`
 }
 
 // parseCIWorkflow parses a GitHub Actions workflow YAML into the slice the build
@@ -121,6 +129,25 @@ func (j ciJob) cgoDisabled() bool {
 	}
 	for _, s := range j.Steps {
 		if s.Env["CGO_ENABLED"] == "0" {
+			return true
+		}
+	}
+	return false
+}
+
+// matrixGoTemplate is the GitHub Actions expression a setup-go step must pass to
+// go-version so the declared build matrix actually drives the installed
+// toolchain.
+const matrixGoTemplate = "${{ matrix.go }}"
+
+// setupGoConsumesMatrix reports whether the job's actions/setup-go step takes its
+// toolchain from the build matrix (go-version: ${{ matrix.go }}), binding the
+// declared matrix to the step that installs Go. Without this binding a hardcoded
+// go-version would run every matrix cell on one toolchain, so the floor would
+// never compile in CI even though the matrix still declared it.
+func (j ciJob) setupGoConsumesMatrix() bool {
+	for _, s := range j.Steps {
+		if strings.HasPrefix(s.Uses, "actions/setup-go") && s.With.GoVersion == matrixGoTemplate {
 			return true
 		}
 	}
