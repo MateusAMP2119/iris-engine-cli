@@ -55,7 +55,7 @@ func roundTrip(dir string, format Format, payload []byte) error {
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	readBack, err := os.ReadFile(path)
+	readBack, err := os.ReadFile(path) //nolint:gosec // G304: path is a fixed filename under this harness's own t.TempDir(), read back from what it just wrote; no external input.
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}

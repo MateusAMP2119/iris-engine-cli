@@ -103,7 +103,7 @@ func fixturePayloads(t *testing.T) []payload {
 		if d.IsDir() {
 			return nil
 		}
-		b, err := os.ReadFile(path)
+		b, err := os.ReadFile(path) //nolint:gosec // G304: path comes from WalkDir over the in-repo golden fixture tree, a trusted checked-in source.
 		if err != nil {
 			return err
 		}

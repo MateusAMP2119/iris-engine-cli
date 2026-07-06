@@ -2,10 +2,14 @@
 #
 # The CI merge gate (spec section 16, S16/ci-pipeline-merge-gate) runs this over
 # the whole tree. The enabled set is the one the task fixes: govet, staticcheck,
-# errcheck, revive, gosec, ineffassign, gocritic, misspell. gosec exclusions
-# below are tuned to the repo's accepted style, not to silence real findings:
-# the engine reads fixtures/goldens/manifests by path and the conformance runner
-# launches the built binary by design.
+# errcheck, revive, gosec, ineffassign, gocritic, misspell.
+#
+# gosec policy: G304 (file inclusion via variable) is deliberately LEFT ACTIVE so
+# path-traversal analysis keeps running as later epics open user-influenced paths
+# (env_file, objects_path, iris.toml). The handful of by-design reads that exist
+# today carry a targeted //nolint:gosec at their call site with a justification;
+# they are not silenced tree-wide. The excludes below are the ones that ARE the
+# repo's accepted style and genuinely have no per-site variation worth annotating.
 version: "2"
 
 run:
@@ -27,33 +31,55 @@ linters:
   settings:
     gosec:
       excludes:
-        # Subprocess launched with variable arguments: the conformance runner
-        # drives the built iris binary with caller-supplied args by design.
+        # Subprocess launched with variable arguments: the conformance runner and
+        # the exec package drive the built iris binary with caller-supplied args
+        # by design. (Not covered by any active exclusion preset, so this is live.)
         - G204
-        # Directory permissions (0o755): the repo's accepted style for the
-        # test-support directories the golden harness creates.
-        - G301
-        # File path from a variable: spec, trace, golden, fixtures and the
-        # runner all read files by path by design (manifests, goldens, sockets).
-        - G304
-        # File permissions (0o644): the repo's accepted style for goldens and
-        # the spec lockfile.
+        # File permissions (0o644): the repo's accepted style for goldens, the
+        # spec lockfile, and the archive round-trip temp file. (Not covered by the
+        # legacy preset's EXC0009, which is perms-of-dir only, so this is live.)
         - G306
-        # WalkDir/ReadFile in a callback: the trace gate and fixture walkers
-        # read every file under a trusted repo tree; the symlink-TOCTOU rule is
-        # noise here and fights the established gate walkers.
+        # WalkDir/ReadFile in a callback: the trace gate and fixture walkers read
+        # every file under a trusted repo tree; the symlink-TOCTOU rule is noise
+        # here and fights the established gate walkers.
         - G122
         # Bounded slice index inside a length-checked loop: a false positive in
         # the pre-existing equalStrings test helper.
         - G602
+        # NOTE: G304 and G301 are intentionally NOT excluded here.
+        #  - G304 stays active (see the gosec policy note at the top); by-design
+        #    reads carry a per-site //nolint:gosec.
+        #  - G301 (directory permissions 0o755, the repo's test-support style) is
+        #    covered by the `legacy` exclusion preset's EXC0009 below, so an
+        #    explicit exclude would be dead config; it is omitted on purpose.
   exclusions:
     generated: lax
     presets:
+      # comments: EXC0011-EXC0015, the "exported X should have comment" family.
       - comments
-      - common-false-positives
+      # legacy: carries EXC0009, which filters gosec G301/G302/G307 (poor file/dir
+      # permissions). This is what covers the repo's 0o755 test-support directories,
+      # including the ones in packages this task does not own (e.g. internal/exec).
       - legacy
+      # std-error-handling: EXC0001, unchecked errors on the usual stdlib closers.
       - std-error-handling
+      # NOTE: the `common-false-positives` preset is deliberately NOT enabled. In
+      # golangci-lint v2 it carries EXC0010, which blanket-filters gosec G304
+      # (file inclusion via variable) across the whole tree. Enabling it would
+      # permanently disable path-traversal analysis -- exactly what the top-of-file
+      # policy keeps on. Dropping it is what makes G304 fire again.
     rules:
+      # internal/trace is the traceability gate: its whole job is to read the spec,
+      # the spec lockfile, and every test source by a computed path from the trusted
+      # repo tree (S16 gate walkers), so G304 (file inclusion via variable) is
+      # by-design across the package. The honest fix is a per-site //nolint:gosec at
+      # each read, but this package is owned by a separate fix branch this task must
+      # not touch, so its by-design reads are grandfathered here via a path rule.
+      # G304 stays active everywhere else, which is the point.
+      - path: internal/trace/
+        linters:
+          - gosec
+        text: "G304"
       # Pre-existing test-support code that predates this config; accepted
       # style, out of this task's scope to change.
       - path: internal/roundtrip/roundtrip_test.go
