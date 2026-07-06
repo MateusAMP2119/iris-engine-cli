@@ -277,6 +277,66 @@ func TestOSRunnerContextCancelKillsGroup(t *testing.T) {
 	}
 }
 
+// TestOSRunnerWaitKeysOffChildReap proves Wait returns when the subprocess
+// itself is reaped, not when every descendant that inherited its output pipe
+// finally exits. A script backgrounds a long-lived grandchild -- which keeps the
+// stdout pipe open -- and then exits 0; Wait must return promptly with the
+// child's own exit status and its own captured output, never blocking for the
+// grandchild's whole lifetime. Timing is asserted with a deadline, never a fixed
+// sleep.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerWaitKeysOffChildReap(t *testing.T) {
+	dir := t.TempDir()
+	// The grandchild outlives the parent and inherits the parent's stdout, so a
+	// runner that keys Wait off pipe EOF would block for the grandchild's whole
+	// lifetime. The parent prints its own line and exits 0.
+	script := writeScript(t, dir, "daemonize.sh", "sleep 30 &\necho done\nexit 0\n")
+
+	// A non-*os.File writer is exactly the case os/exec would drain via a copy
+	// goroutine that cmd.Wait blocks on, so it is where the grandchild stalls a
+	// naive Wait.
+	var out bytes.Buffer
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: &out,
+		Stderr: &out,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// Clear the whole group at the end: after the child is reaped Handle.Kill is a
+	// documented no-op, so the lingering grandchild is reaped by pgid directly.
+	pgid := h.PGID()
+	t.Cleanup(func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
+
+	type result struct {
+		st  exec.ExitStatus
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		st, werr := h.Wait()
+		done <- result{st, werr}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("Wait: %v", r.err)
+		}
+		if r.st.Code != 0 || r.st.Signaled {
+			t.Errorf("exit status = %+v, want code 0, not signaled", r.st)
+		}
+		if !strings.Contains(out.String(), "done") {
+			t.Errorf("stdout = %q, want the child's own output 'done'", out.String())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Wait did not return within the deadline: it is blocking on the backgrounded grandchild, not the child's reap")
+	}
+}
+
 // processAlive reports whether pid names a live (or not-yet-reaped) process, via
 // the null signal.
 func processAlive(pid int) bool {
