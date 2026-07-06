@@ -241,10 +241,13 @@ func PlanSchemaFix(declared *declare.Table, live declare.LiveTable) (Plan, error
 			}
 			plan.Fixes = append(plan.Fixes, SchemaFix{Subject: declare.SubjectColumn, DDL: ddl})
 		case declare.SubjectCaptureTrigger:
-			plan.Fixes = append(plan.Fixes, SchemaFix{
-				Subject: declare.SubjectCaptureTrigger,
-				DDL:     RenderCaptureTrigger(declared.Schema, declared.Table),
-			})
+			// A missing capture trigger installs the complete per-operation trigger
+			// set: Postgres transition tables are per-operation, so one classified
+			// missing-trigger drift maps to three additive CREATE TRIGGER fixes
+			// (insert/update/delete), each a separate statement.
+			for _, ddl := range RenderCaptureTriggers(declared.Schema, declared.Table) {
+				plan.Fixes = append(plan.Fixes, SchemaFix{Subject: declare.SubjectCaptureTrigger, DDL: ddl})
+			}
 		}
 	}
 	return plan, nil
@@ -349,7 +352,13 @@ func (s *DirMigrationSink) AppendMigration(schema, table, filename string, data 
 	}
 	target := filepath.Join(dir, filename)
 	if err := os.Link(tmpName, target); err != nil {
-		return fmt.Errorf("pg: append migration %s (immutable, create-once): %w", target, err)
+		// Distinguish the create-once collision (the ledger is immutable) from a
+		// genuine I/O failure (e.g. a full disk): mislabeling the latter as a replay
+		// would send the caller hunting a nonexistent duplicate migration.
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("pg: append migration %s: already exists, the ledger is immutable (create-once): %w", target, err)
+		}
+		return fmt.Errorf("pg: append migration %s: %w", target, err)
 	}
 	return nil
 }
@@ -379,6 +388,9 @@ func parseSeq(id string) (int, error) {
 	n, err := strconv.Atoi(id)
 	if err != nil {
 		return 0, fmt.Errorf("pg: ledger head id %q is not a number: %w", id, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("pg: ledger head id %q is negative (corrupt ledger)", id)
 	}
 	return n, nil
 }

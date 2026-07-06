@@ -443,30 +443,47 @@ func TestMissingCaptureTriggerAutofix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanSchemaFix: %v", err)
 	}
-	if len(plan.Fixes) != 1 || plan.Fixes[0].Subject != declare.SubjectCaptureTrigger {
-		t.Fatalf("plan fixes = %+v, want one additive capture-trigger fix", plan.Fixes)
+	// A missing capture trigger installs the complete per-operation trigger set:
+	// Postgres transition tables are per-operation (INSERT: NEW only; DELETE: OLD
+	// only; UPDATE: both), so the additive fix is three CREATE TRIGGER statements.
+	if len(plan.Fixes) != 3 {
+		t.Fatalf("plan fixes = %+v, want three per-operation capture-trigger fixes", plan.Fixes)
+	}
+	for i, f := range plan.Fixes {
+		if f.Subject != declare.SubjectCaptureTrigger {
+			t.Errorf("fix[%d] subject = %q, want capture_trigger", i, f.Subject)
+		}
+		if !strings.Contains(f.DDL, "CREATE TRIGGER") || !strings.Contains(f.DDL, "REFERENCING") {
+			t.Errorf("fix[%d] DDL is not a transition-table CREATE TRIGGER: %q", i, f.DDL)
+		}
 	}
 
-	// The trigger fix renders the section 5 create-trigger DDL shape, applied
-	// through the pg seam.
+	// The trigger fixes render the section 4 statement-level transition-table
+	// CREATE TRIGGER shape, applied through the pg seam.
 	rec := pgtest.New()
 	if err := plan.Apply(ctx, pg.NewDirMigrationSink(t.TempDir()), rec, &recordingLedger{}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 	got := rec.Statements()
-	if len(got) != 1 || !strings.Contains(got[0], "CREATE TRIGGER") {
-		t.Fatalf("recorded statements = %v, want one CREATE TRIGGER", got)
+	if len(got) != 3 {
+		t.Fatalf("recorded %d statements, want 3 CREATE TRIGGER (one per operation): %v", len(got), got)
 	}
-	golden.Assert(t, []byte(got[0]+"\n"), filepath.Join("testdata", "capture_trigger.sql"))
+	golden.Assert(t, rec.Dump(), filepath.Join("testdata", "capture_triggers.sql"))
 }
 
-// TestRenderCaptureTrigger pins the capture-trigger DDL shape the sync emits as a
-// seam: E06.2 owns the trigger function's PL/pgSQL body, and this is the CREATE
-// TRIGGER statement that binds it to a declared table. A golden diff is a contract
-// diff.
+// TestRenderCaptureTriggers pins the statement-level, transition-table capture
+// trigger DDL the sync emits as a seam: E06.2 owns the trigger function's PL/pgSQL
+// body, and these are the CREATE TRIGGER statements that bind it to a declared
+// table. Postgres transition tables are per-operation, so the set is three triggers
+// (INSERT with NEW TABLE, UPDATE with OLD and NEW TABLE, DELETE with OLD TABLE), one
+// INSERT...SELECT per statement (specification section 4). A golden diff is a
+// contract diff.
 //
 // spec: S05/missing-capture-trigger-autofix
-func TestRenderCaptureTrigger(t *testing.T) {
-	ddl := pg.RenderCaptureTrigger("analytics", "orders")
-	golden.Assert(t, []byte(ddl+"\n"), filepath.Join("testdata", "capture_trigger.sql"))
+func TestRenderCaptureTriggers(t *testing.T) {
+	stmts := pg.RenderCaptureTriggers("analytics", "orders")
+	if len(stmts) != 3 {
+		t.Fatalf("RenderCaptureTriggers returned %d statements, want 3 (one per operation)", len(stmts))
+	}
+	golden.Assert(t, []byte(strings.Join(stmts, "\n\n")+"\n"), filepath.Join("testdata", "capture_triggers.sql"))
 }
