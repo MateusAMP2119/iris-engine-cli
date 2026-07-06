@@ -134,6 +134,84 @@ func TestifyLower(t *testing.T) {
 			// Test so go test would not run it either -- neither claims.
 			want: map[string]trace.ClaimKind{},
 		},
+		{
+			name: "struct receiver .Run with an id-shaped literal is not a claim",
+			src: `package sample
+
+import "testing"
+
+type runner struct{}
+
+func (runner) Run(name string, fn func()) {}
+
+func TestG(t *testing.T) {
+	var s runner
+	s.Run("S16/manifest-row-schema", func() {})
+}
+`,
+			// s is a local struct, not a *testing.T: its Run is not a subtest, so
+			// the id-shaped literal must not register a claim.
+			want: map[string]trace.ClaimKind{},
+		},
+		{
+			name: "nested t.Run with a renamed closure param still claims",
+			src: `package sample
+
+import "testing"
+
+func TestH(t *testing.T) {
+	t.Run("S16/manifest-row-schema", func(t2 *testing.T) {
+		t2.Run("S16/exempt-needs-no-test", func(t3 *testing.T) {})
+	})
+}
+`,
+			// The subtest *testing.T may be renamed by each closure; a Run on any
+			// identifier bound to a *testing.T still claims.
+			want: map[string]trace.ClaimKind{
+				"S16/manifest-row-schema":  trace.KindSubtest,
+				"S16/exempt-needs-no-test": trace.KindSubtest,
+			},
+		},
+		{
+			name: "a sibling closure's *testing.T param does not leak past a shadowing local",
+			src: `package sample
+
+import "testing"
+
+type runner struct{}
+
+func (runner) Run(name string, fn func()) {}
+
+func TestBaz(t *testing.T) {
+	_ = func(s *testing.T) {}
+	var s runner
+	s.Run("S16/manifest-row-schema", func() {})
+}
+`,
+			// The throwaway closure's s *testing.T is confined to that closure's
+			// scope; in the block s is a local struct that shadows nothing of type
+			// *testing.T, so its Run is not a subtest and must not claim.
+			want: map[string]trace.ClaimKind{},
+		},
+		{
+			name: "a local rebinding the test's t shadows the parameter and does not claim",
+			src: `package sample
+
+import "testing"
+
+type mockRunner struct{}
+
+func (mockRunner) Run(name string, fn func(*testing.T)) {}
+
+func TestShadow(t *testing.T) {
+	var t = mockRunner{}
+	t.Run("S16/exempt-needs-no-test", nil)
+}
+`,
+			// t is rebound to a non-*testing.T local, shadowing the parameter, so
+			// its Run resolves to the local and must not claim.
+			want: map[string]trace.ClaimKind{},
+		},
 	}
 
 	for _, tt := range tests {
