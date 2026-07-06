@@ -70,8 +70,15 @@ func (m Mode) String() string {
 	return "backlog"
 }
 
-// LintError is one tests->manifest violation: a test claiming an id absent from
-// the manifest, or a test claiming no contract at all (ID is empty then).
+// LintError is one tests->manifest violation. It is one of three kinds, told
+// apart by what ID holds:
+//
+//   - unknown claim: the test claims a contract id with no manifest row; ID is
+//     that claimed id.
+//   - malformed annotation: a `// spec:` marker whose token is not a well-formed
+//     contract id (e.g. a trailing period or uppercase slug); ID is that
+//     near-miss token.
+//   - no claim: the test claims no contract at all; ID is empty.
 type LintError struct {
 	File string
 	Line int
