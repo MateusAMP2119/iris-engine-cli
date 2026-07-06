@@ -14,6 +14,7 @@ import (
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
 // This file is the daemon's foreground/detached lifecycle at the process edge
@@ -54,13 +55,20 @@ func IsManagedInstalled(s config.Settings) bool {
 	return err == nil && v > 0
 }
 
-// Run starts the daemon in the foreground: it serves the control/read API on the
-// always-on unix socket and, when configured, the PAT-gated TCP listener, records
-// the pidfile, logs a ready line, and blocks until ctx is cancelled
-// (SIGTERM/SIGINT), then shuts down gracefully (specification section 2:
-// foreground default, streaming). In managed mode it fails fast when the managed
-// Postgres is not installed; it does not itself start Postgres here (managed-PG
-// startup and meta connectivity land in E02.6).
+// Run starts the daemon in the foreground: it brings up Postgres (a managed
+// subprocess or the external cluster), connects the meta client, serves the
+// control/read API on the always-on unix socket and, when configured, the PAT-gated
+// TCP listener, runs leader election, records the pidfile, logs a ready line, and
+// blocks until ctx is cancelled (SIGTERM/SIGINT), then shuts down gracefully
+// (specification section 2: foreground default, streaming). In managed mode it fails
+// fast when the managed Postgres is not installed.
+//
+// Election runs alongside the listeners: the candidate contends for the leader
+// advisory lock on a session-pinned meta connection, becomes the sole dispatcher on
+// winning (re-checking the meta schema through the single-writer path), and reports
+// the leader role so its listeners accept mutations; until then it is a standby that
+// rejects mutations with leader guidance. This is where `iris engine start` becomes
+// genuinely functional: it connects to a real database for the first time.
 func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -69,7 +77,25 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		return ErrManagedNotInstalled
 	}
 
-	srv := NewServer(s, api.NewMux(), WithServerLogger(logger))
+	// Bring up Postgres and resolve the admin DSN (managed subprocess or external),
+	// then connect the meta client: ensure the meta database exists and open the
+	// leader session (advisory lock + writes) and the reader pool.
+	mgr := NewManager(s, EmbeddedSupervisor)
+	adminDSN, err := mgr.Startup(ctx)
+	if err != nil {
+		return fmt.Errorf("daemon: bring up Postgres: %w", err)
+	}
+	defer func() { _ = mgr.Shutdown() }()
+
+	client, err := store.Connect(ctx, adminDSN.Source())
+	if err != nil {
+		return fmt.Errorf("daemon: connect meta: %w", err)
+	}
+	defer func() { _ = client.Close(context.Background()) }()
+
+	// The role state the mux consults: standby until election confirms leadership.
+	role := api.NewRoleState()
+	srv := NewServer(s, api.NewMux(api.WithRole(role)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -79,9 +105,22 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer func() { _ = RemovePIDFile(s) }()
 
+	// Run the election in the background: it flips the role and drives the single
+	// dispatcher. It returns when ctx is cancelled (having released the lock).
+	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger)
+	electDone := make(chan error, 1)
+	go func() { electDone <- cand.Serve(ctx) }()
+
 	logger.Info("iris daemon listening",
 		"socket", srv.SocketPath(), "tcp", srv.TCPAddr(), "mode", modeLabel(s))
-	return srv.Serve(ctx)
+	serveErr := srv.Serve(ctx)
+
+	// Serve returned because ctx was cancelled; wait for the candidate to release the
+	// leader lock (and demote) before the deferred connection teardown runs.
+	if electErr := <-electDone; electErr != nil && !errors.Is(electErr, context.Canceled) {
+		logger.Warn("iris daemon election ended with error", "err", electErr)
+	}
+	return serveErr
 }
 
 // Detach re-execs the binary at exePath with childArgs as a background,

@@ -60,6 +60,22 @@ const pgDirName = "pg"
 // it is where initdb writes PG_VERSION.
 const dataDirName = "data"
 
+// superuserPasswordFile is the file under the managed-Postgres directory that
+// carries the engine-minted superuser password across processes. embedded-postgres
+// sets the superuser password at initdb and health-checks with it on every start,
+// so a managed cluster initialized by `iris engine install` can only be reopened by
+// a later `iris engine start` if both use the same password. The credential is
+// persisted here, engine-owned and 0600, so the daemon (never the CLI) can reopen
+// its own cluster; it is a point flagged for spec review alongside the engine-key
+// storage decision (the spec says the managed superuser is memory-held and the CLI
+// never sees it -- this keeps "the CLI never sees it" true while giving the daemon
+// continuity across restarts).
+const superuserPasswordFile = "superuser.pw"
+
+// superuserPasswordPerm is the mode the persisted superuser password file is
+// clamped to: owner read/write only.
+const superuserPasswordPerm os.FileMode = 0o600
+
 // ErrPGVersionMismatch is the sentinel returned when a managed data directory
 // records a Postgres major version different from PinnedMajorVersion. Startup and
 // install fail fast on it rather than letting a version-mismatched data directory
@@ -286,11 +302,13 @@ func (m *Manager) Shutdown() error {
 }
 
 // managedConfig builds the SupervisorConfig for managed mode: the .iris/pg
-// placement, a fresh engine-minted superuser credential, a free local port, and the
-// socket-vs-TCP choice (TCP only when the engine's own TCP listener -- the standby /
-// remote topology signal -- is configured).
+// placement, the engine-minted superuser credential (persisted so install and every
+// later start share it), a free local port, and the socket-vs-TCP choice (TCP only
+// when the engine's own TCP listener -- the standby / remote topology signal -- is
+// configured).
 func (m *Manager) managedConfig() (SupervisorConfig, error) {
-	password, err := mintPassword()
+	dir := ManagedPGDir(m.settings)
+	password, err := resolveManagedPassword(dir)
 	if err != nil {
 		return SupervisorConfig{}, err
 	}
@@ -298,7 +316,6 @@ func (m *Manager) managedConfig() (SupervisorConfig, error) {
 	if err != nil {
 		return SupervisorConfig{}, err
 	}
-	dir := ManagedPGDir(m.settings)
 	return SupervisorConfig{
 		Dir:       dir,
 		DataDir:   managedDataDir(dir),
@@ -307,6 +324,41 @@ func (m *Manager) managedConfig() (SupervisorConfig, error) {
 		Port:      port,
 		TCP:       m.settings.TCP != "",
 	}, nil
+}
+
+// resolveManagedPassword returns the engine-minted managed superuser password for
+// the managed-Postgres directory, reusing the one persisted on first use so a
+// managed cluster created by `iris engine install` can be reopened by a later
+// `iris engine start`. embedded-postgres health-checks with the configured password
+// on every start, so a fresh password each start would fail against the existing
+// data directory. The credential is crypto-random, engine-owned, and stored 0600;
+// the CLI never reads it. A fresh workspace (no file yet) mints a new one and
+// persists it, so independent engines still get distinct credentials.
+func resolveManagedPassword(dir string) (string, error) {
+	path := filepath.Join(dir, superuserPasswordFile)
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is the engine-owned managed-Postgres dir, never user or network input.
+	switch {
+	case err == nil:
+		if pw := strings.TrimSpace(string(raw)); pw != "" {
+			return pw, nil
+		}
+		// An empty/corrupt file: fall through and re-mint rather than start with no
+		// credential.
+	case !errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("daemon: read managed superuser credential: %w", err)
+	}
+
+	password, err := mintPassword()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("daemon: create managed Postgres directory %s: %w", dir, err)
+	}
+	if err := os.WriteFile(path, []byte(password), superuserPasswordPerm); err != nil {
+		return "", fmt.Errorf("daemon: persist managed superuser credential: %w", err)
+	}
+	return password, nil
 }
 
 // managedDSN builds the admin DSN for a managed instance from its engine-minted
