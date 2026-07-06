@@ -1,6 +1,12 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
 
 // runE is the signature of a cobra command handler.
 type runE = func(cmd *cobra.Command, args []string) error
@@ -15,8 +21,20 @@ func (a *app) newRootCommand() *cobra.Command {
 		Short:         "Iris - provenance-first data engine and pipeline orchestrator",
 		SilenceErrors: true, // errors are rendered by renderError, not cobra
 		SilenceUsage:  true, // usage never pollutes stdout under --json
+		Args:          cobra.NoArgs,
+		// A bare `iris` prints help (exit 0), but under --json it must still emit a
+		// single JSON document rather than human help text on stdout.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
+				return a.describeJSON(cmd)
+			}
+			return cmd.Help()
+		},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
+	// Tag flag-parse failures so the error path can tell them from post-parse
+	// errors when resolving the output mode.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &flagError{err: err} })
 
 	// Global flags, on every command by inheritance (specification section 8).
 	pf := root.PersistentFlags()
@@ -39,6 +57,30 @@ func (a *app) newRootCommand() *cobra.Command {
 	return root
 }
 
+// group builds a noun (or sub-noun) node: a command that owns verbs but does no
+// work itself. A bare invocation is a usage error (exit 2), consistent with the
+// resource-first tree and the spec's bare-declare rule, so no group node ever
+// prints human help to stdout under --json.
+func (a *app) group(use, short string, children ...*cobra.Command) *cobra.Command {
+	c := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.NoArgs,
+		RunE:  a.groupStub(),
+	}
+	c.AddCommand(children...)
+	return c
+}
+
+// groupStub is a group node's handler: it names the available subcommands and
+// returns a usage error.
+func (a *app) groupStub() runE {
+	return func(cmd *cobra.Command, _ []string) error {
+		return a.usage(fmt.Sprintf("%q needs a subcommand: %s",
+			cmd.CommandPath(), strings.Join(visibleChildNames(cmd), ", ")))
+	}
+}
+
 // daemonStub is the handler of a command that must reach a running daemon: with
 // none reachable it reports no-daemon (exit 3) with start guidance.
 func (a *app) daemonStub(op string) runE {
@@ -49,6 +91,20 @@ func (a *app) daemonStub(op string) runE {
 // daemon and is not wired yet: it reports not-implemented (exit 4).
 func (a *app) localStub(what string) runE {
 	return func(_ *cobra.Command, _ []string) error { return a.notImplemented(what) }
+}
+
+// visibleChildNames returns the sorted names of a command's user-facing
+// subcommands, skipping hidden and cobra's built-in help/completion commands.
+func visibleChildNames(cmd *cobra.Command) []string {
+	var out []string
+	for _, c := range cmd.Commands() {
+		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
+			continue
+		}
+		out = append(out, c.Name())
+	}
+	sort.Strings(out)
+	return out
 }
 
 // addConfirmFlags registers the --yes/--force flags of a destructive command
@@ -68,15 +124,6 @@ func addScopeFlags(c *cobra.Command) {
 // declareCmd builds `iris declare`: apply and destroy one declaration file. A
 // bare `iris declare` is a usage error by design (no --all).
 func (a *app) declareCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:   "declare",
-		Short: "Register and tear down the workload graph, one declaration file per invocation",
-		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return a.usage("declare requires a verb: apply <path> or destroy <path>")
-		},
-	}
-
 	apply := &cobra.Command{
 		Use:   "apply <path>",
 		Short: "Register and apply one iris-declare.yaml (pipeline or composer)",
@@ -94,14 +141,13 @@ func (a *app) declareCmd() *cobra.Command {
 	destroy.Flags().Bool("dry-run", false, "report what would be torn down without touching anything")
 	addConfirmFlags(destroy)
 
-	c.AddCommand(apply, destroy)
-	return c
+	return a.group("declare",
+		"Register and tear down the workload graph, one declaration file per invocation",
+		apply, destroy)
 }
 
 // pipelineCmd builds `iris pipeline`: the single-unit lifecycle and reads.
 func (a *app) pipelineCmd() *cobra.Command {
-	c := &cobra.Command{Use: "pipeline", Short: "Operate on a single pipeline"}
-
 	build := &cobra.Command{
 		Use: "build <name>", Short: "Build source into the self-contained binary, recording its content hash",
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline build"),
@@ -124,14 +170,11 @@ func (a *app) pipelineCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline show"),
 	}
 
-	c.AddCommand(build, promote, run, list, show)
-	return c
+	return a.group("pipeline", "Operate on a single pipeline", build, promote, run, list, show)
 }
 
 // runCmd builds `iris run`: execution-record reads and cancel.
 func (a *app) runCmd() *cobra.Command {
-	c := &cobra.Command{Use: "run", Short: "Inspect and control execution records"}
-
 	list := &cobra.Command{
 		Use: "list", Short: "List run history",
 		Args: cobra.NoArgs, RunE: a.daemonStub("run list"),
@@ -157,27 +200,22 @@ func (a *app) runCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("run cancel"),
 	}
 
-	c.AddCommand(list, show, logs, cancel)
-	return c
+	return a.group("run", "Inspect and control execution records", list, show, logs, cancel)
 }
 
 // dataCmd builds `iris data`: row-level provenance, the single computed read.
 func (a *app) dataCmd() *cobra.Command {
-	c := &cobra.Command{Use: "data", Short: "Row-level reads"}
 	prov := &cobra.Command{
 		Use:   "provenance <schema.table> <pk>",
 		Short: "Show a row's provenance: author, layer stack, consumed upstreams, hashes",
 		Args:  cobra.ExactArgs(2), RunE: a.daemonStub("data provenance"),
 	}
-	c.AddCommand(prov)
-	return c
+	return a.group("data", "Row-level reads", prov)
 }
 
 // workloadCmd builds `iris workload`: the standing wiring panel and the dev
 // loop's data scope.
 func (a *app) workloadCmd() *cobra.Command {
-	c := &cobra.Command{Use: "workload", Short: "The standing wiring and the dev loop's data scope"}
-
 	show := &cobra.Command{
 		Use: "show [pipeline]", Short: "Show the wiring panel: lanes, composer walk, gate state per edge",
 		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("workload show"),
@@ -188,16 +226,13 @@ func (a *app) workloadCmd() *cobra.Command {
 	}
 	addConfirmFlags(wipe)
 
-	c.AddCommand(show, wipe)
-	return c
+	return a.group("workload", "The standing wiring and the dev loop's data scope", show, wipe)
 }
 
 // engineCmd builds `iris engine`: the daemon, its state, and its service unit.
 // Local-lifecycle verbs (start/install/uninstall/service) do not dial a daemon
 // and report not-implemented; the rest reach a running daemon.
 func (a *app) engineCmd() *cobra.Command {
-	c := &cobra.Command{Use: "engine", Short: "Manage the daemon, its state, and its service unit"}
-
 	start := &cobra.Command{
 		Use: "start", Short: "Run an engine candidate (foreground; -d to detach)",
 		Args: cobra.NoArgs, RunE: a.localStub("engine start"),
@@ -242,7 +277,6 @@ func (a *app) engineCmd() *cobra.Command {
 		Args: cobra.NoArgs, RunE: a.daemonStub("engine stats"),
 	}
 
-	service := &cobra.Command{Use: "service", Short: "Manage the platform service unit"}
 	svcInstall := &cobra.Command{
 		Use: "install", Short: "Generate and install the platform service unit (systemd/launchd)",
 		Args: cobra.NoArgs, RunE: a.localStub("engine service install"),
@@ -251,22 +285,16 @@ func (a *app) engineCmd() *cobra.Command {
 		Use: "uninstall", Short: "Remove the installed service unit",
 		Args: cobra.NoArgs, RunE: a.localStub("engine service uninstall"),
 	}
-	service.AddCommand(svcInstall, svcUninstall)
+	service := a.group("service", "Manage the platform service unit", svcInstall, svcUninstall)
 
-	c.AddCommand(start, stop, install, uninstall, info, logs, inspect, stats, service)
-	return c
+	return a.group("engine", "Manage the daemon, its state, and its service unit",
+		start, stop, install, uninstall, info, logs, inspect, stats, service)
 }
 
 // deadletterCmd builds `iris deadletter` (sole alias: dl). replay and drain
 // require a scope: <run>, --pipeline <name>, or --all; a bare invocation is a
 // usage error.
 func (a *app) deadletterCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:     "deadletter",
-		Aliases: []string{"dl"},
-		Short:   "The dead-letter worklist",
-	}
-
 	list := &cobra.Command{
 		Use: "list", Short: "List outstanding entries",
 		Args: cobra.NoArgs, RunE: a.daemonStub("deadletter list"),
@@ -287,7 +315,8 @@ func (a *app) deadletterCmd() *cobra.Command {
 	addScopeFlags(drain)
 	addConfirmFlags(drain)
 
-	c.AddCommand(list, show, replay, drain)
+	c := a.group("deadletter", "The dead-letter worklist", list, show, replay, drain)
+	c.Aliases = []string{"dl"} // the one and only alias in the tree
 	return c
 }
 
@@ -308,8 +337,6 @@ func (a *app) deadletterScopedStub(op string) runE {
 // endpointCmd builds `iris endpoint`: declared read surfaces with their own
 // lifecycle, apart from declare apply.
 func (a *app) endpointCmd() *cobra.Command {
-	c := &cobra.Command{Use: "endpoint", Short: "Declared read surfaces (own lifecycle)"}
-
 	apply := &cobra.Command{
 		Use: "apply [name]", Short: "Publish endpoints/ (or one): validate, compile, atomic",
 		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("endpoint apply"),
@@ -327,14 +354,11 @@ func (a *app) endpointCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("endpoint show"),
 	}
 
-	c.AddCommand(apply, remove, list, show)
-	return c
+	return a.group("endpoint", "Declared read surfaces (own lifecycle)", apply, remove, list, show)
 }
 
 // patCmd builds `iris pat`: PAT lifecycle with scopes {control, read, data}.
 func (a *app) patCmd() *cobra.Command {
-	c := &cobra.Command{Use: "pat", Short: "Manage PATs with scopes {control, read, data}"}
-
 	create := &cobra.Command{
 		Use: "create", Short: "Mint a new PAT",
 		Args: cobra.ArbitraryArgs, RunE: a.daemonStub("pat create"),
@@ -348,6 +372,5 @@ func (a *app) patCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pat revoke"),
 	}
 
-	c.AddCommand(create, list, revoke)
-	return c
+	return a.group("pat", "Manage PATs with scopes {control, read, data}", create, list, revoke)
 }

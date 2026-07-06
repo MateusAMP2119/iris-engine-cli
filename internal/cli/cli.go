@@ -5,7 +5,7 @@
 //
 // The command handlers are stubs during epic E01. What is real from day one is
 // the contract around those stubs: the categorical exit codes, the single-JSON
-// envelope on stdout under --json, and the strict separation of log output
+// document on stdout under --json, and the strict separation of log output
 // (stderr) from command output (stdout). A stub that would reach a running
 // daemon reports "no daemon reachable" (exit 3) with guidance to start the
 // engine -- the honest current behavior, since no daemon exists yet -- and a
@@ -19,7 +19,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // The exit codes are the categories of specification section 8. Detail rides the
@@ -27,7 +28,7 @@ import (
 // and in particular overrides cobra's default exit 1.
 const (
 	exitOK           = 0 // success
-	exitUsage        = 2 // usage error (bad flags/args, unknown command)
+	exitUsage        = 2 // usage error (bad flags/args, unknown command, bare noun)
 	exitNoDaemon     = 3 // no daemon reachable (start guidance)
 	exitOpFailed     = 4 // operation failed (includes not-yet-implemented stubs)
 	exitDeadLettered = 5 // run dead-lettered
@@ -66,18 +67,20 @@ func newAppWithLogger(stdout, stderr io.Writer, logger *slog.Logger) *app {
 	return &app{out: stdout, errOut: stderr, logger: logger}
 }
 
-// run resolves the output mode, builds and executes the command tree, and maps
-// the outcome to an exit-code category.
+// run builds and executes the command tree and maps the outcome to an exit-code
+// category. On error it resolves the output mode -- honoring exactly how pflag
+// consumed --json -- and renders the error accordingly.
 func (a *app) run(args []string) int {
-	a.jsonMode = jsonRequested(args)
 	root := a.newRootCommand()
 	root.SetArgs(args)
 	root.SetOut(a.out)
 	root.SetErr(a.errOut)
-	if err := root.Execute(); err != nil {
-		return a.renderError(err)
+	cmd, err := root.ExecuteC()
+	if err == nil {
+		return exitOK
 	}
-	return exitOK
+	a.jsonMode = jsonModeAfterError(cmd, err, args)
+	return a.renderError(err)
 }
 
 // fault is a command outcome carrying a specification section 8 exit-code
@@ -90,6 +93,19 @@ type fault struct {
 
 // Error implements error; the message is the human-readable outcome.
 func (f *fault) Error() string { return f.message }
+
+// flagError wraps a cobra/pflag flag-parsing failure so the error path can tell
+// it apart from a post-parse error. It matters only for resolving the output
+// mode: after a clean parse the parsed --json flag is authoritative (it reflects
+// exactly what pflag consumed), but a flag-parse error may have stopped before
+// --json was reached, so that path re-resolves the mode from a pflag probe.
+type flagError struct{ err error }
+
+// Error implements error with the wrapped pflag message.
+func (e *flagError) Error() string { return e.err.Error() }
+
+// Unwrap exposes the wrapped pflag error.
+func (e *flagError) Unwrap() error { return e.err }
 
 // noDaemon is the outcome of a stub that must reach a running daemon while none
 // is reachable: exit 3, with guidance to start the engine folded into the
@@ -128,6 +144,20 @@ type errBody struct {
 	Message string `json:"message"`
 }
 
+// dataEnvelope is the --json success document: the read-API success envelope
+// shape of specification section 7, {"data":...}.
+type dataEnvelope struct {
+	Data any `json:"data"`
+}
+
+// cliDescription is the payload of `iris --json` (bare root): a machine-readable
+// summary of the command surface, so even the root emits one JSON document under
+// --json rather than human help text.
+type cliDescription struct {
+	Usage string   `json:"usage"`
+	Nouns []string `json:"nouns"`
+}
+
 // renderError writes an error outcome and returns its exit-code category. A
 // fault carries its own code; any other error is one of cobra's own arg, flag, or
 // unknown-command errors, all of which are usage errors (exit 2) -- cobra's
@@ -147,31 +177,48 @@ func (a *app) renderError(err error) int {
 	return f.code
 }
 
-// jsonRequested reports whether --json is set, scanning args directly so the
-// output mode is resolved even when flag parsing later fails (an unknown flag, a
-// missing argument). Only tokens before the "--" terminator count, matching
-// pflag's own boundary between flags and positionals.
-func jsonRequested(args []string) bool {
-	want := false
-	for _, arg := range args {
-		switch {
-		case arg == "--":
-			return want
-		case arg == "--json":
-			want = true
-		case strings.HasPrefix(arg, "--json="):
-			want = truthy(arg[len("--json="):])
+// jsonModeAfterError resolves whether --json was requested, for rendering an
+// error. After a clean parse the parsed flag is authoritative: it reflects
+// exactly what pflag consumed, so a --json that a value-taking flag swallowed
+// (iris --token --json ...) correctly reads as unset. Only a flag-parse error --
+// which may have stopped before --json was reached -- falls back to a pflag probe
+// with matching consumption semantics.
+func jsonModeAfterError(cmd *cobra.Command, err error, args []string) bool {
+	var fe *flagError
+	if !errors.As(err, &fe) && cmd != nil {
+		if b, gerr := cmd.Flags().GetBool("json"); gerr == nil {
+			return b
 		}
 	}
-	return want
+	return probeJSONMode(args)
 }
 
-// truthy parses a boolean flag value the way pflag does for --json=<v>.
-func truthy(v string) bool {
-	switch strings.ToLower(v) {
-	case "1", "t", "true", "y", "yes":
-		return true
-	default:
-		return false
+// probeJSONMode reports whether --json is set by parsing args with a throwaway
+// flag set that mirrors pflag's consumption exactly: the global value-taking
+// flags are registered so a --json they swallow is not mistaken for the bool, and
+// unknown flags are whitelisted so parsing does not stop early. It is the
+// fallback for the flag-parse-error path, where cobra's own parse did not finish.
+func probeJSONMode(args []string) bool {
+	probe := &cobra.Command{FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true}}
+	fs := probe.Flags()
+	fs.SetOutput(io.Discard)
+	fs.Bool("json", false, "")
+	fs.String("socket", "", "")
+	fs.String("host", "", "")
+	fs.String("token", "", "")
+	_ = probe.ParseFlags(args)
+	b, _ := fs.GetBool("json")
+	return b
+}
+
+// describeJSON emits the single JSON document for `iris --json` (bare root): a
+// data envelope summarizing the command surface, so the root honors the --json
+// contract instead of printing human help to stdout.
+func (a *app) describeJSON(root *cobra.Command) error {
+	desc := cliDescription{
+		Usage: "iris <noun> <verb> [target]",
+		Nouns: visibleChildNames(root),
 	}
+	_ = json.NewEncoder(a.out).Encode(dataEnvelope{Data: desc})
+	return nil
 }
