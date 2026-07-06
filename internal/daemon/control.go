@@ -210,7 +210,10 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 		return api.ControlResult{Kind: decl.Kind.String(), Target: decl.Pipeline.Name, DryRun: req.DryRun}, nil
 	case declare.KindComposer:
 		if !req.DryRun {
-			members := o.laneMembers(decl.Composer.Lane)
+			members, err := o.laneMembers(decl.Composer.Lane)
+			if err != nil {
+				return api.ControlResult{}, err
+			}
 			if err := o.destroyer.DestroyComposer(ctx, decl.Composer.Lane, members); err != nil {
 				return api.ControlResult{}, err
 			}
@@ -223,13 +226,13 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 
 // laneMembers returns the pipeline names in the lane's folder discovered from the
 // workspace: the registered-member basis the composer destroy interlock counts. A
-// discovery failure yields an empty set (the interlock then permits the destroy, the
-// safe direction: an unreadable workspace is not a reason to leave a lane wired).
-func (o *controlOrchestrator) laneMembers(lane string) []string {
+// discovery failure refuses the destroy (returns the error) rather than proceeding on
+// an unknown member count: the conservative direction, since the interlock exists to
+// keep a composer that 2+ registered members still need from being removed.
+func (o *controlOrchestrator) laneMembers(lane string) ([]string, error) {
 	ws, err := declare.DiscoverWorkspace(o.workspace)
 	if err != nil {
-		o.logger.Warn("iris control: discover workspace for lane members failed", "lane", lane, "err", err)
-		return nil
+		return nil, fmt.Errorf("declare destroy: discover lane %q members: %w", lane, err)
 	}
 	var members []string
 	for _, p := range ws.Pipelines {
@@ -237,7 +240,7 @@ func (o *controlOrchestrator) laneMembers(lane string) []string {
 			members = append(members, p.Declaration.Name)
 		}
 	}
-	return members
+	return members, nil
 }
 
 // provision runs pipeline-independent schema provisioning over the workspace schemas/
