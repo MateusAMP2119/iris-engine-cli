@@ -42,16 +42,6 @@ func tableIndex(tables []declare.DiscoveredTable) map[string]declare.DiscoveredT
 	return idx
 }
 
-const ordersTableYAML = `schema: %s
-table: %s
-columns:
-  - name: id
-    type: uuid
-    primary_key: true
-  - name: amount
-    type: numeric
-`
-
 // TestSchemasTreeShape proves the engine reads a schemas/ tree shaped as a
 // folder per schema and per table, each table folder holding table.yaml plus an
 // optional engine-written migrations/ ledger.
@@ -92,7 +82,7 @@ func TestSchemasTreeShape(t *testing.T) {
 
 		// Accept: a table folder that also carries an engine-written migrations/.
 		withMig := writeTree(t, t.TempDir(), map[string]string{
-			"analytics/orders/table.yaml":                "schema: analytics\ntable: orders\ncolumns:\n  - name: id\n    type: uuid\n    primary_key: true\n",
+			"analytics/orders/table.yaml":                  "schema: analytics\ntable: orders\ncolumns:\n  - name: id\n    type: uuid\n    primary_key: true\n",
 			"analytics/orders/migrations/0001_create.yaml": "id: \"0001\"\n",
 		})
 		got, err := declare.ValidateSchemaTree(withMig)

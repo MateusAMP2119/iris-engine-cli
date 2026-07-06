@@ -15,7 +15,7 @@ import (
 func goldenDecl(t *testing.T, elem ...string) []byte {
 	t.Helper()
 	path := filepath.Join(append([]string{fixtures.WorkspaceGolden()}, elem...)...)
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: a checked-in fixture path under the trusted repo tree.
 	if err != nil {
 		t.Fatalf("read golden declaration %v: %v", elem, err)
 	}
@@ -26,6 +26,7 @@ func goldenDecl(t *testing.T, elem ...string) []byte {
 // fixture directory, failing the test on a read error.
 func invalidDecl(t *testing.T, name string) []byte {
 	t.Helper()
+	//nolint:gosec // G304: a checked-in fixture path under the trusted repo tree.
 	b, err := os.ReadFile(filepath.Join(fixtures.InvalidDeclaration(name), "iris-declare.yaml"))
 	if err != nil {
 		t.Fatalf("read invalid declaration %q: %v", name, err)
