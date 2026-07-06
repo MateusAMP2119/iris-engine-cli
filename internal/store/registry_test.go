@@ -198,6 +198,62 @@ func TestDependenciesPersistRows(t *testing.T) {
 	})
 }
 
+// TestDependenciesReApplyReplaces proves a re-apply with a different depends_on set
+// replaces the pipeline's edges wholesale rather than accumulating them: the
+// production write path clears the pipeline's edges before inserting the current
+// ones, and the registry-view fake mirrors that replace semantics, so the graph
+// validation reads is the graph the writer persists (never a stale union).
+//
+// spec: S03/dependencies-persist-rows
+func TestDependenciesReApplyReplaces(t *testing.T) {
+	ctx := context.Background()
+
+	// Production: every RegisterPipeline clears the pipeline's edges (a delete)
+	// before inserting the current ones, so a re-apply persists exactly the new set.
+	rec := storetest.NewWriteRecorder()
+	w := store.NewWriter(rec)
+	row := store.PipelineRow{Name: "p", Folder: "f", Run: []string{"python", "m.py"}, Artifact: store.ArtifactSource, DataMode: store.DataDisposable}
+	if err := w.RegisterPipeline(ctx, row, []string{"b", "c"}); err != nil {
+		t.Fatalf("RegisterPipeline: %v", err)
+	}
+	if len(stmtsContaining(rec.Statements(), "DELETE FROM dependencies")) != 1 {
+		t.Errorf("re-apply does not clear the pipeline's edges before inserting: %v", rec.Statements())
+	}
+	prodTo := map[string]bool{}
+	for _, e := range stmtsContaining(rec.Statements(), "INSERT INTO dependencies") {
+		prodTo[e.Args[1].(string)] = true
+	}
+
+	// Fake: re-seeding a name with a different depends_on set replaces its edges,
+	// matching what a re-apply persists -- never the stale union {a, b, c}.
+	reg := storetest.NewRegistryFake()
+	reg.Register("p", "a", "b") // first apply
+	reg.Register("p", "b", "c") // re-apply with a different set
+	edges, err := reg.DependencyEdges(ctx)
+	if err != nil {
+		t.Fatalf("DependencyEdges: %v", err)
+	}
+	fakeTo := map[string]bool{}
+	for _, e := range edges {
+		if e.From == "p" {
+			fakeTo[e.To] = true
+		}
+	}
+	if len(fakeTo) != 2 || !fakeTo["b"] || !fakeTo["c"] {
+		t.Errorf("fake edges after re-seed = %v, want {b, c} (replace, not append)", fakeTo)
+	}
+	// The fake agrees with what production persists, so validation and the writer
+	// never diverge on a re-apply.
+	if len(fakeTo) != len(prodTo) {
+		t.Errorf("fake edges %v and production persisted edges %v differ in count", fakeTo, prodTo)
+	}
+	for to := range fakeTo {
+		if !prodTo[to] {
+			t.Errorf("fake edge to %q is absent from the production write set %v", to, prodTo)
+		}
+	}
+}
+
 // TestLanesRowComposerWritten proves lane state persists in lanes as name-keyed
 // rows (lane, pipeline name, pos) and is written only by the composer's own apply:
 // RewriteLane emits those rows, and a pipeline apply (RegisterPipeline) emits none.

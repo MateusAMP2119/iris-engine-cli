@@ -143,23 +143,25 @@ func (c *pgxWriteConn) Exec(ctx context.Context, sql string, args ...any) error 
 }
 
 // ExecTx runs stmts as one atomic Postgres transaction on the leader's session: it
-// opens a transaction, executes each statement in order, and commits. On any
-// statement error it rolls back and returns the error -- joined with the rollback
-// error if the rollback itself fails -- so a failed registry apply leaves meta
-// exactly as it was, never half-written. The whole batch rides the one lock-holding
+// opens a transaction, executes each statement in order, and commits. A deferred
+// rollback on a background context guards every exit: on a statement error or a
+// failed commit it sends ROLLBACK -- and it uses context.Background(), not the
+// caller's ctx, so a cancelled apply still delivers the ROLLBACK wire message
+// rather than short-circuiting and stranding the persistent leader connection in
+// an aborted transaction (where every later command would fail). After a successful
+// Commit the rollback is a no-op. So a failed registry apply leaves meta exactly as
+// it was and the connection reusable. The whole batch rides the one lock-holding
 // session, like every other meta write.
 func (c *pgxWriteConn) ExecTx(ctx context.Context, stmts []Statement) error {
 	tx, err := c.conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin registry transaction: %w", err)
 	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
 	for _, s := range stmts {
 		if _, err := tx.Exec(ctx, s.SQL, s.Args...); err != nil {
-			execErr := fmt.Errorf("store: registry transaction exec: %w", err)
-			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				return errors.Join(execErr, fmt.Errorf("store: rollback registry transaction: %w", rbErr))
-			}
-			return execErr
+			return fmt.Errorf("store: registry transaction exec: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

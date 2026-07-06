@@ -32,7 +32,10 @@ var _ store.RegistryReader = (*RegistryFake)(nil)
 
 // Register seeds a registered pipeline with the given depends_on upstreams (from =
 // name, the dependent) and returns the fake so calls chain. A name is recorded once
-// even if seeded again; its edges accumulate, mirroring successive applies.
+// even if seeded again. Re-seeding replaces the name's edges wholesale, mirroring
+// the production apply's delete-then-insert (store.Writer.RegisterPipeline): a
+// re-seed with a different set persists that set, never the stale union, so the
+// view a validation reads matches what the writer would persist.
 func (f *RegistryFake) Register(name string, dependsOn ...string) *RegistryFake {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -40,9 +43,16 @@ func (f *RegistryFake) Register(name string, dependsOn ...string) *RegistryFake 
 		f.seenNames[name] = true
 		f.names = append(f.names, name)
 	}
-	for _, dep := range dependsOn {
-		f.edges = append(f.edges, store.DependencyEdge{From: name, To: dep})
+	kept := make([]store.DependencyEdge, 0, len(f.edges)+len(dependsOn))
+	for _, e := range f.edges {
+		if e.From != name {
+			kept = append(kept, e) // preserve other pipelines' edges.
+		}
 	}
+	for _, dep := range dependsOn {
+		kept = append(kept, store.DependencyEdge{From: name, To: dep})
+	}
+	f.edges = kept
 	return f
 }
 
