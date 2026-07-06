@@ -109,10 +109,14 @@ func (e *flagError) Unwrap() error { return e.err }
 
 // noDaemon is the outcome of a stub that must reach a running daemon while none
 // is reachable: exit 3, with guidance to start the engine folded into the
-// message so it rides both the human output and the --json envelope. It logs the
-// diagnostic to stderr (never stdout) at debug level, off by default.
-func (a *app) noDaemon(op string) error {
-	a.logger.Debug("no iris daemon reachable", "op", op)
+// message so it rides both the human output and the --json envelope. It resolves
+// the dial target through the configuration precedence (flags > IRIS_* env >
+// iris.toml > defaults, specification section 8) so the socket/host it would have
+// dialed is real, and logs the diagnostic to stderr (never stdout) at debug
+// level, off by default.
+func (a *app) noDaemon(cmd *cobra.Command, op string) error {
+	target := a.resolveTarget(cmd)
+	a.logger.Debug("no iris daemon reachable", "op", op, "socket", target.Socket, "host", target.Host)
 	return &fault{
 		code:    exitNoDaemon,
 		codeStr: "no_daemon",
