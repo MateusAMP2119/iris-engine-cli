@@ -6,10 +6,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -324,6 +326,105 @@ func TestOSRunnerWaitKeysOffChildReap(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Wait did not return within the deadline: it is blocking on the backgrounded grandchild, not the child's reap")
+	}
+}
+
+// TestOSRunnerSharedWriterCapturesAllBytes proves stdout and stderr aimed at the
+// same writer are captured through a single pump, with no concurrent Write and no
+// dropped bytes: a script interleaves many lines across both streams into one
+// shared buffer, and every line comes back. Two independent pumps on one writer
+// would race (caught by -race) and lose output.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerSharedWriterCapturesAllBytes(t *testing.T) {
+	dir := t.TempDir()
+	const perStream = 1000
+	// Heavy interleaving across both streams into one writer: two pumps would
+	// call Write on it concurrently.
+	body := fmt.Sprintf("i=0\nwhile [ $i -lt %d ]; do echo \"out-$i\"; echo \"err-$i\" 1>&2; i=$((i+1)); done\n", perStream)
+	script := writeScript(t, dir, "interleave.sh", body)
+
+	// One plain buffer for both streams: safe only because a shared writer is fed
+	// by a single pump.
+	var buf bytes.Buffer
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: &buf,
+		Stderr: &buf,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if st.Code != 0 || st.Signaled {
+		t.Errorf("exit status = %+v, want code 0, not signaled", st)
+	}
+	if got, want := strings.Count(buf.String(), "\n"), 2*perStream; got != want {
+		t.Errorf("captured %d lines, want %d (a concurrent pump dropped output)", got, want)
+	}
+}
+
+// throttledWriter delays every Write, modeling a destination slower than the
+// post-reap drain's no-progress window. The delay models writer slowness; it is
+// not a test-synchronization sleep.
+type throttledWriter struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	delay time.Duration
+}
+
+func (w *throttledWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *throttledWriter) len() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Len()
+}
+
+// TestOSRunnerSlowWriterCapturesBufferedOutput proves the post-reap drain is
+// progress-based, not a fixed absolute deadline: when a descendant holds the
+// output pipe open after the child exits and the caller's writer is slower than
+// the no-progress window, the child's own buffered output is still captured in
+// full because each read that makes progress extends the window. A fixed grace
+// would drop the tail of the blob.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerSlowWriterCapturesBufferedOutput(t *testing.T) {
+	dir := t.TempDir()
+	// A blob larger than the pipe buffer, so a slow pump leaves more than one read
+	// buffered at reap; a long-lived grandchild keeps the pipe open past reap.
+	const blob = 96 * 1024
+	body := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' x\nsleep 30 &\nexit 0\n", blob)
+	script := writeScript(t, dir, "bigdump.sh", body)
+
+	// Slower than the post-reap no-progress window, so an absolute deadline would
+	// expire mid-drain and truncate the buffered tail.
+	w := &throttledWriter{delay: 200 * time.Millisecond}
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: w,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid := h.PGID()
+	t.Cleanup(func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
+
+	if _, err := h.Wait(); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if got := w.len(); got != blob {
+		t.Errorf("captured %d bytes, want the child's full %d bytes (progress-based drain must not truncate buffered output)", got, blob)
 	}
 }
 

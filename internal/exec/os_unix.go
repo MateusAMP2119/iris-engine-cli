@@ -26,14 +26,20 @@ func NewOSRunner() *OSRunner { return &OSRunner{} }
 // compile-time proof the real runner satisfies the seam.
 var _ Runner = (*OSRunner)(nil)
 
-// drainGrace bounds how long, after the subprocess is reaped, the output copy
-// goroutines keep draining a stdout/stderr pipe a surviving descendant still
-// holds open. Wait keys off the child's reap, not pipe EOF, so a daemonizing
-// pipeline never stalls it; this grace only lets the child's own already-buffered
-// output flush before the read ends are released. It is not on the hot path: a
-// run with no lingering descendant reaches pipe EOF at child exit and never waits
-// for it.
-const drainGrace = 100 * time.Millisecond
+const (
+	// drainWindow is how long, after the subprocess is reaped, a pump waits for
+	// the next byte before concluding the output has fully drained. Each read that
+	// makes progress buys another window, so the child's own buffered output is
+	// captured no matter how slow the destination writer is; the pump stops after
+	// a window elapses with no progress. Wait keys off the child's reap, so a run
+	// with no lingering descendant reaches pipe EOF at child exit and never waits
+	// on this at all.
+	drainWindow = 100 * time.Millisecond
+	// drainBudget caps total post-reap draining, so a descendant that keeps the
+	// pipe perpetually busy cannot stall Wait forever; output past the budget may
+	// be truncated.
+	drainBudget = 2 * time.Second
+)
 
 // Start spawns spec as a direct exec (never a shell) in its own process group,
 // streaming stdout and stderr to the spec's writers. The returned Handle's PGID
@@ -43,7 +49,9 @@ const drainGrace = 100 * time.Millisecond
 // that inherited its output pipe exit, so a pipeline that backgrounds a
 // long-lived grandchild never stalls the run. Output the subprocess produced
 // before it exited is captured; output a surviving descendant writes after the
-// reap may be truncated.
+// reap may be truncated. When Stdout and Stderr are the same comparable writer,
+// both streams are captured through one pipe and one pump, so they are never
+// written concurrently.
 func (r *OSRunner) Start(ctx context.Context, spec Spec) (Handle, error) {
 	if len(spec.Argv) == 0 {
 		return nil, errors.New("exec: empty argv")
@@ -55,61 +63,35 @@ func (r *OSRunner) Start(ctx context.Context, spec Spec) (Handle, error) {
 	// killing the negative pgid reaches the child and every descendant.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// Wire stdout and stderr. A writer already backed by an *os.File (or a nil
-	// writer) is handed straight to the child so os/exec dup2s the descriptor with
-	// no copy goroutine cmd.Wait would then block on. Any other writer is fed by a
-	// pipe we own end to end, so cmd.Wait keys off the child's reap alone.
-	outChild, outStream, err := childOutput(spec.Stdout)
+	streams, err := wireOutput(cmd, spec)
 	if err != nil {
 		return nil, err
-	}
-	errChild, errStream, err := childOutput(spec.Stderr)
-	if err != nil {
-		if outStream != nil {
-			outStream.closeEnds()
-		}
-		return nil, err
-	}
-	if outChild != nil {
-		cmd.Stdout = outChild
-	}
-	if errChild != nil {
-		cmd.Stderr = errChild
 	}
 
 	if err := cmd.Start(); err != nil {
-		if outStream != nil {
-			outStream.closeEnds()
-		}
-		if errStream != nil {
-			errStream.closeEnds()
+		for _, cs := range streams {
+			cs.closeEnds()
 		}
 		return nil, fmt.Errorf("exec: start %v: %w", spec.Argv, err)
 	}
 
-	h := &osHandle{cmd: cmd, pgid: cmd.Process.Pid, done: make(chan struct{})}
+	h := &osHandle{cmd: cmd, pgid: cmd.Process.Pid, streams: streams, done: make(chan struct{})}
 
 	// The parent drops its copies of the write ends so a read end reaches EOF once
 	// the child and every descendant have closed theirs. os/exec hands an *os.File
 	// straight to the child without tracking it, so this close is ours to make.
-	for _, cs := range []*copyStream{outStream, errStream} {
-		if cs == nil {
-			continue
-		}
+	for _, cs := range streams {
 		_ = cs.w.Close()
-		h.streams = append(h.streams, cs)
 	}
 
-	// Drain each wrapped stream on its own goroutine that survives Wait: it keeps
-	// pumping the child's output until EOF or, once the child is reaped, until the
-	// post-reap grace releases the read end.
-	for _, cs := range h.streams {
+	// Drain each pipe on its own goroutine that survives Wait, keyed off the
+	// child's reap rather than pipe EOF.
+	for _, cs := range streams {
 		cs := cs
 		h.drain.Add(1)
 		go func() {
 			defer h.drain.Done()
-			cs.err = pump(cs.dst, cs.r)
-			_ = cs.r.Close()
+			h.pump(cs)
 		}()
 	}
 
@@ -130,6 +112,71 @@ func (r *OSRunner) Start(ctx context.Context, spec Spec) (Handle, error) {
 	}()
 
 	return h, nil
+}
+
+// wireOutput wires the child's stdout and stderr to spec's writers and returns
+// the pipes we must pump. A writer already backed by an *os.File (or a nil
+// writer) is handed to the child directly, so os/exec dup2s it with no copy
+// goroutine cmd.Wait would block on. A plain writer is fed by a pipe we own end
+// to end. When Stdout and Stderr are the same comparable writer, both child fds
+// are fed from one pipe drained by a single pump -- mirroring os/exec's own
+// same-writer dedup -- so the two never call Write concurrently.
+func wireOutput(cmd *osexec.Cmd, spec Spec) ([]*copyStream, error) {
+	if spec.Stdout != nil && interfaceEqual(spec.Stdout, spec.Stderr) {
+		child, cs, err := childOutput(spec.Stdout)
+		if err != nil {
+			return nil, err
+		}
+		if child != nil {
+			// The same *os.File in both slots: os/exec's interfaceEqual feeds the
+			// child's stdout and stderr from the one descriptor.
+			cmd.Stdout = child
+			cmd.Stderr = child
+		}
+		return streamList(cs), nil
+	}
+
+	outChild, outStream, err := childOutput(spec.Stdout)
+	if err != nil {
+		return nil, err
+	}
+	errChild, errStream, err := childOutput(spec.Stderr)
+	if err != nil {
+		if outStream != nil {
+			outStream.closeEnds()
+		}
+		return nil, err
+	}
+	if outChild != nil {
+		cmd.Stdout = outChild
+	}
+	if errChild != nil {
+		cmd.Stderr = errChild
+	}
+	return streamList(outStream, errStream), nil
+}
+
+// streamList collects the non-nil copy streams.
+func streamList(streams ...*copyStream) []*copyStream {
+	var out []*copyStream
+	for _, cs := range streams {
+		if cs != nil {
+			out = append(out, cs)
+		}
+	}
+	return out
+}
+
+// interfaceEqual reports whether a and b are the same writer, mirroring os/exec's
+// own comparison: it recovers from the panic == raises on an uncomparable dynamic
+// type and treats that as not-equal.
+func interfaceEqual(a, b io.Writer) (eq bool) {
+	defer func() {
+		if recover() != nil {
+			eq = false
+		}
+	}()
+	return a == b
 }
 
 // copyStream is one wrapped output stream: the caller's writer, the pipe read
@@ -166,31 +213,14 @@ func childOutput(dst io.Writer) (*os.File, *copyStream, error) {
 	return pw, &copyStream{dst: dst, r: pr, w: pw}, nil
 }
 
-// pump copies r into dst until the read end reports EOF, a deadline, or a close.
-// A write failure is returned (a capture failure surfaced from Wait); a read-side
-// stop -- EOF, the post-reap deadline, or a closed read end -- is not an error.
-func pump(dst io.Writer, r *os.File) error {
-	buf := make([]byte, 32*1024)
-	for {
-		n, rerr := r.Read(buf)
-		if n > 0 {
-			if _, werr := dst.Write(buf[:n]); werr != nil {
-				return werr
-			}
-		}
-		if rerr != nil {
-			return nil
-		}
-	}
-}
-
 // osHandle is a started OS subprocess and its process group.
 type osHandle struct {
-	cmd     *osexec.Cmd
-	pgid    int
-	streams []*copyStream
-	drain   sync.WaitGroup // the output pump goroutines
-	done    chan struct{}  // closed when the child is reaped
+	cmd            *osexec.Cmd
+	pgid           int
+	streams        []*copyStream
+	drain          sync.WaitGroup // the output pump goroutines
+	done           chan struct{}  // closed when the child is reaped
+	budgetDeadline time.Time      // hard cap on post-reap draining; set before done closes
 
 	mu      sync.Mutex // guards reaped, status, waitErr
 	reaped  bool
@@ -198,8 +228,51 @@ type osHandle struct {
 	waitErr error
 }
 
+// pump drains cs.r into cs.dst. Before the child is reaped it streams live with
+// no deadline. Once reaped it drains on a progress-extended deadline: each read
+// that makes progress buys another drainWindow, so the child's buffered output
+// is captured however slow dst is; it stops after a window with no progress, or
+// when the total post-reap budget is spent. A write failure is recorded (and
+// surfaced from Wait); a read-side stop -- EOF, the no-progress deadline, or a
+// closed read end -- is not an error.
+func (h *osHandle) pump(cs *copyStream) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, rerr := cs.r.Read(buf)
+		if n > 0 {
+			if _, werr := cs.dst.Write(buf[:n]); werr != nil {
+				cs.err = werr
+				return
+			}
+		}
+		if rerr != nil {
+			// Deadlines are armed only after reap. A non-deadline error (EOF or a
+			// closed read end), or a deadline that yielded no bytes (a full window
+			// with no progress), ends the drain; a deadline that still delivered
+			// bytes is progress, so keep going.
+			if !errors.Is(rerr, os.ErrDeadlineExceeded) || n == 0 {
+				return
+			}
+		}
+		// After reap, roll the read deadline forward on progress, capped by the
+		// total budget so a perpetually busy descendant cannot stall Wait.
+		select {
+		case <-h.done:
+			if !time.Now().Before(h.budgetDeadline) {
+				return
+			}
+			next := time.Now().Add(drainWindow)
+			if next.After(h.budgetDeadline) {
+				next = h.budgetDeadline
+			}
+			_ = cs.r.SetReadDeadline(next)
+		default:
+		}
+	}
+}
+
 // reap waits on the child, records its terminal status, disarms the cancel
-// watcher, and arms the bounded output drain.
+// watcher, and kicks the pumps into their bounded post-reap drain.
 func (h *osHandle) reap() {
 	st, werr := translateWait(h.cmd.Wait(), h.cmd)
 
@@ -208,14 +281,15 @@ func (h *osHandle) reap() {
 	h.status = st
 	h.waitErr = werr
 	h.mu.Unlock()
+
+	h.budgetDeadline = time.Now().Add(drainBudget)
 	close(h.done)
 
-	// The child is gone, so its own output is now buffered in the pipes. Give the
-	// pumps a bounded grace to flush that buffer, then release the read ends so a
-	// surviving descendant holding the write end cannot keep them open forever.
-	deadline := time.Now().Add(drainGrace)
+	// Kick each pump out of its unbounded live read into the progress-extended
+	// post-reap drain; it manages its own deadline from here.
+	initial := time.Now().Add(drainWindow)
 	for _, cs := range h.streams {
-		_ = cs.r.SetReadDeadline(deadline)
+		_ = cs.r.SetReadDeadline(initial)
 	}
 }
 
