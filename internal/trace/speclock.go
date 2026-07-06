@@ -33,11 +33,14 @@ func (e *SpecDeltaError) Error() string {
 	return fmt.Sprintf("trace: spec delta in %s without a test delta: locked %s, doc now %s (re-record spec/inventory.lock after amending the tests)", e.Path, short(e.Want), short(e.Got))
 }
 
-// Fingerprint returns the SHA-256 hex digest of content with CR characters
-// stripped, so the fingerprint is stable across line-ending churn but changes
-// with any real content edit.
+// Fingerprint returns the SHA-256 hex digest of content with line endings
+// normalized to LF: a CRLF pair and a lone CR both become "\n". The fingerprint
+// is therefore stable across line-ending churn (CRLF vs LF) yet still changes
+// with any real content edit -- a lone CR is content, so "a\rb" and "ab" do not
+// collide, keeping a spec delta detectable.
 func Fingerprint(content []byte) string {
-	normalized := bytes.ReplaceAll(content, []byte("\r"), nil)
+	normalized := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	normalized = bytes.ReplaceAll(normalized, []byte("\r"), []byte("\n"))
 	sum := sha256.Sum256(normalized)
 	return hex.EncodeToString(sum[:])
 }
