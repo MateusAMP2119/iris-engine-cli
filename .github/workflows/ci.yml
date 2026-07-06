@@ -55,11 +55,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_TARGET }}
-          cache: true
-      - name: Install golangci-lint (pinned)
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
-      - name: Run golangci-lint
-        run: golangci-lint run ./...
+          # golangci-lint-action manages its own analysis cache. Disable setup-go's
+          # cache here so the lint job does not contend with the other Go-1.26 jobs
+          # for the single go.sum-keyed cache entry.
+          cache: false
+      - name: golangci-lint (pinned release binary, cached analysis)
+        # Official action: downloads the pinned release binary (no multi-minute
+        # source build) and caches the lint analysis between runs. The version is
+        # the same pin the whole workflow shares; the action reads .golangci.yml.
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
 
   test:
     name: unit + integration (Go ${{ matrix.go }})

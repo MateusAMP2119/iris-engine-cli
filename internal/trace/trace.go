@@ -20,8 +20,10 @@
 // The gate always computes both directions. The manifest->tests direction is the
 // gap list: every non-exempt contract with no claiming test (exempt rows -- the
 // naming, rationale, and doctrine entries -- need none). The tests->manifest
-// direction is lint: a test claiming an id absent from the manifest, or claiming
-// nothing at all, is a violation (no invented behavior).
+// direction is lint: a test claiming an id absent from the manifest, a test
+// carrying a near-miss `// spec:` annotation whose token is not a well-formed
+// contract id, or a test claiming nothing at all, is a violation (no invented
+// behavior).
 //
 // Two modes resolve the tension between "an unclaimed contract fails the gate"
 // and "the repo keeps merging while the seeded backlog is still red":
@@ -68,8 +70,15 @@ func (m Mode) String() string {
 	return "backlog"
 }
 
-// LintError is one tests->manifest violation: a test claiming an id absent from
-// the manifest, or a test claiming no contract at all (ID is empty then).
+// LintError is one tests->manifest violation. It is one of three kinds, told
+// apart by what ID holds:
+//
+//   - unknown claim: the test claims a contract id with no manifest row; ID is
+//     that claimed id.
+//   - malformed annotation: a `// spec:` marker whose token is not a well-formed
+//     contract id (e.g. a trailing period or uppercase slug); ID is that
+//     near-miss token.
+//   - no claim: the test claims no contract at all; ID is empty.
 type LintError struct {
 	File string
 	Line int
@@ -96,13 +105,24 @@ func GapList(m *spec.Manifest, claimed map[string]bool) []string {
 }
 
 // Lint returns the tests->manifest violations across files: every test that
-// claims an id with no manifest row, and every test that claims no contract at
-// all. It is the "no invented behavior" direction.
+// claims an id with no manifest row, every test that carries a near-miss
+// `// spec:` annotation whose token is not a well-formed contract id, and every
+// test that claims no contract at all. It is the "no invented behavior"
+// direction, and a malformed annotation is caught here rather than silently
+// dropped so a mistyped claim can never leave its contract in the backlog.
 func Lint(m *spec.Manifest, files []*TestFile) []LintError {
 	var errs []LintError
 	for _, tf := range files {
 		for _, fn := range tf.TestFuncs {
-			if len(fn.Claims) == 0 {
+			// Near-miss annotations: a spec marker with a non-id token. Reported
+			// even when the test carries other valid claims.
+			for _, bt := range fn.BadSpecTags {
+				errs = append(errs, LintError{
+					File: bt.File, Line: bt.Line, Func: fn.Name, ID: bt.Token,
+					Msg: fmt.Sprintf("malformed // spec: annotation %q (not a contract id)", bt.Token),
+				})
+			}
+			if len(fn.Claims) == 0 && len(fn.BadSpecTags) == 0 {
 				errs = append(errs, LintError{
 					File: fn.File, Line: fn.Line, Func: fn.Name,
 					Msg: "test claims no contract (no invented behavior)",

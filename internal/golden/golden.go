@@ -55,7 +55,7 @@ func check(got []byte, goldenPath string, update bool) error {
 		}
 		return nil
 	}
-	want, err := os.ReadFile(goldenPath)
+	want, err := os.ReadFile(goldenPath) //nolint:gosec // G304: goldenPath is the harness-controlled path of a checked-in golden file, not user or network input.
 	if err != nil {
 		return fmt.Errorf("golden %s: %w (run the suite with -update to create it)", goldenPath, err)
 	}

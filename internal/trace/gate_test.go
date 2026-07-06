@@ -161,6 +161,49 @@ func TestC(t *testing.T) {}
 	}
 }
 
+// TestLintMalformedAnnotation proves a near-miss // spec: annotation -- a spec
+// marker whose token is present but not a well-formed contract id (a trailing
+// period, an uppercase slug, a malformed shape) -- is surfaced as a lint
+// violation rather than silently dropped. Even when the same test carries another
+// valid claim (so its claim list is non-empty and the "claims no contract" rule
+// stays quiet), the near-miss must be reported so the contract it meant to claim
+// can never linger in the backlog unnoticed. The gate fails on it.
+//
+// spec: S16/test-without-contract-fails-lint
+func TestLintMalformedAnnotation(t *testing.T) {
+	m := smallManifest()
+	files := mustParse(t, "nearmiss_test.go", `package s
+import "testing"
+
+// spec: S02/admin-dsn-precedence
+// spec: S01/apply-never-builds.
+func TestNearMiss(t *testing.T) {}
+`)
+
+	// The valid S02 claim keeps the func's claim list non-empty, so only a
+	// dedicated malformed-annotation lint can surface the S01 near-miss.
+	errs := trace.Lint(m, files)
+	var found bool
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "S01/apply-never-builds.") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("malformed // spec: annotation not flagged by lint; got %v", errs)
+	}
+
+	content := []byte("body")
+	lock := trace.SpecLock{SpecPath: "d", SHA256: trace.Fingerprint(content)}
+	rep := trace.Gate(m, files, lock, content, trace.Backlog)
+	if !rep.Failed() {
+		t.Fatal("backlog gate: Failed() = false, want true from the malformed annotation")
+	}
+	if rep.Err() == nil || !strings.Contains(rep.Err().Error(), "S01/apply-never-builds.") {
+		t.Errorf("gate error = %v, want it to name the malformed token", rep.Err())
+	}
+}
+
 // TestSpecDelta proves the spec-delta mechanism as pure logic: a fingerprint
 // mismatch (the spec doc changed) fails verification, a match passes, and after
 // the lock is re-recorded -- the machine-visible proxy for the accompanying test
@@ -189,10 +232,17 @@ func TestSpecDelta(t *testing.T) {
 		t.Errorf("Verify(changed, re-locked) = %v, want nil", err)
 	}
 
-	// Fingerprint ignores CR so it is stable across line-ending churn but changes
-	// with real content.
+	// Fingerprint normalizes line endings only -- CRLF and a lone CR both to LF --
+	// so it is stable across line-ending churn yet a lone CR is still real content:
+	// "a\rb" must not collapse onto "ab".
 	if trace.Fingerprint([]byte("a\r\nb")) != trace.Fingerprint([]byte("a\nb")) {
-		t.Error("Fingerprint is sensitive to CR line endings, want it normalized")
+		t.Error("Fingerprint distinguishes CRLF from LF, want them normalized equal")
+	}
+	if trace.Fingerprint([]byte("a\rb")) != trace.Fingerprint([]byte("a\nb")) {
+		t.Error("Fingerprint does not normalize a lone CR to LF")
+	}
+	if trace.Fingerprint([]byte("a\rb")) == trace.Fingerprint([]byte("ab")) {
+		t.Error(`Fingerprint collapsed a lone CR to nothing; "a\rb" and "ab" must differ`)
 	}
 	if trace.Fingerprint(v1) == trace.Fingerprint(v2) {
 		t.Error("Fingerprint collided on two different specs")
@@ -260,10 +310,71 @@ func loadRepo(t *testing.T) (*spec.Manifest, []*trace.TestFile, trace.SpecLock, 
 	return m, files, lock, content
 }
 
-// TestTraceabilityGate is the first green build: the gate runs over the seeded
-// manifest in backlog-aware mode and is green, with the whole unclaimed backlog
-// surfaced as the gap list and every real claim (this task's four plus E00.1's
-// two) recognized end-to-end and excluded from it.
+// TestGateMath is the repo-state-independent proof of the gate's gap arithmetic:
+// a hand-built manifest with a known claim set -- extracted from fixture source
+// through the real ParseTestFile -> ClaimedIDs -> GapList pipeline -- must yield
+// exactly the expected unclaimed ids, in manifest order. The expected gaps are
+// hard-coded, not recomputed from ClaimedIDs, so an extraction regression that
+// over-matches (marking more contracts claimed than the source does) shrinks the
+// gap list and fails here loudly. The fixture plants two distractors -- an
+// id-shaped string in a non-subtest call and a Run on a local struct -- whose
+// contracts must therefore stay in the gap list.
+//
+// spec: S16/gate-fails-unclaimed-contract
+func TestGateMath(t *testing.T) {
+	m := &spec.Manifest{Contracts: []spec.Contract{
+		{ID: "S01/alpha", Anchor: "d#1", Tier: spec.TierUnit, Status: spec.StatusUnclaimed},
+		{ID: "S02/beta", Anchor: "d#2", Tier: spec.TierUnit, Status: spec.StatusUnclaimed},
+		{ID: "S03/gamma", Anchor: "d#3", Tier: spec.TierIntegration, Status: spec.StatusUnclaimed},
+		{ID: "S04/delta", Anchor: "d#4", Tier: spec.TierUnit, Status: spec.StatusUnclaimed},
+		{ID: "S05/epsilon", Anchor: "d#5", Tier: spec.TierUnit, Status: spec.StatusUnclaimed},
+		{ID: "S16/doctrine", Anchor: "d#16", Tier: spec.TierExempt, Status: spec.StatusExempt},
+	}}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("synthetic manifest invalid: %v", err)
+	}
+
+	// Two of the five testable contracts are claimed: S02 by annotation, S04 by a
+	// subtest. The fixture also plants distractors that must NOT claim: an
+	// id-shaped string argument (S05) and a Run on a local struct (S01).
+	files := mustParse(t, "math_test.go", `package s
+import "testing"
+
+type runner struct{}
+
+func (runner) Run(name string, fn func()) {}
+
+// spec: S02/beta
+func TestBeta(t *testing.T) {}
+
+func TestDelta(t *testing.T) {
+	t.Run("S04/delta", func(t *testing.T) {})
+	_ = decode("S05/epsilon")
+	var r runner
+	r.Run("S01/alpha", func() {})
+}
+`)
+
+	content := []byte("spec body")
+	lock := trace.SpecLock{SpecPath: "d", SHA256: trace.Fingerprint(content)}
+	rep := trace.Gate(m, files, lock, content, trace.Backlog)
+
+	if rep.Failed() {
+		t.Fatalf("backlog gate over the synthetic repo failed: %v", rep.Err())
+	}
+	// Exactly the three unclaimed testable ids, in manifest order: the exempt row
+	// is absent, the two claimed ids (S02, S04) are absent, and the two distractor
+	// ids (S01, S05) remain because their id-shaped strings were never real claims.
+	if want := []string{"S01/alpha", "S03/gamma", "S05/epsilon"}; !equalStrings(rep.Gaps, want) {
+		t.Errorf("gaps = %v, want %v", rep.Gaps, want)
+	}
+}
+
+// TestTraceabilityGate is the live smoke test: the gate runs over the seeded
+// manifest in backlog-aware mode and is green, with the real claims recognized
+// end-to-end and a known-unclaimed far-future contract still surfaced in the gap
+// list. The exact gap arithmetic is proven repo-state-independently by
+// TestGateMath; here we pin only anchors that do not decay as the backlog shrinks.
 //
 // spec: S16/gate-fails-unclaimed-contract
 // spec: S16/claims-via-subtest-or-annotation
@@ -274,16 +385,11 @@ func TestTraceabilityGate(t *testing.T) {
 	if rep.Failed() {
 		t.Fatalf("backlog-aware gate over the real repo failed: %v", rep.Err())
 	}
-
-	// The full red backlog is the deliverable: hundreds of unclaimed contracts.
-	if len(rep.Gaps) < 400 {
-		t.Errorf("gap list = %d contracts, want the big unclaimed backlog", len(rep.Gaps))
-	}
+	claimed := trace.ClaimedIDs(files)
 	t.Logf("traceability backlog: %d unclaimed non-exempt contracts", len(rep.Gaps))
 
 	// Claims are recognized end-to-end: the six contracts real tests claim are
-	// not in the gap list.
-	claimed := trace.ClaimedIDs(files)
+	// recognized and excluded from the gap list.
 	for _, id := range []string{
 		"S16/manifest-row-schema",
 		"S16/exempt-needs-no-test",
@@ -298,6 +404,24 @@ func TestTraceabilityGate(t *testing.T) {
 		if contains(rep.Gaps, id) {
 			t.Errorf("contract %s is claimed but still appears in the gap list", id)
 		}
+	}
+
+	// A far-future contract that no test can legitimately claim yet must still be
+	// in the backlog -- the live guard against a claim-extraction regression that
+	// silently empties the gap list. S13 is the end-to-end acceptance scenario
+	// (Iris Epics, E13), the last epic; S13/scenario-passes-unattended is claimed
+	// only when E13's own task lands its conformance suite, which updates this
+	// anchor then. Until E13 it is a stable, non-decaying proof that the gate
+	// actually reports unclaimed contracts.
+	const futureAnchor = "S13/scenario-passes-unattended"
+	if _, ok := m.Find(futureAnchor); !ok {
+		t.Fatalf("anchor %s is gone from the manifest; pick another far-future unclaimed contract", futureAnchor)
+	}
+	if claimed[futureAnchor] {
+		t.Fatalf("anchor %s is now claimed; move TestTraceabilityGate to a still-unclaimed far-future contract", futureAnchor)
+	}
+	if !contains(rep.Gaps, futureAnchor) {
+		t.Errorf("unclaimed contract %s is missing from the gap list; the gate is under-reporting the backlog", futureAnchor)
 	}
 }
 
