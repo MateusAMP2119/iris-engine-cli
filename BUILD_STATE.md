@@ -42,10 +42,10 @@ Opus, never downgrade.
 ## E03 Declarations, Schemas and Apply — epic PR: —
 
 - [x] E03.1 Declaration parsing and discovery — done (PR #24: https://github.com/MateusAMP2119/iris-engine-cli/pull/24)
-- [ ] E03.2 Lane composer validation — in-progress (worktree .worktrees/E03.2, Opus)
-- [ ] E03.3 Single file targets — in-progress (worktree .worktrees/E03.3, Sonnet per model rubric)
-- [ ] E03.4 Dependency graph validation — in-progress (worktree .worktrees/E03.4, Opus)
-- [ ] E03.5 Type mapping and DDL — todo (needs E03.1)
+- [ ] E03.2 Lane composer validation — in-progress (PR #27, greptile fix round)
+- [x] E03.3 Single file targets — done (PR #26: https://github.com/MateusAMP2119/iris-engine-cli/pull/26; Sonnet)
+- [x] E03.4 Dependency graph validation — done (PR #25: https://github.com/MateusAMP2119/iris-engine-cli/pull/25)
+- [ ] E03.5 Type mapping and DDL — in-progress (worktree .worktrees/E03.5)
 - [ ] E03.6 Drift classification — todo (needs E03.5)
 - [ ] E03.7 Migration ledger sync — todo (needs E02, E03.5, E03.6)
 - [ ] E03.8 Idempotent provisioning — todo (needs E02, E03.7)
