@@ -89,7 +89,7 @@ func TestGoldenUpdateFlag(t *testing.T) {
 	if err := check(payload, goldenPath, true); err != nil {
 		t.Fatalf("update against an absent golden failed: %v", err)
 	}
-	onDisk, err := os.ReadFile(goldenPath)
+	onDisk, err := os.ReadFile(goldenPath) //nolint:gosec // G304: goldenPath is a fixed filename under this test's own t.TempDir(); no external input.
 	if err != nil {
 		t.Fatalf("golden not written by -update: %v", err)
 	}

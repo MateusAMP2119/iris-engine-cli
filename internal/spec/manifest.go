@@ -66,7 +66,7 @@ var idPattern = regexp.MustCompile(`^S\d\d(\.\d+)?/[a-z0-9-]+$`)
 
 // Load reads and parses the manifest at path.
 func Load(path string) (*Manifest, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is the repo-controlled spec/contracts.yaml location supplied by the build tooling, never user or network input.
 	if err != nil {
 		return nil, fmt.Errorf("spec: read manifest %s: %w", path, err)
 	}
