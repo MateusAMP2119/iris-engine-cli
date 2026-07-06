@@ -92,7 +92,9 @@ func Detach(ctx context.Context, s config.Settings, exePath string, childArgs []
 	}
 	defer func() { _ = logFile.Close() }()
 
-	cmd := osexec.Command(exePath, childArgs...) //nolint:gosec // G204: exePath is this binary's own path (os.Executable); childArgs are the CLI's own args minus -d.
+	// exePath is this binary's own path (os.Executable) and childArgs are the CLI's
+	// own args minus -d: re-execing ourselves as a background daemon.
+	cmd := osexec.Command(exePath, childArgs...)
 	cmd.Env = append(os.Environ(), DaemonizedEnv+"=1")
 	cmd.Stdin = nil
 	cmd.Stdout = logFile

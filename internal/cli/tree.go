@@ -11,6 +11,41 @@ import (
 // runE is the signature of a cobra command handler.
 type runE = func(cmd *cobra.Command, args []string) error
 
+// The lifecycle annotation classifies each leaf command as daemonless (runnable
+// without a daemon: the fixed roster of specification section 2) or daemon-
+// touching (must reach a running daemon, or fail fast with start guidance). It is
+// set explicitly at command construction, so later epics (and the traceability
+// sweep) read the annotation rather than a string list.
+const (
+	// lifecycleAnnotation is the cobra Annotations key carrying the classification.
+	lifecycleAnnotation = "iris.lifecycle"
+	// lifecycleDaemonless marks a command that runs without a daemon.
+	lifecycleDaemonless = "daemonless"
+	// lifecycleDaemonTouching marks a command that must reach a running daemon.
+	lifecycleDaemonTouching = "daemon-touching"
+)
+
+// withLifecycle records a leaf command's daemon-lifecycle classification and
+// returns it, for chaining at construction.
+func withLifecycle(c *cobra.Command, life string) *cobra.Command {
+	if c.Annotations == nil {
+		c.Annotations = map[string]string{}
+	}
+	c.Annotations[lifecycleAnnotation] = life
+	return c
+}
+
+// daemonTouching marks c as a command that must reach a running daemon.
+func daemonTouching(c *cobra.Command) *cobra.Command {
+	return withLifecycle(c, lifecycleDaemonTouching)
+}
+
+// daemonless marks c as a command in the specification section 2 daemonless
+// roster.
+func daemonless(c *cobra.Command) *cobra.Command {
+	return withLifecycle(c, lifecycleDaemonless)
+}
+
 // newRootCommand builds the iris command tree: the root, its global persistent
 // flags, and the noun-verb subcommands of specification section 8. The tree is
 // built fresh per invocation from a constructor (no package globals, no init),
@@ -81,11 +116,13 @@ func (a *app) groupStub() runE {
 	}
 }
 
-// daemonStub is the handler of a command that must reach a running daemon: with
-// none reachable it reports no-daemon (exit 3) with start guidance, resolving the
-// dial target through the configuration precedence first.
+// daemonStub is the handler of a command that must reach a running daemon: it
+// dials the resolved daemon and, with none reachable, reports no-daemon (exit 3)
+// with start guidance, never auto-starting one. When the daemon is reachable the
+// command is not wired yet, so it reports not-implemented (exit 4); the command's
+// real body lands in a later epic.
 func (a *app) daemonStub(op string) runE {
-	return func(cmd *cobra.Command, _ []string) error { return a.noDaemon(cmd, op) }
+	return func(cmd *cobra.Command, _ []string) error { return a.requireDaemon(cmd, op) }
 }
 
 // localStub is the handler of a local-lifecycle command that does not dial a
@@ -144,7 +181,7 @@ func (a *app) declareCmd() *cobra.Command {
 
 	return a.group("declare",
 		"Register and tear down the workload graph, one declaration file per invocation",
-		apply, destroy)
+		daemonTouching(apply), daemonTouching(destroy))
 }
 
 // pipelineCmd builds `iris pipeline`: the single-unit lifecycle and reads.
@@ -171,7 +208,8 @@ func (a *app) pipelineCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline show"),
 	}
 
-	return a.group("pipeline", "Operate on a single pipeline", build, promote, run, list, show)
+	return a.group("pipeline", "Operate on a single pipeline",
+		daemonTouching(build), daemonTouching(promote), daemonTouching(run), daemonTouching(list), daemonTouching(show))
 }
 
 // runCmd builds `iris run`: execution-record reads and cancel.
@@ -201,7 +239,8 @@ func (a *app) runCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("run cancel"),
 	}
 
-	return a.group("run", "Inspect and control execution records", list, show, logs, cancel)
+	return a.group("run", "Inspect and control execution records",
+		daemonTouching(list), daemonTouching(show), daemonTouching(logs), daemonTouching(cancel))
 }
 
 // dataCmd builds `iris data`: row-level provenance, the single computed read.
@@ -211,7 +250,7 @@ func (a *app) dataCmd() *cobra.Command {
 		Short: "Show a row's provenance: author, layer stack, consumed upstreams, hashes",
 		Args:  cobra.ExactArgs(2), RunE: a.daemonStub("data provenance"),
 	}
-	return a.group("data", "Row-level reads", prov)
+	return a.group("data", "Row-level reads", daemonTouching(prov))
 }
 
 // workloadCmd builds `iris workload`: the standing wiring panel and the dev
@@ -227,7 +266,8 @@ func (a *app) workloadCmd() *cobra.Command {
 	}
 	addConfirmFlags(wipe)
 
-	return a.group("workload", "The standing wiring and the dev loop's data scope", show, wipe)
+	return a.group("workload", "The standing wiring and the dev loop's data scope",
+		daemonTouching(show), daemonTouching(wipe))
 }
 
 // engineCmd builds `iris engine`: the daemon, its state, and its service unit.
@@ -236,7 +276,7 @@ func (a *app) workloadCmd() *cobra.Command {
 func (a *app) engineCmd() *cobra.Command {
 	start := &cobra.Command{
 		Use: "start", Short: "Run an engine candidate (foreground; -d to detach)",
-		Args: cobra.NoArgs, RunE: a.localStub("engine start"),
+		Args: cobra.NoArgs, RunE: a.engineStart(),
 	}
 	// Daemon-scoped flags live only on engine start (specification section 8).
 	start.Flags().BoolP("detach", "d", false, "detach and run the engine in the background")
@@ -250,7 +290,7 @@ func (a *app) engineCmd() *cobra.Command {
 
 	stop := &cobra.Command{
 		Use: "stop", Short: "Stop a detached daemon (graceful SIGTERM)",
-		Args: cobra.NoArgs, RunE: a.daemonStub("engine stop"),
+		Args: cobra.NoArgs, RunE: a.engineStop(),
 	}
 	install := &cobra.Command{
 		Use: "install", Short: "Download and place the managed Postgres, then create meta and set up the socket",
@@ -286,10 +326,12 @@ func (a *app) engineCmd() *cobra.Command {
 		Use: "uninstall", Short: "Remove the installed service unit",
 		Args: cobra.NoArgs, RunE: a.localStub("engine service uninstall"),
 	}
-	service := a.group("service", "Manage the platform service unit", svcInstall, svcUninstall)
+	service := a.group("service", "Manage the platform service unit",
+		daemonless(svcInstall), daemonless(svcUninstall))
 
 	return a.group("engine", "Manage the daemon, its state, and its service unit",
-		start, stop, install, uninstall, info, logs, inspect, stats, service)
+		daemonless(start), daemonTouching(stop), daemonless(install), daemonless(uninstall),
+		daemonTouching(info), daemonTouching(logs), daemonTouching(inspect), daemonTouching(stats), service)
 }
 
 // deadletterCmd builds `iris deadletter` (sole alias: dl). replay and drain
@@ -316,7 +358,8 @@ func (a *app) deadletterCmd() *cobra.Command {
 	addScopeFlags(drain)
 	addConfirmFlags(drain)
 
-	c := a.group("deadletter", "The dead-letter worklist", list, show, replay, drain)
+	c := a.group("deadletter", "The dead-letter worklist",
+		daemonTouching(list), daemonTouching(show), daemonTouching(replay), daemonTouching(drain))
 	c.Aliases = []string{"dl"} // the one and only alias in the tree
 	return c
 }
@@ -331,7 +374,7 @@ func (a *app) deadletterScopedStub(op string) runE {
 		if len(args) == 0 && !all && pipeline == "" {
 			return a.usage(op + " requires <run>, --pipeline <name>, or --all")
 		}
-		return a.noDaemon(cmd, op)
+		return a.requireDaemon(cmd, op)
 	}
 }
 
@@ -355,7 +398,8 @@ func (a *app) endpointCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("endpoint show"),
 	}
 
-	return a.group("endpoint", "Declared read surfaces (own lifecycle)", apply, remove, list, show)
+	return a.group("endpoint", "Declared read surfaces (own lifecycle)",
+		daemonTouching(apply), daemonTouching(remove), daemonTouching(list), daemonTouching(show))
 }
 
 // patCmd builds `iris pat`: PAT lifecycle with scopes {control, read, data}.
@@ -373,5 +417,6 @@ func (a *app) patCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pat revoke"),
 	}
 
-	return a.group("pat", "Manage PATs with scopes {control, read, data}", create, list, revoke)
+	return a.group("pat", "Manage PATs with scopes {control, read, data}",
+		daemonTouching(create), daemonTouching(list), daemonTouching(revoke))
 }

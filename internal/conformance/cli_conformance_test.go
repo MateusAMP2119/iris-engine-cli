@@ -28,11 +28,13 @@ func leafCommands() [][]string {
 		{"run", "list"}, {"run", "show"}, {"run", "logs"}, {"run", "cancel"},
 		{"data", "provenance"},
 		{"workload", "show"}, {"workload", "wipe"},
-		// `engine install` is intentionally absent: it is no longer a uniform stub
-		// but a real daemonless command that downloads and places the managed
-		// Postgres (side-effectful, network- and filesystem-bound), covered on its
-		// own by TestManagedPGInstall. Sweeping it here would trigger a real download.
-		{"engine", "start"}, {"engine", "stop"}, {"engine", "uninstall"},
+		// `engine install` and `engine start` are intentionally absent: both are now
+		// real, side-effectful daemonless commands, not uniform stubs. `install`
+		// downloads and places the managed Postgres (network- and filesystem-bound),
+		// covered by TestManagedPGInstall; `start` runs a foreground daemon that
+		// blocks until signalled, covered by TestForegroundDefaultDetach. Sweeping
+		// either here would trigger a download or hang the sweep on a live daemon.
+		{"engine", "stop"}, {"engine", "uninstall"},
 		{"engine", "info"}, {"engine", "logs"}, {"engine", "inspect"}, {"engine", "stats"},
 		{"engine", "service", "install"}, {"engine", "service", "uninstall"},
 		{"deadletter", "list"}, {"deadletter", "show"}, {"deadletter", "replay"}, {"deadletter", "drain"},

@@ -4,12 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+)
+
+// The daemon-lifecycle timeouts bound `engine start --detach` (waiting for the
+// detached daemon to become reachable) and `engine stop` (waiting for the
+// signalled daemon to exit). They bound the operation, never readiness itself:
+// readiness is a reachable socket and liveness a signalled process, polled within
+// these windows.
+const (
+	detachReadyTimeout = 30 * time.Second
+	stopGraceTimeout   = 10 * time.Second
 )
 
 // engineVersion is the engine's own version string reported by `iris engine info`.
@@ -198,6 +212,160 @@ func (a *app) engineUninstall() runE {
 		for _, path := range removed {
 			fmt.Fprintf(a.out, "  %s\n", path)
 		}
+		return nil
+	}
+}
+
+// startResult is the machine-readable outcome of a detached `iris engine start`:
+// the daemon is running in the background and reachable on the socket. It carries
+// no credential.
+type startResult struct {
+	Status string `json:"status"`
+	Socket string `json:"socket"`
+	PID    int    `json:"pid,omitempty"`
+}
+
+// engineStart is the handler for `iris engine start`: a daemonless lifecycle
+// command that runs an engine candidate (specification section 2). By default it
+// runs the daemon attached in the foreground, streaming logs to stderr and
+// blocking until SIGTERM/SIGINT; with -d it detaches, re-execing itself as a
+// background daemon and returning once the socket is reachable so the daemon
+// survives the CLI's exit. In managed mode with no installed Postgres it fails
+// fast with install guidance (exit 4); it does not itself start Postgres yet
+// (managed-PG startup and meta connectivity land in E02.6).
+func (a *app) engineStart() runE {
+	return func(cmd *cobra.Command, _ []string) error {
+		settings := a.resolveTarget(cmd)
+		detach, _ := cmd.Flags().GetBool("detach")
+		daemonized := os.Getenv(daemon.DaemonizedEnv) == "1"
+
+		if settings.Managed() && !daemon.IsManagedInstalled(settings) {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "engine_not_installed",
+				message: `the engine's managed Postgres is not installed; run "iris engine install" first`,
+			}
+		}
+		if detach && !daemonized {
+			return a.startDetached(cmd, settings)
+		}
+		return a.startForeground(cmd, settings)
+	}
+}
+
+// startForeground runs the daemon attached in the current process, cancelling on
+// SIGTERM/SIGINT so a graceful shutdown follows. It blocks for the daemon's
+// lifetime; a clean signalled shutdown returns exit 0.
+func (a *app) startForeground(cmd *cobra.Command, settings config.Settings) error {
+	base := cmd.Context()
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(base, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a.logger.Info("iris engine starting (foreground)", "socket", settings.Socket, "mode", modeName(settings))
+	if err := daemon.Run(ctx, settings, a.logger); err != nil {
+		a.logger.Error("engine start failed", "err", err)
+		return &fault{
+			code:    exitOpFailed,
+			codeStr: "engine_start_failed",
+			message: fmt.Sprintf("engine start failed: %v", err),
+		}
+	}
+	return nil
+}
+
+// startDetached backgrounds the daemon by re-execing this binary as a session
+// leader with -d stripped and a marker in the environment, its output redirected
+// to the daemon log, and returns once the daemon's socket is reachable.
+func (a *app) startDetached(cmd *cobra.Command, settings config.Settings) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return &fault{
+			code:    exitOpFailed,
+			codeStr: "engine_start_failed",
+			message: fmt.Sprintf("engine start (detach) failed: cannot locate the iris binary: %v", err),
+		}
+	}
+	base := cmd.Context()
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, detachReadyTimeout)
+	defer cancel()
+
+	if err := daemon.Detach(ctx, settings, exe, argsWithoutDetach(os.Args[1:])); err != nil {
+		a.logger.Error("engine start (detach) failed", "err", err)
+		return &fault{
+			code:    exitOpFailed,
+			codeStr: "engine_start_failed",
+			message: fmt.Sprintf("engine start (detach) failed: %v", err),
+		}
+	}
+	pid, _ := daemon.ReadPIDFile(settings) // best-effort: the daemon is up, pid is informational
+	res := startResult{Status: "detached", Socket: settings.Socket, PID: pid}
+	if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
+		return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
+	}
+	fmt.Fprintf(a.out, "iris engine detached; daemon listening on %s\n", settings.Socket)
+	return nil
+}
+
+// argsWithoutDetach returns args with the detach flag (-d / --detach) removed, so
+// the re-exec'd child runs in the foreground of its new session.
+func argsWithoutDetach(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "-d" || arg == "--detach" || arg == "--detach=true" || arg == "--detach=false" {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+// stopResult is the machine-readable outcome of `iris engine stop`.
+type stopResult struct {
+	Status string `json:"status"`
+	PID    int    `json:"pid"`
+}
+
+// engineStop is the handler for `iris engine stop`: it stops a detached daemon by
+// the pid it recorded, signalling SIGTERM and waiting for it to exit
+// (specification section 2). With no recorded daemon there is nothing to stop, so
+// it reports no-daemon (exit 3) with start guidance. Graceful-shutdown semantics
+// deepen in E02.7/E02.8; this is the minimal stop that also cleans up a detached
+// daemon.
+func (a *app) engineStop() runE {
+	return func(cmd *cobra.Command, _ []string) error {
+		settings := a.resolveTarget(cmd)
+		pid, err := daemon.ReadPIDFile(settings)
+		if err != nil {
+			a.logger.Debug("no detached iris daemon to stop", "err", err)
+			return a.noDaemon(cmd, "engine stop")
+		}
+		base := cmd.Context()
+		if base == nil {
+			base = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(base, stopGraceTimeout)
+		defer cancel()
+
+		if err := daemon.StopDaemon(ctx, settings, pid); err != nil {
+			a.logger.Error("engine stop failed", "err", err)
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "stop_failed",
+				message: fmt.Sprintf("engine stop failed: %v", err),
+			}
+		}
+		a.logger.Info("engine stopped", "pid", pid)
+		res := stopResult{Status: "stopped", PID: pid}
+		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
+			return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
+		}
+		fmt.Fprintf(a.out, "iris engine stopped (pid %d)\n", pid)
 		return nil
 	}
 }

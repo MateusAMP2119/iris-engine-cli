@@ -66,8 +66,9 @@ func startServer(t *testing.T, srv *Server) {
 	t.Cleanup(func() { _ = srv.Shutdown() })
 }
 
-// unixGet issues a GET to path over the unix socket at sockPath and returns the
-// status and decoded envelope status field.
+// getStatus issues a GET to url through client (with an optional Authorization
+// header) and returns the HTTP status and the decoded healthz envelope status
+// field, or (-1, error text) when the request itself fails.
 func getStatus(t *testing.T, client *http.Client, url, authz string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, url, nil)
