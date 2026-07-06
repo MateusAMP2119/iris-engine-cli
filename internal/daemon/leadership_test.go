@@ -2,6 +2,7 @@ package daemon_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +35,52 @@ func (c *leaderWriteConn) wrote() bool {
 
 // compile-time proof the recorder stands in for the leader's meta write connection.
 var _ store.MetaWriteConn = (*leaderWriteConn)(nil)
+
+// acquireErrLock is a store.LeaderLock whose Acquire returns a scripted error, so a
+// test can drive Serve's acquire-error branch (ctx-cancel is a clean shutdown; any
+// other error propagates) with no real lock contention.
+type acquireErrLock struct {
+	acquireErr error
+	lost       chan struct{}
+}
+
+func (l *acquireErrLock) Acquire(context.Context) error { return l.acquireErr }
+func (l *acquireErrLock) Release(context.Context) error { return nil }
+func (l *acquireErrLock) SessionLost() <-chan struct{}  { return l.lost }
+
+// TestCandidateServeShutdown proves Serve's acquire-error handling: a context
+// cancellation while still a standby is a clean shutdown (nil), while any other
+// acquire failure propagates as an error -- and either way the candidate never
+// reports the leader role.
+//
+// spec: S02/one-leader-sole-dispatcher
+func TestCandidateServeShutdown(t *testing.T) {
+	t.Run("ctx cancellation before winning the lock is a clean shutdown (nil)", func(t *testing.T) {
+		for _, ctxErr := range []error{context.Canceled, context.DeadlineExceeded} {
+			role := api.NewRoleState()
+			cand := daemon.NewCandidate(&acquireErrLock{acquireErr: ctxErr}, role, &leaderWriteConn{}, nil)
+			if err := cand.Serve(context.Background()); err != nil {
+				t.Errorf("Serve with acquire=%v returned %v, want nil (clean standby shutdown)", ctxErr, err)
+			}
+			if role.Role() == api.RoleLeader {
+				t.Error("a candidate that never acquired the lock reported the leader role")
+			}
+		}
+	})
+
+	t.Run("a non-ctx acquire failure propagates", func(t *testing.T) {
+		boom := errors.New("meta session died")
+		role := api.NewRoleState()
+		cand := daemon.NewCandidate(&acquireErrLock{acquireErr: boom}, role, &leaderWriteConn{}, nil)
+		err := cand.Serve(context.Background())
+		if !errors.Is(err, boom) {
+			t.Errorf("Serve error = %v, want it to wrap %v", err, boom)
+		}
+		if role.Role() == api.RoleLeader {
+			t.Error("a candidate whose acquire failed reported the leader role")
+		}
+	})
+}
 
 // candidate bundles one daemon candidate for the election test: its Candidate, its
 // role state, its meta write conn, and the context that keeps it running.

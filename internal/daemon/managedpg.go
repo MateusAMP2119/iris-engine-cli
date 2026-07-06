@@ -336,16 +336,10 @@ func (m *Manager) managedConfig() (SupervisorConfig, error) {
 // persists it, so independent engines still get distinct credentials.
 func resolveManagedPassword(dir string) (string, error) {
 	path := filepath.Join(dir, superuserPasswordFile)
-	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is the engine-owned managed-Postgres dir, never user or network input.
-	switch {
-	case err == nil:
-		if pw := strings.TrimSpace(string(raw)); pw != "" {
-			return pw, nil
-		}
-		// An empty/corrupt file: fall through and re-mint rather than start with no
-		// credential.
-	case !errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("daemon: read managed superuser credential: %w", err)
+	if pw, ok, err := readManagedPassword(path); err != nil {
+		return "", err
+	} else if ok {
+		return pw, nil
 	}
 
 	password, err := mintPassword()
@@ -355,10 +349,59 @@ func resolveManagedPassword(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("daemon: create managed Postgres directory %s: %w", dir, err)
 	}
-	if err := os.WriteFile(path, []byte(password), superuserPasswordPerm); err != nil {
+
+	// Persist atomically so racing candidates converge on one credential rather than
+	// clobbering each other (a plain read-then-write is a TOCTOU: two candidates both
+	// see the file absent and write conflicting passwords). Write the minted password
+	// to a private temp file, then hard-link it to the final path: os.Link fails with
+	// ErrExist if another candidate already created the credential, and the linked
+	// file already carries its full content (no empty-file window), so the loser
+	// re-reads the winner's password and both end with the same credential.
+	tmp, err := os.CreateTemp(dir, superuserPasswordFile+".*")
+	if err != nil {
+		return "", fmt.Errorf("daemon: stage managed superuser credential: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.WriteString(password); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("daemon: write managed superuser credential: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("daemon: write managed superuser credential: %w", err)
+	}
+
+	if err := os.Link(tmpName, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			pw, ok, rerr := readManagedPassword(path)
+			if rerr != nil {
+				return "", rerr
+			}
+			if ok {
+				return pw, nil
+			}
+			return "", fmt.Errorf("daemon: managed superuser credential %s exists but is empty", path)
+		}
 		return "", fmt.Errorf("daemon: persist managed superuser credential: %w", err)
 	}
 	return password, nil
+}
+
+// readManagedPassword returns the persisted managed superuser password and whether a
+// usable (non-empty) credential was found. A missing file, or an empty/whitespace-
+// only one, is reported as "no credential yet" ("", false, nil) so the caller mints
+// one; any other read error is surfaced.
+func readManagedPassword(path string) (string, bool, error) {
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is the engine-owned managed-Postgres dir, never user or network input.
+	switch {
+	case err == nil:
+		pw := strings.TrimSpace(string(raw))
+		return pw, pw != "", nil
+	case errors.Is(err, os.ErrNotExist):
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("daemon: read managed superuser credential: %w", err)
+	}
 }
 
 // managedDSN builds the admin DSN for a managed instance from its engine-minted

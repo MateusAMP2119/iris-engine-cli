@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -99,16 +100,19 @@ func (l *PgxLeaderLock) Release(ctx context.Context) error {
 	l.mu.Unlock()
 
 	unlockErr := l.conn.exec(ctx, ReleaseLeaderLockSQL, LeaderLockKey)
+	closeErr := l.conn.close(ctx)
 	// Closing the session releases the lock regardless of the unlock result, so the
-	// close is the authoritative release; the unlock error is only surfaced when the
-	// close itself succeeds, to aid diagnosis without masking a leaked session.
-	if closeErr := l.conn.close(ctx); closeErr != nil {
-		return fmt.Errorf("store: close leader-lock session: %w", closeErr)
+	// close is the authoritative release and its error is primary; a concurrent
+	// unlock error is joined for diagnosis rather than dropped, so a leaked session
+	// (close failed) is never masked and the unlock failure is never lost.
+	var errs []error
+	if closeErr != nil {
+		errs = append(errs, fmt.Errorf("store: close leader-lock session: %w", closeErr))
 	}
 	if unlockErr != nil {
-		return fmt.Errorf("store: release leader lock: %w", unlockErr)
+		errs = append(errs, fmt.Errorf("store: release leader lock: %w", unlockErr))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // SessionLost returns a channel closed when the lock's session ends: on Release, or

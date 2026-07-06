@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -62,9 +63,11 @@ func (c *Candidate) Serve(ctx context.Context) error {
 
 	if err := c.lock.Acquire(ctx); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
+			// Cancelled while still a standby (never won the lock): a clean shutdown,
+			// not an error.
+			return nil
 		}
-		return err
+		return fmt.Errorf("daemon: acquire leader lock: %w", err)
 	}
 	// Won the lock: become the leader and the sole dispatcher.
 	return c.lead(ctx)
@@ -99,10 +102,9 @@ func (c *Candidate) lead(ctx context.Context) error {
 	}
 
 	c.role.SetStandby("")
-	if err := c.release(); err != nil {
-		return err
-	}
-	return ctx.Err()
+	// A clean shutdown (ctx cancelled) or a demotion (session lost) is not an error;
+	// only a failed lock release is.
+	return c.release()
 }
 
 // release relinquishes the leader lock on a detached, time-bounded context: the

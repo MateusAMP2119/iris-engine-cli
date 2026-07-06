@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -96,14 +97,20 @@ func (c *Client) WriteConn() MetaWriteConn { return c.writer }
 func (c *Client) Reader() Reader { return c.reader }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
-// is safe to call after the lock has already released the session (Close is
-// idempotent), so the daemon can Release the lock then Close the client.
+// is safe to call after the lock has already released the session, so the daemon can
+// Release the lock then Close the client. The double-close guard checks IsClosed
+// BEFORE closing: pgx marks a connection closed regardless of whether the terminate
+// succeeded, so testing IsClosed after Close would always be true and would swallow
+// a genuine close error.
 func (c *Client) Close(ctx context.Context) error {
 	if c.pool != nil {
 		c.pool.Close()
 	}
 	if c.session != nil {
-		if err := c.session.Close(ctx); err != nil && !c.session.IsClosed() {
+		if c.session.IsClosed() {
+			return nil // already released by the lock; nothing to close.
+		}
+		if err := c.session.Close(ctx); err != nil {
 			return fmt.Errorf("store: close leader session: %w", err)
 		}
 	}
@@ -124,10 +131,14 @@ func (c *pgxWriteConn) Exec(ctx context.Context, sql string, args ...any) error 
 	return err
 }
 
+// duplicateDatabaseCode is Postgres' SQLSTATE for duplicate_database: a CREATE
+// DATABASE that lost a race to another candidate creating the same database first.
+const duplicateDatabaseCode = "42P04"
+
 // ensureMetaDatabase creates the dedicated meta database if it does not yet exist,
 // on the admin/maintenance connection (the admin DSN as configured points at a
 // connectable maintenance database, never at meta, which may not exist yet). The
-// probe + create is idempotent: an existing meta database is left untouched.
+// probe + create is idempotent and race-tolerant (see ensureMetaDatabaseOn).
 func ensureMetaDatabase(ctx context.Context, adminDSN string) error {
 	conn, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
@@ -135,17 +146,52 @@ func ensureMetaDatabase(ctx context.Context, adminDSN string) error {
 	}
 	defer func() { _ = conn.Close(ctx) }()
 
-	var exists int
-	err = conn.QueryRow(ctx, MetaExistsQuery).Scan(&exists)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		if _, err := conn.Exec(ctx, CreateMetaDatabaseDDL()); err != nil {
-			return fmt.Errorf("store: create meta database: %w", err)
+	exists := func(ctx context.Context) (bool, error) {
+		var one int
+		qerr := conn.QueryRow(ctx, MetaExistsQuery).Scan(&one)
+		if errors.Is(qerr, pgx.ErrNoRows) {
+			return false, nil
 		}
-	case err != nil:
+		if qerr != nil {
+			return false, qerr
+		}
+		return true, nil
+	}
+	create := func(ctx context.Context) error {
+		_, cerr := conn.Exec(ctx, CreateMetaDatabaseDDL())
+		return cerr
+	}
+	return ensureMetaDatabaseOn(ctx, exists, create)
+}
+
+// ensureMetaDatabaseOn runs the create-if-missing logic over injected probe and
+// create seams, so its race handling is provable with no live Postgres. It probes
+// for meta and, if absent, creates it -- tolerating a concurrent create: another
+// candidate creating meta between the probe and the CREATE makes CREATE DATABASE
+// fail with duplicate_database (42P04), which is not an error but the goal already
+// met (the database exists), so it is treated as success.
+func ensureMetaDatabaseOn(ctx context.Context, exists func(context.Context) (bool, error), create func(context.Context) error) error {
+	present, err := exists(ctx)
+	if err != nil {
 		return fmt.Errorf("store: probe meta database: %w", err)
 	}
+	if present {
+		return nil
+	}
+	if err := create(ctx); err != nil {
+		if isDuplicateDatabase(err) {
+			return nil
+		}
+		return fmt.Errorf("store: create meta database: %w", err)
+	}
 	return nil
+}
+
+// isDuplicateDatabase reports whether err is Postgres' duplicate_database (42P04):
+// a CREATE DATABASE lost the race to a concurrent candidate that created meta first.
+func isDuplicateDatabase(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == duplicateDatabaseCode
 }
 
 // metaConnConfig parses the admin DSN and points it at the meta database: the

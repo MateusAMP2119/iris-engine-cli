@@ -16,6 +16,7 @@ type scriptedSession struct {
 	execs      []scriptedExec
 	closes     int
 	execErr    error
+	unlockErr  error // returned only for the release (pg_advisory_unlock) statement
 	closeErr   error
 	blockAcq   chan struct{} // when non-nil, exec blocks on it before returning (models a held lock)
 	afterClose bool          // set true once close has been called, to detect use-after-return
@@ -39,6 +40,9 @@ func (s *scriptedSession) exec(ctx context.Context, sql string, args ...any) err
 		}
 	}
 	s.execs = append(s.execs, scriptedExec{sql: sql, args: args})
+	if sql == ReleaseLeaderLockSQL && s.unlockErr != nil {
+		return s.unlockErr
+	}
 	return s.execErr
 }
 
@@ -145,6 +149,31 @@ func TestPgxLeaderLockSessionPinned(t *testing.T) {
 		t.Run("nil pinned connection is rejected", func(t *testing.T) {
 			if _, err := newPgxLeaderLock(nil); !errors.Is(err, errNilPinnedConn) {
 				t.Errorf("newPgxLeaderLock(nil) error = %v, want errNilPinnedConn", err)
+			}
+		})
+
+		t.Run("Release surfaces both the unlock and the close error, neither dropped", func(t *testing.T) {
+			unlockErr := errors.New("unlock failed")
+			closeErr := errors.New("close failed")
+			sess := &scriptedSession{unlockErr: unlockErr, closeErr: closeErr}
+			lock, err := newPgxLeaderLock(sess)
+			if err != nil {
+				t.Fatalf("newPgxLeaderLock: %v", err)
+			}
+			if err := lock.Acquire(context.Background()); err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+			relErr := lock.Release(context.Background())
+			if relErr == nil {
+				t.Fatal("Release returned nil despite both unlock and close failing")
+			}
+			// Both errors are surfaced (joined): neither the unlock failure nor the
+			// close/leaked-session failure is silently dropped.
+			if !errors.Is(relErr, unlockErr) {
+				t.Errorf("Release error does not carry the unlock failure: %v", relErr)
+			}
+			if !errors.Is(relErr, closeErr) {
+				t.Errorf("Release error does not carry the close failure: %v", relErr)
 			}
 		})
 	})

@@ -116,8 +116,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	serveErr := srv.Serve(ctx)
 
 	// Serve returned because ctx was cancelled; wait for the candidate to release the
-	// leader lock (and demote) before the deferred connection teardown runs.
-	if electErr := <-electDone; electErr != nil && !errors.Is(electErr, context.Canceled) {
+	// leader lock (and demote) before the deferred connection teardown runs. A clean
+	// shutdown returns nil, so any non-nil error here is a genuine election fault.
+	if electErr := <-electDone; electErr != nil {
 		logger.Warn("iris daemon election ended with error", "err", electErr)
 	}
 	return serveErr
