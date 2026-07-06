@@ -255,11 +255,18 @@ func TestZeroConfigDefaults(t *testing.T) {
 		t.Errorf("zero-config JournalPartitionRows = %d, want %d", got.JournalPartitionRows, config.DefaultJournalPartitionRows)
 	}
 
-	// The bare defaults layer alone yields the same resolved settings: the higher
-	// layers, being empty, add nothing.
-	bare := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
-	if bare != got {
-		t.Errorf("bare defaults = %+v, want equal to the full empty-stack resolution %+v", bare, got)
+	// The full resolved struct is exactly the documented zero-config defaults.
+	// Distinct operands -- an independently built expected value versus the fold --
+	// so this can actually fail, and it pins the fields the per-field checks above
+	// omit (Host, Token, and the TCP/TLS settings) to empty.
+	want := config.Settings{
+		Socket:               wantSocket,
+		Retain:               config.DefaultRetain,
+		JournalPartitionRows: config.DefaultJournalPartitionRows,
+		ObjectsPath:          filepath.Join(ws, ".iris", "objects"),
+	}
+	if got != want {
+		t.Errorf("zero-config resolution = %+v, want the documented defaults %+v", got, want)
 	}
 
 	// External Postgres is selected the moment an admin DSN appears, so managed is
