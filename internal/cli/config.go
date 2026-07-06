@@ -58,6 +58,24 @@ func flagLayer(cmd *cobra.Command) config.Layer {
 	if v, ok := changedString(cmd, "token"); ok {
 		l.Token = &v
 	}
+	// The daemon-scoped flags live only on `engine start`; on any other command
+	// the Lookup misses and contributes nothing. They configure the running engine
+	// the daemon starts (specification section 8).
+	if v, ok := changedString(cmd, "pg-dsn"); ok {
+		l.PgDSN = &v
+	}
+	if v, ok := changedString(cmd, "objects-path"); ok {
+		l.ObjectsPath = &v
+	}
+	if v, ok := changedString(cmd, "tcp"); ok {
+		l.TCP = &v
+	}
+	if v, ok := changedString(cmd, "tls-cert"); ok {
+		l.TLSCert = &v
+	}
+	if v, ok := changedString(cmd, "tls-key"); ok {
+		l.TLSKey = &v
+	}
 	return l
 }
 

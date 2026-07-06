@@ -128,11 +128,23 @@ func (h *osHandle) Wait() (ExitStatus, error) {
 // inherent POSIX race a caller cannot fully avoid, since a pgid is reserved only
 // while the group has a live member.
 func (h *osHandle) Kill() error {
-	if err := syscall.Kill(-h.pgid, syscall.SIGKILL); err != nil {
+	return KillGroup(h.pgid)
+}
+
+// KillGroup best-effort terminates the whole process group identified by pgid with
+// SIGKILL, signalling every member by killing the negated pgid. It is the crash-
+// reconciliation kill path: a restarting same-host leader has no live Handle for a
+// surviving run, only its recorded handle (runs.handle = pgid), so it SIGKILLs the
+// group by that bare pgid (specification section 2 crash recovery). An already-gone
+// group (ESRCH) is not an error -- the survivor may already have exited. The pgid
+// may in principle be recycled once the original group emptied (an inherent POSIX
+// race), the accepted best-effort trade the spec names.
+func KillGroup(pgid int) error {
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			return nil // group already gone
 		}
-		return fmt.Errorf("exec: kill group %d: %w", h.pgid, err)
+		return fmt.Errorf("exec: kill group %d: %w", pgid, err)
 	}
 	return nil
 }

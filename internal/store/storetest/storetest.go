@@ -30,8 +30,22 @@ func New() *Fake {
 	return &Fake{}
 }
 
-// compile-time proof the fake satisfies the seam it stands in for.
-var _ store.Store = (*Fake)(nil)
+// compile-time proof the fake satisfies the seams it stands in for: the full
+// meta client (store.Store) and, for the read paths that draw plain MVCC snapshots
+// (crash reconciliation reads leftover run records this way), the reader seam
+// (store.Reader).
+var (
+	_ store.Store  = (*Fake)(nil)
+	_ store.Reader = (*Fake)(nil)
+)
+
+// Runs satisfies store.Reader: it serves the same creation-ordered, filtered,
+// value-copied snapshot ListRuns returns, so a component that reads run records
+// through the plain-MVCC reader seam (rather than the full store) can stand on the
+// fake with no live Postgres.
+func (f *Fake) Runs(ctx context.Context, filter store.RunFilter) ([]store.Run, error) {
+	return f.ListRuns(ctx, filter)
+}
 
 // CreateRun inserts a new queued run with the next id and ordering sequence.
 func (f *Fake) CreateRun(_ context.Context, spec store.RunSpec) (store.Run, error) {

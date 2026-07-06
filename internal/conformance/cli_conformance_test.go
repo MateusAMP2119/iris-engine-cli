@@ -28,7 +28,13 @@ func leafCommands() [][]string {
 		{"run", "list"}, {"run", "show"}, {"run", "logs"}, {"run", "cancel"},
 		{"data", "provenance"},
 		{"workload", "show"}, {"workload", "wipe"},
-		{"engine", "start"}, {"engine", "stop"}, {"engine", "install"}, {"engine", "uninstall"},
+		// `engine install` and `engine start` are intentionally absent: both are now
+		// real, side-effectful daemonless commands, not uniform stubs. `install`
+		// downloads and places the managed Postgres (network- and filesystem-bound),
+		// covered by TestManagedPGInstall; `start` runs a foreground daemon that
+		// blocks until signalled, covered by TestForegroundDefaultDetach. Sweeping
+		// either here would trigger a download or hang the sweep on a live daemon.
+		{"engine", "stop"}, {"engine", "uninstall"},
 		{"engine", "info"}, {"engine", "logs"}, {"engine", "inspect"}, {"engine", "stats"},
 		{"engine", "service", "install"}, {"engine", "service", "uninstall"},
 		{"deadletter", "list"}, {"deadletter", "show"}, {"deadletter", "replay"}, {"deadletter", "drain"},
@@ -74,8 +80,10 @@ func TestCLIExitCodesAndJSON(t *testing.T) {
 		bin.Run(t, RunOptions{Args: []string{"pipeline"}}).RequireExit(t, 2)
 		// 3 no daemon: a command that must reach a running daemon.
 		bin.Run(t, RunOptions{Args: []string{"pipeline", "list"}}).RequireExit(t, 3)
-		// 4 operation failed: a local-lifecycle command not wired yet.
-		bin.Run(t, RunOptions{Args: []string{"engine", "install"}}).RequireExit(t, 4)
+		// 4 operation failed: a local-lifecycle command not wired yet. (`engine
+		// install` is now wired -- it downloads the managed Postgres -- so a still-
+		// unwired local command stands in as the exit-4 example.)
+		bin.Run(t, RunOptions{Args: []string{"engine", "uninstall"}}).RequireExit(t, 4)
 
 		// Detail rides the message/--json, never an out-of-category code: a broad
 		// sweep over every node never yields a code outside the closed set.

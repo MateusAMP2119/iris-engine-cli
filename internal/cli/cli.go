@@ -14,6 +14,7 @@
 package cli
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,9 @@ import (
 	"log/slog"
 
 	"github.com/spf13/cobra"
+
+	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 )
 
 // The exit codes are the categories of specification section 8. Detail rides the
@@ -52,6 +56,16 @@ type app struct {
 	errOut   io.Writer
 	logger   *slog.Logger
 	jsonMode bool
+	// newKeyReader builds the engine-key reader `iris engine info` reads the public
+	// half through. It is nil in production (the handler falls back to
+	// daemon.NewEngineKeyReader) and injected by tests to drive info with no live
+	// meta.
+	newKeyReader func(config.Settings) daemon.EngineKeyReader
+	// daemonTLSConfig overrides the TLS client config the daemon-reachability probe
+	// uses for an https:// host. It is nil in production (standard verification
+	// against the system trust store) and injected by tests to trust a self-signed
+	// test CA. A remote-control epic can promote it to a real --tls-ca flag.
+	daemonTLSConfig *tls.Config
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -122,12 +136,6 @@ func (a *app) noDaemon(cmd *cobra.Command, op string) error {
 		codeStr: "no_daemon",
 		message: `no Iris daemon reachable; start the engine with "iris engine start", or target a running daemon with --socket or --host`,
 	}
-}
-
-// notImplemented is the outcome of a local-lifecycle stub that does not dial a
-// daemon and is not wired yet: exit 4 (operation failed).
-func (a *app) notImplemented(what string) error {
-	return &fault{code: exitOpFailed, codeStr: "not_implemented", message: what + " is not implemented yet"}
 }
 
 // usage is a usage-error outcome (exit 2) raised by a handler, distinct from the
