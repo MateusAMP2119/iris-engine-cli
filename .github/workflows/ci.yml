@@ -99,6 +99,10 @@ jobs:
           cache: true
       - name: Cross-compile build
         env:
+          # cgo-free is a hard constraint (spec section 9): every cross-compiled
+          # artifact is a portable, statically linked binary. Pinned explicitly,
+          # not left to the toolchain's implicit cross-compile default.
+          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: go build ./...
