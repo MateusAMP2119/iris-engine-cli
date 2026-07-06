@@ -29,16 +29,6 @@ func writeScript(t *testing.T, dir, name, body string) string {
 	return path
 }
 
-// TestOSRunnerImplementsRunner proves the real subprocess runner sits behind the
-// exec seam, exactly as the fake does.
-//
-// spec: S16/real-process-io-throwaway-scripts
-func TestOSRunnerImplementsRunner(_ *testing.T) {
-	// Compile-time proof the real runner is assignable to the exec seam; the
-	// behavioral tests below drive it through that seam.
-	var _ exec.Runner = exec.NewOSRunner()
-}
-
 // TestOSRunnerCapturesOutput runs a real throwaway script and proves stdout and
 // stderr are captured to the seam's writers, with a clean exit status.
 //
