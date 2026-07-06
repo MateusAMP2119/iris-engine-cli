@@ -58,11 +58,18 @@ type Handle interface {
 	// PGID returns the process-group id of the started subprocess. Killing the
 	// negative of this value terminates the whole group.
 	PGID() int
-	// Wait blocks until the subprocess terminates and returns its exit status. A
-	// signaled (killed or cancelled) termination is a terminal status, not an
-	// error; the error is non-nil only for a failure to wait.
+	// Wait blocks until the subprocess is reaped and returns its exit status. A
+	// signaled (killed or cancelled) or non-zero termination is a terminal status,
+	// not an error. After the subprocess exits, output capture is bounded: if a
+	// destination writer fails, or a descendant that inherited the output pipe
+	// holds it open past that bound, Wait returns a non-nil error alongside the
+	// recorded exit status -- never a silent success -- and output the descendant
+	// writes past the bound is truncated.
 	Wait() (ExitStatus, error)
-	// Kill terminates the whole process group immediately.
+	// Kill terminates the whole process group with SIGKILL; an already-gone group
+	// is not an error. Once the subprocess is reaped its pgid may in principle be
+	// recycled -- an inherent POSIX race, since a pgid stays reserved only while
+	// the group has a live member.
 	Kill() error
 }
 

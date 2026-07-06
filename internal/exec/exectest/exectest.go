@@ -10,6 +10,7 @@ package exectest
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"syscall"
@@ -22,9 +23,9 @@ import (
 // the run hangs until it is killed or its context is cancelled (a hung run held
 // for a mid-flight cancel).
 type Outcome struct {
-	// Stdout is written to the spec's stdout writer when the run starts.
+	// Stdout is streamed to the spec's stdout writer after the run starts.
 	Stdout string
-	// Stderr is written to the spec's stderr writer when the run starts.
+	// Stderr is streamed to the spec's stderr writer after the run starts.
 	Stderr string
 	// Exit is the exit code of a non-blocking run.
 	Exit int
@@ -66,15 +67,20 @@ func (r *Runner) SetDefault(o Outcome) {
 	r.def = o
 }
 
-// Start streams the matched Outcome's output to the spec's writers, assigns a
-// fake process-group id, and returns a Handle. A blocking Outcome yields a
-// Handle whose Wait blocks until Kill or ctx cancellation.
+// Start assigns a fake process-group id, launches the matched Outcome's output
+// streaming on its own goroutine, and returns a Handle. It mirrors the real seam:
+// Start returns immediately (never blocking on a backpressured writer), output is
+// delivered concurrently with the handle's lifetime, and any writer error
+// surfaces from Wait rather than Start. Argv must be non-empty, the precondition
+// the real runner enforces. A blocking Outcome yields a Handle whose Wait blocks
+// until Kill or ctx cancellation.
 func (r *Runner) Start(ctx context.Context, spec exec.Spec) (exec.Handle, error) {
-	r.mu.Lock()
-	program := ""
-	if len(spec.Argv) > 0 {
-		program = spec.Argv[0]
+	if len(spec.Argv) == 0 {
+		return nil, errors.New("exec: empty argv")
 	}
+
+	r.mu.Lock()
+	program := spec.Argv[0]
 	o, ok := r.scripts[program]
 	if !ok {
 		o = r.def
@@ -83,20 +89,34 @@ func (r *Runner) Start(ctx context.Context, spec exec.Spec) (exec.Handle, error)
 	pgid := r.nextPID
 	r.mu.Unlock()
 
-	// Stream the scripted output up front (the fake's "run"), so a caller sees
-	// it even for a run cancelled mid-flight.
-	if spec.Stdout != nil && o.Stdout != "" {
-		if _, err := io.WriteString(spec.Stdout, o.Stdout); err != nil {
-			return nil, err
-		}
-	}
-	if spec.Stderr != nil && o.Stderr != "" {
-		if _, err := io.WriteString(spec.Stderr, o.Stderr); err != nil {
-			return nil, err
-		}
+	h := &fakeHandle{
+		pgid:     pgid,
+		block:    o.Block,
+		exit:     o.Exit,
+		done:     make(chan struct{}),
+		streamed: make(chan struct{}),
 	}
 
-	h := &fakeHandle{pgid: pgid, block: o.Block, exit: o.Exit, done: make(chan struct{})}
+	// Stream the scripted output asynchronously (the fake's "run"): Start returns
+	// at once, the output arrives concurrently with the handle's lifetime -- so a
+	// cancel can interleave with streaming and a backpressured writer never blocks
+	// Start -- and a writer error is held for Wait to report.
+	go func() {
+		defer close(h.streamed)
+		if spec.Stdout != nil && o.Stdout != "" {
+			if _, err := io.WriteString(spec.Stdout, o.Stdout); err != nil {
+				h.streamErr = err
+				return
+			}
+		}
+		if spec.Stderr != nil && o.Stderr != "" {
+			if _, err := io.WriteString(spec.Stderr, o.Stderr); err != nil {
+				h.streamErr = err
+				return
+			}
+		}
+	}()
+
 	if o.Block {
 		// A blocking run is unblocked by Kill or by context cancellation; the
 		// watcher exits when the run is killed, so it never leaks.
@@ -111,27 +131,45 @@ func (r *Runner) Start(ctx context.Context, spec exec.Spec) (exec.Handle, error)
 	return h, nil
 }
 
-// fakeHandle is a started fake run: a fake process-group id and either an
-// immediate scripted exit or a block until killed.
+// fakeHandle is a started fake run: a fake process-group id, the streaming
+// goroutine's completion signal, and either an immediate scripted exit or a
+// block until killed.
 type fakeHandle struct {
-	pgid  int
-	block bool
-	exit  int
-	done  chan struct{}
-	once  sync.Once
+	pgid      int
+	block     bool
+	exit      int
+	done      chan struct{}
+	streamed  chan struct{}
+	streamErr error // writer error, read only after streamed is closed
+	once      sync.Once
 }
 
 // PGID returns the fake process-group id.
 func (h *fakeHandle) PGID() int { return h.pgid }
 
-// Wait returns the scripted exit status immediately for a non-blocking run, or
-// blocks until Kill/cancel and reports a signaled termination for a blocking one.
+// Wait reports the run's terminal status once its output has finished streaming:
+// the scripted exit status for a non-blocking run, or a signaled termination
+// after Kill/cancel for a blocking one. A writer error seen while streaming is
+// surfaced here rather than from Start, alongside that recorded terminal status
+// (never a zero one). It mirrors the real runner's precedence: the error surfaces
+// only when the run otherwise exited cleanly (code 0, not signaled), because a
+// non-clean terminal status subsumes it just as os/exec's ExitError subsumes a
+// copy error. Because Wait waits for streaming to finish, the captured output is
+// complete and safe to read after it returns.
 func (h *fakeHandle) Wait() (exec.ExitStatus, error) {
-	if !h.block {
-		return exec.ExitStatus{Code: h.exit}, nil
+	if h.block {
+		<-h.done // Kill or ctx cancellation unblocks the run
 	}
-	<-h.done
-	return exec.ExitStatus{Code: -1, Signaled: true, Signal: syscall.SIGKILL}, nil
+	<-h.streamed // streaming finished: output complete and streamErr stable
+
+	st := exec.ExitStatus{Code: h.exit}
+	if h.block {
+		st = exec.ExitStatus{Code: -1, Signaled: true, Signal: syscall.SIGKILL}
+	}
+	if h.streamErr != nil && st.Code == 0 && !st.Signaled {
+		return st, h.streamErr
+	}
+	return st, nil
 }
 
 // Kill unblocks a blocking run, modeling a process-group kill.

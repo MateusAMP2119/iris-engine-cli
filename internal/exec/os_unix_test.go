@@ -6,10 +6,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -27,16 +31,6 @@ func writeScript(t *testing.T, dir, name, body string) string {
 		t.Fatalf("write script %s: %v", path, err)
 	}
 	return path
-}
-
-// TestOSRunnerImplementsRunner proves the real subprocess runner sits behind the
-// exec seam, exactly as the fake does.
-//
-// spec: S16/real-process-io-throwaway-scripts
-func TestOSRunnerImplementsRunner(_ *testing.T) {
-	// Compile-time proof the real runner is assignable to the exec seam; the
-	// behavioral tests below drive it through that seam.
-	var _ exec.Runner = exec.NewOSRunner()
 }
 
 // TestOSRunnerCapturesOutput runs a real throwaway script and proves stdout and
@@ -274,6 +268,215 @@ func TestOSRunnerContextCancelKillsGroup(t *testing.T) {
 	}
 	if !st.Signaled {
 		t.Errorf("exit status = %+v, want a signaled termination from context cancel", st)
+	}
+}
+
+// TestOSRunnerGrandchildBoundedByWaitDelay proves a pipeline that backgrounds a
+// long-lived grandchild -- which inherits and holds the output pipe open past the
+// child's own exit -- does not stall Wait for the grandchild's lifetime. os/exec's
+// WaitDelay bounds the post-reap output drain: Wait returns within WaitDelay of
+// the child's exit, carrying the child's own recorded status and its own output,
+// and the drain that could not finish surfaces as ErrWaitDelay -- never a silent
+// success. Timing is asserted with a deadline, never a fixed sleep.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerGrandchildBoundedByWaitDelay(t *testing.T) {
+	dir := t.TempDir()
+	// The grandchild outlives the parent and inherits its stdout, keeping the pipe
+	// open; the parent prints its own line and exits 0.
+	script := writeScript(t, dir, "daemonize.sh", "sleep 30 &\necho done\nexit 0\n")
+
+	// A non-*os.File writer routes output through an os/exec copy goroutine, the
+	// path a lingering grandchild can hold open; WaitDelay is what bounds it.
+	var out bytes.Buffer
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: &out,
+		Stderr: &out,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// The seam's Kill sweeps the still-live grandchild through the group.
+	t.Cleanup(func() { _ = h.Kill() })
+
+	type result struct {
+		st  exec.ExitStatus
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		st, werr := h.Wait()
+		done <- result{st, werr}
+	}()
+
+	select {
+	case r := <-done:
+		if !errors.Is(r.err, osexec.ErrWaitDelay) {
+			t.Errorf("Wait error = %v, want ErrWaitDelay (drain bounded, never a silent success)", r.err)
+		}
+		if r.st.Code != 0 || r.st.Signaled {
+			t.Errorf("exit status = %+v, want the child's own code 0, not signaled", r.st)
+		}
+		if !strings.Contains(out.String(), "done") {
+			t.Errorf("stdout = %q, want the child's own output 'done'", out.String())
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("Wait did not return within the WaitDelay bound: it is blocking on the backgrounded grandchild")
+	}
+}
+
+// TestOSRunnerSharedWriterCapturesAllBytes proves stdout and stderr aimed at the
+// same writer are captured through a single pump, with no concurrent Write and no
+// dropped bytes: a script interleaves many lines across both streams into one
+// shared buffer, and every line comes back. Two independent pumps on one writer
+// would race (caught by -race) and lose output.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerSharedWriterCapturesAllBytes(t *testing.T) {
+	dir := t.TempDir()
+	const perStream = 1000
+	// Heavy interleaving across both streams into one writer: two pumps would
+	// call Write on it concurrently.
+	body := fmt.Sprintf("i=0\nwhile [ $i -lt %d ]; do echo \"out-$i\"; echo \"err-$i\" 1>&2; i=$((i+1)); done\n", perStream)
+	script := writeScript(t, dir, "interleave.sh", body)
+
+	// One plain buffer for both streams: safe only because a shared writer is fed
+	// by a single pump.
+	var buf bytes.Buffer
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: &buf,
+		Stderr: &buf,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if st.Code != 0 || st.Signaled {
+		t.Errorf("exit status = %+v, want code 0, not signaled", st)
+	}
+	if got, want := strings.Count(buf.String(), "\n"), 2*perStream; got != want {
+		t.Errorf("captured %d lines, want %d (a concurrent pump dropped output)", got, want)
+	}
+}
+
+// throttledWriter delays every Write, modeling a destination slower than real
+// time. The delay models writer slowness; it is not a test-synchronization sleep.
+type throttledWriter struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	delay time.Duration
+}
+
+func (w *throttledWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *throttledWriter) len() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Len()
+}
+
+// TestOSRunnerSlowWriterCapturesBufferedOutput proves a destination writer slower
+// than real time never truncates the child's own output when the drain finishes
+// within WaitDelay: os/exec copies to EOF at the child's own pace, and with no
+// lingering descendant EOF arrives at the child's exit. A blob larger than the
+// pipe buffer is streamed through a throttled writer and every byte comes back
+// with a clean status.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerSlowWriterCapturesBufferedOutput(t *testing.T) {
+	dir := t.TempDir()
+	const blob = 96 * 1024
+	// No backgrounded descendant: the pipe reaches EOF at the child's exit, so the
+	// copy completes regardless of writer speed, well inside WaitDelay.
+	body := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' x\nexit 0\n", blob)
+	script := writeScript(t, dir, "bigdump.sh", body)
+
+	// Slow, but the whole blob drains in a handful of 32KiB writes, far inside the
+	// 2s WaitDelay bound.
+	w := &throttledWriter{delay: 40 * time.Millisecond}
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: w,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if st.Code != 0 || st.Signaled {
+		t.Errorf("exit status = %+v, want code 0, not signaled", st)
+	}
+	if got := w.len(); got != blob {
+		t.Errorf("captured %d bytes, want the child's full %d bytes", got, blob)
+	}
+}
+
+// errWriter fails every Write with a sentinel, standing in for a failed output
+// sink (full disk, closed connection).
+type errWriter struct{}
+
+var errSink = errors.New("sink failed")
+
+func (errWriter) Write([]byte) (int, error) { return 0, errSink }
+
+// TestOSRunnerWriterErrorSurfacesFromWait proves a destination-writer failure is
+// reported from Wait -- promptly and never as a silent success -- alongside the
+// child's recorded exit status, even when the child emits far more than the pipe
+// buffer. os/exec closes the pipe read end when the copy stops, delivering EPIPE
+// so the child is never wedged in write(2); Wait returns quickly rather than
+// hanging. Timing is asserted with a deadline, never a fixed sleep.
+//
+// spec: S16/real-process-io-throwaway-scripts
+func TestOSRunnerWriterErrorSurfacesFromWait(t *testing.T) {
+	dir := t.TempDir()
+	// Far more than the ~64KiB pipe buffer, so a runner that abandoned the pipe on
+	// a writer error would wedge the child mid-write forever.
+	script := writeScript(t, dir, "flood.sh", "head -c 1048576 /dev/zero | tr '\\0' x\nexit 0\n")
+
+	h, err := exec.NewOSRunner().Start(context.Background(), exec.Spec{
+		Argv:   []string{script},
+		Env:    os.Environ(),
+		Stdout: errWriter{},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	type result struct {
+		st  exec.ExitStatus
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		st, werr := h.Wait()
+		done <- result{st, werr}
+	}()
+
+	select {
+	case r := <-done:
+		if !errors.Is(r.err, errSink) {
+			t.Errorf("Wait error = %v, want the destination-writer error surfaced", r.err)
+		}
+		if r.st.Code != 0 || r.st.Signaled {
+			t.Errorf("exit status = %+v, want the child's recorded exit 0 alongside the error", r.st)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("Wait hung on the failed writer; os/exec must EPIPE the child and surface the error promptly")
 	}
 }
 

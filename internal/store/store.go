@@ -36,8 +36,10 @@ const (
 	// RunSucceeded is a run that exited zero.
 	RunSucceeded RunState = "succeeded"
 	// RunDeadLettered is the single non-success terminal state, parked in the
-	// dead-letter worklist.
-	RunDeadLettered RunState = "dead-lettered"
+	// dead-letter worklist. Its wire token is the spec's DDL/grammar form
+	// `dead_lettered` (specification sections 4 and 7), the value E02's Postgres
+	// CHECK constraint and every --json golden pin.
+	RunDeadLettered RunState = "dead_lettered"
 )
 
 // Run is one execution record in meta: a minimal slice of the runs table

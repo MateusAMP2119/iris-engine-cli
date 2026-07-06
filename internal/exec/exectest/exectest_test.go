@@ -3,8 +3,11 @@ package exectest_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec/exectest"
@@ -125,7 +128,9 @@ func TestDispatchShapedComposerOrderStreamCancel(t *testing.T) {
 			t.Fatalf("Wait(%s): %v", pipeline, err)
 		}
 		if st.Signaled {
-			if _, err := meta.SetRunState(ctx, run.ID, store.RunDeadLettered, store.WithReason("cancelled")); err != nil {
+			// A cancelled run dead-letters with the spec's reason token "stopped"
+			// (specification sections 4 and 8), never the prose "cancelled".
+			if _, err := meta.SetRunState(ctx, run.ID, store.RunDeadLettered, store.WithReason("stopped")); err != nil {
 				t.Fatalf("dead-letter: %v", err)
 			}
 		} else {
@@ -197,5 +202,147 @@ func TestFakeRunnerContextCancel(t *testing.T) {
 	st := <-done
 	if !st.Signaled {
 		t.Errorf("cancelled run status = %+v, want signaled", st)
+	}
+}
+
+// TestFakeRunnerRejectsEmptyArgv proves the fake enforces the same precondition
+// as the real runner and the Spec doc: Argv must be non-empty. A fake that
+// silently ran an empty argv would let a bug slip past every integration test
+// that the real runner rejects at once.
+//
+// spec: S16/integration-fakes-interfaces
+func TestFakeRunnerRejectsEmptyArgv(t *testing.T) {
+	r := exectest.New()
+	_, err := r.Start(context.Background(), exec.Spec{})
+	if err == nil {
+		t.Fatal("Start with empty Argv = nil error, want the empty-argv precondition the real runner enforces")
+	}
+	if !strings.Contains(err.Error(), "empty argv") {
+		t.Errorf("Start error = %v, want it to name the empty-argv precondition", err)
+	}
+}
+
+// gateWriter blocks every Write until its gate is released, then records the
+// bytes. It stands in for a backpressured writer (an unread pipe) to prove the
+// fake does not stream inside Start.
+type gateWriter struct {
+	gate chan struct{}
+	mu   sync.Mutex
+	buf  bytes.Buffer
+}
+
+func (w *gateWriter) Write(p []byte) (int, error) {
+	<-w.gate
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *gateWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+// TestFakeRunnerStreamsAsynchronously proves the fake streams output after Start
+// returns, mirroring the real runner: Start does not block on a backpressured
+// writer, and output is delivered concurrently with the handle's lifetime.
+//
+// spec: S16/integration-fakes-interfaces
+func TestFakeRunnerStreamsAsynchronously(t *testing.T) {
+	r := exectest.New()
+	r.Script("stream", exectest.Outcome{Stdout: "streamed-output\n", Exit: 0})
+
+	// A writer that blocks until released: a fake that streams inside Start would
+	// hang here, exactly as the old synchronous fake did on an unread pipe.
+	w := &gateWriter{gate: make(chan struct{})}
+
+	type startResult struct {
+		h   exec.Handle
+		err error
+	}
+	started := make(chan startResult, 1)
+	go func() {
+		h, err := r.Start(context.Background(), exec.Spec{Argv: []string{"stream"}, Stdout: w})
+		started <- startResult{h, err}
+	}()
+
+	var h exec.Handle
+	select {
+	case s := <-started:
+		if s.err != nil {
+			t.Fatalf("Start: %v", s.err)
+		}
+		h = s.h
+	case <-time.After(1 * time.Second):
+		t.Fatal("Start blocked on the backpressured writer; the fake must stream asynchronously after Start returns")
+	}
+
+	// Release the writer, then Wait: output is delivered concurrently with the
+	// handle's lifetime and complete once Wait returns.
+	close(w.gate)
+	st, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if st.Code != 0 || st.Signaled {
+		t.Errorf("exit status = %+v, want code 0, not signaled", st)
+	}
+	if w.String() != "streamed-output\n" {
+		t.Errorf("streamed output = %q, want %q", w.String(), "streamed-output\n")
+	}
+}
+
+// errWriter fails every Write with a sentinel, to prove a streaming writer error
+// reaches the caller through Wait, not Start.
+type errWriter struct{}
+
+var errWrite = errors.New("exectest: write failed")
+
+func (errWriter) Write([]byte) (int, error) { return 0, errWrite }
+
+// TestFakeRunnerWriterErrorSurfacesFromWait proves a writer error during
+// streaming is reported from Wait, not Start, and -- mirroring the real runner --
+// alongside the run's recorded terminal status rather than a zero one: a clean
+// run whose output sink fails reports exit 0 with the writer error.
+//
+// spec: S16/integration-fakes-interfaces
+func TestFakeRunnerWriterErrorSurfacesFromWait(t *testing.T) {
+	r := exectest.New()
+	r.Script("noisy", exectest.Outcome{Stdout: "data\n", Exit: 0})
+
+	h, err := r.Start(context.Background(), exec.Spec{Argv: []string{"noisy"}, Stdout: errWriter{}})
+	if err != nil {
+		t.Fatalf("Start surfaced the writer error, want it deferred to Wait: %v", err)
+	}
+	st, werr := h.Wait()
+	if !errors.Is(werr, errWrite) {
+		t.Errorf("Wait error = %v, want the streaming writer error", werr)
+	}
+	if st.Code != 0 || st.Signaled {
+		t.Errorf("Wait status = %+v, want the recorded exit 0 alongside the error, not a zero fallback for a different reason", st)
+	}
+}
+
+// TestFakeRunnerWriterErrorSubsumedByNonZeroExit proves the fake mirrors the real
+// runner's precedence: when the run exits non-zero, its terminal status subsumes
+// the streaming-writer error (os/exec's ExitError subsumes a copy error), so Wait
+// reports the recorded non-zero status with no error rather than the writer error.
+//
+// spec: S16/integration-fakes-interfaces
+func TestFakeRunnerWriterErrorSubsumedByNonZeroExit(t *testing.T) {
+	r := exectest.New()
+	r.Script("failing", exectest.Outcome{Stdout: "data\n", Exit: 3})
+
+	h, err := r.Start(context.Background(), exec.Spec{Argv: []string{"failing"}, Stdout: errWriter{}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st, werr := h.Wait()
+	if werr != nil {
+		t.Errorf("Wait error = %v, want nil: a non-zero exit subsumes the writer error", werr)
+	}
+	if st.Code != 3 || st.Signaled {
+		t.Errorf("Wait status = %+v, want the recorded exit 3", st)
 	}
 }

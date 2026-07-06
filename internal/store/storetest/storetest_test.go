@@ -9,6 +9,30 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
+// TestRunStateWireValues pins the run-state constants to the exact tokens the
+// spec's runs DDL and wire grammar use (specification sections 4 and 7:
+// `state in (queued, running, succeeded, dead_lettered)` and
+// `state=dead_lettered`). E02's Postgres CHECK constraint and every --json
+// golden depend on the underscore form; a faithful meta-store fake must speak
+// the same tokens.
+//
+// spec: S16/integration-fakes-interfaces
+func TestRunStateWireValues(t *testing.T) {
+	for _, tc := range []struct {
+		got  store.RunState
+		want string
+	}{
+		{store.RunQueued, "queued"},
+		{store.RunRunning, "running"},
+		{store.RunSucceeded, "succeeded"},
+		{store.RunDeadLettered, "dead_lettered"},
+	} {
+		if string(tc.got) != tc.want {
+			t.Errorf("run-state wire value = %q, want %q (spec sections 4 and 7)", tc.got, tc.want)
+		}
+	}
+}
+
 // TestFakeSatisfiesStore proves the meta-store fake stands in for meta: it
 // implements the store.Store interface, so any code written against the seam
 // runs against the fake with no live meta database.
@@ -82,13 +106,16 @@ func TestFakeRunLifecycle(t *testing.T) {
 	}
 
 	// reset: queued -> dead-lettered with a reason (single non-success terminal).
+	// The reason is the spec's closed dead_letters.reason enum token; a cancelled
+	// run maps to "stopped" (specification sections 4 and 8), never the prose
+	// "cancelled".
 	rc := created[1].ID
-	dl, err := s.SetRunState(ctx, rc, store.RunDeadLettered, store.WithReason("cancelled"))
+	dl, err := s.SetRunState(ctx, rc, store.RunDeadLettered, store.WithReason("stopped"))
 	if err != nil {
 		t.Fatalf("SetRunState dead-lettered: %v", err)
 	}
-	if dl.State != store.RunDeadLettered || dl.Reason != "cancelled" {
-		t.Errorf("dead-letter = (%q, %q), want (dead-lettered, cancelled)", dl.State, dl.Reason)
+	if dl.State != store.RunDeadLettered || dl.Reason != "stopped" {
+		t.Errorf("dead-letter = (%q, %q), want (dead_lettered, stopped)", dl.State, dl.Reason)
 	}
 
 	// GetRun round-trips a stored run by id.
