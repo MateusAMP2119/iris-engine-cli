@@ -45,11 +45,11 @@ Opus, never downgrade.
 - [x] E03.2 Lane composer validation — done (PR #27: https://github.com/MateusAMP2119/iris-engine-cli/pull/27)
 - [x] E03.3 Single file targets — done (PR #26: https://github.com/MateusAMP2119/iris-engine-cli/pull/26; Sonnet)
 - [x] E03.4 Dependency graph validation — done (PR #25: https://github.com/MateusAMP2119/iris-engine-cli/pull/25)
-- [ ] E03.5 Type mapping and DDL — in-progress (worktree .worktrees/E03.5)
-- [ ] E03.6 Drift classification — todo (needs E03.5)
+- [x] E03.5 Type mapping and DDL — done (PR #28: https://github.com/MateusAMP2119/iris-engine-cli/pull/28)
+- [ ] E03.6 Drift classification — in-progress (worktree .worktrees/E03.6)
 - [ ] E03.7 Migration ledger sync — todo (needs E02, E03.5, E03.6)
 - [ ] E03.8 Idempotent provisioning — todo (needs E02, E03.7)
-- [ ] E03.9 Registry persistence in meta — in-progress (worktree .worktrees/E03.9)
+- [ ] E03.9 Registry persistence in meta — in-progress (PR #29 merging)
 - [ ] E03.10 Apply destroy closure — todo (needs E02, E03.8, E03.9)
 
 ## E04 Roles, Grants and Credentials — epic PR: —
