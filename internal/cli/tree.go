@@ -82,9 +82,10 @@ func (a *app) groupStub() runE {
 }
 
 // daemonStub is the handler of a command that must reach a running daemon: with
-// none reachable it reports no-daemon (exit 3) with start guidance.
+// none reachable it reports no-daemon (exit 3) with start guidance, resolving the
+// dial target through the configuration precedence first.
 func (a *app) daemonStub(op string) runE {
-	return func(_ *cobra.Command, _ []string) error { return a.noDaemon(op) }
+	return func(cmd *cobra.Command, _ []string) error { return a.noDaemon(cmd, op) }
 }
 
 // localStub is the handler of a local-lifecycle command that does not dial a
@@ -330,7 +331,7 @@ func (a *app) deadletterScopedStub(op string) runE {
 		if len(args) == 0 && !all && pipeline == "" {
 			return a.usage(op + " requires <run>, --pipeline <name>, or --all")
 		}
-		return a.noDaemon(op)
+		return a.noDaemon(cmd, op)
 	}
 }
 

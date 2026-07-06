@@ -42,15 +42,18 @@ const rankMain = 100
 // rank. The one-direction rule is: a shipped package may import another shipped
 // package only when the target's rank is strictly lower. That single rule
 // captures the spec's whole layering at once -- cli -> daemon -> api -> dispatch
-// -> store/pg/exec, archive beside dispatch, declare/build/pat/version as leaves
-// -- and, because a strictly-lower target is required, it also forbids the
+// -> store/pg/exec, archive beside dispatch, config/declare/build/pat/version as
+// leaves -- and, because a strictly-lower target is required, it also forbids the
 // same-rank crossings the spec bans: store<->pg ("two clients, two databases,
 // never crossed") and archive<->dispatch (siblings coordinated from above).
 // daemon outranks api because listener wiring (which mounts the api mux) lives in
-// the daemon; api renders read views and never reaches back up. Later epics add a
-// package by giving it a rank here; the checks do not change.
+// the daemon; api renders read views and never reaches back up. config is a leaf
+// carrying no dependencies of its own -- pure configuration resolution the CLI
+// (and later the daemon) reads. Later epics add a package by giving it a rank
+// here; the checks do not change.
 var productRanks = map[string]int{
 	"version":  1,
+	"config":   1,
 	"declare":  1,
 	"build":    1,
 	"pat":      1,
