@@ -14,6 +14,7 @@
 package cli
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,6 +61,11 @@ type app struct {
 	// daemon.NewEngineKeyReader) and injected by tests to drive info with no live
 	// meta.
 	newKeyReader func(config.Settings) daemon.EngineKeyReader
+	// daemonTLSConfig overrides the TLS client config the daemon-reachability probe
+	// uses for an https:// host. It is nil in production (standard verification
+	// against the system trust store) and injected by tests to trust a self-signed
+	// test CA. A remote-control epic can promote it to a real --tls-ca flag.
+	daemonTLSConfig *tls.Config
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping

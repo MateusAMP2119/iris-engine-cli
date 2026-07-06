@@ -75,7 +75,7 @@ func (a *app) newRootCommand() *cobra.Command {
 	pf := root.PersistentFlags()
 	pf.Bool("json", false, "emit a single JSON document on stdout instead of human-readable output")
 	pf.String("socket", "", "path to the engine's Unix control socket")
-	pf.String("host", "", "address of a remote engine reached over TCP")
+	pf.String("host", "", "address of a remote engine reached over TCP (host:port or http://host:port for plain, https://host:port for TLS)")
 	pf.String("token", "", "PAT presented to a remote engine over TCP")
 
 	root.AddCommand(
