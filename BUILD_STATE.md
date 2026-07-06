@@ -48,9 +48,9 @@ Opus, never downgrade.
 - [x] E03.5 Type mapping and DDL — done (PR #28: https://github.com/MateusAMP2119/iris-engine-cli/pull/28)
 - [x] E03.6 Drift classification — done (PR #30: https://github.com/MateusAMP2119/iris-engine-cli/pull/30)
 - [x] E03.7 Migration ledger sync — done (PR #31: https://github.com/MateusAMP2119/iris-engine-cli/pull/31)
-- [ ] E03.8 Idempotent provisioning — in-progress (worktree .worktrees/E03.8)
+- [x] E03.8 Idempotent provisioning — done (PR #32: https://github.com/MateusAMP2119/iris-engine-cli/pull/32)
 - [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
-- [ ] E03.10 Apply destroy closure — todo (needs E02, E03.8, E03.9)
+- [ ] E03.10 Apply destroy closure — in-progress (worktree .worktrees/E03.10)
 
 ## E04 Roles, Grants and Credentials — epic PR: —
 
