@@ -128,7 +128,10 @@ func (b *Binary) Run(t testing.TB, opts RunOptions) Result {
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	// Only a real run failure counts as a timeout: a process that exits cleanly
+	// just before the deadline leaves ctx.Err() == DeadlineExceeded with err ==
+	// nil, and must not be misreported as a timeout (harness flake). Guard on err.
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("conformance: %s %v timed out after %s\nstdout:\n%s\nstderr:\n%s",
 			b.path, opts.Args, timeout, stdout.Bytes(), stderr.Bytes())
 	}
