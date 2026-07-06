@@ -92,7 +92,11 @@ type Table struct {
 type Schema struct {
 	// Database is the database the tables live in.
 	Database string
-	// Tables are the schema's tables, in create-if-missing emission order.
+	// Tables are the schema's tables in spec roster order (runs precedes
+	// artifacts), the order the roster assertion pins. It is NOT a safe emission
+	// order: iterating it to issue DDL forward-references artifacts from runs and
+	// fails against real Postgres. Call DDL() for FK-safe (topologically ordered)
+	// create-if-missing emission.
 	Tables []Table
 }
 
@@ -260,8 +264,9 @@ func dependenciesSatisfied(t Table, emitted map[string]bool) bool {
 }
 
 // MetaSchema returns the meta control-plane schema: the seventeen tables of
-// specification section 4, in the spec's own roster order (which is also the
-// create-if-missing emission order). Ordering keys are monotonic bigint identity
+// specification section 4, in the spec's own roster order. Roster order is not a
+// safe DDL emission order (runs precedes artifacts it references); DDL() emits in
+// FK-dependency order instead. Ordering keys are monotonic bigint identity
 // columns; recorded_at is an opaque non-ordering text audit string throughout.
 func MetaSchema() Schema {
 	return Schema{
