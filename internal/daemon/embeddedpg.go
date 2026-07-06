@@ -30,32 +30,45 @@ const managedStartTimeout = 90 * time.Second
 // release decision.
 const pinnedEmbeddedVersion = embeddedpostgres.V18
 
+// pgInstance is the lifecycle subset of embedded-postgres that embeddedSupervisor
+// drives. *embeddedpostgres.EmbeddedPostgres satisfies it directly; a scripted fake
+// substitutes it in tests so the Start/Stop failure paths (which would otherwise
+// need a real download and a way to force pg_ctl to fail) are provable in-process.
+type pgInstance interface {
+	Start() error
+	Stop() error
+}
+
 // EmbeddedSupervisor is the production SupervisorFactory. It builds a managed-
 // Postgres supervisor that places the pinned build under the configured
 // <workspace>/.iris/pg directory and supervises it as a child subprocess. It
 // satisfies daemon.SupervisorFactory, so the CLI wires it into a Manager for
 // `iris engine install` and (from E02.4) the daemon lifecycle.
 func EmbeddedSupervisor(cfg SupervisorConfig) (Supervisor, error) {
-	return &embeddedSupervisor{cfg: cfg}, nil
+	s := &embeddedSupervisor{cfg: cfg}
+	s.newInstance = s.buildInstance
+	return s, nil
 }
 
 // embeddedSupervisor adapts embedded-postgres to the Supervisor seam. It holds the
 // running instance between Start and Stop so a supervised subprocess can be stopped
-// on shutdown.
+// on shutdown. newInstance builds the underlying instance and is a field so tests
+// can inject a scripted pgInstance in place of the real embedded-postgres one.
 type embeddedSupervisor struct {
-	cfg     SupervisorConfig
-	running *embeddedpostgres.EmbeddedPostgres
+	cfg         SupervisorConfig
+	newInstance func() pgInstance
+	running     pgInstance
 }
 
-// newInstance builds an embedded-postgres instance configured to place its binaries
-// and data under the managed-Postgres directory (specification section 10), pin the
-// major version, and use the engine-minted superuser credential. Postgres server
-// output is discarded rather than written to the process's stdout/stderr, so the
-// CLI contract (stdout carries only command output) holds and the minted credential
-// can never ride Postgres logs into the CLI's streams. TCP beyond localhost is
-// enabled only when the config asks for it (standby topology); otherwise the
-// instance stays local.
-func (s *embeddedSupervisor) newInstance() *embeddedpostgres.EmbeddedPostgres {
+// buildInstance builds an embedded-postgres instance configured to place its
+// binaries and data under the managed-Postgres directory (specification section 10),
+// pin the major version, and use the engine-minted superuser credential. Postgres
+// server output is discarded rather than written to the process's stdout/stderr, so
+// the CLI contract (stdout carries only command output) holds and the minted
+// credential can never ride Postgres logs into the CLI's streams. TCP beyond
+// localhost is enabled only when the config asks for it (standby topology);
+// otherwise the instance stays local.
+func (s *embeddedSupervisor) buildInstance() pgInstance {
 	cfg := embeddedpostgres.DefaultConfig().
 		Version(pinnedEmbeddedVersion).
 		Username(s.cfg.Superuser).
@@ -83,6 +96,20 @@ func (s *embeddedSupervisor) newInstance() *embeddedpostgres.EmbeddedPostgres {
 // engine-minted password matching an already-initialized cluster. Continuity of
 // that credential across separate runs -- so a later `iris engine start` can
 // re-open an existing managed cluster -- is E02.4's connection-bootstrap concern.
+//
+// Context handling: EnsureInstalled honors a context cancelled before it begins, but
+// once embedded-postgres's Start is underway a cancellation cannot interrupt it --
+// the library offers no cancellation hook, so Start blocks until it succeeds or hits
+// managedStartTimeout. Callers with short-lived contexts must account for that
+// bound; racing Start in a goroutine to return early on ctx.Done is deliberately not
+// done, as it would leave the library call -- and any postgres it spawned -- running
+// detached with no handle (an orphan).
+//
+// Failed-stop safety: if the subprocess starts but the follow-up stop fails, the
+// process is running with no other handle to it. EnsureInstalled never strands it
+// silently: it retries the stop best-effort, and if that also fails it retains the
+// instance handle (so a later Stop can still reach the process) and returns an error
+// naming the orphan risk and its remediation.
 func (s *embeddedSupervisor) EnsureInstalled(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -95,7 +122,17 @@ func (s *embeddedSupervisor) EnsureInstalled(ctx context.Context) error {
 		return fmt.Errorf("daemon: materialize managed Postgres under %s: %w", s.cfg.Dir, err)
 	}
 	if err := instance.Stop(); err != nil {
-		return fmt.Errorf("daemon: stop managed Postgres after install: %w", err)
+		// Start succeeded, so a postgres subprocess is running. A single stop failure
+		// must never silently strand it: retry once, and only if that also fails give
+		// up -- retaining the handle so a later Stop can reach it and surfacing the
+		// orphan risk.
+		if retryErr := instance.Stop(); retryErr == nil {
+			return nil
+		}
+		s.running = instance
+		return fmt.Errorf("daemon: managed Postgres started during install but could not be stopped; "+
+			"a postgres subprocess may still be running under %s -- stop it before retrying "+
+			"(pg_ctl stop -D %s): %w", s.cfg.Dir, s.cfg.DataDir, err)
 	}
 	return nil
 }
@@ -116,6 +153,12 @@ func (s *embeddedSupervisor) alreadyMaterialized() bool {
 // Start brings the managed-Postgres subprocess up and returns once it is accepting
 // connections (embedded-postgres blocks on a readiness health check before
 // returning). The running instance is retained so Stop can shut it down.
+//
+// Context handling: Start honors a context cancelled before it begins, but a
+// cancellation during the underlying embedded-postgres Start cannot interrupt it --
+// the library has no cancellation hook, so Start blocks until readiness or
+// managedStartTimeout. Callers with short-lived contexts must account for that
+// bound.
 func (s *embeddedSupervisor) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
