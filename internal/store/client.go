@@ -30,11 +30,12 @@ import (
 // reader pool, all derived from the one admin DSN. Build it with Connect and tear
 // it down with Close.
 type Client struct {
-	session *pgx.Conn
-	pool    *pgxpool.Pool
-	lock    *PgxLeaderLock
-	writer  MetaWriteConn
-	reader  Reader
+	session  *pgx.Conn
+	pool     *pgxpool.Pool
+	lock     *PgxLeaderLock
+	writer   MetaWriteConn
+	reader   Reader
+	registry RegistryReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -76,12 +77,14 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
+	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
-		session: session,
-		pool:    pool,
-		lock:    lock,
-		writer:  &pgxWriteConn{conn: session},
-		reader:  newPgxReader(&pgxReadPool{pool: pool}),
+		session:  session,
+		pool:     pool,
+		lock:     lock,
+		writer:   &pgxWriteConn{conn: session},
+		reader:   newPgxReader(readPoolSeam),
+		registry: &pgxRegistryReader{pool: readPoolSeam},
 	}, nil
 }
 
@@ -95,6 +98,10 @@ func (c *Client) WriteConn() MetaWriteConn { return c.writer }
 // Reader returns the plain-MVCC meta reader (the pool), for read paths that must
 // never block behind the single writer or the leader lock.
 func (c *Client) Reader() Reader { return c.reader }
+
+// RegistryReader returns the plain-MVCC registry reader (the pool): the pipelines
+// and dependencies read seam the apply op rebuilds the dependency graph from.
+func (c *Client) RegistryReader() RegistryReader { return c.registry }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can
@@ -123,12 +130,44 @@ type pgxWriteConn struct {
 	conn *pgx.Conn
 }
 
-// compile-time proof the leader session adapter satisfies the write seam.
-var _ MetaWriteConn = (*pgxWriteConn)(nil)
+// compile-time proof the leader session adapter satisfies the write and
+// atomic-transaction seams: the same lock-holding session carries both.
+var (
+	_ MetaWriteConn = (*pgxWriteConn)(nil)
+	_ MetaTxConn    = (*pgxWriteConn)(nil)
+)
 
 func (c *pgxWriteConn) Exec(ctx context.Context, sql string, args ...any) error {
 	_, err := c.conn.Exec(ctx, sql, args...)
 	return err
+}
+
+// ExecTx runs stmts as one atomic Postgres transaction on the leader's session: it
+// opens a transaction, executes each statement in order, and commits. A deferred
+// rollback on a background context guards every exit: on a statement error or a
+// failed commit it sends ROLLBACK -- and it uses context.Background(), not the
+// caller's ctx, so a cancelled apply still delivers the ROLLBACK wire message
+// rather than short-circuiting and stranding the persistent leader connection in
+// an aborted transaction (where every later command would fail). After a successful
+// Commit the rollback is a no-op. So a failed registry apply leaves meta exactly as
+// it was and the connection reusable. The whole batch rides the one lock-holding
+// session, like every other meta write.
+func (c *pgxWriteConn) ExecTx(ctx context.Context, stmts []Statement) error {
+	tx, err := c.conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin registry transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	for _, s := range stmts {
+		if _, err := tx.Exec(ctx, s.SQL, s.Args...); err != nil {
+			return fmt.Errorf("store: registry transaction exec: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: commit registry transaction: %w", err)
+	}
+	return nil
 }
 
 // duplicateDatabaseCode is Postgres' SQLSTATE for duplicate_database: a CREATE
