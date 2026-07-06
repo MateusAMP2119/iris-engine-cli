@@ -50,11 +50,11 @@ Opus, never downgrade.
 - [x] E03.7 Migration ledger sync — done (PR #31: https://github.com/MateusAMP2119/iris-engine-cli/pull/31)
 - [x] E03.8 Idempotent provisioning — done (PR #32: https://github.com/MateusAMP2119/iris-engine-cli/pull/32)
 - [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
-- [ ] E03.10 Apply destroy closure — in-progress (worktree .worktrees/E03.10)
+- [ ] E03.10 Apply destroy closure — in-progress (worktree .worktrees/E03.10, Opus)
 
 ## E04 Roles, Grants and Credentials — epic PR: —
 
-- [ ] E04.1 Access declaration validation — todo (needs E02, E03)
+- [ ] E04.1 Access declaration validation — in-progress (worktree .worktrees/E04.1, Sonnet)
 - [ ] E04.2 Role and credential lifecycle — todo (needs E02, E03)
 - [ ] E04.3 Grant reconcile and drift — todo (needs E04.1, E04.2)
 - [ ] E04.4 Connection injection and enforcement — todo (needs E04.2, E04.3)
@@ -71,7 +71,7 @@ Opus, never downgrade.
 - [ ] E05.8 Dead letter drain — todo (needs E05.7)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [ ] E05.10 Manual pipeline run — todo (needs E05.5)
-- [ ] E05.11 Doctrines and scope — todo
+- [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
 - [ ] E05.12 Lane runner pass semantics — todo (needs E05.1, E05.4, E05.5)
 
 ## E06 Write Capture, Wipe and Promotion — epic PR: —
