@@ -15,7 +15,6 @@ import (
 type scriptedSession struct {
 	execs      []scriptedExec
 	closes     int
-	pinged     int
 	execErr    error
 	closeErr   error
 	blockAcq   chan struct{} // when non-nil, exec blocks on it before returning (models a held lock)
@@ -42,8 +41,6 @@ func (s *scriptedSession) exec(ctx context.Context, sql string, args ...any) err
 	s.execs = append(s.execs, scriptedExec{sql: sql, args: args})
 	return s.execErr
 }
-
-func (s *scriptedSession) ping(context.Context) error { s.pinged++; return nil }
 
 func (s *scriptedSession) close(context.Context) error {
 	s.closes++
