@@ -39,6 +39,12 @@ const serviceLaunchdLabel = "com.iris.engine"
 // the owner-only mode the rest of the .iris tree uses.
 const serviceUnitPerm os.FileMode = 0o644
 
+// serviceUnitDirPerm is the mode intermediate directories are created with for a
+// --path target outside the workspace: 0755, so a service manager running as a
+// different user can traverse to the world-readable unit file. The .iris tree's
+// own 0700 is for engine-private state and would block that traversal.
+const serviceUnitDirPerm os.FileMode = 0o755
+
 // systemdUnitTemplate renders a systemd service that wraps the detached daemon.
 // Type=forking with PIDFile tracks the daemon that `engine start --detach`
 // backgrounds; KillSignal=SIGTERM drives the daemon's graceful shutdown on
@@ -147,7 +153,17 @@ func InstallServiceUnit(s config.Settings, exePath, unitPath string) (string, er
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(unitPath), socketDirPerm); err != nil {
+	// Intermediate-directory mode: the workspace .iris tree stays owner-only (0700,
+	// private engine state); a --path target outside it gets traversable 0755 so a
+	// service manager running as another user can reach the world-readable unit.
+	// MkdirAll leaves an existing directory's mode untouched, so this only sets the
+	// mode on directories it creates.
+	dir := filepath.Dir(unitPath)
+	dirPerm := serviceUnitDirPerm
+	if dir == irisDir(s) {
+		dirPerm = socketDirPerm
+	}
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
 		return "", fmt.Errorf("daemon: create service unit directory for %s: %w", unitPath, err)
 	}
 	// serviceUnitPerm is the conventional world-readable 0644: a unit carries no

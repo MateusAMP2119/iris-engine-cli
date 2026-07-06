@@ -41,6 +41,11 @@ type SizeRotator struct {
 	perm        os.FileMode
 	file        *os.File
 	size        int64
+	// rename performs a generation rename; it defaults to os.Rename and is a seam
+	// tests override to inject a transient rotation failure, so the recovery path
+	// (never panic on the next write after a failed rotation) is exercised
+	// deterministically.
+	rename func(oldpath, newpath string) error
 }
 
 // NewSizeRotator opens (creating/appending) the active log at path and returns a
@@ -53,7 +58,7 @@ func NewSizeRotator(path string, maxBytes int64, generations int) (*SizeRotator,
 	if generations < 0 {
 		return nil, fmt.Errorf("daemon: rotator generations must be non-negative, got %d", generations)
 	}
-	r := &SizeRotator{path: path, maxBytes: maxBytes, generations: generations, perm: logFilePerm}
+	r := &SizeRotator{path: path, maxBytes: maxBytes, generations: generations, perm: logFilePerm, rename: os.Rename}
 	if err := r.open(); err != nil {
 		return nil, err
 	}
@@ -85,8 +90,18 @@ func (r *SizeRotator) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// A prior rotation may have failed partway (a transient disk error on a rename
+	// or reopen), leaving the active file closed. Reopen it before use so a write
+	// never dereferences a nil file; a still-failing reopen is returned as an
+	// error, never panicked.
+	if err := r.ensureOpen(); err != nil {
+		return 0, err
+	}
 	if r.size > 0 && r.size+int64(len(p)) > r.maxBytes {
 		if err := r.rotate(); err != nil {
+			// rotate closed the active file and left it nil after a transient
+			// failure; the next Write reopens it via ensureOpen. Surface the error
+			// rather than write to a nil file.
 			return 0, err
 		}
 	}
@@ -95,14 +110,30 @@ func (r *SizeRotator) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// ensureOpen opens the active file when a prior rotation left it closed, so the
+// rotator recovers on the next write rather than dereferencing a nil file. The
+// caller holds r.mu.
+func (r *SizeRotator) ensureOpen() error {
+	if r.file != nil {
+		return nil
+	}
+	return r.open()
+}
+
 // rotate rolls the active file to <path>.1, shifting each older generation up by
 // one and dropping the oldest, then reopens a fresh active file. The caller holds
 // r.mu.
 func (r *SizeRotator) rotate() error {
-	if err := r.file.Close(); err != nil {
-		return fmt.Errorf("daemon: close log before rotation %s: %w", r.path, err)
+	// Close and release the active file. Guard the close so a rotate re-entered
+	// after a prior failure (active file already nil) never dereferences nil; the
+	// active file is nulled only once it is closed, so a failure below leaves the
+	// rotator recoverable (the next Write reopens).
+	if r.file != nil {
+		if err := r.file.Close(); err != nil {
+			return fmt.Errorf("daemon: close log before rotation %s: %w", r.path, err)
+		}
+		r.file = nil
 	}
-	r.file = nil
 
 	if r.generations < 1 {
 		// No generations kept: the active file is simply replaced.
@@ -118,11 +149,11 @@ func (r *SizeRotator) rotate() error {
 		return err
 	}
 	for g := r.generations - 1; g >= 1; g-- {
-		if err := renameIfPresent(fmt.Sprintf("%s.%d", r.path, g), fmt.Sprintf("%s.%d", r.path, g+1)); err != nil {
+		if err := r.renameIfPresent(fmt.Sprintf("%s.%d", r.path, g), fmt.Sprintf("%s.%d", r.path, g+1)); err != nil {
 			return err
 		}
 	}
-	if err := renameIfPresent(r.path, r.path+".1"); err != nil {
+	if err := r.renameIfPresent(r.path, r.path+".1"); err != nil {
 		return err
 	}
 	return r.open()
@@ -151,10 +182,10 @@ func removeIfPresent(path string) error {
 	return nil
 }
 
-// renameIfPresent renames from to to, treating an absent source as success (a
-// generation that has never been written yet).
-func renameIfPresent(from, to string) error {
-	if err := os.Rename(from, to); err != nil && !errors.Is(err, os.ErrNotExist) {
+// renameIfPresent renames from to to through the rotator's rename seam, treating
+// an absent source as success (a generation that has never been written yet).
+func (r *SizeRotator) renameIfPresent(from, to string) error {
+	if err := r.rename(from, to); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("daemon: rotate log %s -> %s: %w", from, to, err)
 	}
 	return nil

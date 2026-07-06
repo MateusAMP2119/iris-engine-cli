@@ -143,6 +143,39 @@ func TestServiceInstallOnDemand(t *testing.T) {
 			}
 		})
 
+		t.Run("install creates traversable parent dirs for an out-of-workspace --path", func(t *testing.T) {
+			base := t.TempDir()
+			realWS := t.TempDir()
+			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
+			unitPath := filepath.Join(base, "sub", "systemd", "iris.service")
+
+			if _, err := daemon.InstallServiceUnit(s, exe, unitPath); err != nil {
+				t.Fatalf("InstallServiceUnit(nested --path): %v", err)
+			}
+
+			// The unit file is world-readable (0644); an owner-only 0700 parent would
+			// block a service manager running as another user from traversing to it.
+			// The created intermediate dirs must be group/other-traversable -- 0755
+			// under the process umask, compared against a reference dir created the
+			// same way so the assertion is umask-independent.
+			refParent := filepath.Join(t.TempDir(), "ref")
+			if err := os.MkdirAll(refParent, 0o755); err != nil {
+				t.Fatalf("reference MkdirAll: %v", err)
+			}
+			ref, err := os.Stat(refParent)
+			if err != nil {
+				t.Fatalf("stat reference dir: %v", err)
+			}
+			got, err := os.Stat(filepath.Join(base, "sub"))
+			if err != nil {
+				t.Fatalf("stat created intermediate dir: %v", err)
+			}
+			if got.Mode().Perm() != ref.Mode().Perm() {
+				t.Errorf("intermediate dir perm = %#o, want %#o (0755 under umask; a 0700 parent blocks non-owner traversal to the world-readable unit)",
+					got.Mode().Perm(), ref.Mode().Perm())
+			}
+		})
+
 		t.Run("install defaults to the E02.4 ServiceUnitPath seam", func(t *testing.T) {
 			realWS := t.TempDir()
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
