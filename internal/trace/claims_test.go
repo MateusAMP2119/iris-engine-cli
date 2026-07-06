@@ -172,6 +172,46 @@ func TestH(t *testing.T) {
 				"S16/exempt-needs-no-test": trace.KindSubtest,
 			},
 		},
+		{
+			name: "a sibling closure's *testing.T param does not leak past a shadowing local",
+			src: `package sample
+
+import "testing"
+
+type runner struct{}
+
+func (runner) Run(name string, fn func()) {}
+
+func TestBaz(t *testing.T) {
+	_ = func(s *testing.T) {}
+	var s runner
+	s.Run("S16/manifest-row-schema", func() {})
+}
+`,
+			// The throwaway closure's s *testing.T is confined to that closure's
+			// scope; in the block s is a local struct that shadows nothing of type
+			// *testing.T, so its Run is not a subtest and must not claim.
+			want: map[string]trace.ClaimKind{},
+		},
+		{
+			name: "a local rebinding the test's t shadows the parameter and does not claim",
+			src: `package sample
+
+import "testing"
+
+type mockRunner struct{}
+
+func (mockRunner) Run(name string, fn func(*testing.T)) {}
+
+func TestShadow(t *testing.T) {
+	var t = mockRunner{}
+	t.Run("S16/exempt-needs-no-test", nil)
+}
+`,
+			// t is rebound to a non-*testing.T local, shadowing the parameter, so
+			// its Run resolves to the local and must not claim.
+			want: map[string]trace.ClaimKind{},
+		},
 	}
 
 	for _, tt := range tests {
