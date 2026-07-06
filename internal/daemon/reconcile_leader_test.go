@@ -155,12 +155,14 @@ func assertReconcileBeforeReady(t *testing.T, events []string) {
 }
 
 // isReconcileDisposal reports whether a "write:<sql>" event is a reconciliation run
-// disposal -- a dead-letter (UPDATE runs / INSERT INTO dead_letters) or a queued
-// delete (DELETE FROM runs) -- as opposed to the leader's schema-DDL preamble.
+// disposal -- the atomic dead-letter CTE (matched by its INSERT INTO dead_letters
+// clause) or the queued delete (DELETE FROM runs) -- as opposed to the leader's
+// schema-DDL preamble. The dead-letter is one CTE beginning "WITH updated AS ...", so
+// it is matched by a substring, not a prefix; "INSERT INTO dead_letters" also
+// excludes the "CREATE TABLE ... dead_letters" schema statement.
 func isReconcileDisposal(event string) bool {
 	sql := strings.TrimPrefix(event, "write:")
-	return strings.HasPrefix(sql, "UPDATE runs") ||
-		strings.HasPrefix(sql, "INSERT INTO dead_letters") ||
+	return strings.Contains(sql, "INSERT INTO dead_letters") ||
 		strings.HasPrefix(sql, "DELETE FROM runs")
 }
 

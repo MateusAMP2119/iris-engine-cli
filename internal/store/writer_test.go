@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
@@ -50,6 +51,38 @@ func TestWriterEnsureSchema(t *testing.T) {
 		w := store.NewWriter(&recordingWriteConn{err: boom})
 		if err := w.EnsureSchema(context.Background()); !errors.Is(err, boom) {
 			t.Errorf("EnsureSchema error = %v, want it to wrap %v", err, boom)
+		}
+	})
+}
+
+// TestWriterDeadLetterRunAtomic proves the single writer dead-letters a run
+// atomically: the state transition to dead_lettered and the dead_letters worklist
+// row are ONE statement, never two. Two separate statements have an orphan window --
+// a failure between them (a shutdown ctx cancel, a transient error) would leave a
+// dead_lettered run with no worklist row, and reconciliation (which scans only
+// running/queued runs) would never repair it, so the run would be lost from the
+// worklist forever. One CTE closes that window.
+//
+// spec: S02/inflight-runs-deadlettered
+func TestWriterDeadLetterRunAtomic(t *testing.T) {
+	t.Run("S02/inflight-runs-deadlettered", func(t *testing.T) {
+		conn := &recordingWriteConn{}
+		w := store.NewWriter(conn)
+
+		// detail is a free string; its exact wording ("daemon terminated ...") is
+		// asserted by the reconciliation tests, not here.
+		if err := w.DeadLetterRun(context.Background(), "run-7", store.ReasonStopped, "daemon terminated while run was in flight"); err != nil {
+			t.Fatalf("DeadLetterRun: %v", err)
+		}
+		if len(conn.stmts) != 1 {
+			t.Fatalf("DeadLetterRun issued %d statements, want exactly 1 (atomic: no orphan window between the state change and the worklist row)", len(conn.stmts))
+		}
+		stmt := conn.stmts[0]
+		if !strings.Contains(stmt, "UPDATE runs SET state") {
+			t.Errorf("the atomic dead-letter statement does not transition the run state: %q", stmt)
+		}
+		if !strings.Contains(stmt, "INSERT INTO dead_letters") {
+			t.Errorf("the atomic dead-letter statement does not record the dead_letters worklist row: %q", stmt)
 		}
 	})
 }

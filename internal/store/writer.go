@@ -56,26 +56,35 @@ func (w *Writer) EnsureSchema(ctx context.Context) error {
 }
 
 // The run-record write statements crash reconciliation submits through the single
-// writer. deleteQueuedRunSQL is guarded on the queued state so it can only ever
-// remove a never-started run (never one that has since progressed).
+// writer. Both are guarded on the run's source state so they can only ever act on a
+// run that is actually in that state (never one that has since progressed).
+//
+// deadLetterRunSQL is a single CTE, not two statements: the state transition and the
+// dead_letters worklist insert are one atomic Exec, so there is no window in which a
+// failure could leave a dead_lettered run with no worklist row -- an orphan
+// reconciliation would never repair, since it scans only running and queued runs.
+// The INSERT feeds off the UPDATE's RETURNING, so it runs if and only if the guarded
+// transition took effect.
 const (
-	updateRunStateSQL   = "UPDATE runs SET state = $1 WHERE id = $2"
-	insertDeadLetterSQL = "INSERT INTO dead_letters (run_id, reason, error) VALUES ($1, $2, $3)"
-	deleteQueuedRunSQL  = "DELETE FROM runs WHERE id = $1 AND state = $2"
+	deadLetterRunSQL = `WITH updated AS (
+    UPDATE runs SET state = $1 WHERE id = $2 AND state = $3 RETURNING id
+)
+INSERT INTO dead_letters (run_id, reason, error)
+SELECT id, $4, $5 FROM updated`
+	deleteQueuedRunSQL = "DELETE FROM runs WHERE id = $1 AND state = $2"
 )
 
-// DeadLetterRun dead-letters a leftover run: it transitions the run to the
-// dead_lettered terminal state and records its dead_letters worklist row with the
-// given reason and human error detail. Crash reconciliation calls it for a run left
-// running when the daemon died (reason ReasonStopped, detail "daemon terminated
-// while run was in flight" -- specification section 2 crash recovery). It is a
-// leader-only meta write, so it rides the single Writer like every other.
+// DeadLetterRun dead-letters a leftover run: in one atomic statement it transitions
+// the run from running to the dead_lettered terminal state and records its
+// dead_letters worklist row with the given reason and human error detail. Crash
+// reconciliation calls it for a run left running when the daemon died (reason
+// ReasonStopped, detail "daemon terminated while run was in flight" -- specification
+// section 2 crash recovery). The state transition and worklist insert are a single
+// CTE, so they commit together or not at all: a dead_lettered run can never be left
+// without its worklist row. It is a leader-only meta write, riding the single Writer.
 func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetterReason, detail string) error {
-	if err := w.conn.Exec(ctx, updateRunStateSQL, RunDeadLettered, id); err != nil {
+	if err := w.conn.Exec(ctx, deadLetterRunSQL, RunDeadLettered, id, RunRunning, reason, detail); err != nil {
 		return fmt.Errorf("store: writer dead-letter run %s: %w", id, err)
-	}
-	if err := w.conn.Exec(ctx, insertDeadLetterSQL, id, reason, detail); err != nil {
-		return fmt.Errorf("store: writer record dead-letter for run %s: %w", id, err)
 	}
 	return nil
 }

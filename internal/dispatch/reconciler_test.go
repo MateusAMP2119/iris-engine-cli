@@ -115,10 +115,13 @@ func seedQueued(t *testing.T, f *storetest.Fake) store.Run {
 	return r
 }
 
-// findDeadLetter returns the dead_letters INSERT recorded for run id, if any.
+// findDeadLetter returns the atomic dead-letter statement recorded for run id, if
+// any. The dead-letter is one CTE (UPDATE runs ... INSERT INTO dead_letters ...), so
+// it is matched by its INSERT clause; its args are
+// (RunDeadLettered, id, RunRunning, reason, detail), so the run id is args[1].
 func findDeadLetter(writes []metaWrite, id string) (metaWrite, bool) {
 	for _, w := range writes {
-		if strings.HasPrefix(w.sql, "INSERT INTO dead_letters") && len(w.args) > 0 && w.args[0] == id {
+		if strings.Contains(w.sql, "INSERT INTO dead_letters") && len(w.args) >= 2 && w.args[1] == id {
 			return w, true
 		}
 	}
@@ -188,11 +191,15 @@ func TestReconcilerSameHostRestartKills(t *testing.T) {
 				if !ok {
 					t.Fatalf("no dead_letters row recorded for running run %s: %v", id, writes)
 				}
-				if dl.args[1] != store.ReasonStopped {
-					t.Errorf("run %s dead-letter reason arg = %v, want %v", id, dl.args[1], store.ReasonStopped)
+				// args: (RunDeadLettered, id, RunRunning, reason, detail).
+				if len(dl.args) != 5 {
+					t.Fatalf("atomic dead-letter of run %s has %d args, want 5 (RunDeadLettered, id, RunRunning, reason, detail): %v", id, len(dl.args), dl.args)
 				}
-				if dl.args[2] != dispatch.DaemonTerminatedDetail {
-					t.Errorf("run %s dead-letter detail arg = %v, want %q", id, dl.args[2], dispatch.DaemonTerminatedDetail)
+				if dl.args[3] != store.ReasonStopped {
+					t.Errorf("run %s dead-letter reason arg = %v, want %v", id, dl.args[3], store.ReasonStopped)
+				}
+				if dl.args[4] != dispatch.DaemonTerminatedDetail {
+					t.Errorf("run %s dead-letter detail arg = %v, want %q", id, dl.args[4], dispatch.DaemonTerminatedDetail)
 				}
 			}
 			if !hasDelete(writes, queued.ID) {
