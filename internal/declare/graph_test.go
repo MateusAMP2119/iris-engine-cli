@@ -192,11 +192,14 @@ func TestApplyUpstreamFirst(t *testing.T) {
 }
 
 // TestRegistryGraphView proves the in-memory Registry satisfies the Graph view
-// the persisted registry (E03.9) will also satisfy: registered names report
-// registered, unknown names do not, and DependsOn returns a node's recorded
-// upstreams. This is the seam ValidateDependencies reads through.
+// the apply-time checks read through (and that E03.9's persisted registry will
+// also satisfy): registered names report registered and unknown names do not --
+// the Registered() lookup upstream-first depends on -- while DependsOn returns a
+// node's recorded upstreams as an isolated copy, the edge view acyclicity walks.
+// It is anchored to the upstream-first contract because that rule is exactly the
+// Registered() lookup these assertions exercise.
 func TestRegistryGraphView(t *testing.T) {
-	t.Run("S04/dependencies-cross-lane-ok", func(t *testing.T) {
+	t.Run("S06.3/apply-upstream-first", func(t *testing.T) {
 		var g declare.Graph = declare.NewRegistry().Add("a").Add("b", "a")
 		if !g.Registered("a") || !g.Registered("b") {
 			t.Error("registered pipelines a and b not reported as registered")
