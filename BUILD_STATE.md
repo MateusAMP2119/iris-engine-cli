@@ -49,7 +49,7 @@ Opus, never downgrade.
 - [ ] E03.6 Drift classification — in-progress (worktree .worktrees/E03.6)
 - [ ] E03.7 Migration ledger sync — todo (needs E02, E03.5, E03.6)
 - [ ] E03.8 Idempotent provisioning — todo (needs E02, E03.7)
-- [ ] E03.9 Registry persistence in meta — in-progress (PR #29 merging)
+- [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
 - [ ] E03.10 Apply destroy closure — todo (needs E02, E03.8, E03.9)
 
 ## E04 Roles, Grants and Credentials — epic PR: —
