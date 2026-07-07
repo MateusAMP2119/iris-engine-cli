@@ -214,7 +214,7 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 		return api.ControlResult{Kind: decl.Kind.String(), Target: decl.Pipeline.Name, DryRun: req.DryRun}, nil
 	case declare.KindComposer:
 		if !req.DryRun {
-			members, err := o.laneMembers(decl.Composer.Lane)
+			members, err := o.laneMembers(ctx, decl.Composer.Lane)
 			if err != nil {
 				return api.ControlResult{}, err
 			}
@@ -228,38 +228,43 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 	}
 }
 
-// laneMembers returns the pipeline names in the lane's folder discovered from the
-// workspace: the registered-member basis the composer destroy interlock counts. A
-// discovery failure refuses the destroy (returns the error) rather than proceeding on
-// an unknown member count: the conservative direction, since the interlock exists to
-// keep a composer that 2+ registered members still need from being removed.
-func (o *controlOrchestrator) laneMembers(lane string) ([]string, error) {
-	ws, err := declare.DiscoverWorkspace(o.workspace)
+// laneMembers returns the lane's member names from the lanes table in meta (the
+// composer-destroy interlock's registered-member basis), not the workspace disk: a
+// pipeline still registered in the lane whose iris-declare.yaml was deleted from disk
+// must still be counted, so a composer is never destroyed while registered members
+// remain. A read failure refuses the destroy (returns the error) rather than
+// proceeding on an unknown member count: the conservative direction, since the
+// interlock exists to keep a composer that 2+ registered members still need from
+// being removed.
+func (o *controlOrchestrator) laneMembers(ctx context.Context, lane string) ([]string, error) {
+	members, err := o.registry.LaneMembers(ctx, lane)
 	if err != nil {
-		return nil, fmt.Errorf("declare destroy: discover lane %q members: %w", lane, err)
-	}
-	var members []string
-	for _, p := range ws.Pipelines {
-		if p.Lane == lane && p.Declaration != nil {
-			members = append(members, p.Declaration.Name)
-		}
+		return nil, fmt.Errorf("declare destroy: read lane %q members: %w", lane, err)
 	}
 	return members, nil
 }
 
 // provision runs pipeline-independent schema provisioning over the workspace schemas/
-// tree (specification section 5): it discovers the declared tables, reconstructs each
-// table's ledger (on-disk migrations plus the applied head in meta), reads the
-// live-Postgres view, plans, and -- unless the plan is empty or this is a dry run --
-// ensures the capture function and applies the plan. A re-apply against an
+// tree (specification section 5): it rejects a reserved public schema folder,
+// discovers the declared tables, reconstructs each table's ledger (on-disk migrations
+// plus the applied head in meta), reads the live-Postgres view, and plans. On every
+// non-dry-run apply it ensures the capture function (self-healing, even when the plan
+// is empty) and then applies the plan when non-empty. A re-apply against an
 // already-provisioned database plans empty, so provisioning is idempotent (nothing
-// re-created, nothing re-recorded).
+// re-created, nothing re-recorded) beyond the idempotent capture-function ensure.
 func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error {
 	schemasDir := filepath.Join(o.workspace, "schemas")
 	if _, err := os.Stat(schemasDir); errors.Is(err, fs.ErrNotExist) {
 		return nil // no schemas/ tree: nothing to provision.
 	} else if err != nil {
 		return fmt.Errorf("declare apply: stat schemas tree: %w", err)
+	}
+	// public is engine-reserved: reject a schemas/public/ folder before any
+	// provisioning, independent of ValidateSchemaTree's per-table folder-agreement
+	// checks, so declared tables never land in the engine's own public schema beside
+	// data_journal (specification section 3).
+	if err := declare.ValidateSchemaTreeReserved(schemasDir); err != nil {
+		return fmt.Errorf("declare apply: %w", err)
 	}
 	// Provisioning reads only the schemas/ tree (pipeline-independent, specification
 	// section 5): it never validates the pipeline folders, so a schema apply provisions
@@ -294,14 +299,20 @@ func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error 
 	if err != nil {
 		return fmt.Errorf("declare apply: plan provision: %w", err)
 	}
-	if dryRun || plan.Empty() {
+	if dryRun {
 		return nil
 	}
 
-	// The capture triggers the plan installs bind to iris.capture(); ensure it exists
-	// before applying (E03.10 forward seam, E06.2 owns the body).
+	// Ensure iris.capture() on every non-dry-run apply, before the empty-plan early
+	// return: the capture triggers bind to it, so a dropped function must be
+	// re-created (the seam is self-healing) even when the plan is otherwise empty.
+	// Skipping it on an empty plan would leave a re-apply computing nothing and the
+	// triggers silently broken (E03.10 forward seam, E06.2 owns the body).
 	if err := o.data.EnsureCaptureFunction(ctx); err != nil {
 		return fmt.Errorf("declare apply: ensure capture function: %w", err)
+	}
+	if plan.Empty() {
+		return nil
 	}
 	if err := plan.Apply(ctx, o.data, o.ledgerRec); err != nil {
 		return fmt.Errorf("declare apply: provision: %w", err)
