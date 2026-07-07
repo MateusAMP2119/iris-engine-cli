@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 )
@@ -81,27 +85,38 @@ func (a *app) engineInstall() runE {
 }
 
 // engineInfoResult is the machine-readable payload of `iris engine info`, the
-// --json data envelope. It reports the engine and Go version, the control socket
-// path, the Postgres mode, the object store path, and the engine key's PUBLIC half
-// -- never any private key material or credential. Leadership role, listeners, and
-// uptime are reported once their daemon/liveness legs land (E02.5/E02.6).
+// --json data envelope: the local configuration (engine and Go version, control
+// socket, Postgres mode, object store path) merged with the engine key's PUBLIC
+// half and, when a daemon is reachable, its runtime readout from GET /info -- the
+// leadership role (naming the leader when known), the TCP listener, the data and
+// meta targets, the per-lane pass counts, and uptime, the engine's sole,
+// display-only wall-clock (specification sections 11 and 15). It never carries
+// private key material, a DSN, or a credential.
 type engineInfoResult struct {
-	Version         string `json:"version"`
-	Go              string `json:"go"`
-	Socket          string `json:"socket"`
-	Mode            string `json:"mode"`
-	ObjectsPath     string `json:"objects_path"`
-	EngineKeyPublic string `json:"engine_key_public"`
+	Version         string           `json:"version"`
+	Go              string           `json:"go"`
+	Socket          string           `json:"socket"`
+	TCP             string           `json:"tcp,omitempty"`
+	Mode            string           `json:"mode"`
+	ObjectsPath     string           `json:"objects_path"`
+	EngineKeyPublic string           `json:"engine_key_public"`
+	Role            string           `json:"role,omitempty"`
+	Leader          string           `json:"leader,omitempty"`
+	DataTarget      string           `json:"data_target,omitempty"`
+	MetaTarget      string           `json:"meta_target,omitempty"`
+	LanePasses      []api.LanePasses `json:"lane_passes,omitempty"`
+	Uptime          string           `json:"uptime,omitempty"`
 }
 
-// engineInfo is the handler for `iris engine info`: a minimal, real readout of the
-// engine's local configuration plus the engine key's public half (specification
-// sections 4 and 11). It reads the key through an EngineKeyReader seam (a live meta
-// read once wired; unreadable today in production), derives the public half, and
-// shows only that -- the private half stays in meta and never reaches an output
-// stream. When the key cannot be read the engine is not installed or unreachable,
-// reported as operation-failed (exit 4) with a clear message. Role/listeners/uptime
-// are deferred seams (E02.5/E02.6).
+// engineInfo is the handler for `iris engine info`: the engine readout of
+// specification section 11. It reads the engine key through an EngineKeyReader
+// seam, derives the public half, and shows only that -- the private half stays in
+// meta and never reaches an output stream. It then merges the daemon-held runtime
+// readout (GET /info: role, listeners, targets, lane passes, uptime) best-effort:
+// info remains a real local readout when no daemon is running (the daemonless
+// install/key surface), and reports the full field set against a live daemon.
+// When the key cannot be read the engine is not installed or unreachable,
+// reported as operation-failed (exit 4) with a clear message.
 func (a *app) engineInfo() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
@@ -132,6 +147,17 @@ func (a *app) engineInfo() runE {
 			ObjectsPath:     settings.ObjectsPath,
 			EngineKeyPublic: key.PublicBase64(),
 		}
+		runtimeInfo, daemonUp := a.fetchDaemonInfo(cmd, settings)
+		if daemonUp {
+			res.Role = runtimeInfo.Role
+			res.Leader = runtimeInfo.Leader
+			res.TCP = runtimeInfo.TCP
+			res.DataTarget = runtimeInfo.DataTarget
+			res.MetaTarget = runtimeInfo.MetaTarget
+			res.LanePasses = runtimeInfo.LanePasses
+			res.Uptime = runtimeInfo.Uptime
+		}
+
 		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
 			return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
 		}
@@ -141,8 +167,73 @@ func (a *app) engineInfo() runE {
 		fmt.Fprintf(a.out, "postgres mode:     %s\n", res.Mode)
 		fmt.Fprintf(a.out, "object store:      %s\n", res.ObjectsPath)
 		fmt.Fprintf(a.out, "engine key (pub):  %s\n", res.EngineKeyPublic)
+		if !daemonUp {
+			fmt.Fprintln(a.out, `daemon:            not reachable (run "iris engine start")`)
+			return nil
+		}
+		role := res.Role
+		if res.Leader != "" {
+			role += " (leader: " + res.Leader + ")"
+		}
+		fmt.Fprintf(a.out, "role:              %s\n", role)
+		if res.TCP != "" {
+			fmt.Fprintf(a.out, "tcp listener:      %s\n", res.TCP)
+		}
+		fmt.Fprintf(a.out, "data target:       %s\n", res.DataTarget)
+		fmt.Fprintf(a.out, "meta target:       %s\n", res.MetaTarget)
+		fmt.Fprintf(a.out, "lane passes:       %s\n", lanePassList(res.LanePasses))
+		fmt.Fprintf(a.out, "uptime:            %s\n", res.Uptime)
 		return nil
 	}
+}
+
+// fetchDaemonInfo reads the daemon's runtime info readout (GET /info)
+// best-effort: false when no daemon is reachable or the read fails, so `iris
+// engine info` stays a real local readout on a daemonless engine.
+func (a *app) fetchDaemonInfo(cmd *cobra.Command, settings config.Settings) (api.InfoPayload, bool) {
+	client, base, overTCP := a.daemonHTTPClient(settings)
+	hreq, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, base+"/info", nil)
+	if err != nil {
+		a.logger.Debug("engine info: build daemon request", "err", err)
+		return api.InfoPayload{}, false
+	}
+	if overTCP && settings.Token != "" {
+		hreq.Header.Set("Authorization", "Bearer "+settings.Token)
+	}
+	resp, err := client.Do(hreq)
+	if err != nil {
+		a.logger.Debug("engine info: no iris daemon reachable", "socket", settings.Socket, "host", settings.Host, "err", err)
+		return api.InfoPayload{}, false
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode != http.StatusOK {
+		a.logger.Debug("engine info: daemon /info failed", "status", resp.StatusCode)
+		return api.InfoPayload{}, false
+	}
+	var env struct {
+		Data api.InfoPayload `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		a.logger.Debug("engine info: decode daemon response", "err", err)
+		return api.InfoPayload{}, false
+	}
+	return env.Data, true
+}
+
+// lanePassList renders the per-lane pass counts as "lane count" pairs in lane
+// order, or "none" while no lane has completed a pass.
+func lanePassList(passes []api.LanePasses) string {
+	if len(passes) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(passes))
+	for _, lp := range passes {
+		parts = append(parts, fmt.Sprintf("%s %d", lp.Lane, lp.Passes))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // uninstallResult is the machine-readable payload of `iris engine uninstall`, the
