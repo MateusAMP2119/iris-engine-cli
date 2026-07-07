@@ -58,8 +58,8 @@ Opus, never downgrade.
 
 - [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
 - [x] E04.2 Role and credential lifecycle — done (PR #37: https://github.com/MateusAMP2119/iris-engine-cli/pull/37)
-- [ ] E04.3 Grant reconcile and drift — in-progress (.worktrees/E04.3, Opus)
-- [ ] E04.4 Connection injection and enforcement — todo (needs E04.2, E04.3)
+- [x] E04.3 Grant reconcile and drift — done (PR #43)
+- [ ] E04.4 Connection injection and enforcement — in-progress (.worktrees/E04.4, Opus)
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
