@@ -136,7 +136,7 @@ Opus, never downgrade.
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
 - [x] E09.3 Param grammar and paging — done (PR #57)
 - [x] E09.4 Envelope and serialization — done (PR #61)
-- [ ] E09.5 Route mux and auth — in-progress, session B (taken over ~14:20: session A dead since 13:11 limit hit, never resumed after 13:40 reset; worktree was empty — fresh start)
+- [x] E09.5 Route mux and auth — done (PR #69)
 - [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
 - [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
 - [ ] E09.8 Q and data routes — todo (needs E09.6, E09.7)
