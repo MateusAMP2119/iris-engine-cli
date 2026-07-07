@@ -47,6 +47,13 @@ func startReplayStub(t *testing.T, sock string, status int, body any) {
 //
 // spec: S06.2/failed-replay-chains-entry
 func TestDeadletterReplayExit5(t *testing.T) {
+	// Isolate the ambient IRIS_* config so --socket is authoritative: a real
+	// IRIS_HOST in the environment would otherwise win over the flag socket
+	// (daemonHTTPClient prefers a configured host) and the test would dial elsewhere.
+	t.Setenv("IRIS_HOST", "")
+	t.Setenv("IRIS_SOCKET", "")
+	t.Setenv("IRIS_TOKEN", "")
+
 	t.Run("bare invocation is a usage error (exit 2)", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"deadletter", "replay"})
