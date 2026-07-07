@@ -63,7 +63,7 @@ Opus, never downgrade.
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
-- [ ] E05.1 Exec seam — in-progress (worktree .worktrees/E05.1, Opus)
+- [x] E05.1 Exec seam — done (PR #39: https://github.com/MateusAMP2119/iris-engine-cli/pull/39)
 - [ ] E05.2 Run environment — todo (needs E05.1)
 - [ ] E05.3 Run records and states — todo (needs E05.1)
 - [x] E05.4 Lane model and walk — done (PR #38: https://github.com/MateusAMP2119/iris-engine-cli/pull/38)
