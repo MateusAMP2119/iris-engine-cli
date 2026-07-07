@@ -39,7 +39,7 @@ Opus, never downgrade.
 - [x] E02.7 Crash reconciliation — done (PR #22: https://github.com/MateusAMP2119/iris-engine-cli/pull/22)
 - [x] E02.8 Logging and service unit — done (PR #21: https://github.com/MateusAMP2119/iris-engine-cli/pull/21)
 
-## E03 Declarations, Schemas and Apply — epic PR: #36 (Greptile review pending)
+## E03 Declarations, Schemas and Apply — epic PR: #36 (Greptile done: 7 findings / 5 real bugs — epic-fix queued behind E04.2 due to API instability; findings in job tmp/epic-e03-findings.md)
 
 - [x] E03.1 Declaration parsing and discovery — done (PR #24: https://github.com/MateusAMP2119/iris-engine-cli/pull/24)
 - [x] E03.2 Lane composer validation — done (PR #27: https://github.com/MateusAMP2119/iris-engine-cli/pull/27)
