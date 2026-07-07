@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // This file is the engine-owned access-ledger write surface: the meta writes that
@@ -208,6 +209,38 @@ func (w *Writer) SetCredential(ctx context.Context, pgRole string, owner RoleOwn
 		return fmt.Errorf("store: writer set credential for %q: %w", pgRole, err)
 	}
 	return nil
+}
+
+// RenderSetRolePassword renders the credential-bearing DDL that sets a pipeline login
+// role's password to the engine-minted secret: ALTER ROLE "role" WITH PASSWORD
+// '<secret>' (specification sections 4 and 7). It lives here -- beside Secret, the one
+// place a credential's raw value is revealed -- so the secret never leaves store
+// except through its deliberate exits; the live role provisioner (internal/pg)
+// executes the returned statement in order but never constructs or logs it. The role
+// name is a quoted identifier and the secret a quoted string literal, so neither can
+// break the statement. The secret is engine-minted (base64url, no metacharacters), but
+// it is quoted defensively regardless.
+func RenderSetRolePassword(role string, secret Secret) string {
+	// The role is engine-derived and quoted as an identifier; the secret is an
+	// engine-minted base64url credential quoted as a SQL string literal (single quotes
+	// doubled). Postgres utility statements (ALTER ROLE) take no bind parameters, so the
+	// credential must be a quoted literal, not a placeholder.
+	return fmt.Sprintf("ALTER ROLE %s WITH PASSWORD %s;", quoteRoleIdentifier(role), quoteStringLiteral(secret.reveal())) //nolint:gosec // credential is engine-minted and quoted as a literal; no injection vector.
+}
+
+// quoteRoleIdentifier double-quotes a Postgres role identifier and escapes any embedded
+// double quote by doubling it (the SQL standard escape), so a role name is always a
+// safe, unambiguous identifier in the DDL store renders.
+func quoteRoleIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// quoteStringLiteral renders s as a Postgres string literal, doubling every embedded
+// single quote (the standard escape; standard_conforming_strings is on by default, so
+// backslashes are literal). It is used to bind the engine-minted credential into an
+// ALTER ROLE statement, which takes no parameters.
+func quoteStringLiteral(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
 // redactedSecret is what every formatting path renders in place of a credential
