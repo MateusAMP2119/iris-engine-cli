@@ -143,11 +143,11 @@ func interpolate(value string, hostEnv func(string) string) string {
 			i++
 			continue
 		}
-		switch next := value[i+1]; {
-		case next == '$':
+		switch next := value[i+1]; next {
+		case '$':
 			b.WriteByte('$') // escaped: $$ -> $
 			i += 2
-		case next == '{':
+		case '{':
 			end := strings.IndexByte(value[i+2:], '}')
 			if end < 0 {
 				// No closing brace: leave the '${' literal and continue past it.

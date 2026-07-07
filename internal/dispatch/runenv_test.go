@@ -52,7 +52,7 @@ func TestResolveRunEnvInterpolationMerge(t *testing.T) {
 		},
 		{
 			name:     "braced interpolation resolves from the daemon environment",
-			declared: map[string]string{"TOKEN": "${HOST_TOKEN}"},
+			declared: map[string]string{"TOKEN": "${HOST_TOKEN}"}, //nolint:gosec // G101: synthetic test env fixture, not a real credential
 			want:     []string{"TOKEN=s3cr3t"},
 		},
 		{
@@ -77,7 +77,7 @@ func TestResolveRunEnvInterpolationMerge(t *testing.T) {
 		},
 		{
 			name: "multiple entries emitted sorted by key",
-			declared: map[string]string{
+			declared: map[string]string{ //nolint:gosec // G101: synthetic test env fixture, not a real credential
 				"ZED":   "last",
 				"ALPHA": "first",
 				"TOKEN": "${HOST_TOKEN}",
@@ -105,7 +105,7 @@ func TestResolveRunEnvWinsOverEnvFile(t *testing.T) {
 	host := map[string]string{"HOST_TOKEN": "from-host"}
 
 	t.Run("explicit env overrides env_file on key collision", func(t *testing.T) {
-		files := map[string]string{
+		files := map[string]string{ //nolint:gosec // G101: synthetic test env fixture, not a real credential
 			"secrets.env": "SHARED=file-value\nONLY_FILE=f\n",
 		}
 		declared := map[string]string{"SHARED": "env-value", "ONLY_ENV": "e"}
@@ -121,7 +121,7 @@ func TestResolveRunEnvWinsOverEnvFile(t *testing.T) {
 
 	t.Run("winning env value is still interpolated", func(t *testing.T) {
 		files := map[string]string{"secrets.env": "TOKEN=file-token\n"}
-		declared := map[string]string{"TOKEN": "${HOST_TOKEN}"}
+		declared := map[string]string{"TOKEN": "${HOST_TOKEN}"} //nolint:gosec // G101: synthetic test env fixture, not a real credential
 		got, err := dispatch.ResolveRunEnv(declared, []string{"secrets.env"}, hostEnvFrom(host), readFileFrom(files))
 		if err != nil {
 			t.Fatalf("ResolveRunEnv() error = %v", err)
