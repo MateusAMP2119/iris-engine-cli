@@ -90,7 +90,7 @@ func ensureDataDatabase(ctx context.Context, adminDSN string) error {
 
 	exists := func(ctx context.Context) (bool, error) {
 		var one int
-		qerr := conn.QueryRow(ctx, DataExistsQuery).Scan(&one)
+		qerr := conn.QueryRow(ctx, DataExistsQuery, DataDatabase).Scan(&one)
 		if errors.Is(qerr, pgx.ErrNoRows) {
 			return false, nil
 		}

@@ -46,7 +46,9 @@ func CreateDataDatabaseDDL() string {
 // DataExistsQuery is the catalog probe answering the create-if-missing guard: whether
 // the dedicated data database already exists, so the caller issues CreateDataDatabaseDDL
 // only when it does not. It runs on the admin/maintenance connection, never on data.
-const DataExistsQuery = "SELECT 1 FROM pg_database WHERE datname = '" + DataDatabase + "'"
+// The datname is a bound $1 argument (DataDatabase), parameterized like every other
+// catalog query in the package rather than concatenated into the SQL text.
+const DataExistsQuery = "SELECT 1 FROM pg_database WHERE datname = $1"
 
 // DropDataDatabaseDDL is the statement that drops the dedicated data database in full:
 // the engine-uninstall teardown of the data plane (specification sections 4 and 12),
