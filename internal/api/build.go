@@ -7,6 +7,17 @@ import (
 	"net/http"
 )
 
+const (
+	// StatusClientClosedRequest is the non-standard 499 status the build route
+	// returns when the caller's request context is cancelled or times out before the
+	// build finishes: an aborted request, told apart from an engine-side failure.
+	StatusClientClosedRequest = 499
+	// CodeCanceled is the machine code for a build aborted by request-context
+	// cancellation or deadline, distinct from operation_failed so a client or proxy
+	// never mistakes an aborted request for a genuine build error.
+	CodeCanceled = "canceled"
+)
+
 // This file is the daemon's build surface for the explicit `iris pipeline build`
 // control mutation (specification sections 1, 8, and 9). POST /pipeline/build is a
 // mutation, so the mux's leader gate already rejects it on a standby with
@@ -86,11 +97,17 @@ func (m *mux) servePipelineBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := m.build.BuildPipeline(r.Context(), req)
 	if err != nil {
-		if errors.Is(err, ErrControlUnavailable) {
+		switch {
+		case errors.Is(err, ErrControlUnavailable):
 			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-			return
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			// The caller's request context ended before the build finished: report the
+			// cancellation distinctly (499 + canceled), so an aborted request is never
+			// mistaken for an engine-side build failure (422 operation_failed).
+			WriteError(w, StatusClientClosedRequest, CodeCanceled, "pipeline build canceled: "+err.Error())
+		default:
+			WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, err.Error())
 		}
-		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, err.Error())
 		return
 	}
 	WriteData(w, http.StatusOK, res)
