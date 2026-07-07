@@ -113,7 +113,7 @@ Opus, never downgrade.
 - [x] E06.4 Payload tiers and modes — done (PR #58)
 - [x] E06.5 Wipe replay and conflicts — done (PR #60)
 - [x] E06.6 Promotion — done (PR #65: B's coder authored + full local conformance green + B diff review; A merged, CI 9/9)
-- [ ] E06.7 Live wipe closure — in-progress, session B (needs E06.5 ✓, E06.6 ✓)
+- [x] E06.7 Live wipe closure — done (PR #73; S14 capture-overhead leg reshaped w/ profiling evidence, 1.25x gate deferred to E13.8 — see PR)
 
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
 
@@ -138,8 +138,8 @@ Opus, never downgrade.
 - [x] E09.3 Param grammar and paging — done (PR #57)
 - [x] E09.4 Envelope and serialization — done (PR #61)
 - [x] E09.5 Route mux and auth — done (PR #69)
-- [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
-- [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
+- [x] E09.6 Endpoint apply lifecycle — done (PR #71)
+- [x] E09.7 Read pool and SQL safety — done (PR #72)
 - [ ] E09.8 Q and data routes — todo (needs E09.6, E09.7)
 - [ ] E09.9 NDJSON streaming — todo (needs E09.5, E09.8)
 - [ ] E09.10 Read parity closure — todo (needs E09.8)
