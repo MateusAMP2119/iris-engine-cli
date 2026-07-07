@@ -204,6 +204,31 @@ func (m *RunManager) CancelRun(ctx context.Context, runID string) error {
 	return nil
 }
 
+// KillInflight best-effort SIGKILLs every in-flight run's process group and
+// returns how many groups it signalled. It is the self-demotion kill
+// (specification section 15): a daemon that loses its meta session stops
+// dispatching and kills its in-flight runs at once. It deliberately writes NOTHING
+// to meta -- a deposed session cannot carry a meta write (the lock guard refuses a
+// session that has not re-acquired the leader lock), and the runs' records are the
+// NEW leader's to dead-letter during its startup reconciliation, which cannot
+// reach these processes across hosts; this kill is the deposed side's half of that
+// contract (S02/crosshost-failover-no-kill). An already-gone group is not an
+// error. The per-run reap goroutines StartRun launched observe each kill, close
+// the log sinks, and clear the in-flight table, exactly as a cancel would.
+func (m *RunManager) KillInflight() int {
+	m.mu.Lock()
+	handles := make([]exec.Handle, 0, len(m.inflight))
+	for _, h := range m.inflight {
+		handles = append(handles, h)
+	}
+	m.mu.Unlock()
+
+	for _, h := range handles {
+		_ = h.Kill() // best-effort by design: the group may already be gone
+	}
+	return len(handles)
+}
+
 // ErrRunStateUnknown reports a run state value outside the closed lifecycle enum
 // (queued, running, succeeded, dead_lettered): a mistyped or invented state that must
 // never reach a meta write.
