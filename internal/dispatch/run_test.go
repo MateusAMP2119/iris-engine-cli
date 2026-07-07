@@ -387,10 +387,10 @@ func TestRunTransitionRejectsOutOfEnum(t *testing.T) {
 	}
 
 	outOfEnum := []struct{ from, to store.RunState }{
-		{store.RunQueued, "cancelled"},   // "cancelled" is prose, not a run state
-		{"bogus", store.RunRunning},      // unknown source state
-		{store.RunRunning, "in_flight"},  // near-miss target
-		{store.RunQueued, ""},            // empty is not a state
+		{store.RunQueued, "cancelled"},  // "cancelled" is prose, not a run state
+		{"bogus", store.RunRunning},     // unknown source state
+		{store.RunRunning, "in_flight"}, // near-miss target
+		{store.RunQueued, ""},           // empty is not a state
 	}
 	for _, tc := range outOfEnum {
 		if err := dispatch.CheckRunTransition(tc.from, tc.to); err == nil {
@@ -399,10 +399,10 @@ func TestRunTransitionRejectsOutOfEnum(t *testing.T) {
 	}
 
 	illegal := []struct{ from, to store.RunState }{
-		{store.RunSucceeded, store.RunRunning},       // terminal has no successor
-		{store.RunDeadLettered, store.RunSucceeded},  // terminal has no successor
-		{store.RunQueued, store.RunSucceeded},        // must pass through running
-		{store.RunRunning, store.RunQueued},          // never runs backward
+		{store.RunSucceeded, store.RunRunning},      // terminal has no successor
+		{store.RunDeadLettered, store.RunSucceeded}, // terminal has no successor
+		{store.RunQueued, store.RunSucceeded},       // must pass through running
+		{store.RunRunning, store.RunQueued},         // never runs backward
 	}
 	for _, tc := range illegal {
 		if err := dispatch.CheckRunTransition(tc.from, tc.to); err == nil {
