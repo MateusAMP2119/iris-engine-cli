@@ -80,12 +80,24 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
+	// The write connection is the SAME session the leader lock is pinned to, and it
+	// is lock-guarded: every meta write first checks that this session currently
+	// holds the leader lock, so a write is never issued over a session that has not
+	// re-acquired it (specification section 15) -- not before election, and not
+	// after a demotion.
+	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
+	if err != nil {
+		pool.Close()
+		_ = session.Close(ctx)
+		return nil, err
+	}
+
 	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
 		session:  session,
 		pool:     pool,
 		lock:     lock,
-		writer:   &pgxWriteConn{conn: session},
+		writer:   writer,
 		reader:   newPgxReader(readPoolSeam),
 		registry: &pgxRegistryReader{pool: readPoolSeam},
 		ledger:   &pgxAppliedHeadReader{pool: readPoolSeam},
