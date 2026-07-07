@@ -4,13 +4,13 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
-KNOWN CI-RED (fixing, worktree .worktrees/shutdownfix): conformance TestSignalGracefulShutdown/SIGINT fails on LINUX CI only (passes darwin) — pidfile removal gated behind election-lock release + embedded-PG teardown (both heavier since E05.10 added the data pool + pipeline plane), crosses the test 10s deadline. Fix: remove pidfile promptly after Serve returns. E05.8 (PR #50) merge HOLDS until this lands + re-sync.
+FLAKY TEST (fix in flight, branch issue/flake-hung-run-holds-lane): dispatch TestHungRunHoldsLane (E05.12, pass_loop_test.go:581, claims S01/hung-run-holds-lane) fails ~40% on darwin host, "hung pipeline never started" — scheduling race: live lane paces 3 passes of `b` before the stuck lane's goroutine starts `a`. Confirmed pre-existing on clean development by 3 independent sessions. Linux CI has passed repeatedly but is at risk.
+
+RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
 
 SCHEMA-FK DEBT (E05.9 flag, resolve when live prune path wired): run_inputs.upstream_run_id -> runs.id is a plain FK (schema.go ~176, no ON DELETE). Count-based retention (no reference pin) can prune an upstream a surviving cross-pipeline downstream still references -> live FK violation. Composite PK forbids SET NULL; spec §4(FK) vs §6.2(no pin) tension. Likely fix: make it FK-free (like data_journal.run_id S04/journal-run-id-not-fk) or ON DELETE CASCADE. Latent until dispatcher prune loop runs live.
 
 GRANT DEBT (E04.3/E04.4 follow-up): for capture to fire, pipeline roles need USAGE ON SCHEMA iris + EXECUTE ON iris.capture() (E06.2 conformance grants them explicitly; journal write itself runs as owner via SECURITY DEFINER). Add the iris-schema execute grant to grant-reconcile. Also E06.2 flags: data-PAT/pipeline reaching iris.capture() needs those grants.
-
-REVIEW PAUSE (user request): after E05.12 + E06.4 + E09.3 merge, STOP spawning — hand off to user for review. Do not start new tasks until user resumes.
 
 DAEMON WIRING DEBT (track, close in E05.12 + a daemon-routes pass): several control-plane
 routes are defined CLI-side + proven at unit/integration/stub-conformance tier but NOT
@@ -99,8 +99,8 @@ Opus, never downgrade.
 - [x] E06.2 Capture trigger emission — done (PR #52)
 - [x] E06.3 Run attribution — done (PR #55)
 - [x] E06.4 Payload tiers and modes — done (PR #58)
-- [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)
-- [ ] E06.6 Promotion — todo (needs E06.5)
+- [x] E06.5 Wipe replay and conflicts — done (PR #60)
+- [ ] E06.6 Promotion — in-progress (needs E06.5 ✓)
 - [ ] E06.7 Live wipe closure — todo (needs E06.5, E06.6)
 
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
@@ -114,8 +114,8 @@ Opus, never downgrade.
 
 ## E08 Build, Artifacts and Modes — epic PR: —
 
-- [ ] E08.1 Recipe inference and matrix — todo (needs E03, E05)
-- [ ] E08.2 Build and artifact storage — todo (needs E08.1)
+- [x] E08.1 Recipe inference and matrix — done (PR #62)
+- [ ] E08.2 Build and artifact storage — in-progress (needs E08.1 ✓)
 - [ ] E08.3 Promote gating — todo (needs E08.2)
 - [ ] E08.4 Mode execution and retirement — todo (needs E08.2)
 
@@ -124,7 +124,7 @@ Opus, never downgrade.
 - [x] E09.1 PAT store and scopes — done (PR #53)
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
 - [x] E09.3 Param grammar and paging — done (PR #57)
-- [ ] E09.4 Envelope and serialization — todo (needs E09.3)
+- [x] E09.4 Envelope and serialization — done (PR #61)
 - [ ] E09.5 Route mux and auth — todo (needs E09.1, E09.4)
 - [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
 - [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
@@ -140,14 +140,14 @@ Opus, never downgrade.
 
 ## E11 High Availability and Failover — epic PR: —
 
-- [ ] E11.1 Leader lock election — todo (needs E02, E05)
+- [x] E11.1 Leader lock election — done (PR #63)
 - [ ] E11.2 Standby reads and rejection — todo (needs E11.1)
-- [ ] E11.3 Promotion and self demotion — todo (needs E11.1)
+- [ ] E11.3 Promotion and self demotion — in-progress (needs E11.1 ✓)
 - [ ] E11.4 Host prerequisites and live failover — todo (needs E11.3; conformance rows ride E13 step 9)
 
 ## E12 Stats, Info and Inspect — epic PR: —
 
-- [ ] E12.1 Stats rollups — todo (needs E02, E05)
+- [ ] E12.1 Stats rollups — in-progress
 - [ ] E12.2 Info inspect and show — todo (needs E12.1)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)

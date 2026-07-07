@@ -9,10 +9,20 @@ package storetest
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
+
+// ErrSessionEnded is returned by Acquire on a handle whose session has ended (a
+// Release or a scripted LoseSession): a Postgres session that died cannot be
+// revived, so a deposed candidate can never re-acquire the lock on its old
+// session. Re-entering standby requires a FRESH session -- a new handle from the
+// LockSet -- exactly the spec's "re-enters standby on a fresh session"
+// (specification section 15). This is what keeps a deposed leader's write guard
+// refusing forever: its session has not, and can never have, re-acquired the lock.
+var ErrSessionEnded = errors.New("storetest: lock session ended; contending again requires a fresh session")
 
 // LockSet is one logical advisory lock several candidates contend for. It hands out
 // FakeLock handles (one per candidate) that all race for the single lock: the token
@@ -44,19 +54,38 @@ type FakeLock struct {
 	lost   chan struct{}
 }
 
-// compile-time proof the fake satisfies the leader-lock seam it stands in for.
-var _ store.LeaderLock = (*FakeLock)(nil)
+// compile-time proof the fake satisfies the leader-lock seam it stands in for,
+// and the gate the lock-guarded write connection consults before every meta write.
+var (
+	_ store.LeaderLock = (*FakeLock)(nil)
+	_ store.LeaderGate = (*FakeLock)(nil)
+)
 
 // Acquire blocks until this candidate holds the shared lock or ctx is cancelled.
 // With several handles from one LockSet, exactly one Acquire returns and the rest
-// block here -- the standbys -- until the holder releases.
+// block here -- the standbys -- until the holder releases. A handle whose session
+// has ended (Release or LoseSession) fails with ErrSessionEnded, blocked or not: a
+// dead Postgres session cannot re-acquire; contending again takes a fresh session
+// (a new handle).
 func (l *FakeLock) Acquire(ctx context.Context) error {
 	select {
 	case l.set.token <- struct{}{}:
 		l.mu.Lock()
+		if l.closed {
+			// The session ended while this candidate was blocked (or before it even
+			// contended): hand the just-taken lock straight back so the next live
+			// standby is promoted, and fail the acquire -- a dead session never leads.
+			<-l.set.token
+			l.mu.Unlock()
+			return ErrSessionEnded
+		}
 		l.held = true
 		l.mu.Unlock()
 		return nil
+	case <-l.lost:
+		// The candidate's own session died while it stood blocked in the standby
+		// queue: its blocking pg_advisory_lock call fails with the session.
+		return ErrSessionEnded
 	case <-ctx.Done():
 		return ctx.Err()
 	}
