@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -251,10 +253,28 @@ func CheckRunTransition(from, to store.RunState) error {
 // composeEnv builds a run's child environment: the inherited daemon environment
 // first, then the declared entries, then the injected scoped DB connection last, so
 // each later group overrides an earlier duplicate key (os/exec keeps the last value
-// for a duplicate key).
+// for a duplicate key). The injected connection carries the run's id as the per-session
+// iris.run_id setting the capture trigger reads (see injectedDBURL), so every write the
+// run makes is attributed to it.
 func composeEnv(spec RunSpec) []string {
 	env := os.Environ()
 	env = append(env, spec.Env...)
-	env = append(env, DBConnEnvVar+"="+spec.DBURL)
+	env = append(env, DBConnEnvVar+"="+injectedDBURL(spec))
 	return env
+}
+
+// injectedDBURL is the scoped connection URL the run receives as IRIS_DB_URL, carrying
+// the run's id so the capture trigger attributes every write to it in-transaction
+// (specification section 4: the run id rides the injected connection as a per-session
+// setting at spawn). The id rides the DSN via pg.InjectRunID, the same mechanism the
+// capture path reads back with current_setting('iris.run_id'). A run id that is not a
+// bigint meta identity (only a synthetic non-numeric id, never a real run) leaves the
+// URL unchanged; the capture trigger then fails any such run's write loudly rather than
+// stamping an unattributed row -- fail-closed, never a silent unattributed write.
+func injectedDBURL(spec RunSpec) string {
+	id, err := strconv.ParseInt(spec.RunID, 10, 64)
+	if err != nil {
+		return spec.DBURL
+	}
+	return pg.InjectRunID(spec.DBURL, id)
 }
