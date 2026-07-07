@@ -163,10 +163,20 @@ func BuildReadPoolConn(params ScopedConnParams, role string, secret Secret) (Sco
 // back -- a session whose reset fails is destroyed, never reused. The transaction
 // contains exactly one statement, and it is read-only, so no route through this
 // pool can mutate anything.
-func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) (err error) {
+func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) error {
 	if role == "" {
 		return fmt.Errorf("store: read pool: %w", ErrInvalidRoleOwner)
 	}
+	return p.read(ctx, role, stmt, args, consume)
+}
+
+// read is the checkout cycle under Read and the self-read path (readexec.go):
+// an empty role is the engine's own read -- no SET ROLE is issued, the session
+// keeps the pool's own login identity -- while every other mechanic (the
+// read-only single-statement transaction, session-scoped prepare, and the
+// unconditional RESET ROLE release probe) is identical, so a self read can
+// never mutate either and a session that cannot shed a role is still destroyed.
+func (p *ReadPool) read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) (err error) {
 	if stmt.IsZero() {
 		return errors.New("store: read pool: empty read statement")
 	}
@@ -192,8 +202,10 @@ func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, ar
 		sess.release(false)
 	}()
 
-	if err := sess.exec(ctx, "SET ROLE "+pgx.Identifier{role}.Sanitize()); err != nil {
-		return fmt.Errorf("store: read pool: set role %q: %w", role, err)
+	if role != "" {
+		if err := sess.exec(ctx, "SET ROLE "+pgx.Identifier{role}.Sanitize()); err != nil {
+			return fmt.Errorf("store: read pool: set role %q: %w", role, err)
+		}
 	}
 	if err := sess.exec(ctx, beginReadOnlySQL); err != nil {
 		return fmt.Errorf("store: read pool: begin read-only transaction: %w", err)

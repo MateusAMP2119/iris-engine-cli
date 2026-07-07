@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
 // This file is the /q/{endpoint} serving surface of the endpoint apply
@@ -15,11 +16,10 @@ import (
 // endpoint registry, swapped on apply commit) and holds that shape to the end,
 // so an applied endpoint serves the very next request with no daemon restart
 // and a re-apply never disturbs a request already in flight. Execution is
-// delegated to the EndpointReader seam: the production reader (the shared
-// data-database read pool, SET ROLE to the caller PAT's role, the compiled
-// statement with bound params, per-column serialization) lands with
-// E09.7/E09.8; until both seams are wired, /q answers the internal-fault
-// envelope exactly as E09.5 mounted it.
+// delegated to the EndpointReader seam; the production reader is PoolReader
+// (readexec.go): the shared data-database read pool, SET ROLE to the caller
+// PAT's role, the compiled statement with bound params. With either seam
+// unwired, /q answers the internal-fault envelope exactly as E09.5 mounted it.
 
 // EndpointSource is the live compiled-shape lookup the /q route checks a
 // request's endpoint out of. The daemon supplies dispatch's endpoint registry;
@@ -119,6 +119,15 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 
 	rows, err := m.qreader.ReadEndpoint(r.Context(), shape, plan)
 	if err != nil {
+		if errors.Is(err, store.ErrReadForbidden) {
+			// Postgres refused the read: the caller's role lacks a grant on the
+			// endpoint's source fields. The 403 names the endpoint with a fresh
+			// message -- never the wrapped Postgres text, never the missing fields
+			// (specification section 7).
+			WriteError(w, http.StatusForbidden, string(CodeForbidden),
+				"forbidden: the calling role lacks a grant on endpoint "+name)
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, string(CodeInternal), "api: endpoint "+name+": "+err.Error())
 		return
 	}

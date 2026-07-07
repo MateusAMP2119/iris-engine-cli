@@ -96,11 +96,12 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		}
 		serveUnwiredRead(w, r, "provenance")
 	case "data":
-		// /data/{schema}/{table}: the raw table read (E09.6).
+		// /data/{schema}/{table}: the raw ad-hoc table read (dataroute.go),
+		// executing through the shared read pool as the calling PAT's role.
 		if len(segs) != 3 {
 			return false
 		}
-		serveUnwiredRead(w, r, "data")
+		m.serveData(w, r, segs[1], segs[2])
 	case "q":
 		// /q/{endpoint}: the declared endpoint read. E09.6 owns the live-shape
 		// checkout and lifecycle (endpoint.go); the production reader over the

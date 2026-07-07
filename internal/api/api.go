@@ -119,6 +119,12 @@ type mux struct {
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
 	endpoints EndpointSource
 	qreader   EndpointReader
+	// datasrc and readexec are the /data serving seams (dataroute.go,
+	// readexec.go): the declared-table shape source and the shared read pool's
+	// statement executor. Both default nil (unwired): /data then answers the
+	// internal-fault envelope, per the noStats doctrine.
+	datasrc  DataSource
+	readexec ReadExecutor
 }
 
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority

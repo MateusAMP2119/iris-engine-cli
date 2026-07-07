@@ -28,6 +28,12 @@ type Authority struct {
 	// Scopes are the PAT's minted scopes, any non-empty subset of
 	// {control, read, data}.
 	Scopes []pat.Scope
+	// DataRole is the engine-managed read-only Postgres role a data-scope PAT
+	// owns (specification section 7): the role every data-surface read this
+	// authority makes executes as, via SET ROLE on the shared read pool. Empty
+	// for a PAT without the data scope and for ambient authority (an ambient
+	// read runs as the engine itself).
+	DataRole string
 	// Ambient marks a unix-socket request: local and filesystem-guarded, it
 	// passes every scope check without a PAT (specification section 7:
 	// "Socket: ambient authorization").

@@ -106,9 +106,10 @@ func ordersShape() *api.DataShape {
 	}
 }
 
-// dataMux builds a mux with the /data seams wired to the fakes.
+// dataMux builds a leader-role mux with the /data seams wired to the fakes (a
+// non-GET must reach the route's own 405, not the standby mutation gate).
 func dataMux(exec *fakeExecutor) http.Handler {
-	return api.NewMux(
+	return leaderMux(
 		api.WithDataSource(mapDataSource{"analytics.orders": ordersShape()}),
 		api.WithReadExecutor(exec),
 	)
