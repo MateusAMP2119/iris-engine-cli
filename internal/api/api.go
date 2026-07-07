@@ -80,7 +80,16 @@ func WithRole(r RoleReporter) MuxOption {
 // liveness and the leadership role. With no WithRole option the role is unknown, so
 // mutations are rejected until election confirms a leader.
 func NewMux(opts ...MuxOption) http.Handler {
-	m := &mux{role: unknownRole{}, control: noControl{}, pipelines: noPipelines{}, build: noBuild{}, stats: noStats{}}
+	m := &mux{
+		role:         unknownRole{},
+		control:      noControl{},
+		pipelines:    noPipelines{},
+		build:        noBuild{},
+		stats:        noStats{},
+		info:         noInfo{},
+		inspect:      noInspect{},
+		pipelineShow: noPipelineShow{},
+	}
 	for _, o := range opts {
 		o(m)
 	}
@@ -93,11 +102,14 @@ func NewMux(opts ...MuxOption) http.Handler {
 // mutations to the leader (specification section 15) and routes the control-plane
 // mutations to the injected ControlHandler.
 type mux struct {
-	role      RoleReporter
-	control   ControlHandler
-	pipelines PipelineHandler
-	build     BuildHandler
-	stats     StatsHandler
+	role         RoleReporter
+	control      ControlHandler
+	pipelines    PipelineHandler
+	build        BuildHandler
+	stats        StatsHandler
+	info         InfoHandler
+	inspect      InspectHandler
+	pipelineShow PipelineShowHandler
 }
 
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority
@@ -128,8 +140,14 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePipelineRun(w, r)
 	case "/pipeline/list":
 		m.servePipelineList(w, r)
+	case "/pipeline/show":
+		m.servePipelineShow(w, r)
 	case "/stats":
 		m.serveStats(w, r)
+	case "/info":
+		m.serveInfo(w, r)
+	case "/inspect":
+		m.serveInspect(w, r)
 	default:
 		if m.serveRoster(w, r) {
 			return
