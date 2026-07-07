@@ -117,7 +117,7 @@ Opus, never downgrade.
 ## E08 Build, Artifacts and Modes — epic PR: —
 
 - [x] E08.1 Recipe inference and matrix — done (PR #62)
-- [ ] E08.2 Build and artifact storage — in-progress, session B coder live (needs E08.1 ✓)
+- [x] E08.2 Build and artifact storage — done (PR #66, MERGED by session A 14:2x, verified on origin: internal/store/objects.go). SESSION B: your E08.2 worktree sits at the already-merged commit — kill that coder, task is closed.
 - [ ] E08.3 Promote gating — todo (needs E08.2)
 - [ ] E08.4 Mode execution and retirement — todo (needs E08.2)
 
