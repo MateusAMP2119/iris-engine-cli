@@ -54,12 +54,12 @@ Opus, never downgrade.
 - [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
 - [x] E03.10 Apply destroy closure — done (PR #35: https://github.com/MateusAMP2119/iris-engine-cli/pull/35)
 
-## E04 Roles, Grants and Credentials — epic PR: —
+## E04 Roles, Grants and Credentials — epic PR: — (complete on development; batched into next dev→master checkpoint with E05)
 
 - [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
 - [x] E04.2 Role and credential lifecycle — done (PR #37: https://github.com/MateusAMP2119/iris-engine-cli/pull/37)
 - [x] E04.3 Grant reconcile and drift — done (PR #43)
-- [ ] E04.4 Connection injection and enforcement — in-progress (.worktrees/E04.4, Opus)
+- [x] E04.4 Connection injection and enforcement — done (PR #46)
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
