@@ -41,10 +41,12 @@ func TestApplyNeverBuilds(t *testing.T) {
 		t.Fatalf("ApplyPipeline: %v", err)
 	}
 
-	// No toolchain ran, no artifact was recorded, no object bytes appeared.
-	if got := runner.calls(); got != 0 {
-		t.Fatalf("apply invoked the build toolchain %d times, want 0 (apply never builds)", got)
-	}
+	// Apply wrote no artifact row: the real proof it never built, since an artifacts
+	// insert is the sole meta trace a build leaves. (The toolchain runner is wired
+	// only into the builder, not the applier, so a runner.calls()==0 check here would
+	// be structurally vacuous -- the applier has no exec seam to reach it. The
+	// meaningful contrast is drawn below: the same runner, driven by the explicit
+	// build path, invokes the toolchain exactly once.)
 	stmts := rec.Statements()
 	if inserts := artifactInserts(stmts); len(inserts) != 0 {
 		t.Errorf("apply recorded %d artifacts inserts, want 0", len(inserts))
