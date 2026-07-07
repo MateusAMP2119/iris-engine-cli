@@ -198,6 +198,17 @@ func JournalTable() Table {
 	}
 }
 
+// JournalSelectGrantDDL renders the journal's read grant: GRANT SELECT on
+// public.data_journal TO PUBLIC (specification section 4). public is the readable
+// surface, so every engine role -- present and future -- may SELECT the journal,
+// and no write privilege is ever granted here: writes reach the journal only
+// through the capture triggers, which run as the table owner. Granting to PUBLIC
+// rather than role-by-role is what makes "every role may SELECT, none may write" a
+// standing property rather than a per-role reconcile. It is idempotent.
+func JournalSelectGrantDDL() string {
+	return "GRANT SELECT ON " + JournalTable().Qualified() + " TO PUBLIC;"
+}
+
 // JournalTeardownDDL renders the statements that drop the data journal in full:
 // the engine uninstall teardown of the data database (specification sections 4 and
 // 12). It is a single cascading DROP TABLE, so the journal's partitions and any

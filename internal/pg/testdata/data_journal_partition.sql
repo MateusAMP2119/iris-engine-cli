@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);
+
+CREATE TABLE IF NOT EXISTS public.data_journal_p1 PARTITION OF public.data_journal FOR VALUES FROM (1) TO (10000001);

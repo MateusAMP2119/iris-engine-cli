@@ -4,6 +4,15 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
+DAEMON WIRING DEBT (track, close in E05.12 + a daemon-routes pass): several control-plane
+routes are defined CLI-side + proven at unit/integration/stub-conformance tier but NOT
+wired into the live daemon perpetual loop yet: apply/destroy (E03.10, wired), deadletter
+replay (E05.7, CLI+stub only), manual run (E05.10). The lane-runner perpetual pass loop
+(E05.12) + a daemon-routes pass must connect these. Contracts are proven at tier; the
+end-to-end daemon path is the integration closure. E05.7 CLI↔leader wire shape
+(POST /deadletter/replay → {data:{replayed,dead_lettered}}) is provisional — formalize in
+internal/api when the route lands.
+
 Worktrees: `../iris-worktrees/EXX.Y` on branch `issue/EXX.Y-short-name`.
 
 RECONCILED 2026-07-07 07:xx: PRs #27 (E03.2 lanes) + #33 (test flake fix) had silently NOT merged despite chains reporting success (API-instability window) — merged into development by hand (commits 6afe150, e131edd); development green, daemon race-clean x3. AUDIT LESSON: verify each merge landed (grep a signature file on origin/development) before marking done; don't trust merge-when-green.sh exit alone.
@@ -54,12 +63,12 @@ Opus, never downgrade.
 - [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
 - [x] E03.10 Apply destroy closure — done (PR #35: https://github.com/MateusAMP2119/iris-engine-cli/pull/35)
 
-## E04 Roles, Grants and Credentials — epic PR: —
+## E04 Roles, Grants and Credentials — epic PR: — (complete on development; batched into next dev→master checkpoint with E05)
 
 - [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
 - [x] E04.2 Role and credential lifecycle — done (PR #37: https://github.com/MateusAMP2119/iris-engine-cli/pull/37)
 - [x] E04.3 Grant reconcile and drift — done (PR #43)
-- [ ] E04.4 Connection injection and enforcement — in-progress (.worktrees/E04.4, Opus)
+- [x] E04.4 Connection injection and enforcement — done (PR #46)
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
@@ -69,8 +78,8 @@ Opus, never downgrade.
 - [x] E05.4 Lane model and walk — done (PR #38: https://github.com/MateusAMP2119/iris-engine-cli/pull/38)
 - [x] E05.5 Gate and consumption — done (PR #44)
 - [x] E05.6 Failure propagation — done (PR #45)
-- [ ] E05.7 Dead letter replay — in-progress (.worktrees/E05.7, Opus)
-- [ ] E05.8 Dead letter drain — todo (needs E05.7)
+- [x] E05.7 Dead letter replay — done (PR #47)
+- [ ] E05.8 Dead letter drain — in-progress (.worktrees/E05.8, Sonnet)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [ ] E05.10 Manual pipeline run — todo (needs E05.5)
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
@@ -78,8 +87,8 @@ Opus, never downgrade.
 
 ## E06 Write Capture, Wipe and Promotion — epic PR: —
 
-- [ ] E06.1 Journal DDL and partitioning — todo (needs E03, E05)
-- [ ] E06.2 Capture trigger emission — todo (needs E06.1)
+- [x] E06.1 Journal DDL and partitioning — done (PR #48)
+- [ ] E06.2 Capture trigger emission — in-progress (.worktrees/E06.2, Opus)
 - [ ] E06.3 Run attribution — todo (needs E06.2)
 - [ ] E06.4 Payload tiers and modes — todo (needs E06.2, E06.3)
 - [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)

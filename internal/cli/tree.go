@@ -344,7 +344,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 	}
 	replay := &cobra.Command{
 		Use: "replay [run]", Short: "Replay root causes (auto-walks failed_upstream)",
-		Args: cobra.MaximumNArgs(1), RunE: a.deadletterScopedStub("deadletter replay"),
+		Args: cobra.MaximumNArgs(1), RunE: a.deadletterReplay(),
 	}
 	addScopeFlags(replay)
 	drain := &cobra.Command{
