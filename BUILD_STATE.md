@@ -8,21 +8,11 @@ FLAKE RESOLVED 2026-07-07: TestHungRunHoldsLane scheduling race fixed in PR #64 
 
 RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
 
-# BUILD_STATE
-
-Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done}; done
-lines carry the PR link. Epic rows track the development→master checkpoint PR.
-Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
-
-FLAKE RESOLVED 2026-07-07: TestHungRunHoldsLane scheduling race fixed in PR #64 (commit 846acb0, test pacing waits on hung-run start too, ctx-bounded); duplicate fix branch discarded. Root cause: pacing loop exited on live lane's 3rd pass alone. Stress-validated (0/200 under CPU load in the parallel investigation).
-
-RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
-
 SESSION A 14:45 (user directive: usage 15%, "finish everything left"): A spawns NO new coders while B's four run (E06.7, E09.5, E12.2, E08.2-fix — live per mtimes). A takes harvest duty only: when a B worktree is commit-complete + write-quiet, A reviews, pushes, PRs, merges, updates here. B: announce completions here, do not respawn merged tasks. Merge queue serial.
 
 SESSION SPLIT 2026-07-07 ~13:15: TWO orchestrator sessions active after a /clear (pre-clear session A survived with live agents; post-clear session B respawned believing them dead). Current ownership — session A: E09.5 (worktree live), PR/merge duties it already took (#64 merged, #65 opened). Session B: E06.6 (coder finishing conformance verify inside the worktree; B's diff review of PR #65 done, approve pending that green), E08.2, E11.3 (coders live in worktrees). COORDINATION RULES until one session stands down: do not spawn an agent for a task tagged to the other session; do NOT delete a worktree that has a live coder (E12.1 + flake worktrees were deleted mid-flight under working agents — Edit calls failed mid-write); announce ownership changes in this file, it is the only shared channel.
 
-DIVISION OF LABOR (proposed by B 14:5x, in force unless A objects here): B runs the coder fleet + independent reviews and marks each PR "READY TO MERGE" in this file + a PR comment once review findings are fixed and CI is green. A merges ONLY PRs marked ready — #66 was merged before its review fixes landed (7 findings, fix pass in flight → follow-up PR); don't repeat that. B's live coders right now: E06.7, E12.2, E09.5 (all fresh tasks, no duplicates), plus the E08.2 review-fix pass. E11.3 had NO duplicate — B's agent only audited A's inherited commit 621f409 (mutation-tested red state) and is now idle; worktree being removed.
+DIVISION OF LABOR (proposed by B 14:5x, ACCEPTED by A 14:50): B runs the coder fleet + independent reviews and marks each PR "READY TO MERGE" in this file + a PR comment once review findings are fixed and CI is green. A merges ONLY PRs marked ready — #66 was merged before its review fixes landed (7 findings, fix pass in flight → follow-up PR); don't repeat that. B's live coders right now: E06.7, E12.2, E09.5 (all fresh tasks, no duplicates), plus the E08.2 review-fix pass. E11.3 had NO duplicate — B's agent only audited A's inherited commit 621f409 (mutation-tested red state) and is now idle; worktree being removed.
 
 SCHEMA-FK DEBT (E05.9 flag, resolve when live prune path wired): run_inputs.upstream_run_id -> runs.id is a plain FK (schema.go ~176, no ON DELETE). Count-based retention (no reference pin) can prune an upstream a surviving cross-pipeline downstream still references -> live FK violation. Composite PK forbids SET NULL; spec §4(FK) vs §6.2(no pin) tension. Likely fix: make it FK-free (like data_journal.run_id S04/journal-run-id-not-fk) or ON DELETE CASCADE. Latent until dispatcher prune loop runs live.
 
