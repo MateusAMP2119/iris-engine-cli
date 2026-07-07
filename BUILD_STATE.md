@@ -87,8 +87,8 @@ Opus, never downgrade.
 
 ## E06 Write Capture, Wipe and Promotion — epic PR: —
 
-- [ ] E06.1 Journal DDL and partitioning — todo (needs E03, E05)
-- [ ] E06.2 Capture trigger emission — todo (needs E06.1)
+- [x] E06.1 Journal DDL and partitioning — done (PR #48)
+- [ ] E06.2 Capture trigger emission — in-progress (.worktrees/E06.2, Opus)
 - [ ] E06.3 Run attribution — todo (needs E06.2)
 - [ ] E06.4 Payload tiers and modes — todo (needs E06.2, E06.3)
 - [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)
