@@ -176,7 +176,30 @@ func (m *RunManager) StartRun(ctx context.Context, spec RunSpec) (RunHandle, err
 // CancelRun kills the run's process group and dead-letters it as stopped, touching
 // nothing else.
 func (m *RunManager) CancelRun(ctx context.Context, runID string) error {
-	panic("todo")
+	m.mu.Lock()
+	h, ok := m.inflight[runID]
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("dispatch: cancel run %s: %w", runID, ErrRunNotInFlight)
+	}
+
+	// Kill the whole process group first: the subprocess (and every descendant that
+	// inherited the group) is gone or going before the run is parked terminal. An
+	// already-gone group is not an error. The reap goroutine that StartRun launched
+	// observes the kill, closes the log, and drops the in-flight entry.
+	if err := h.Kill(); err != nil {
+		return fmt.Errorf("dispatch: cancel run %s: kill group: %w", runID, err)
+	}
+
+	// Dead-letter the run as stopped through the single writer -- one atomic CTE that
+	// transitions running -> dead_lettered and records the worklist row. Only this
+	// run is touched.
+	if err := m.disp.Submit(ctx, func(w *store.Writer) error {
+		return w.DeadLetterRun(ctx, runID, store.ReasonStopped, "run cancelled by iris run cancel")
+	}); err != nil {
+		return fmt.Errorf("dispatch: cancel run %s: dead-letter: %w", runID, err)
+	}
+	return nil
 }
 
 // CheckRunTransition validates a proposed run state transition over the closed run
