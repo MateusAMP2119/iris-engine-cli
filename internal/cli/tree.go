@@ -199,7 +199,7 @@ func (a *app) pipelineCmd() *cobra.Command {
 	list.Flags().Bool("all", false, "list every pipeline, not only active ones")
 	show := &cobra.Command{
 		Use: "show <name>", Short: "Show a pipeline's resolved declaration, role, grants, recent runs, and gate ledger",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline show"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineShow(),
 	}
 
 	return a.group("pipeline", "Operate on a single pipeline",
@@ -305,7 +305,7 @@ func (a *app) engineCmd() *cobra.Command {
 	}
 	inspect := &cobra.Command{
 		Use: "inspect", Short: "Dump the engine-table DDL, read-only",
-		Args: cobra.NoArgs, RunE: a.daemonStub("engine inspect"),
+		Args: cobra.NoArgs, RunE: a.engineInspect(),
 	}
 	stats := &cobra.Command{
 		Use: "stats", Short: "Show rollups: run, lane, and dead-letter counts",

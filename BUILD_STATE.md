@@ -28,6 +28,7 @@ end-to-end daemon path is the integration closure. E05.7 CLI↔leader wire shape
 internal/api when the route lands. E11.3 adds: production Run() wires neither
 WithInflightKiller nor WithFreshSessions — wire BOTH together (else standby re-entry
 silently breaks) alongside the lane loop + a store.Client session-renewal seam (E11.4).
+NEW FLAKE (track): daemon TestLanePassCounterLeaderTerm/S11/lane-pass-counter-reset (E12.1) — counter read raced leader-change reset once on linux Go 1.26 CI (PR #70); 30/30 green under -race locally; rerun passed. If it repeats, fix = wait on demotion completion before Counts assert.
 E08.2 adds: WithBuildPlane/WithPipelinePlane/WithControlPlane silently overwrite shared
 option fields (workspace/manualReader/runner) — last wins, no error; buildplane clear()
 blocks new builds but doesn't stop in-flight ones (mirrors manual-run plane pattern).
@@ -159,7 +160,7 @@ Opus, never downgrade.
 ## E12 Stats, Info and Inspect — epic PR: —
 
 - [x] E12.1 Stats rollups — done (PR #64)
-- [ ] E12.2 Info inspect and show — in-progress, session B (needs E12.1 ✓)
+- [x] E12.2 Info inspect and show — done (PR #70)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
 
