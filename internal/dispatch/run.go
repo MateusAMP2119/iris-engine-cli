@@ -202,10 +202,50 @@ func (m *RunManager) CancelRun(ctx context.Context, runID string) error {
 	return nil
 }
 
+// ErrRunStateUnknown reports a run state value outside the closed lifecycle enum
+// (queued, running, succeeded, dead_lettered): a mistyped or invented state that must
+// never reach a meta write.
+var ErrRunStateUnknown = errors.New("dispatch: unknown run state")
+
+// ErrRunStateIllegal reports a well-formed but illegal lifecycle edge: a transition
+// between two real run states the machine does not allow (e.g. a terminal state to
+// any other, or queued straight to succeeded).
+var ErrRunStateIllegal = errors.New("dispatch: illegal run state transition")
+
+// runStates is the closed set of run lifecycle states (specification section 1:
+// queued, running, succeeded, dead-lettered). A from or to value absent here is
+// out-of-enum and rejected.
+var runStates = map[store.RunState]bool{
+	store.RunQueued:       true,
+	store.RunRunning:      true,
+	store.RunSucceeded:    true,
+	store.RunDeadLettered: true,
+}
+
+// runTransitions is the closed run lifecycle graph: queued advances only to running,
+// running ends in succeeded or dead_lettered, and the two terminal states have no
+// successors (absent keys).
+var runTransitions = map[store.RunState]map[store.RunState]bool{
+	store.RunQueued:  {store.RunRunning: true},
+	store.RunRunning: {store.RunSucceeded: true, store.RunDeadLettered: true},
+}
+
 // CheckRunTransition validates a proposed run state transition over the closed run
-// lifecycle enum.
+// lifecycle enum. It is pure -- no I/O -- and is the guard the run-record writes rely
+// on: it rejects any from or to value that is not one of the four run states
+// (ErrRunStateUnknown, so an out-of-enum value never reaches meta), and any pair of
+// real states that is not a legal lifecycle edge (ErrRunStateIllegal).
 func CheckRunTransition(from, to store.RunState) error {
-	panic("todo")
+	if !runStates[from] {
+		return fmt.Errorf("%w: from %q", ErrRunStateUnknown, from)
+	}
+	if !runStates[to] {
+		return fmt.Errorf("%w: to %q", ErrRunStateUnknown, to)
+	}
+	if !runTransitions[from][to] {
+		return fmt.Errorf("%w: %q -> %q", ErrRunStateIllegal, from, to)
+	}
+	return nil
 }
 
 // composeEnv builds a run's child environment: the inherited daemon environment
@@ -218,6 +258,3 @@ func composeEnv(spec RunSpec) []string {
 	env = append(env, DBConnEnvVar+"="+spec.DBURL)
 	return env
 }
-
-// ensure the manager compiles against the seam it drives.
-var _ = fmt.Sprintf
