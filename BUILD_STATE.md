@@ -67,7 +67,7 @@ Opus, never downgrade.
 - [x] E05.2 Run environment — done (PR #40)
 - [x] E05.3 Run records and states — done (PR #42)
 - [x] E05.4 Lane model and walk — done (PR #38: https://github.com/MateusAMP2119/iris-engine-cli/pull/38)
-- [ ] E05.5 Gate and consumption — in-progress (.worktrees/E05.5, Opus)
+- [x] E05.5 Gate and consumption — done (PR #44)
 - [ ] E05.6 Failure propagation — todo (needs E05.5)
 - [ ] E05.7 Dead letter replay — todo (needs E05.6)
 - [ ] E05.8 Dead letter drain — todo (needs E05.7)
