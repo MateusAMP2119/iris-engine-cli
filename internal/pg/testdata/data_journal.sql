@@ -15,3 +15,7 @@ CREATE TABLE IF NOT EXISTS public.data_journal (
 ) PARTITION BY RANGE (id);
 
 CREATE INDEX IF NOT EXISTS data_journal_provenance_idx ON public.data_journal ("schema", "table", row_pk, run_id);
+
+CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);
+
+GRANT SELECT ON public.data_journal TO PUBLIC;
