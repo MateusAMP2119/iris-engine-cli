@@ -309,7 +309,7 @@ func (a *app) engineCmd() *cobra.Command {
 	}
 	stats := &cobra.Command{
 		Use: "stats", Short: "Show rollups: run, lane, and dead-letter counts",
-		Args: cobra.NoArgs, RunE: a.daemonStub("engine stats"),
+		Args: cobra.NoArgs, RunE: a.engineStats(),
 	}
 
 	svcInstall := &cobra.Command{
