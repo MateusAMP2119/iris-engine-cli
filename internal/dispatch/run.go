@@ -115,7 +115,62 @@ func NewRunManager(runner exec.Runner, disp *Dispatcher, log RunLog) *RunManager
 // group, streams its output to the per-run log, and records the run running with its
 // process-group handle through the single writer.
 func (m *RunManager) StartRun(ctx context.Context, spec RunSpec) (RunHandle, error) {
-	panic("todo")
+	if spec.RunID == "" {
+		return RunHandle{}, errors.New("dispatch: start run: empty run id")
+	}
+	if len(spec.Argv) == 0 {
+		return RunHandle{}, errors.New("dispatch: start run: empty argv")
+	}
+
+	sink, ref, err := m.log.Open(spec.RunID)
+	if err != nil {
+		return RunHandle{}, fmt.Errorf("dispatch: start run %s: open log: %w", spec.RunID, err)
+	}
+
+	h, err := m.runner.Start(ctx, exec.Spec{
+		Dir:    spec.Dir,
+		Argv:   spec.Argv,
+		Env:    composeEnv(spec),
+		Stdout: sink,
+		Stderr: sink,
+	})
+	if err != nil {
+		// Nothing started: close the sink we opened so no descriptor leaks.
+		_ = sink.Close()
+		return RunHandle{}, fmt.Errorf("dispatch: start run %s: %w", spec.RunID, err)
+	}
+
+	// Record the started run through the single writer: state -> running, handle =
+	// process-group id. If that write fails, the subprocess is already running but
+	// unrecorded -- kill its group and drain before returning, so no orphaned,
+	// untracked process escapes and the sink is closed.
+	if err := m.disp.Submit(ctx, func(w *store.Writer) error {
+		return w.MarkRunRunning(ctx, spec.RunID, h.PGID())
+	}); err != nil {
+		_ = h.Kill()
+		_, _ = h.Wait()
+		_ = sink.Close()
+		return RunHandle{}, fmt.Errorf("dispatch: start run %s: record running: %w", spec.RunID, err)
+	}
+
+	m.mu.Lock()
+	m.inflight[spec.RunID] = h
+	m.mu.Unlock()
+
+	// Reap on a manager-owned goroutine: whether the run exits on its own or a
+	// cancel kills its group, wait for it to be reaped, then close its log sink and
+	// drop it from the in-flight table so no handle, goroutine, or descriptor leaks.
+	// Terminal-state recording (succeeded/failed) belongs to the lane runner, not
+	// this seam, so it is deliberately not done here.
+	go func() {
+		_, _ = h.Wait()
+		_ = sink.Close()
+		m.mu.Lock()
+		delete(m.inflight, spec.RunID)
+		m.mu.Unlock()
+	}()
+
+	return RunHandle{pgid: h.PGID(), ref: ref, h: h}, nil
 }
 
 // CancelRun kills the run's process group and dead-letters it as stopped, touching
