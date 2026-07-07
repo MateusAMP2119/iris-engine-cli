@@ -4,7 +4,7 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
-FLAKY TEST (fix in flight, branch issue/flake-hung-run-holds-lane): dispatch TestHungRunHoldsLane (E05.12, pass_loop_test.go:581, claims S01/hung-run-holds-lane) fails ~40% on darwin host, "hung pipeline never started" — scheduling race: live lane paces 3 passes of `b` before the stuck lane's goroutine starts `a`. Confirmed pre-existing on clean development by 3 independent sessions. Linux CI has passed repeatedly but is at risk.
+FLAKE RESOLVED 2026-07-07: TestHungRunHoldsLane scheduling race fixed in PR #64 (commit 846acb0, test pacing waits on hung-run start too, ctx-bounded); duplicate fix branch discarded. Root cause: pacing loop exited on live lane's 3rd pass alone. Stress-validated (0/200 under CPU load in the parallel investigation).
 
 RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
 
@@ -125,7 +125,7 @@ Opus, never downgrade.
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
 - [x] E09.3 Param grammar and paging — done (PR #57)
 - [x] E09.4 Envelope and serialization — done (PR #61)
-- [ ] E09.5 Route mux and auth — todo (needs E09.1, E09.4)
+- [ ] E09.5 Route mux and auth — in-progress (needs E09.1 ✓, E09.4 ✓)
 - [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
 - [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
 - [ ] E09.8 Q and data routes — todo (needs E09.6, E09.7)
@@ -147,7 +147,7 @@ Opus, never downgrade.
 
 ## E12 Stats, Info and Inspect — epic PR: —
 
-- [ ] E12.1 Stats rollups — in-progress
+- [x] E12.1 Stats rollups — done (PR #64)
 - [ ] E12.2 Info inspect and show — todo (needs E12.1)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
