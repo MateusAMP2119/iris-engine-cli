@@ -402,8 +402,12 @@ func (a *app) endpointCmd() *cobra.Command {
 func (a *app) patCmd() *cobra.Command {
 	create := &cobra.Command{
 		Use: "create", Short: "Mint a new PAT",
-		Args: cobra.ArbitraryArgs, RunE: a.daemonStub("pat create"),
+		Args: cobra.NoArgs, RunE: a.patCreate(),
 	}
+	create.Flags().StringSlice("scope", nil, "PAT scope (repeatable): any non-empty subset of {control, read, data}")
+	create.Flags().String("label", "", "human label recorded for the PAT")
+	create.Flags().StringSlice("read", nil, "data-PAT read grant (repeatable): schema.table.field, or bare schema.table for all fields declared at mint")
+	create.Flags().StringSlice("endpoint", nil, "data-PAT read grant (repeatable): expand an endpoint's source fields")
 	list := &cobra.Command{
 		Use: "list", Short: "List PATs",
 		Args: cobra.NoArgs, RunE: a.daemonStub("pat list"),

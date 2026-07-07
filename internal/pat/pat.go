@@ -267,7 +267,10 @@ func Verify(rawToken, encodedHash string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	got := argon2.IDKey([]byte(rawToken), salt, argonTime, argonMemory, argonThreads, uint32(len(key)))
+	// Recompute at the engine's fixed key length: every hash this engine writes uses
+	// argonKeyLen, and a stored key of any other length is safely rejected by the
+	// constant-time compare (unequal lengths never match).
+	got := argon2.IDKey([]byte(rawToken), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
 	return subtle.ConstantTimeCompare(got, key) == 1, nil
 }
 
