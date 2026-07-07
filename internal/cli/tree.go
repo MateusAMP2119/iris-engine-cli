@@ -190,11 +190,11 @@ func (a *app) pipelineCmd() *cobra.Command {
 	}
 	run := &cobra.Command{
 		Use: "run <name>", Short: "Trigger a manual one-off run",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline run"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineRun(),
 	}
 	list := &cobra.Command{
 		Use: "list", Short: "List pipelines with a queued or running run",
-		Args: cobra.NoArgs, RunE: a.daemonStub("pipeline list"),
+		Args: cobra.NoArgs, RunE: a.pipelineList(),
 	}
 	list.Flags().Bool("all", false, "list every pipeline, not only active ones")
 	show := &cobra.Command{
