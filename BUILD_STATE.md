@@ -4,6 +4,8 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
+KNOWN CI-RED (fixing, worktree .worktrees/shutdownfix): conformance TestSignalGracefulShutdown/SIGINT fails on LINUX CI only (passes darwin) — pidfile removal gated behind election-lock release + embedded-PG teardown (both heavier since E05.10 added the data pool + pipeline plane), crosses the test 10s deadline. Fix: remove pidfile promptly after Serve returns. E05.8 (PR #50) merge HOLDS until this lands + re-sync.
+
 DAEMON WIRING DEBT (track, close in E05.12 + a daemon-routes pass): several control-plane
 routes are defined CLI-side + proven at unit/integration/stub-conformance tier but NOT
 wired into the live daemon perpetual loop yet: apply/destroy (E03.10, wired), deadletter
