@@ -81,7 +81,7 @@ Opus, never downgrade.
 - [x] E05.7 Dead letter replay — done (PR #47)
 - [ ] E05.8 Dead letter drain — in-progress (.worktrees/E05.8, Sonnet)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
-- [ ] E05.10 Manual pipeline run — todo (needs E05.5)
+- [x] E05.10 Manual pipeline run — done (PR #49)
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
 - [ ] E05.12 Lane runner pass semantics — todo (needs E05.1, E05.4, E05.5)
 
