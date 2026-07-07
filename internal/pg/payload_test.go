@@ -26,8 +26,9 @@ var allOps = []pg.WriteOp{pg.OpInsert, pg.OpUpdate, pg.OpDelete}
 // spec: S01/capture-covers-all-modes
 func TestCaptureCoversAllModes(t *testing.T) {
 	// --- Capture install is mode-independent: it is emitted for every declared
-	// table and never branches on a data or artifact mode, so capture is active in
-	// every mode combination by construction. ---
+	// table unconditionally, and the plan carries no mode input at all (PlanProvision
+	// is driven by the declared tables, never a pipeline's artifact or data mode), so
+	// capture is active in every mode combination by construction. ---
 	tables := discoverGoldenSchemas(t)
 	plan, err := pg.PlanProvision(tables, emptyLive(), freshLedgers(tables))
 	if err != nil {
@@ -39,13 +40,11 @@ func TestCaptureCoversAllModes(t *testing.T) {
 				tp.Schema, tp.Table, len(tp.CaptureTriggers))
 		}
 	}
-	for _, stmt := range captureInstallDDL(plan) {
-		low := strings.ToLower(stmt)
-		for _, modeTok := range []string{"disposable", "permanent", "data_mode", "artifact"} {
-			if strings.Contains(low, modeTok) {
-				t.Errorf("capture-install DDL branches on mode token %q; capture install must be mode-independent:\n%s", modeTok, stmt)
-			}
-		}
+	// The tier is a RUNTIME decision, not an install-time branch: the one installed
+	// capture function serves every mode because it reads the write's wipe-eligibility
+	// in-transaction from the per-session setting. There is no per-mode install.
+	if fn := pg.CaptureFunctionDDL(); !strings.Contains(fn, "current_setting('"+pg.WipeEligibleSetting) {
+		t.Errorf("capture function does not read the per-session %s setting; the payload tier must be a runtime decision so one install covers every mode", pg.WipeEligibleSetting)
 	}
 
 	// --- The tier matrix: artifact (source/built) x data (disposable/permanent). The

@@ -38,8 +38,8 @@ func CaptureSchemaDDL() string {
 //
 // Per changed row it stamps: the writing role (session_user), the run id, the
 // (schema, table) it guards, the row's primary key as text (row_pk), the operation
-// (insert/update/delete), the pre-image, undo='open', and an opaque recorded_at
-// audit string. There is no post-image.
+// (insert/update/delete), the mode-tiered pre-image, the born undo state, and an
+// opaque recorded_at audit string. There is no post-image.
 //
 //   - Attribution. run_id rides the injected connection as the per-session setting
 //     iris.run_id, read here in-transaction with current_setting. E06.3 sets it on
@@ -53,10 +53,17 @@ func CaptureSchemaDDL() string {
 //     role is read from session_user (the connection's login role, unaffected by the
 //     definer boundary or a SET ROLE), which is the role Iris injected. search_path
 //     is pinned so the definer function cannot be hijacked by a caller's search_path.
-//   - pre_image. The full prior row (to_json) on a wipe-eligible update or delete;
-//     null on an insert. The undo-eligibility / born-promoted refinement that nulls
-//     it in the common case is downstream (E06.4/E06.6); here every entry is born
-//     undo='open', so it correctly carries its pre-image.
+//   - Mode-tiered payload. The trigger reads the write's wipe-eligibility
+//     in-transaction from the per-session setting iris.wipe_eligible
+//     (WipeEligibleSetting, injected on the run's connection at spawn beside
+//     iris.run_id); an absent setting defaults to wipe-eligible, the disposable
+//     registration default. A wipe-eligible write is born undo='open' (in wipe
+//     scope); a permanent-mode write is born undo='promoted' (out of scope, so a
+//     later wipe skips it). The pre_image carries the full prior row (to_json) only
+//     on a wipe-eligible update or delete, where undo can spend it on a wipe; it is
+//     null on every insert (a wipe reverts an insert by deleting the row) and on
+//     every write born promoted -- a slim stamp (specification sections 4, 12, 14).
+//     ClassifyPayloadTier (payload.go) is the pure model of this decision.
 //   - row_pk. Resolved from the firing table's primary key, in key order, as the
 //     text of the key column(s). A single-column key renders its bare value (the
 //     provenance key data_journal indexes on); a composite key joins with '|'.
@@ -68,10 +75,12 @@ SET search_path = pg_catalog, public
 AS $iris_capture$
 DECLARE
     v_run_id  bigint := current_setting('iris.run_id')::bigint;
+    v_wipe_eligible boolean := COALESCE(NULLIF(current_setting('iris.wipe_eligible', true), '')::boolean, true);
     v_pk_expr text;
     v_source  text;
     v_op      text;
     v_pre     text;
+    v_undo    text;
 BEGIN
     -- Resolve the firing table's primary-key columns, in key order, into a
     -- concat_ws argument list over the transition-table row alias r. row_pk is the
@@ -89,14 +98,22 @@ BEGIN
             TG_TABLE_SCHEMA, TG_TABLE_NAME;
     END IF;
 
-    -- Insert reads the after image (new_rows) and carries no pre-image; update and
-    -- delete read the before image (old_rows) and carry the full pre-image.
+    -- Born undo state: a wipe-eligible write is in wipe scope (open); a permanent-mode
+    -- write is born promoted (out of scope, so a later wipe skips it).
+    IF v_wipe_eligible THEN v_undo := 'open'; ELSE v_undo := 'promoted'; END IF;
+
+    -- Mode-tiered pre-image: insert reads the after image (new_rows) and never carries
+    -- a pre-image; update and delete read the before image (old_rows) and carry the
+    -- full prior row ONLY when wipe-eligible (undo can spend it), a slim NULL stamp
+    -- otherwise (permanent / born-promoted writes).
     IF TG_OP = 'INSERT' THEN
         v_source := 'new_rows'; v_op := 'insert'; v_pre := 'NULL';
     ELSIF TG_OP = 'UPDATE' THEN
-        v_source := 'old_rows'; v_op := 'update'; v_pre := 'to_json(r)';
+        v_source := 'old_rows'; v_op := 'update';
+        IF v_wipe_eligible THEN v_pre := 'to_json(r)'; ELSE v_pre := 'NULL'; END IF;
     ELSE
-        v_source := 'old_rows'; v_op := 'delete'; v_pre := 'to_json(r)';
+        v_source := 'old_rows'; v_op := 'delete';
+        IF v_wipe_eligible THEN v_pre := 'to_json(r)'; ELSE v_pre := 'NULL'; END IF;
     END IF;
 
     -- One INSERT...SELECT per fired statement: the transition table holds every row
@@ -104,10 +121,10 @@ BEGIN
     EXECUTE format(
         'INSERT INTO public.data_journal '
         '(pg_role, run_id, "schema", "table", row_pk, op, pre_image, undo, recorded_at) '
-        'SELECT session_user, $1, $2, $3, concat_ws(''|'', %s), $4, %s, ''open'', $5 '
+        'SELECT session_user, $1, $2, $3, concat_ws(''|'', %s), $4, %s, $5, $6 '
         'FROM %s AS r',
         v_pk_expr, v_pre, v_source)
-    USING v_run_id, TG_TABLE_SCHEMA, TG_TABLE_NAME, v_op, clock_timestamp()::text;
+    USING v_run_id, TG_TABLE_SCHEMA, TG_TABLE_NAME, v_op, v_undo, clock_timestamp()::text;
 
     RETURN NULL;
 END;
