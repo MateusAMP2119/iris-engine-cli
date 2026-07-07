@@ -117,7 +117,7 @@ Opus, never downgrade.
 
 ## E09 Read API, Endpoints and PATs — epic PR: —
 
-- [ ] E09.1 PAT store and scopes — todo (needs E02, E03, E04)
+- [x] E09.1 PAT store and scopes — done (PR #53)
 - [ ] E09.2 Endpoint compile and validation — todo (needs E02, E03, E04)
 - [ ] E09.3 Param grammar and paging — todo (needs E09.2)
 - [ ] E09.4 Envelope and serialization — todo (needs E09.3)
