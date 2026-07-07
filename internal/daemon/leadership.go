@@ -184,6 +184,7 @@ func (c *Candidate) lead(ctx context.Context) error {
 			c.workspace,
 			dispatch.NewApplier(c.registry, d),
 			dispatch.NewDestroyer(c.registry, d),
+			c.registry,
 			c.data,
 			dispatch.NewLedgerRecorder(d),
 			c.appliedHds,

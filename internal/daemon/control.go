@@ -116,6 +116,7 @@ type controlOrchestrator struct {
 	workspace string
 	applier   *dispatch.Applier
 	destroyer *dispatch.Destroyer
+	registry  store.RegistryReader
 	data      dataPlane
 	ledgerRec pg.LedgerRecorder
 	heads     store.AppliedHeadReader
@@ -123,8 +124,10 @@ type controlOrchestrator struct {
 }
 
 // newControlOrchestrator builds the leader's control orchestrator over its workspace
-// root and the wired seams. A nil logger discards output.
-func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, logger *slog.Logger) *controlOrchestrator {
+// root and the wired seams. reg is the plain-MVCC registry reader the composer-destroy
+// interlock counts a lane's registered members from (the lanes table in meta, not the
+// workspace disk). A nil logger discards output.
+func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, reg store.RegistryReader, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, logger *slog.Logger) *controlOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -132,6 +135,7 @@ func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroy
 		workspace: workspace,
 		applier:   applier,
 		destroyer: destroyer,
+		registry:  reg,
 		data:      data,
 		ledgerRec: ledgerRec,
 		heads:     heads,

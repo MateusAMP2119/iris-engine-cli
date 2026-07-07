@@ -141,6 +141,11 @@ func (c *coupledRegistry) RegisteredPipelines(_ context.Context) ([]string, erro
 	return out, nil
 }
 
+// LaneMembers is unused by the apply op (satisfies the read seam only).
+func (c *coupledRegistry) LaneMembers(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
 // DependencyEdges returns the committed depends_on edges.
 func (c *coupledRegistry) DependencyEdges(_ context.Context) ([]store.DependencyEdge, error) {
 	c.mu.Lock()

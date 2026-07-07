@@ -20,11 +20,12 @@ type RegistryFake struct {
 	names     []string
 	edges     []store.DependencyEdge
 	seenNames map[string]bool
+	lanes     map[string][]string
 }
 
 // NewRegistryFake returns an empty registry view: no pipelines registered.
 func NewRegistryFake() *RegistryFake {
-	return &RegistryFake{seenNames: map[string]bool{}}
+	return &RegistryFake{seenNames: map[string]bool{}, lanes: map[string][]string{}}
 }
 
 // compile-time proof the fake satisfies the registry read seam.
@@ -68,4 +69,21 @@ func (f *RegistryFake) DependencyEdges(_ context.Context) ([]store.DependencyEdg
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]store.DependencyEdge(nil), f.edges...), nil
+}
+
+// SeedLane seeds a lane's member names (in walk order), the lanes-table rows the
+// composer-destroy interlock counts. It returns the fake so calls chain.
+func (f *RegistryFake) SeedLane(lane string, members ...string) *RegistryFake {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lanes[lane] = append([]string(nil), members...)
+	return f
+}
+
+// LaneMembers returns a copy of the lane's seeded member names, or nil for a lane
+// with no seeded rows.
+func (f *RegistryFake) LaneMembers(_ context.Context, lane string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.lanes[lane]...), nil
 }

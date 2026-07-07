@@ -92,15 +92,23 @@ type MetaTxConn interface {
 	ExecTx(ctx context.Context, stmts []Statement) error
 }
 
-// RegistryReader reads the persisted registry (the pipelines and dependencies
-// tables) so the apply op can rebuild the dependency graph it validates a new
-// declaration against. It is a plain-MVCC read seam, never serialized through the
-// single writer; a pgx-pool-backed implementation and a fake both satisfy it.
+// RegistryReader reads the persisted registry (the pipelines, dependencies, and
+// lanes tables) so the apply op can rebuild the dependency graph it validates a new
+// declaration against, and the composer-destroy interlock can count a lane's members
+// from meta rather than the workspace disk. It is a plain-MVCC read seam, never
+// serialized through the single writer; a pgx-pool-backed implementation and a fake
+// both satisfy it.
 type RegistryReader interface {
 	// RegisteredPipelines returns the names of every registered pipeline.
 	RegisteredPipelines(ctx context.Context) ([]string, error)
 	// DependencyEdges returns every persisted depends_on edge (from = dependent).
 	DependencyEdges(ctx context.Context) ([]DependencyEdge, error)
+	// LaneMembers returns the member pipeline names persisted in the lanes table for
+	// the given lane, in walk (pos) order. The interlock counts these against the
+	// registered set, so a member still registered but whose declaration file was
+	// deleted from disk is never undercounted. An empty (or single-member) lane
+	// returns no rows.
+	LaneMembers(ctx context.Context, lane string) ([]string, error)
 }
 
 // errNoTxConn is returned when the write connection cannot run an atomic
@@ -137,6 +145,9 @@ ON CONFLICT (name) DO UPDATE SET folder = EXCLUDED.folder, run = EXCLUDED.run`
 
 	// selectDependencyEdgesSQL reads the depends_on edges.
 	selectDependencyEdgesSQL = `SELECT from_pipeline, to_pipeline FROM dependencies ORDER BY from_pipeline, to_pipeline`
+
+	// selectLaneMembersSQL reads a lane's member names in walk (pos) order.
+	selectLaneMembersSQL = `SELECT pipeline FROM lanes WHERE lane = $1 ORDER BY pos`
 )
 
 // RegisterPipeline persists a pipeline declaration as one atomic meta transaction:
@@ -266,6 +277,29 @@ func (r *pgxRegistryReader) DependencyEdges(ctx context.Context) ([]DependencyEd
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: read dependency edges: %w", err)
+	}
+	return out, nil
+}
+
+// LaneMembers reads a lane's member names from the lanes table in walk (pos) order,
+// in one plain MVCC query.
+func (r *pgxRegistryReader) LaneMembers(ctx context.Context, lane string) ([]string, error) {
+	rows, err := r.pool.query(ctx, selectLaneMembersSQL, lane)
+	if err != nil {
+		return nil, fmt.Errorf("store: read lane members: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("store: scan lane member: %w", err)
+		}
+		out = append(out, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: read lane members: %w", err)
 	}
 	return out, nil
 }
