@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
@@ -143,4 +144,172 @@ func ineligibilityReason(ledger []EdgeVerdict) string {
 	default:
 		return "depends_on gate not satisfied"
 	}
+}
+
+// ManualRunState is the terminal outcome of a manual `iris pipeline run`, mapped by the
+// CLI to a specification section 8 exit code. It is the single result the CLI reads to
+// pick 0, 4, or 5.
+type ManualRunState int
+
+const (
+	// ManualRunIneligible is a manual run whose depends_on gate did not open: no run was
+	// minted. The CLI exits 4 with the accompanying reason.
+	ManualRunIneligible ManualRunState = iota
+	// ManualRunQueued is a lane-member manual run enqueued as its lane's next run at the
+	// current run boundary (same-lane serialization preserved). The CLI exits 0.
+	ManualRunQueued
+	// ManualRunSucceeded is an own-lane manual run that ran immediately and succeeded.
+	// The CLI exits 0.
+	ManualRunSucceeded
+	// ManualRunDeadLettered is a manual run that ran (or propagated) and dead-lettered.
+	// The CLI exits 5.
+	ManualRunDeadLettered
+)
+
+// String names the state, for diagnostics.
+func (s ManualRunState) String() string {
+	switch s {
+	case ManualRunIneligible:
+		return "ineligible"
+	case ManualRunQueued:
+		return "queued"
+	case ManualRunSucceeded:
+		return "succeeded"
+	case ManualRunDeadLettered:
+		return "dead_lettered"
+	default:
+		return "unknown"
+	}
+}
+
+// EdgeReader resolves a pipeline's depends_on edges for the manual-run gate: its
+// upstreams, each upstream's latest run disposition and id, and the awaited-from
+// baseline (E05.5 Edge). A meta-backed implementation (dependency edges joined to each
+// upstream's latest run) and a fake both satisfy it.
+type EdgeReader interface {
+	// Edges returns pipeline's depends_on edges, resolved against each upstream's most
+	// recent run. A pipeline with no depends_on edges returns none (ungated).
+	Edges(ctx context.Context, pipeline string) ([]Edge, error)
+}
+
+// LaneReader reads the persisted lane rows the manual router decides membership from
+// (specification section 4: lanes holds pipeline names). A meta-backed implementation
+// and a fake both satisfy it.
+type LaneReader interface {
+	// LaneRows returns every persisted (lane, pipeline, pos) row.
+	LaneRows(ctx context.Context) ([]LaneRow, error)
+}
+
+// RunQueue enqueues a manual run as a lane's next run at the current run boundary so
+// same-lane serialization holds: the lane runner starts it in turn rather than the
+// manual path starting it out of band (specification section 8). A meta-backed
+// implementation (a queued run row the lane runner picks up) and a fake both satisfy it.
+type RunQueue interface {
+	// Enqueue records rec (cause=manual) as lane's next run to start at the current run
+	// boundary.
+	Enqueue(ctx context.Context, lane string, rec store.RunRecord) error
+}
+
+// ImmediateRunner mints and runs an own-lane manual run at once, returning its terminal
+// disposition, since no same-lane member needs serializing (specification section 8:
+// own-lane runs immediately). A meta+exec-backed implementation and a fake both satisfy
+// it.
+type ImmediateRunner interface {
+	// RunNow mints rec (cause=manual), starts the run, and blocks until it reaches a
+	// terminal state, returning that disposition.
+	RunNow(ctx context.Context, rec store.RunRecord) (RunOutcome, error)
+}
+
+// ManualRunner is the manual `iris pipeline run` op: it applies the depends_on gate
+// exactly like a loop pass, then routes an eligible run by lane membership -- a lane
+// member is queued as its lane's next run (same-lane serial), an own-lane pipeline runs
+// immediately. It holds only seams, so it is composed with a fake or the real meta+exec
+// stack alike.
+type ManualRunner struct {
+	gate  *Gate
+	edges EdgeReader
+	lanes LaneReader
+	queue RunQueue
+	now   ImmediateRunner
+}
+
+// NewManualRunner builds a manual runner over the depends_on gate and the edge/lane read
+// seams plus the queue (lane members) and immediate (own-lane) run seams.
+func NewManualRunner(gate *Gate, edges EdgeReader, lanes LaneReader, queue RunQueue, now ImmediateRunner) *ManualRunner {
+	return &ManualRunner{gate: gate, edges: edges, lanes: lanes, queue: queue, now: now}
+}
+
+// Run performs one manual `iris pipeline run` of pipeline and returns the terminal state
+// the CLI maps to an exit code, plus an ineligibility reason when the gate did not open.
+// It applies the depends_on gate exactly like a loop pass; an ineligible gate mints no
+// run (exit 4 + reason) and a poisoned gate dead-letters by propagation (exit 5). An
+// open gate routes by lane membership: a lane member is queued as its lane's next run at
+// the current run boundary (same-lane serialization holds), an own-lane pipeline runs
+// immediately. Any seam error is returned unwrapped-of-outcome so the caller never acts
+// on a half-resolved run.
+func (r *ManualRunner) Run(ctx context.Context, pipeline string) (ManualRunState, string, error) {
+	edges, err := r.edges.Edges(ctx, pipeline)
+	if err != nil {
+		return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: resolve edges: %w", pipeline, err)
+	}
+	mg, err := r.gate.EvaluateManual(ctx, pipeline, edges)
+	if err != nil {
+		return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: evaluate gate: %w", pipeline, err)
+	}
+
+	switch mg.Disposition {
+	case ManualIneligible:
+		// The gate did not open: no run minted, the CLI exits 4 with the reason.
+		return ManualRunIneligible, mg.Reason, nil
+	case ManualPoisoned:
+		// An awaited upstream is dead-lettered: failure propagates, so the manual run
+		// dead-letters. The propagation write rides the immediate run path, which the
+		// daemon composes over the real propagation seam; here the state alone is the
+		// CLI's exit-5 signal.
+		return ManualRunDeadLettered, "", nil
+	case ManualRunnable:
+		return r.route(ctx, pipeline, mg.Record)
+	default:
+		return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: unknown gate disposition %v", pipeline, mg.Disposition)
+	}
+}
+
+// route dispatches an eligible manual run by lane membership: a lane member (named by a
+// persisted lane row) is queued as its lane's next run so same-lane serialization holds;
+// an own-lane pipeline (named by no row) runs immediately.
+func (r *ManualRunner) route(ctx context.Context, pipeline string, rec store.RunRecord) (ManualRunState, string, error) {
+	rows, err := r.lanes.LaneRows(ctx)
+	if err != nil {
+		return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: read lanes: %w", pipeline, err)
+	}
+	if lane, member := laneMembership(rows, pipeline); member {
+		if err := r.queue.Enqueue(ctx, lane, rec); err != nil {
+			return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: enqueue on lane %q: %w", pipeline, lane, err)
+		}
+		return ManualRunQueued, "", nil
+	}
+
+	outcome, err := r.now.RunNow(ctx, rec)
+	if err != nil {
+		return ManualRunIneligible, "", fmt.Errorf("dispatch: manual run %q: run: %w", pipeline, err)
+	}
+	if outcome == RunDeadLettered {
+		return ManualRunDeadLettered, "", nil
+	}
+	return ManualRunSucceeded, "", nil
+}
+
+// laneMembership reports the lane a manual run of pipeline joins and whether pipeline is
+// a lane member. A pipeline named by a persisted lane row is that lane's member (a
+// composed lane persists rows only for two or more members, so a placed pipeline is
+// genuinely serialized against a peer); a pipeline named by no row is its own anonymous
+// lane (specification section 4), and its own lane's name is the pipeline's. It reads
+// the lane rows directly, consuming lane.go's LaneRow without rewriting BuildWalk.
+func laneMembership(rows []LaneRow, pipeline string) (lane string, member bool) {
+	for _, row := range rows {
+		if row.Pipeline == pipeline {
+			return row.Lane, true
+		}
+	}
+	return pipeline, false
 }
