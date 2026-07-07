@@ -40,6 +40,7 @@ type Client struct {
 	pipes    PipelineLister
 	manual   ManualReader
 	show     ShowReader
+	promote  PromoteStateReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -105,6 +106,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		pipes:    newPgxPipelineLister(readPoolSeam),
 		manual:   newPgxManualReader(readPoolSeam),
 		show:     newPgxShowReader(readPoolSeam),
+		promote:  &pgxPromoteReader{pool: readPoolSeam},
 	}, nil
 }
 
@@ -140,6 +142,11 @@ func (c *Client) ManualReader() ManualReader { return c.manual }
 // declaration detail, role grants, runs, and gate-ledger input reads the `iris
 // pipeline show` readout composes.
 func (c *Client) ShowReader() ShowReader { return c.show }
+
+// PromoteStateReader returns the plain-MVCC promote-gate reader (the pool): the
+// registration/data-mode, built-state, and upstream-data-mode reads the promote
+// op's gate and cross-mode warning are decided from.
+func (c *Client) PromoteStateReader() PromoteStateReader { return c.promote }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

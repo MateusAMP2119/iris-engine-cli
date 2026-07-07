@@ -89,6 +89,7 @@ func NewMux(opts ...MuxOption) http.Handler {
 		control:      noControl{},
 		pipelines:    noPipelines{},
 		build:        noBuild{},
+		promote:      noPromote{},
 		stats:        noStats{},
 		info:         noInfo{},
 		inspect:      noInspect{},
@@ -110,6 +111,7 @@ type mux struct {
 	control      ControlHandler
 	pipelines    PipelineHandler
 	build        BuildHandler
+	promote      PromoteHandler
 	stats        StatsHandler
 	info         InfoHandler
 	inspect      InspectHandler
@@ -151,6 +153,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveDestroy(w, r)
 	case "/pipeline/build":
 		m.servePipelineBuild(w, r)
+	case "/pipeline/promote":
+		m.servePipelinePromote(w, r)
 	case "/pipeline/run":
 		m.servePipelineRun(w, r)
 	case "/pipeline/list":

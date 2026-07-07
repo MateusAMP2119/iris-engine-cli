@@ -186,7 +186,7 @@ func (a *app) pipelineCmd() *cobra.Command {
 	}
 	promote := &cobra.Command{
 		Use: "promote <name>", Short: "Mark the pipeline's data permanent (gated on built)",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline promote"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelinePromote(),
 	}
 	run := &cobra.Command{
 		Use: "run <name>", Short: "Trigger a manual one-off run",

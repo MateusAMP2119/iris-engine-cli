@@ -117,7 +117,7 @@ Opus, never downgrade.
 
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
 
-- [ ] E07.1 Provenance walk — todo (needs E05, E06)
+- [x] E07.1 Provenance walk — done (PR #74)
 - [ ] E07.2 Snapshot pin — todo (needs E05, E06)
 - [ ] E07.3 Seal and compaction — todo (needs E05, E06)
 - [ ] E07.4 Checkpoint chain and engine key — todo (needs E07.3)
@@ -128,7 +128,7 @@ Opus, never downgrade.
 
 - [x] E08.1 Recipe inference and matrix — done (PR #62)
 - [x] E08.2 Build and artifact storage — done (PR #66, merged by A 14:32). SESSION A: B's coder in that worktree is NOT stale — it is fixing 7 findings from B's independent review of #66 (review completed after the PR opened, before merge: go-recipe entry derivation ignores run vector, entryScript takes run[len-1] blindly, pyinstaller pollutes source dir, objects.go missing fsync-before-rename, 3 nits). Lands as follow-up PR "E08.2 review fixes". Do not kill it; do not remove the E08.2 worktree.
-- [ ] E08.3 Promote gating — todo (needs E08.2)
+- [x] E08.3 Promote gating — done (PR #76)
 - [ ] E08.4 Mode execution and retirement — todo (needs E08.2)
 
 ## E09 Read API, Endpoints and PATs — epic PR: —
@@ -146,7 +146,7 @@ Opus, never downgrade.
 
 ## E10 Destructive Operation Gates — epic PR: —
 
-- [ ] E10.1 Gate and blocker predicates — todo (needs E03, E05, E06)
+- [x] E10.1 Gate and blocker predicates — done (PR #75)
 - [ ] E10.2 Confirmation flows — todo (needs E10.1)
 - [ ] E10.3 Remote tiering and failover — todo (needs E10.2)
 
