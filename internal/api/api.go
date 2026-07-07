@@ -31,6 +31,10 @@ import (
 type Envelope struct {
 	// Data is the response payload, shaped per route.
 	Data any `json:"data"`
+	// Page is the pagination half on paged collection responses (specification
+	// section 7: {"page": {"next_after": <key|null>, "limit": <n>}}); nil -- and
+	// absent on the wire -- everywhere else.
+	Page *Page `json:"page,omitempty"`
 }
 
 // ErrorEnvelope is the read-API error document of specification section 7:
@@ -98,6 +102,11 @@ type mux struct {
 	pipelines PipelineHandler
 	build     BuildHandler
 	stats     StatsHandler
+	// endpoints and qreader are the /q serving seams (endpoint.go): the live
+	// compiled-shape source and the read executor. Both default nil (unwired):
+	// /q then answers the internal-fault envelope, per the noStats doctrine.
+	endpoints EndpointSource
+	qreader   EndpointReader
 }
 
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority

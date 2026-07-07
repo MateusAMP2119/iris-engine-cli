@@ -102,11 +102,13 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		}
 		serveUnwiredRead(w, r, "data")
 	case "q":
-		// /q/{endpoint}: the declared endpoint read (E09.8).
+		// /q/{endpoint}: the declared endpoint read. E09.6 owns the live-shape
+		// checkout and lifecycle (endpoint.go); the production reader over the
+		// shared read pool lands with E09.7/E09.8.
 		if len(segs) != 2 {
 			return false
 		}
-		serveUnwiredRead(w, r, "endpoint")
+		m.serveEndpoint(w, r, segs[1])
 	default:
 		return false
 	}
