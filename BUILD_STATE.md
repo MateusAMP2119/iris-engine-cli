@@ -102,8 +102,8 @@ Opus, never downgrade.
 - [x] E06.3 Run attribution — done (PR #55)
 - [x] E06.4 Payload tiers and modes — done (PR #58)
 - [x] E06.5 Wipe replay and conflicts — done (PR #60)
-- [ ] E06.6 Promotion — in-progress, session B (PR #65 open; B diff review clean, merge waits on B's conformance green)
-- [ ] E06.7 Live wipe closure — todo (needs E06.5, E06.6)
+- [x] E06.6 Promotion — done (PR #65: B's coder authored + full local conformance green + B diff review; A merged, CI 9/9)
+- [ ] E06.7 Live wipe closure — in-progress, session B (needs E06.5 ✓, E06.6 ✓)
 
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
 
@@ -150,7 +150,7 @@ Opus, never downgrade.
 ## E12 Stats, Info and Inspect — epic PR: —
 
 - [x] E12.1 Stats rollups — done (PR #64)
-- [ ] E12.2 Info inspect and show — todo (needs E12.1)
+- [ ] E12.2 Info inspect and show — in-progress, session B (needs E12.1 ✓)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
 
