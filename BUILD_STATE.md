@@ -83,7 +83,7 @@ Opus, never downgrade.
 - [x] E05.5 Gate and consumption — done (PR #44)
 - [x] E05.6 Failure propagation — done (PR #45)
 - [x] E05.7 Dead letter replay — done (PR #47)
-- [ ] E05.8 Dead letter drain — in-progress (.worktrees/E05.8, Sonnet)
+- [x] E05.8 Dead letter drain — done (PR #50, merging post-shutdown-fix)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [x] E05.10 Manual pipeline run — done (PR #49)
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
@@ -92,7 +92,7 @@ Opus, never downgrade.
 ## E06 Write Capture, Wipe and Promotion — epic PR: —
 
 - [x] E06.1 Journal DDL and partitioning — done (PR #48)
-- [ ] E06.2 Capture trigger emission — in-progress (.worktrees/E06.2, Opus)
+- [x] E06.2 Capture trigger emission — done (PR #52)
 - [ ] E06.3 Run attribution — todo (needs E06.2)
 - [ ] E06.4 Payload tiers and modes — todo (needs E06.2, E06.3)
 - [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)
