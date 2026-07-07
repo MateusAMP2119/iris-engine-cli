@@ -121,7 +121,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// The pipeline plane serves iris pipeline list from the reader pool (any node) and,
 	// once this daemon leads, POST /pipeline/run through the single writer and exec seam.
 	pipelines := newPipelinePlane(client.PipelineLister(), logger)
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines)), WithServerLogger(logger))
+	// The build plane serves POST /pipeline/build once this daemon leads: the pinned
+	// recipe toolchain through the exec seam, bytes into the object store at
+	// objects_path, the content hash through the single writer into artifacts.
+	builds := newBuildPlane(logger)
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -145,7 +149,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner()))
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner()),
+		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

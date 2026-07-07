@@ -70,6 +70,13 @@ type Candidate struct {
 	manualReader store.ManualReader
 	runner       exec.Runner
 
+	// Build wiring, installed on winning leadership and cleared on demotion so the
+	// api mux's POST /pipeline/build reaches the single meta writer, the object
+	// store, and the exec seam only while this daemon leads (specification sections
+	// 1 and 9). Nil builds skips it.
+	builds  *buildPlane
+	objects dispatch.ObjectPutter
+
 	// Lane-loop wiring: builds the perpetual lane loop over the single dispatcher on
 	// winning leadership. The leader drives it after reconciliation (so no lane
 	// dispatches ahead of crash recovery) and stops it on demotion (so a deposed leader
@@ -133,6 +140,24 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.workspace = workspace
 		c.registry = reg
 		c.manualReader = manual
+		c.runner = runner
+	}
+}
+
+// WithBuildPlane wires the leader-side explicit-build plane: on winning leadership
+// the candidate builds the build orchestrator over the single dispatcher (the sole
+// meta writer), the run-target read seam, the content-addressed object store at
+// objects_path, and the process runner, and installs it into bp before reporting
+// the leader role, clearing it on demotion. workspace is the leader's workspace
+// tree (pipeline folders resolve against it); manual supplies the run-target read;
+// objects is the object store the binary bytes land in. A nil bp leaves the
+// candidate without a build plane (the shape tests use).
+func WithBuildPlane(bp *buildPlane, workspace string, manual store.ManualReader, objects dispatch.ObjectPutter, runner exec.Runner) CandidateOption {
+	return func(c *Candidate) {
+		c.builds = bp
+		c.workspace = workspace
+		c.manualReader = manual
+		c.objects = objects
 		c.runner = runner
 	}
 }
@@ -248,6 +273,17 @@ func (c *Candidate) lead(ctx context.Context) error {
 		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.runner, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
+	}
+
+	// Install the leader-side build orchestrator over the single dispatcher, the
+	// run-target read, the object store, and the exec seam before reporting the
+	// leader role, so a POST /pipeline/build that passes the mux's leader gate always
+	// finds an installed orchestrator; clear it on demotion so a build racing a lost
+	// lock faults rather than writing off-path.
+	if c.builds != nil {
+		bo := newBuildOrchestrator(c.workspace, d, c.manualReader, c.objects, c.runner, c.logger)
+		c.builds.install(bo)
+		defer c.builds.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane

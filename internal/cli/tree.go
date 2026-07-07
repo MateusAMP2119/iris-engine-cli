@@ -182,7 +182,7 @@ func (a *app) declareCmd() *cobra.Command {
 func (a *app) pipelineCmd() *cobra.Command {
 	build := &cobra.Command{
 		Use: "build <name>", Short: "Build source into the self-contained binary, recording its content hash",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline build"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineBuild(),
 	}
 	promote := &cobra.Command{
 		Use: "promote <name>", Short: "Mark the pipeline's data permanent (gated on built)",
