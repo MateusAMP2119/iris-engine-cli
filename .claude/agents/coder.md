@@ -44,3 +44,24 @@ sections your contracts reference before writing anything.
 
 Final report: contracts satisfied (ids), test counts per tier, gate status, Done-when
 checklist with each item checked, and anything the reviewer must know.
+
+## Robustness checklist (review-derived; apply to every task)
+
+Recurring review findings — handle these BEFORE finishing, they are the top round-trip
+causes in this repo:
+
+1. Error paths: no swallowed errors (check-before-close, not after); exactly one layer
+   owns each error prefix (interface docs say who wraps); errors.Join when two
+   failures coexist.
+2. Atomicity: multi-statement state changes are one statement (CTE) or one
+   transaction — never two Execs that can split.
+3. Partial-failure recovery: after any failed step, the object must be reusable or
+   fail loudly — never a latent nil/broken state that detonates on the next call;
+   never a leaked process/fd/file.
+4. Filesystem: permissions chosen per artifact intent (private 0600/0700 vs
+   traversable 0755 + 0644), parents created explicitly, temp+rename/link for
+   atomic writes, O_EXCL or equivalent for create-once races.
+5. Concurrency/env: same-writer dedup, ctx during long library calls documented,
+   test-env isolation (unset ambient IRIS_* vars in tests that resolve config).
+6. Stdlib first: don't reinvent io.Discard/os features; check what os/exec already
+   guarantees before wrapping it.

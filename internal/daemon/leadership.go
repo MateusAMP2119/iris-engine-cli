@@ -51,6 +51,16 @@ type Candidate struct {
 	// before the leader role is reported: the seam the E05 lane dispatcher waits on so
 	// no lane is dispatched until crash reconciliation is done. Nil until E05 wires it.
 	onDispatchReady func()
+
+	// Control-plane wiring, installed on winning leadership and cleared on demotion so
+	// the api mux's apply/destroy routes reach the single meta writer only while this
+	// daemon leads (specification sections 3, 6.3, and 12). Nil control skips it (the
+	// election-only wiring used by tests with no control plane).
+	control    *controlPlane
+	workspace  string
+	registry   store.RegistryReader
+	appliedHds store.AppliedHeadReader
+	data       dataPlane
 }
 
 // CandidateOption configures a Candidate at construction.
@@ -75,6 +85,23 @@ func WithReconciliation(reader store.Reader, killer dispatch.GroupKiller, matche
 // hook is ignored.
 func WithDispatchReady(hook func()) CandidateOption {
 	return func(c *Candidate) { c.onDispatchReady = hook }
+}
+
+// WithControlPlane wires the leader-side control plane: on winning leadership the
+// candidate builds the apply/destroy orchestrator over the single dispatcher (the sole
+// meta writer) and installs it into cp before reporting the leader role, and clears it
+// on demotion. workspace is the leader's workspace tree (declarations and schemas/
+// resolve against it); reg and heads are the plain-MVCC meta readers the apply path
+// uses; data is the data-database plane provisioning runs against. A nil cp leaves the
+// candidate election-only (no control plane), the shape tests use.
+func WithControlPlane(cp *controlPlane, workspace string, reg store.RegistryReader, heads store.AppliedHeadReader, data dataPlane) CandidateOption {
+	return func(c *Candidate) {
+		c.control = cp
+		c.workspace = workspace
+		c.registry = reg
+		c.appliedHds = heads
+		c.data = data
+	}
 }
 
 // NewCandidate builds a leadership candidate over the leader lock, the role state
@@ -146,6 +173,25 @@ func (c *Candidate) lead(ctx context.Context) error {
 			c.role.SetStandby("")
 			return errors.Join(err, c.release())
 		}
+	}
+
+	// Install the leader-side control plane over the single dispatcher (the sole meta
+	// writer) before reporting the leader role, so a POST /apply or /destroy that
+	// passes the mux's leader gate always finds an installed orchestrator; clear it on
+	// demotion so a request racing a lost lock faults rather than writing off-path.
+	if c.control != nil {
+		orch := newControlOrchestrator(
+			c.workspace,
+			dispatch.NewApplier(c.registry, d),
+			dispatch.NewDestroyer(c.registry, d),
+			c.registry,
+			c.data,
+			dispatch.NewLedgerRecorder(d),
+			c.appliedHds,
+			c.logger,
+		)
+		c.control.install(orch)
+		defer c.control.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane

@@ -6,6 +6,8 @@ Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13
 
 Worktrees: `../iris-worktrees/EXX.Y` on branch `issue/EXX.Y-short-name`.
 
+RECONCILED 2026-07-07 07:xx: PRs #27 (E03.2 lanes) + #33 (test flake fix) had silently NOT merged despite chains reporting success (API-instability window) — merged into development by hand (commits 6afe150, e131edd); development green, daemon race-clean x3. AUDIT LESSON: verify each merge landed (grep a signature file on origin/development) before marking done; don't trust merge-when-green.sh exit alone.
+
 ## E00 Conformance Harness and Traceability Gate — epic PR: #6 (merged)
 
 Post-epic deep review (multi-agent, orchestrator-run per user instruction) produced
@@ -39,39 +41,39 @@ Opus, never downgrade.
 - [x] E02.7 Crash reconciliation — done (PR #22: https://github.com/MateusAMP2119/iris-engine-cli/pull/22)
 - [x] E02.8 Logging and service unit — done (PR #21: https://github.com/MateusAMP2119/iris-engine-cli/pull/21)
 
-## E03 Declarations, Schemas and Apply — epic PR: —
+## E03 Declarations, Schemas and Apply — epic PR: #36 (Greptile 7 findings; epic-fix in-progress worktree .worktrees/epicE03fix; merge to master after)
 
-- [ ] E03.1 Declaration parsing and discovery — in-progress (worktree .worktrees/E03.1)
-- [ ] E03.2 Lane composer validation — todo (needs E03.1)
-- [ ] E03.3 Single file targets — todo (needs E03.1)
-- [ ] E03.4 Dependency graph validation — todo (needs E03.1)
-- [ ] E03.5 Type mapping and DDL — todo (needs E03.1)
-- [ ] E03.6 Drift classification — todo (needs E03.5)
-- [ ] E03.7 Migration ledger sync — todo (needs E02, E03.5, E03.6)
-- [ ] E03.8 Idempotent provisioning — todo (needs E02, E03.7)
-- [ ] E03.9 Registry persistence in meta — todo (needs E02, E03.2, E03.4)
-- [ ] E03.10 Apply destroy closure — todo (needs E02, E03.8, E03.9)
+- [x] E03.1 Declaration parsing and discovery — done (PR #24: https://github.com/MateusAMP2119/iris-engine-cli/pull/24)
+- [x] E03.2 Lane composer validation — done (PR #27: https://github.com/MateusAMP2119/iris-engine-cli/pull/27)
+- [x] E03.3 Single file targets — done (PR #26: https://github.com/MateusAMP2119/iris-engine-cli/pull/26; Sonnet)
+- [x] E03.4 Dependency graph validation — done (PR #25: https://github.com/MateusAMP2119/iris-engine-cli/pull/25)
+- [x] E03.5 Type mapping and DDL — done (PR #28: https://github.com/MateusAMP2119/iris-engine-cli/pull/28)
+- [x] E03.6 Drift classification — done (PR #30: https://github.com/MateusAMP2119/iris-engine-cli/pull/30)
+- [x] E03.7 Migration ledger sync — done (PR #31: https://github.com/MateusAMP2119/iris-engine-cli/pull/31)
+- [x] E03.8 Idempotent provisioning — done (PR #32: https://github.com/MateusAMP2119/iris-engine-cli/pull/32)
+- [x] E03.9 Registry persistence in meta — done (PR #29: https://github.com/MateusAMP2119/iris-engine-cli/pull/29)
+- [x] E03.10 Apply destroy closure — done (PR #35: https://github.com/MateusAMP2119/iris-engine-cli/pull/35)
 
 ## E04 Roles, Grants and Credentials — epic PR: —
 
-- [ ] E04.1 Access declaration validation — todo (needs E02, E03)
-- [ ] E04.2 Role and credential lifecycle — todo (needs E02, E03)
+- [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
+- [x] E04.2 Role and credential lifecycle — done (PR #37: https://github.com/MateusAMP2119/iris-engine-cli/pull/37)
 - [ ] E04.3 Grant reconcile and drift — todo (needs E04.1, E04.2)
 - [ ] E04.4 Connection injection and enforcement — todo (needs E04.2, E04.3)
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
-- [ ] E05.1 Exec seam — todo (needs E02, E03)
+- [x] E05.1 Exec seam — done (PR #39: https://github.com/MateusAMP2119/iris-engine-cli/pull/39)
 - [ ] E05.2 Run environment — todo (needs E05.1)
 - [ ] E05.3 Run records and states — todo (needs E05.1)
-- [ ] E05.4 Lane model and walk — todo (needs E02, E03)
+- [x] E05.4 Lane model and walk — done (PR #38: https://github.com/MateusAMP2119/iris-engine-cli/pull/38)
 - [ ] E05.5 Gate and consumption — todo (needs E05.3, E05.4)
 - [ ] E05.6 Failure propagation — todo (needs E05.5)
 - [ ] E05.7 Dead letter replay — todo (needs E05.6)
 - [ ] E05.8 Dead letter drain — todo (needs E05.7)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [ ] E05.10 Manual pipeline run — todo (needs E05.5)
-- [ ] E05.11 Doctrines and scope — todo
+- [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
 - [ ] E05.12 Lane runner pass semantics — todo (needs E05.1, E05.4, E05.5)
 
 ## E06 Write Capture, Wipe and Promotion — epic PR: —

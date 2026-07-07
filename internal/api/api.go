@@ -75,7 +75,7 @@ func WithRole(r RoleReporter) MuxOption {
 // liveness and the leadership role. With no WithRole option the role is unknown, so
 // mutations are rejected until election confirms a leader.
 func NewMux(opts ...MuxOption) http.Handler {
-	m := &mux{role: unknownRole{}}
+	m := &mux{role: unknownRole{}, control: noControl{}}
 	for _, o := range opts {
 		o(m)
 	}
@@ -85,9 +85,11 @@ func NewMux(opts ...MuxOption) http.Handler {
 // mux is the daemon's route table. It is a hand-rolled matcher (rather than
 // http.ServeMux) so unknown routes and disallowed methods return the read-API
 // error envelope, not net/http's plain-text 404/405. It consults role to gate
-// mutations to the leader (specification section 15).
+// mutations to the leader (specification section 15) and routes the control-plane
+// mutations to the injected ControlHandler.
 type mux struct {
-	role RoleReporter
+	role    RoleReporter
+	control ControlHandler
 }
 
 // ServeHTTP gates mutations to the leader, then dispatches a request to its route,
@@ -107,6 +109,10 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		WriteData(w, http.StatusOK, Health{Status: "ok", Role: string(m.role.Role())})
+	case "/apply":
+		m.serveApply(w, r)
+	case "/destroy":
+		m.serveDestroy(w, r)
 	default:
 		WriteError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path)
 	}

@@ -160,7 +160,7 @@ func (a *app) declareCmd() *cobra.Command {
 		Use:   "apply <path>",
 		Short: "Register and apply one iris-declare.yaml (pipeline or composer)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  a.daemonStub("declare apply"),
+		RunE:  a.declareApply(),
 	}
 	apply.Flags().Bool("dry-run", false, "report what would change without touching anything")
 
@@ -168,7 +168,7 @@ func (a *app) declareCmd() *cobra.Command {
 		Use:   "destroy <path>",
 		Short: "Tear down one declaration: its pipeline, role, grants, and un-promoted data",
 		Args:  cobra.ExactArgs(1),
-		RunE:  a.daemonStub("declare destroy"),
+		RunE:  a.declareDestroy(),
 	}
 	destroy.Flags().Bool("dry-run", false, "report what would be torn down without touching anything")
 	addConfirmFlags(destroy)

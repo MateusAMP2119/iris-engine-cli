@@ -116,6 +116,20 @@ func leaders(cands []*candidate) []*candidate {
 	return out
 }
 
+// standbyCount returns how many candidates currently report the standby role. A
+// candidate reports standby only once its Serve goroutine has run past SetStandby,
+// so this count rises asynchronously as the goroutines are scheduled; callers poll
+// on it rather than reading it the instant a leader appears.
+func standbyCount(cands []*candidate) int {
+	n := 0
+	for _, c := range cands {
+		if c.role.Role() == api.RoleStandby {
+			n++
+		}
+	}
+	return n
+}
+
 // TestLeaderElectionSingleWriter proves the leader-election single-writer path with
 // several candidates contending for one advisory lock: exactly one acquires
 // leadership and starts dispatching, only that leader writes meta (through its one
@@ -151,23 +165,23 @@ func TestLeaderElectionSingleWriter(t *testing.T) {
 
 	// spec: S02/one-leader-sole-dispatcher
 	t.Run("S02/one-leader-sole-dispatcher", func(t *testing.T) {
-		if !pollUntil(func() bool { return len(leaders(cands)) == 1 }) {
-			t.Fatalf("want exactly one leader, got %d", len(leaders(cands)))
+		// The candidates reach their roles asynchronously: each reports standby before
+		// contending, then the one that wins the lock flips to leader. Wait for the
+		// electorate to settle -- exactly one leader and every other candidate a
+		// standby -- rather than reading the counts the instant the first leader
+		// appears, when a still-scheduling candidate may not have run past SetStandby
+		// yet and so still reports the unknown role.
+		if !pollUntil(func() bool { return len(leaders(cands)) == 1 && standbyCount(cands) == n-1 }) {
+			t.Fatalf("election did not settle: leaders=%d standbys=%d, want 1 leader and %d standbys",
+				len(leaders(cands)), standbyCount(cands), n-1)
 		}
-		ls := leaders(cands)
-		if len(ls) != 1 {
-			t.Fatalf("exactly one candidate must lead, got %d", len(ls))
+		// Exactly one candidate leads; every other is a standby blocked on the lock,
+		// never a second leader.
+		if got := len(leaders(cands)); got != 1 {
+			t.Fatalf("exactly one candidate must lead, got %d", got)
 		}
-		// Every other candidate is a standby (blocked acquiring the lock), never a
-		// second leader.
-		standbys := 0
-		for _, c := range cands {
-			if c.role.Role() == api.RoleStandby {
-				standbys++
-			}
-		}
-		if standbys != n-1 {
-			t.Errorf("standbys = %d, want %d (all non-leaders block on the lock)", standbys, n-1)
+		if got := standbyCount(cands); got != n-1 {
+			t.Errorf("standbys = %d, want %d (all non-leaders block on the lock)", got, n-1)
 		}
 	})
 

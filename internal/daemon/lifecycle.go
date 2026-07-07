@@ -15,6 +15,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -94,9 +95,29 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer func() { _ = client.Close(context.Background()) }()
 
-	// The role state the mux consults: standby until election confirms leadership.
+	// The data-database client the control plane provisions schemas through: a pool on
+	// the admin DSN's own database (where the declared tables and journal live), a peer
+	// of the meta client store owns.
+	data, err := pg.Connect(ctx, adminDSN.Source())
+	if err != nil {
+		return fmt.Errorf("daemon: connect data database: %w", err)
+	}
+	defer data.Close()
+
+	// The leader's workspace tree: declarations and the schemas/ tree resolve against
+	// it. The daemon runs in the workspace (its socket lives under <workspace>/.iris),
+	// so its working directory is that tree.
+	workspace, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("daemon: resolve workspace: %w", err)
+	}
+
+	// The role state the mux consults and the control plane the mux routes apply/destroy
+	// to: standby/unwired until election confirms leadership and installs the
+	// orchestrator.
 	role := api.NewRoleState()
-	srv := NewServer(s, api.NewMux(api.WithRole(role)), WithServerLogger(logger))
+	control := newControlPlane()
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -113,7 +134,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// SIGKILLs same-host survivors through the exec seam, and disposes of their runs
 	// through the single writer (specification section 2 crash recovery).
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
-		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()))
+		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
+		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

@@ -72,7 +72,23 @@ const (
 INSERT INTO dead_letters (run_id, reason, error)
 SELECT id, $4, $5 FROM updated`
 	deleteQueuedRunSQL = "DELETE FROM runs WHERE id = $1 AND state = $2"
+	markRunRunningSQL  = "UPDATE runs SET state = $1, handle = $2 WHERE id = $3 AND state = $4"
 )
+
+// MarkRunRunning records a started run: in one guarded statement it transitions the
+// run from queued to running and records its subprocess process-group id as
+// runs.handle (specification section 1: handle = process-group id, set when the
+// subprocess starts). The dispatcher submits it through the single writer the moment
+// exec starts a run. The UPDATE is guarded on the queued state, so it can only ever
+// act on a run that has not already started -- never one already running or terminal
+// -- and it is one atomic Exec, never a read-then-write that could split. It is a
+// leader-only meta write, riding the single Writer.
+func (w *Writer) MarkRunRunning(ctx context.Context, id string, pgid int) error {
+	if err := w.conn.Exec(ctx, markRunRunningSQL, RunRunning, pgid, id, RunQueued); err != nil {
+		return fmt.Errorf("store: writer mark run running %s: %w", id, err)
+	}
+	return nil
+}
 
 // DeadLetterRun dead-letters a leftover run: in one atomic statement it transitions
 // the run from running to the dead_lettered terminal state and records its
@@ -97,6 +113,52 @@ func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetter
 func (w *Writer) DeleteQueuedRun(ctx context.Context, id string) error {
 	if err := w.conn.Exec(ctx, deleteQueuedRunSQL, id, RunQueued); err != nil {
 		return fmt.Errorf("store: writer delete queued run %s: %w", id, err)
+	}
+	return nil
+}
+
+// MigrationHead is one applied-migration ledger row an engine records against the
+// meta migrations table (specification section 4): the (schema, table,
+// migration_id) key, the parent migration id, and the checksum of table.yaml at
+// that revision. The applied_seq identity column is assigned by meta on insert,
+// never carried here. It is the durable applied head that ledger-versus-disk drift
+// detection compares against the migrations/ files on disk.
+type MigrationHead struct {
+	// Schema is the declared table's schema.
+	Schema string
+	// Table is the declared table's name.
+	Table string
+	// MigrationID is the zero-padded migration id being recorded as applied (e.g.
+	// "0002").
+	MigrationID string
+	// Parent is the predecessor migration id (e.g. "0001"); empty for the create
+	// head (0001_create), which is recorded as a SQL NULL parent.
+	Parent string
+	// Checksum is the checksum of table.yaml at this revision (declare.ChecksumTableYAML).
+	Checksum string
+}
+
+// recordMigrationHeadSQL inserts one applied-migration ledger row. It is a single
+// statement: recording an applied head is one atomic Exec, never a read-then-write
+// that could split. applied_seq is omitted so meta's identity generator assigns
+// the monotonic ordering key; the reserved column names schema and table are
+// double-quoted.
+const recordMigrationHeadSQL = `INSERT INTO migrations ("schema", "table", migration_id, parent, checksum)
+VALUES ($1, $2, $3, $4, $5)`
+
+// RecordMigrationHead inserts a migrations row recording a table's applied head so
+// each table's applied migration is durably recorded for ledger-versus-disk drift
+// detection (specification section 4). The insert is one atomic statement; an empty
+// parent (the create head) is recorded as SQL NULL rather than an empty string, so
+// the create head is distinguishable from a migration that names "" as its parent.
+// It is a leader-only meta write, riding the single Writer.
+func (w *Writer) RecordMigrationHead(ctx context.Context, head MigrationHead) error {
+	var parent any // nil -> SQL NULL for the create head.
+	if head.Parent != "" {
+		parent = head.Parent
+	}
+	if err := w.conn.Exec(ctx, recordMigrationHeadSQL, head.Schema, head.Table, head.MigrationID, parent, head.Checksum); err != nil {
+		return fmt.Errorf("store: writer record migration head %s.%s %s: %w", head.Schema, head.Table, head.MigrationID, err)
 	}
 	return nil
 }

@@ -5,14 +5,14 @@ set -euo pipefail
 pr="$1"
 
 # Wait for checks to register (gh prints "no checks reported" to stderr and exits 8).
-for _ in $(seq 1 40); do
+for _ in $(seq 1 120); do
   out=$(gh pr checks "$pr" 2>/dev/null || true)
   if [ -n "$out" ]; then break; fi
   sleep 15
 done
 out=$(gh pr checks "$pr" 2>/dev/null || true)
 if [ -z "$out" ]; then
-  echo "NO_CHECKS_REGISTERED after 10m" >&2
+  echo "NO_CHECKS_REGISTERED after 30m" >&2
   exit 1
 fi
 

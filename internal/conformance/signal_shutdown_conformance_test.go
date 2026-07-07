@@ -62,15 +62,23 @@ func TestSignalGracefulShutdown(t *testing.T) {
 					t.Fatalf("daemon did not exit cleanly on %s: %v", tc.name, err)
 				}
 
-				// The socket and pidfile are released on a clean shutdown.
-				goneCtx, cancelGone := context.WithTimeout(context.Background(), 10*time.Second)
-				if err := waitSocketGone(goneCtx, socket); err != nil {
+				// The socket and pidfile are released as the daemon shuts down --
+				// asynchronously: the process can be gone (waitPIDGone above) a hair
+				// before it has finished releasing either artifact, so poll each with a
+				// generous deadline and fail only once it is truly overdue, never on the
+				// instant after the signal is sent. Independent deadlines keep a lingering
+				// socket from starving the pidfile check into a misleading cascade.
+				socketCtx, cancelSocket := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := waitSocketGone(socketCtx, socket); err != nil {
 					t.Errorf("socket still reachable after %s: %v", tc.name, err)
 				}
-				cancelGone()
-				if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-					t.Errorf("pidfile survived %s (stat err=%v)", tc.name, err)
+				cancelSocket()
+
+				pidGoneCtx, cancelPIDGone := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := waitFileGone(pidGoneCtx, pidPath); err != nil {
+					t.Errorf("pidfile survived %s: %v", tc.name, err)
 				}
+				cancelPIDGone()
 
 				// The shutdown is recorded in the structured daemon log.
 				body, err := os.ReadFile(logPath) //nolint:gosec // G304: logPath is the engine-owned daemon.log under the test's throwaway workspace, never user or network input.
@@ -97,6 +105,29 @@ func readDaemonPID(t *testing.T, pidPath string) int {
 		t.Fatalf("pidfile %s does not hold a pid: %v", pidPath, err)
 	}
 	return pid
+}
+
+// waitFileGone polls until the file at path no longer exists or ctx is done, so a
+// test can confirm a stopped daemon has removed an artifact -- its pidfile --
+// whose removal rides the asynchronous shutdown and is not synchronous with
+// process exit. It returns nil once the file is gone, ctx.Err() when the deadline
+// passes with the file still present, and any stat error other than not-exist.
+// The brief backoff between probes only keeps the loop from spinning and never
+// stands in for a readiness signal.
+func waitFileGone(ctx context.Context, path string) error {
+	for {
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // waitPIDGone polls until the process with pid is no longer alive or the deadline

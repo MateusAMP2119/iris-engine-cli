@@ -1,0 +1,8 @@
+id: "0002"
+parent: "0001"
+op: add_column
+column:
+  name: status
+  type: text
+  default: "'pending'"
+checksum: c0bb62137b875d4d76dc820e5f98cf9afe740831eb1476cf3072e1d1885dd353
