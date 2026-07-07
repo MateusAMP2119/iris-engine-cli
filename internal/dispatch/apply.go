@@ -41,13 +41,6 @@ func NewApplier(reg store.RegistryReader, submit Submitter) *Applier {
 // failure -- a depends_on on an unregistered pipeline, or one that closes a cycle --
 // returns before any write, so meta is unchanged.
 func (a *Applier) ApplyPipeline(ctx context.Context, folder string, decl *declare.Pipeline) error {
-	graph, err := a.buildGraph(ctx)
-	if err != nil {
-		return fmt.Errorf("dispatch: apply pipeline %q: %w", decl.Name, err)
-	}
-	if err := declare.ValidateDependencies(graph, decl); err != nil {
-		return fmt.Errorf("dispatch: apply pipeline %q: %w", decl.Name, err)
-	}
 	row := store.PipelineRow{
 		Name:     decl.Name,
 		Folder:   folder,
@@ -55,7 +48,21 @@ func (a *Applier) ApplyPipeline(ctx context.Context, folder string, decl *declar
 		Artifact: store.ArtifactSource,
 		DataMode: store.DataDisposable,
 	}
+	// Validate and write on the single-writer path: the graph is read, the
+	// depends_on edges validated against it, and the row written inside one
+	// dispatcher closure, so no concurrent apply can commit an edge between the read
+	// and the write. Reading the registry outside Submit would reopen the
+	// read-validate-write race two concurrent applies (A->B and B->A) could exploit
+	// to both pass acyclicity on the same pre-write snapshot and then both commit a
+	// cycle. A validation failure returns before any write, so meta is unchanged.
 	if err := a.submit.Submit(ctx, func(w *store.Writer) error {
+		graph, err := a.buildGraph(ctx)
+		if err != nil {
+			return err
+		}
+		if err := declare.ValidateDependencies(graph, decl); err != nil {
+			return err
+		}
 		return w.RegisterPipeline(ctx, row, decl.DependsOn)
 	}); err != nil {
 		return fmt.Errorf("dispatch: apply pipeline %q: %w", decl.Name, err)
