@@ -58,16 +58,16 @@ Opus, never downgrade.
 
 - [x] E04.1 Access declaration validation — done (PR #34: https://github.com/MateusAMP2119/iris-engine-cli/pull/34; Sonnet)
 - [x] E04.2 Role and credential lifecycle — done (PR #37: https://github.com/MateusAMP2119/iris-engine-cli/pull/37)
-- [ ] E04.3 Grant reconcile and drift — todo (needs E04.1, E04.2)
+- [ ] E04.3 Grant reconcile and drift — in-progress (.worktrees/E04.3, Opus)
 - [ ] E04.4 Connection injection and enforcement — todo (needs E04.2, E04.3)
 
 ## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
 
 - [x] E05.1 Exec seam — done (PR #39: https://github.com/MateusAMP2119/iris-engine-cli/pull/39)
-- [ ] E05.2 Run environment — todo (needs E05.1)
-- [ ] E05.3 Run records and states — todo (needs E05.1)
+- [x] E05.2 Run environment — done (PR #40)
+- [x] E05.3 Run records and states — done (PR #42)
 - [x] E05.4 Lane model and walk — done (PR #38: https://github.com/MateusAMP2119/iris-engine-cli/pull/38)
-- [ ] E05.5 Gate and consumption — todo (needs E05.3, E05.4)
+- [ ] E05.5 Gate and consumption — in-progress (.worktrees/E05.5, Opus)
 - [ ] E05.6 Failure propagation — todo (needs E05.5)
 - [ ] E05.7 Dead letter replay — todo (needs E05.6)
 - [ ] E05.8 Dead letter drain — todo (needs E05.7)
