@@ -330,3 +330,156 @@ func TestArtifactRebuildInsertsNewRow(t *testing.T) {
 		t.Errorf("newest artifacts row hash = %v, want the rebuild's %q", last.Args[0], second.Hash)
 	}
 }
+
+// goTarget is a registered go pipeline's build target with an explicit run vector,
+// so a test can drive the recipe from a non-default run shape.
+func goTarget(t *testing.T, run []string) dispatch.BuildTarget {
+	t.Helper()
+	return dispatch.BuildTarget{Pipeline: "svc", Dir: t.TempDir(), Run: run}
+}
+
+// flagValue returns the argument following flag in argv, or "" when the flag is
+// absent, so a test can pin the value a toolchain invocation binds to a flag.
+func flagValue(argv []string, flag string) string {
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == flag {
+			return argv[i+1]
+		}
+	}
+	return ""
+}
+
+// TestBuildGoPackageFromRunVector proves the Go recipe compiles the package the
+// run vector actually names, not the folder root (specification section 1: build
+// compiles the source into one self-contained binary). A pipeline whose main
+// package is a subdirectory -- run [go, run, ./cmd/etl] -- must build ./cmd/etl, so
+// the executed binary is the declared entry point, never a stray root package.
+//
+// spec: S01/build-single-binary-content-hash
+func TestBuildGoPackageFromRunVector(t *testing.T) {
+	h := newBuildHarness(t)
+	h.runner.Output = []byte("#!ELF fake go binary from ./cmd/etl")
+
+	if _, err := h.builder.Build(context.Background(), goTarget(t, []string{"go", "run", "./cmd/etl"})); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := h.runner.calls(); got != 1 {
+		t.Fatalf("toolchain invocations = %d, want exactly 1", got)
+	}
+	argv := h.runner.Specs[0].Argv
+	if len(argv) < 2 || argv[0] != "go" || argv[1] != "build" {
+		t.Fatalf("go toolchain argv = %v, want a `go build` invocation", argv)
+	}
+	// The package argument is the declared package, never the folder root ".".
+	if pkg := argv[len(argv)-1]; pkg != "./cmd/etl" {
+		t.Errorf("go build package = %q, want the declared ./cmd/etl", pkg)
+	}
+	for _, a := range argv {
+		if a == "." {
+			t.Errorf("go build used the folder root \".\", ignoring the declared package ./cmd/etl: %v", argv)
+		}
+	}
+}
+
+// TestBuildRejectsUnbuildableRunVectors proves a run vector with no single source
+// file to compile is rejected with a clear error BEFORE any toolchain runs
+// (specification sections 1 and 9): module (`python -m etl`) and inline
+// (`python -c ...`, `node -e ...`) forms, an interpreter with no script, and a Go
+// vector that is not `go run <package>` all fail without exec, so the toolchain is
+// never handed a flag or module name as if it were the entry source.
+//
+// spec: S01/build-single-binary-content-hash
+func TestBuildRejectsUnbuildableRunVectors(t *testing.T) {
+	cases := []struct {
+		name string
+		run  []string
+	}{
+		{"python module form", []string{"python", "-m", "etl"}},
+		{"python inline form", []string{"python", "-c", "print(1)"}},
+		{"python interpreter only", []string{"python"}},
+		{"node inline form", []string{"node", "-e", "console.log(1)"}},
+		{"go without run subcommand", []string{"go", "main.go"}},
+		{"go run without package", []string{"go", "run"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newBuildHarness(t)
+			_, err := h.builder.Build(context.Background(), dispatch.BuildTarget{
+				Pipeline: "p", Dir: t.TempDir(), Run: tc.run,
+			})
+			if err == nil {
+				t.Fatalf("Build(%v) returned nil error, want an unbuildable-vector rejection", tc.run)
+			}
+			if got := h.runner.calls(); got != 0 {
+				t.Errorf("toolchain ran %d times for unbuildable vector %v, want 0 (rejected before exec)", got, tc.run)
+			}
+		})
+	}
+}
+
+// TestBuildEntryScriptIgnoresProgramArgs proves the interpreted entry the toolchain
+// compiles is the declared script, not the run vector's trailing token
+// (specification section 1). Program args after the script -- run
+// [python, main.py, --verbose] -- are the pipeline's, never the entry: pyinstaller
+// receives main.py and never the --verbose flag.
+//
+// spec: S01/build-single-binary-content-hash
+func TestBuildEntryScriptIgnoresProgramArgs(t *testing.T) {
+	h := newBuildHarness(t)
+	if _, err := h.builder.Build(context.Background(), dispatch.BuildTarget{
+		Pipeline: "etl", Dir: t.TempDir(), Run: []string{"python", "main.py", "--verbose"},
+	}); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	argv := h.runner.Specs[0].Argv
+	if last := argv[len(argv)-1]; last != "main.py" {
+		t.Errorf("pyinstaller entry = %q, want the declared script main.py (not a program arg)", last)
+	}
+	for _, a := range argv {
+		if a == "--verbose" {
+			t.Errorf("pyinstaller argv carries the pipeline's program arg --verbose: %v", argv)
+		}
+	}
+}
+
+// TestBuildPyInstallerStagesScratchDirs proves the PyInstaller invocation pins its
+// scratch outputs -- the work dir, the .spec dir, and the dist dir -- outside the
+// pipeline's source folder (specification section 9), so a real one-file build never
+// litters build/ and <name>.spec into the user's source tree.
+//
+// spec: S01/build-single-binary-content-hash
+func TestBuildPyInstallerStagesScratchDirs(t *testing.T) {
+	h := newBuildHarness(t)
+	target := pyTarget(t)
+	if _, err := h.builder.Build(context.Background(), target); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	argv := h.runner.Specs[0].Argv
+
+	scratch := map[string]string{
+		"--workpath": flagValue(argv, "--workpath"),
+		"--specpath": flagValue(argv, "--specpath"),
+		"--distpath": flagValue(argv, "--distpath"),
+	}
+	if scratch["--workpath"] == "" {
+		t.Error("pyinstaller argv has no --workpath; the real toolchain would write build/ into the source dir")
+	}
+	if scratch["--specpath"] == "" {
+		t.Error("pyinstaller argv has no --specpath; the real toolchain would write <name>.spec into the source dir")
+	}
+	for flag, p := range scratch {
+		if p == "" {
+			continue
+		}
+		// The scratch dir must not sit inside the pipeline source folder: a relative
+		// path from the source dir either escapes it (starts with "..") or is out of
+		// tree entirely (Rel errors on a different volume/root).
+		rel, err := filepath.Rel(target.Dir, p)
+		if err != nil {
+			continue // different root: definitively outside the source dir.
+		}
+		if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			t.Errorf("%s %q is inside the pipeline source dir %q; toolchain scratch must stay out of source", flag, p, target.Dir)
+		}
+	}
+}

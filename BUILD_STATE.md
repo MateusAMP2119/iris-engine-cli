@@ -8,7 +8,7 @@ FLAKE RESOLVED 2026-07-07: TestHungRunHoldsLane scheduling race fixed in PR #64 
 
 RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
 
-SESSION A 14:45 (user directive: usage 15%, "finish everything left"): A spawns NO new coders while B's four run (E06.7, E09.5, E12.2, E08.2-fix — live per mtimes). A takes harvest duty only: when a B worktree is commit-complete + write-quiet, A reviews, pushes, PRs, merges, updates here. B: announce completions here, do not respawn merged tasks. Merge queue serial.
+SESSION B DEAD ~14:41 (all four worktrees went write-silent simultaneously; user closed it). SESSION A owns everything again. E08.2 review-fix harvested → PR #68. E06.7/E09.5/E12.2 resumed in-place by fresh A agents (15:0x) continuing B's partial state.
 
 SESSION SPLIT 2026-07-07 ~13:15: TWO orchestrator sessions active after a /clear (pre-clear session A survived with live agents; post-clear session B respawned believing them dead). Current ownership — session A: E09.5 (worktree live), PR/merge duties it already took (#64 merged, #65 opened). Session B: E06.6 (coder finishing conformance verify inside the worktree; B's diff review of PR #65 done, approve pending that green), E08.2, E11.3 (coders live in worktrees). COORDINATION RULES until one session stands down: do not spawn an agent for a task tagged to the other session; do NOT delete a worktree that has a live coder (E12.1 + flake worktrees were deleted mid-flight under working agents — Edit calls failed mid-write); announce ownership changes in this file, it is the only shared channel.
 
@@ -28,6 +28,7 @@ end-to-end daemon path is the integration closure. E05.7 CLI↔leader wire shape
 internal/api when the route lands. E11.3 adds: production Run() wires neither
 WithInflightKiller nor WithFreshSessions — wire BOTH together (else standby re-entry
 silently breaks) alongside the lane loop + a store.Client session-renewal seam (E11.4).
+NEW FLAKE (track): daemon TestLanePassCounterLeaderTerm/S11/lane-pass-counter-reset (E12.1) — counter read raced leader-change reset once on linux Go 1.26 CI (PR #70); 30/30 green under -race locally; rerun passed. If it repeats, fix = wait on demotion completion before Counts assert.
 E08.2 adds: WithBuildPlane/WithPipelinePlane/WithControlPlane silently overwrite shared
 option fields (workspace/manualReader/runner) — last wins, no error; buildplane clear()
 blocks new builds but doesn't stop in-flight ones (mirrors manual-run plane pattern).
@@ -136,7 +137,7 @@ Opus, never downgrade.
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
 - [x] E09.3 Param grammar and paging — done (PR #57)
 - [x] E09.4 Envelope and serialization — done (PR #61)
-- [ ] E09.5 Route mux and auth — in-progress, session B (taken over ~14:20: session A dead since 13:11 limit hit, never resumed after 13:40 reset; worktree was empty — fresh start)
+- [x] E09.5 Route mux and auth — done (PR #69)
 - [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
 - [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
 - [ ] E09.8 Q and data routes — todo (needs E09.6, E09.7)
@@ -159,7 +160,7 @@ Opus, never downgrade.
 ## E12 Stats, Info and Inspect — epic PR: —
 
 - [x] E12.1 Stats rollups — done (PR #64)
-- [ ] E12.2 Info inspect and show — in-progress, session B (needs E12.1 ✓)
+- [x] E12.2 Info inspect and show — done (PR #70)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
 

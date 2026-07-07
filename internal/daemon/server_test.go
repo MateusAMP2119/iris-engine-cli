@@ -21,6 +21,7 @@ import (
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
 // fakeVerifier accepts exactly one bearer token, so the TCP listener's PAT gate
@@ -28,12 +29,13 @@ import (
 // real (E09.1) PAT store.
 type fakeVerifier struct{ good string }
 
-// VerifyToken accepts only the configured token.
-func (f fakeVerifier) VerifyToken(_ context.Context, tok string) error {
+// VerifyToken accepts only the configured token, resolving it to a full-scope
+// authority.
+func (f fakeVerifier) VerifyToken(_ context.Context, tok string) (api.Authority, error) {
 	if tok == f.good {
-		return nil
+		return api.Authority{PATID: "fake", Scopes: []pat.Scope{pat.ScopeControl, pat.ScopeRead, pat.ScopeData}}, nil
 	}
-	return errNoMatch
+	return api.Authority{}, errNoMatch
 }
 
 var errNoMatch = errTest("unknown token")

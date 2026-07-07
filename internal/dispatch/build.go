@@ -22,6 +22,7 @@ package dispatch
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -84,16 +85,35 @@ func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.Artifact
 		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: %w", target.Pipeline, err)
 	}
 
+	// The single source the recipe compiles, validated from the run vector before
+	// anything runs: the Go package the run vector names, or the interpreted entry
+	// script -- never a flag or module name. An unbuildable vector fails here, so the
+	// toolchain is never handed a non-source argument.
+	src, err := sourceTarget(recipe, target.Run)
+	if err != nil {
+		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: %w", target.Pipeline, err)
+	}
+
 	// The binary is compiled into a private staging directory and only its bytes
-	// survive -- ingested into the object store under their hash -- so no
-	// mutable "latest binary" path ever exists to run from.
+	// survive -- ingested into the object store under their hash -- so no mutable
+	// "latest binary" path ever exists to run from. The toolchain's own scratch
+	// (PyInstaller's work and .spec dirs, the dist dir) is pinned under here too, so a
+	// real build never writes into the pipeline's source folder.
 	stage, err := os.MkdirTemp("", "iris-build-")
 	if err != nil {
 		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: create staging dir: %w", target.Pipeline, err)
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 
-	argv, binPath := toolchainInvocation(recipe, target, stage)
+	dist := filepath.Join(stage, "dist")
+	work := filepath.Join(stage, "work")
+	spec := filepath.Join(stage, "spec")
+	for _, d := range []string{dist, work, spec} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: create staging dir: %w", target.Pipeline, err)
+		}
+	}
+	argv, binPath := toolchainArgv(recipe, target, src, dist, work, spec)
 
 	// Direct exec of the pinned toolchain in the pipeline folder, output captured
 	// so a failed compile reports the toolchain's own diagnostics.
@@ -109,8 +129,15 @@ func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.Artifact
 	}
 	status, waitErr := h.Wait()
 	if status.Signaled || status.Code != 0 {
-		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: %s failed (%s)%s",
+		failed := fmt.Errorf("dispatch: build %q: %s failed (%s)%s",
 			target.Pipeline, recipe.Toolchain, exitString(status), diagnosticTail(&stderr, &stdout))
+		// A bounded-output-capture fault coincident with a non-zero exit is joined,
+		// not swallowed: both the compile failure and the capture error are reported.
+		if waitErr != nil {
+			return store.ArtifactRow{}, errors.Join(failed,
+				fmt.Errorf("dispatch: build %q: %s output capture: %w", target.Pipeline, recipe.Toolchain, waitErr))
+		}
+		return store.ArtifactRow{}, failed
 	}
 	if waitErr != nil {
 		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: %s output capture: %w", target.Pipeline, recipe.Toolchain, waitErr)
@@ -141,20 +168,29 @@ func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.Artifact
 	return row, nil
 }
 
-// toolchainInvocation composes the pinned recipe's direct-exec argv and the
-// staged path the self-contained binary lands at. The mapping is closed, one
-// invocation shape per pinned toolchain (specification section 9): Go native
-// go build, Python via PyInstaller one-file, Node via pkg. The staged binary is
-// always named after the pipeline, so every recipe yields exactly one output.
-func toolchainInvocation(r build.Recipe, target BuildTarget, stage string) (argv []string, binPath string) {
-	binPath = filepath.Join(stage, target.Pipeline)
+// toolchainArgv composes the pinned recipe's direct-exec argv and the staged path
+// the self-contained binary lands at. The mapping is closed, one invocation shape
+// per pinned toolchain (specification section 9): Go native go build, Python via
+// PyInstaller one-file, Node via pkg. src is the validated build source
+// (sourceTarget): the Go package the run vector names, or the interpreted entry
+// script. dist/work/spec are staged scratch dirs under the build staging root, so
+// the toolchain never writes into the pipeline's source folder; the staged binary
+// is always named after the pipeline, so every recipe yields exactly one output.
+func toolchainArgv(r build.Recipe, target BuildTarget, src, dist, work, spec string) (argv []string, binPath string) {
+	binPath = filepath.Join(dist, target.Pipeline)
 	switch r.Toolchain {
 	case build.ToolchainGoBuild:
-		return []string{"go", "build", "-o", binPath, "."}, binPath
+		return []string{"go", "build", "-o", binPath, src}, binPath
 	case build.ToolchainPyInstallerOneFile:
-		return []string{"pyinstaller", "--onefile", "--distpath", stage, "--name", target.Pipeline, entryScript(target.Run)}, binPath
+		// --distpath, --workpath, and --specpath are all pinned into the staging tree
+		// so PyInstaller's dist/, build/, and <name>.spec never land in the source dir.
+		return []string{
+			"pyinstaller", "--onefile",
+			"--distpath", dist, "--workpath", work, "--specpath", spec,
+			"--name", target.Pipeline, src,
+		}, binPath
 	case build.ToolchainPkg:
-		return []string{"pkg", entryScript(target.Run), "--output", binPath}, binPath
+		return []string{"pkg", src, "--output", binPath}, binPath
 	default:
 		// Unreachable through Build: InferRecipe only yields pinned recipes. Kept
 		// total so a future recipe added to internal/build without an invocation
@@ -163,14 +199,55 @@ func toolchainInvocation(r build.Recipe, target BuildTarget, stage string) (argv
 	}
 }
 
-// entryScript is the interpreted entry file a script-runtime toolchain compiles:
-// the run vector's final element ([python, main.py] -> main.py, [node, index.js]
-// -> index.js), the argument position the dev run executes.
-func entryScript(run []string) string {
-	if len(run) == 0 {
-		return ""
+// sourceTarget validates target.Run's shape for recipe's runtime and returns the
+// single source the toolchain compiles, or an error for an unbuildable vector
+// (specification sections 1, 3, and 9). It is the guard that keeps a flag or module
+// name from ever reaching the toolchain as if it were the entry source.
+func sourceTarget(r build.Recipe, run []string) (string, error) {
+	switch r.Runtime {
+	case build.RuntimeGo:
+		return goPackage(run)
+	case build.RuntimePython, build.RuntimeNode:
+		return entryScript(r.Runtime, run)
+	default:
+		// Unreachable through Build: InferRecipe only yields pinned runtimes.
+		return "", fmt.Errorf("unsupported runtime %q: no build source rule", r.Runtime)
 	}
-	return run[len(run)-1]
+}
+
+// goPackage extracts the package a Go dev-run vector names -- `go run <package>`,
+// e.g. [go, run, ./cmd/etl] -> ./cmd/etl -- so go build compiles that package, not
+// the folder root. It requires the `go run` shape and a package argument; the
+// package is the first non-flag token after `run` (leading build flags are skipped,
+// trailing program args never reached). A vector that is not `go run <package>` is
+// unbuildable.
+func goPackage(run []string) (string, error) {
+	if len(run) < 3 || run[1] != "run" {
+		return "", fmt.Errorf("unbuildable go run vector %v: expected `go run <package>`", run)
+	}
+	for _, a := range run[2:] {
+		if !strings.HasPrefix(a, "-") {
+			return a, nil
+		}
+	}
+	return "", fmt.Errorf("unbuildable go run vector %v: no package argument after `go run`", run)
+}
+
+// entryScript extracts the interpreted entry file a script-runtime dev-run vector
+// compiles: the first argument after the interpreter ([python, main.py, --verbose]
+// -> main.py, [node, index.js] -> index.js), so trailing program args are never
+// mistaken for the entry. An interpreter option in the entry position (`-m module`,
+// `-c code`, `-e code`) has no single source file to compile and is unbuildable, as
+// is an interpreter with no script at all.
+func entryScript(rt build.Runtime, run []string) (string, error) {
+	if len(run) < 2 {
+		return "", fmt.Errorf("unbuildable %s run vector %v: no entry script after the interpreter", rt, run)
+	}
+	script := run[1]
+	if strings.HasPrefix(script, "-") {
+		return "", fmt.Errorf("unbuildable %s run vector %v: %q is an interpreter option, not a source file (module/inline forms have no single source file to compile)", rt, run, script)
+	}
+	return script, nil
 }
 
 // exitString renders a toolchain's terminal status for the build error.
@@ -192,9 +269,10 @@ func diagnosticTail(stderr, stdout *bytes.Buffer) string {
 	if out == "" {
 		return ""
 	}
+	// Bound the tail on a rune boundary so a multi-byte character is never split.
 	const bound = 512
-	if len(out) > bound {
-		out = "..." + out[len(out)-bound:]
+	if r := []rune(out); len(r) > bound {
+		out = "..." + string(r[len(r)-bound:])
 	}
 	return ": " + out
 }
