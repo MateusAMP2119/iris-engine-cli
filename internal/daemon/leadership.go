@@ -69,6 +69,14 @@ type Candidate struct {
 	pipelines    *pipelinePlane
 	manualReader store.ManualReader
 	runner       exec.Runner
+
+	// Lane-loop wiring: builds the perpetual lane loop over the single dispatcher on
+	// winning leadership. The leader drives it after reconciliation (so no lane
+	// dispatches ahead of crash recovery) and stops it on demotion (so a deposed leader
+	// never dispatches). Nil leaves the leader without a lane loop -- the election-only,
+	// control-only, and manual-only wiring uses this, so existing composition is
+	// unaffected (specification sections 6.1 and 6.3).
+	laneLoopBuild func(dispatch.Submitter) *dispatch.Loop
 }
 
 // CandidateOption configures a Candidate at construction.
@@ -127,6 +135,18 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.manualReader = manual
 		c.runner = runner
 	}
+}
+
+// WithLaneLoop wires the leader-side perpetual lane loop: on winning leadership the
+// candidate builds the loop over the single dispatcher (the sole meta writer) with build,
+// starts it once startup reconciliation is done, and stops it on demotion. The loop reads
+// the walk at each pass start and starts eligible pipelines in composer order, one
+// goroutine per lane, distinct lanes in parallel (specification sections 6.1 and 6.3).
+// build receives the dispatcher as the single-writer submission seam and composes the
+// walk, gate, run-start, and post-pass bookkeeping over it. A nil build (the default)
+// leaves the leader without a lane loop.
+func WithLaneLoop(build func(dispatch.Submitter) *dispatch.Loop) CandidateOption {
+	return func(c *Candidate) { c.laneLoopBuild = build }
 }
 
 // NewCandidate builds a leadership candidate over the leader lock, the role state
@@ -239,6 +259,29 @@ func (c *Candidate) lead(ctx context.Context) error {
 
 	c.role.SetLeader()
 	c.logger.Info("iris daemon leader: dispatching (sole meta writer)")
+
+	// Drive the perpetual lane loop for the duration of leadership, over the single
+	// dispatcher (specification sections 6.1 and 6.3). It starts only now -- after crash
+	// reconciliation and after the leader role is reported -- so no lane dispatches ahead
+	// of recovery, and it is bound to a child context cancelled the moment leadership ends
+	// (ctx cancelled at shutdown, or the lock session lost), so a demoted leader stops
+	// dispatching at once. The join waits for Run to return, not for in-flight runs: a hung
+	// run holds its lane but never delays demotion (the loop exits promptly on cancel).
+	if c.laneLoopBuild != nil {
+		loop := c.laneLoopBuild(d)
+		loopCtx, stopLoop := context.WithCancel(ctx)
+		loopDone := make(chan struct{})
+		go func() {
+			defer close(loopDone)
+			if err := loop.Run(loopCtx); err != nil && ctx.Err() == nil {
+				c.logger.Warn("iris daemon leader: lane loop stopped", "err", err)
+			}
+		}()
+		defer func() {
+			stopLoop()
+			<-loopDone
+		}()
+	}
 
 	select {
 	case <-ctx.Done():
