@@ -95,7 +95,7 @@ Opus, never downgrade.
 
 - [x] E06.1 Journal DDL and partitioning — done (PR #48)
 - [x] E06.2 Capture trigger emission — done (PR #52)
-- [ ] E06.3 Run attribution — todo (needs E06.2)
+- [x] E06.3 Run attribution — done (PR #55)
 - [ ] E06.4 Payload tiers and modes — todo (needs E06.2, E06.3)
 - [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)
 - [ ] E06.6 Promotion — todo (needs E06.5)
