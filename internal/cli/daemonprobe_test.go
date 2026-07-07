@@ -21,6 +21,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
 // acceptTokenVerifier accepts one bearer token, so a TCP probe over the PAT gate
@@ -28,12 +29,13 @@ import (
 // the auth outcome.
 type acceptTokenVerifier struct{ good string }
 
-// VerifyToken accepts only the configured token.
-func (v acceptTokenVerifier) VerifyToken(_ context.Context, tok string) error {
+// VerifyToken accepts only the configured token, resolving it to a read-scope
+// authority (the probe hits /healthz, an engine-state read).
+func (v acceptTokenVerifier) VerifyToken(_ context.Context, tok string) (api.Authority, error) {
 	if tok == v.good {
-		return nil
+		return api.Authority{PATID: "probe", Scopes: []pat.Scope{pat.ScopeRead}}, nil
 	}
-	return errors.New("cli: bad token")
+	return api.Authority{}, errors.New("cli: bad token")
 }
 
 // startInProcess starts srv and registers its shutdown, failing on a bind error.

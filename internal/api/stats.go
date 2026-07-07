@@ -163,6 +163,9 @@ func (m *mux) serveStats(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
 		return
 	}
+	if !noParams(w, r) {
+		return
+	}
 	payload, err := m.stats.Stats(r.Context())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())

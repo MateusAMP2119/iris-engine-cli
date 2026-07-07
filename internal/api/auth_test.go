@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
 // fakeVerifier accepts exactly one bearer token and rejects every other, so the
@@ -16,12 +18,13 @@ import (
 // an unauthenticated one.
 type fakeVerifier struct{ good string }
 
-// VerifyToken accepts only the configured token.
-func (f fakeVerifier) VerifyToken(_ context.Context, tok string) error {
+// VerifyToken accepts only the configured token, resolving it to a full-scope
+// authority.
+func (f fakeVerifier) VerifyToken(_ context.Context, tok string) (Authority, error) {
 	if tok == f.good {
-		return nil
+		return Authority{PATID: "fake", Scopes: []pat.Scope{pat.ScopeControl, pat.ScopeRead, pat.ScopeData}}, nil
 	}
-	return errors.New("api: unknown token")
+	return Authority{}, errors.New("api: unknown token")
 }
 
 // okHandler is the trivial downstream handler the middleware protects: it writes
