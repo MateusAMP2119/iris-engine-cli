@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS public.data_journal (
 
 CREATE INDEX IF NOT EXISTS data_journal_provenance_idx ON public.data_journal ("schema", "table", row_pk, run_id);
 
+CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);
+
+GRANT SELECT ON public.data_journal TO PUBLIC;
+
 DROP TRIGGER IF EXISTS "iris_capture_ins_analytics_orders" ON "analytics"."orders";
 CREATE TRIGGER "iris_capture_ins_analytics_orders"
     AFTER INSERT ON "analytics"."orders"

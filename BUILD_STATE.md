@@ -4,6 +4,10 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
+KNOWN CI-RED (fixing, worktree .worktrees/shutdownfix): conformance TestSignalGracefulShutdown/SIGINT fails on LINUX CI only (passes darwin) — pidfile removal gated behind election-lock release + embedded-PG teardown (both heavier since E05.10 added the data pool + pipeline plane), crosses the test 10s deadline. Fix: remove pidfile promptly after Serve returns. E05.8 (PR #50) merge HOLDS until this lands + re-sync.
+
+GRANT DEBT (E04.3/E04.4 follow-up): for capture to fire, pipeline roles need USAGE ON SCHEMA iris + EXECUTE ON iris.capture() (E06.2 conformance grants them explicitly; journal write itself runs as owner via SECURITY DEFINER). Add the iris-schema execute grant to grant-reconcile. Also E06.2 flags: data-PAT/pipeline reaching iris.capture() needs those grants.
+
 DAEMON WIRING DEBT (track, close in E05.12 + a daemon-routes pass): several control-plane
 routes are defined CLI-side + proven at unit/integration/stub-conformance tier but NOT
 wired into the live daemon perpetual loop yet: apply/destroy (E03.10, wired), deadletter
@@ -79,7 +83,7 @@ Opus, never downgrade.
 - [x] E05.5 Gate and consumption — done (PR #44)
 - [x] E05.6 Failure propagation — done (PR #45)
 - [x] E05.7 Dead letter replay — done (PR #47)
-- [ ] E05.8 Dead letter drain — in-progress (.worktrees/E05.8, Sonnet)
+- [x] E05.8 Dead letter drain — done (PR #50)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [x] E05.10 Manual pipeline run — done (PR #49)
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
@@ -88,7 +92,7 @@ Opus, never downgrade.
 ## E06 Write Capture, Wipe and Promotion — epic PR: —
 
 - [x] E06.1 Journal DDL and partitioning — done (PR #48)
-- [ ] E06.2 Capture trigger emission — in-progress (.worktrees/E06.2, Opus)
+- [x] E06.2 Capture trigger emission — done (PR #52)
 - [ ] E06.3 Run attribution — todo (needs E06.2)
 - [ ] E06.4 Payload tiers and modes — todo (needs E06.2, E06.3)
 - [ ] E06.5 Wipe replay and conflicts — todo (needs E06.1)

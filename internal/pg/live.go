@@ -230,38 +230,17 @@ func (c *Client) scan(ctx context.Context, sql string, onRow func(scan func(...a
 	return rows.Err()
 }
 
-// The capture-function forward seam (specification sections 4 and 5). The capture
+// EnsureCaptureFunction ensures the iris schema and the real iris.capture() trigger
+// function exist so the provisioner's capture triggers can bind. The capture
 // triggers the provisioner installs on every declared table bind to iris.capture(),
-// the engine-owned PL/pgSQL function whose real body -- reading the transition
-// tables and writing provenance rows into public.data_journal -- is E06.2's
-// deliverable. Provisioning cannot install a trigger that binds to a missing
-// function, so E03.10 ensures the schema and a no-op function stand so the
-// provisioning DDL applies and is idempotent end to end; E06.2 replaces the body
-// (CREATE OR REPLACE) with the real capture. This is deliberately NOT in trigger.go
-// (which E06 owns): it is a provisioning-enablement seam, isolated and labeled so
-// E06.2 can lift ownership cleanly.
-const (
-	ensureCaptureSchemaSQL = `CREATE SCHEMA IF NOT EXISTS iris`
-
-	// ensureCaptureFunctionSQL creates a no-op AFTER-STATEMENT capture function so the
-	// per-operation triggers bind. It returns NULL (the AFTER-trigger convention) and
-	// captures nothing; E06.2 replaces the body with the real journal write.
-	ensureCaptureFunctionSQL = `CREATE OR REPLACE FUNCTION iris.capture() RETURNS trigger
-LANGUAGE plpgsql AS $iris_capture$
-BEGIN
-    -- E03.10 provisioning-enablement stub: no capture yet. E06.2 replaces this body
-    -- with the transition-table read that writes provenance into public.data_journal.
-    RETURN NULL;
-END;
-$iris_capture$`
-)
-
-// EnsureCaptureFunction ensures the iris schema and the iris.capture() trigger
-// function exist so the provisioner's capture triggers can bind (see the seam note
-// above). It is create-if-missing / create-or-replace, so it is idempotent and safe
-// to run before every provisioning apply. E06.2 owns the real function body.
+// the engine-owned PL/pgSQL function whose body reads the statement's transition
+// tables and writes provenance rows into public.data_journal (capture.go owns the
+// body). Provisioning cannot install a trigger that binds to a missing function, so
+// this ensures the schema and the function first; it is create-if-missing /
+// create-or-replace, so a dropped function self-heals and it is idempotent and safe
+// to run before every provisioning apply.
 func (c *Client) EnsureCaptureFunction(ctx context.Context) error {
-	for _, stmt := range []string{ensureCaptureSchemaSQL, ensureCaptureFunctionSQL} {
+	for _, stmt := range []string{CaptureSchemaDDL(), CaptureFunctionDDL()} {
 		if _, err := c.pool.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("pg: ensure capture function: %w", err)
 		}

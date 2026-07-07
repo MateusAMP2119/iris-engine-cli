@@ -349,7 +349,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 	addScopeFlags(replay)
 	drain := &cobra.Command{
 		Use: "drain [run]", Short: "Discard entries: worklist only, nothing re-runs (gated)",
-		Args: cobra.MaximumNArgs(1), RunE: a.deadletterScopedStub("deadletter drain"),
+		Args: cobra.MaximumNArgs(1), RunE: a.deadletterDrain(),
 	}
 	addScopeFlags(drain)
 	addConfirmFlags(drain)
@@ -358,20 +358,6 @@ func (a *app) deadletterCmd() *cobra.Command {
 		daemonTouching(list), daemonTouching(show), daemonTouching(replay), daemonTouching(drain))
 	c.Aliases = []string{"dl"} // the one and only alias in the tree
 	return c
-}
-
-// deadletterScopedStub validates that a replay/drain names a scope before it
-// would reach the daemon: a bare invocation is a usage error (exit 2), a scoped
-// one reports no-daemon (exit 3) while none is reachable.
-func (a *app) deadletterScopedStub(op string) runE {
-	return func(cmd *cobra.Command, args []string) error {
-		all, _ := cmd.Flags().GetBool("all")
-		pipeline, _ := cmd.Flags().GetString("pipeline")
-		if len(args) == 0 && !all && pipeline == "" {
-			return a.usage(op + " requires <run>, --pipeline <name>, or --all")
-		}
-		return a.requireDaemon(cmd, op)
-	}
 }
 
 // endpointCmd builds `iris endpoint`: declared read surfaces with their own

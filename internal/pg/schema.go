@@ -220,12 +220,20 @@ func JournalTeardownDDL() []string {
 	return []string{"DROP TABLE IF EXISTS " + JournalTable().Qualified() + " CASCADE;"}
 }
 
-// EnsureJournal issues the embedded data_journal DDL create-if-missing through db:
-// the partitioned CREATE TABLE IF NOT EXISTS public.data_journal plus its
-// provenance index. Like the meta schema it is applied at provisioning and
-// re-checkable, idempotent, with no ALTER or migration ledger.
+// EnsureJournal issues the embedded data_journal DDL create-if-missing through db,
+// ensuring a fully writable and readable journal in one call: the partitioned
+// CREATE TABLE IF NOT EXISTS public.data_journal and its provenance index, then its
+// initial open tail partition (so the partitioned journal can accept writes -- a
+// partitioned table with no partition rejects every insert), then the SELECT grant
+// to PUBLIC (so every engine role may read it). Both provisioning paths -- engine
+// install and declare apply -- end by calling this, so the journal a partition and
+// grant would otherwise be a latent half-provisioned, unwritable table is never
+// left behind. Like the meta schema it is applied at provisioning and re-checkable,
+// idempotent (every statement is create-if-missing or an idempotent grant), with no
+// ALTER or migration ledger.
 func EnsureJournal(ctx context.Context, db DB) error {
-	for _, stmt := range JournalTable().DDL() {
+	stmts := append(JournalTable().DDL(), InitialPartition().CreateDDL(), JournalSelectGrantDDL())
+	for _, stmt := range stmts {
 		if err := db.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("pg: apply data_journal DDL: %w", err)
 		}
