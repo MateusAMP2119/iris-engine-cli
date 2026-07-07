@@ -563,9 +563,14 @@ func TestHungRunHoldsLane(t *testing.T) {
 		defer func() { cancel(); <-done }()
 
 		// While a is hung, its lane is held (a is dispatched once and never again) yet the
-		// live lane keeps dispatching. Pace the live lane to three passes; no timer frees a.
+		// live lane keeps dispatching. Pace the live lane to three passes AND await a's
+		// one start; no timer frees a. Both conditions must be waited on: the lanes are
+		// independent goroutines, so nothing orders a's first dispatch before b's third
+		// pass -- exiting on b's count alone races the scheduler and can miss a's start
+		// signal. The wait stays bounded (nextStart fails on ctx timeout), so an a that
+		// genuinely never starts still fails loudly.
 		aSeen := false
-		for runner.count("b") < 3 {
+		for runner.count("b") < 3 || !aSeen {
 			p := nextStart(ctx, t, runner)
 			if p == "a" {
 				aSeen = true // a started once, now hung; do not release it (no engine timer)
@@ -576,9 +581,6 @@ func TestHungRunHoldsLane(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatalf("timed out releasing b: %v", ctx.Err())
 			}
-		}
-		if !aSeen {
-			t.Fatal("hung pipeline never started")
 		}
 		if n := runner.count("a"); n != 1 {
 			t.Fatalf("hung pipeline dispatched %d times while held, want exactly 1 (the lane is held, no engine timer)", n)

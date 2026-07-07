@@ -4,9 +4,11 @@ Orchestrator resume file. One line per task: status ∈ {todo, in-progress, done
 lines carry the PR link. Epic rows track the development→master checkpoint PR.
 Task briefs live in `docs/Tasks/`. Process epics E00 → E12, then E14, then E13.
 
-FLAKY TEST (fix in flight, branch issue/flake-hung-run-holds-lane): dispatch TestHungRunHoldsLane (E05.12, pass_loop_test.go:581, claims S01/hung-run-holds-lane) fails ~40% on darwin host, "hung pipeline never started" — scheduling race: live lane paces 3 passes of `b` before the stuck lane's goroutine starts `a`. Confirmed pre-existing on clean development by 3 independent sessions. Linux CI has passed repeatedly but is at risk.
+FLAKE RESOLVED 2026-07-07: TestHungRunHoldsLane scheduling race fixed in PR #64 (commit 846acb0, test pacing waits on hung-run start too, ctx-bounded); duplicate fix branch discarded. Root cause: pacing loop exited on live lane's 3rd pass alone. Stress-validated (0/200 under CPU load in the parallel investigation).
 
 RESOLVED 2026-07-07: shutdownfix (linux CI pidfile timeout) landed as PR #51; KNOWN CI-RED note retired. REVIEW PAUSE lifted by user 2026-07-07 ("finish my BUILD_STATE tasks", parallelism cap removed, Fable 5 agents instead of coder agent, orchestrator self-review instead of Greptile — tokens spent).
+
+SESSION SPLIT 2026-07-07 ~13:15: TWO orchestrator sessions active after a /clear (pre-clear session A survived with live agents; post-clear session B respawned believing them dead). Current ownership — session A: E09.5 (worktree live), PR/merge duties it already took (#64 merged, #65 opened). Session B: E06.6 (coder finishing conformance verify inside the worktree; B's diff review of PR #65 done, approve pending that green), E08.2, E11.3 (coders live in worktrees). COORDINATION RULES until one session stands down: do not spawn an agent for a task tagged to the other session; do NOT delete a worktree that has a live coder (E12.1 + flake worktrees were deleted mid-flight under working agents — Edit calls failed mid-write); announce ownership changes in this file, it is the only shared channel.
 
 SCHEMA-FK DEBT (E05.9 flag, resolve when live prune path wired): run_inputs.upstream_run_id -> runs.id is a plain FK (schema.go ~176, no ON DELETE). Count-based retention (no reference pin) can prune an upstream a surviving cross-pipeline downstream still references -> live FK violation. Composite PK forbids SET NULL; spec §4(FK) vs §6.2(no pin) tension. Likely fix: make it FK-free (like data_journal.run_id S04/journal-run-id-not-fk) or ON DELETE CASCADE. Latent until dispatcher prune loop runs live.
 
@@ -100,7 +102,7 @@ Opus, never downgrade.
 - [x] E06.3 Run attribution — done (PR #55)
 - [x] E06.4 Payload tiers and modes — done (PR #58)
 - [x] E06.5 Wipe replay and conflicts — done (PR #60)
-- [ ] E06.6 Promotion — in-progress (needs E06.5 ✓)
+- [ ] E06.6 Promotion — in-progress, session B (PR #65 open; B diff review clean, merge waits on B's conformance green)
 - [ ] E06.7 Live wipe closure — todo (needs E06.5, E06.6)
 
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
@@ -115,7 +117,7 @@ Opus, never downgrade.
 ## E08 Build, Artifacts and Modes — epic PR: —
 
 - [x] E08.1 Recipe inference and matrix — done (PR #62)
-- [ ] E08.2 Build and artifact storage — in-progress (needs E08.1 ✓)
+- [ ] E08.2 Build and artifact storage — in-progress, session B coder live (needs E08.1 ✓)
 - [ ] E08.3 Promote gating — todo (needs E08.2)
 - [ ] E08.4 Mode execution and retirement — todo (needs E08.2)
 
@@ -125,7 +127,7 @@ Opus, never downgrade.
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
 - [x] E09.3 Param grammar and paging — done (PR #57)
 - [x] E09.4 Envelope and serialization — done (PR #61)
-- [ ] E09.5 Route mux and auth — todo (needs E09.1, E09.4)
+- [ ] E09.5 Route mux and auth — in-progress, session A coder live (needs E09.1 ✓, E09.4 ✓)
 - [ ] E09.6 Endpoint apply lifecycle — todo (needs E09.2, E09.5)
 - [ ] E09.7 Read pool and SQL safety — todo (needs E09.1, E09.5)
 - [ ] E09.8 Q and data routes — todo (needs E09.6, E09.7)
@@ -142,12 +144,12 @@ Opus, never downgrade.
 
 - [x] E11.1 Leader lock election — done (PR #63)
 - [ ] E11.2 Standby reads and rejection — todo (needs E11.1)
-- [ ] E11.3 Promotion and self demotion — in-progress (needs E11.1 ✓)
+- [ ] E11.3 Promotion and self demotion — in-progress, session B coder live (needs E11.1 ✓)
 - [ ] E11.4 Host prerequisites and live failover — todo (needs E11.3; conformance rows ride E13 step 9)
 
 ## E12 Stats, Info and Inspect — epic PR: —
 
-- [ ] E12.1 Stats rollups — in-progress
+- [x] E12.1 Stats rollups — done (PR #64)
 - [ ] E12.2 Info inspect and show — todo (needs E12.1)
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
