@@ -10,6 +10,8 @@ SCHEMA-FK DEBT (E05.9 flag, resolve when live prune path wired): run_inputs.upst
 
 GRANT DEBT (E04.3/E04.4 follow-up): for capture to fire, pipeline roles need USAGE ON SCHEMA iris + EXECUTE ON iris.capture() (E06.2 conformance grants them explicitly; journal write itself runs as owner via SECURITY DEFINER). Add the iris-schema execute grant to grant-reconcile. Also E06.2 flags: data-PAT/pipeline reaching iris.capture() needs those grants.
 
+REVIEW PAUSE (user request): after E05.12 + E06.4 + E09.3 merge, STOP spawning — hand off to user for review. Do not start new tasks until user resumes.
+
 DAEMON WIRING DEBT (track, close in E05.12 + a daemon-routes pass): several control-plane
 routes are defined CLI-side + proven at unit/integration/stub-conformance tier but NOT
 wired into the live daemon perpetual loop yet: apply/destroy (E03.10, wired), deadletter
