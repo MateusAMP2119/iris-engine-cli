@@ -83,7 +83,7 @@ Opus, never downgrade.
 - [x] E05.5 Gate and consumption — done (PR #44)
 - [x] E05.6 Failure propagation — done (PR #45)
 - [x] E05.7 Dead letter replay — done (PR #47)
-- [x] E05.8 Dead letter drain — done (PR #50, merging post-shutdown-fix)
+- [x] E05.8 Dead letter drain — done (PR #50)
 - [ ] E05.9 Retention and pruning — todo (needs E05.7)
 - [x] E05.10 Manual pipeline run — done (PR #49)
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
