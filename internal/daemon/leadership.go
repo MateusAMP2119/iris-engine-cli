@@ -91,6 +91,16 @@ type Candidate struct {
 	builds  *buildPlane
 	objects dispatch.ObjectPutter
 
+	// Wipe wiring, installed on winning leadership and cleared on demotion so the
+	// api mux's POST /workload/wipe reaches the attribution reader and the data
+	// database ExecuteWipe only while leading (specification sections 5,12,13).
+	wipes *wipePlane
+
+	// Promote wiring (for pipeline promote).
+	promotes        *promotePlane
+	promoteState    store.PromoteStateReader
+	journalPromoter dispatch.JournalPromoter
+
 	// Lane-loop wiring: builds the perpetual lane loop over the single dispatcher on
 	// winning leadership. The leader drives it after reconciliation (so no lane
 	// dispatches ahead of crash recovery) and stops it on demotion (so a deposed leader
@@ -225,6 +235,33 @@ func WithBuildPlane(bp *buildPlane, workspace string, manual store.ManualReader,
 		c.manualReader = manual
 		c.objects = objects
 		c.runner = runner
+	}
+}
+
+// WithWipePlane wires the leader-side workload wipe plane: on winning leadership
+// the candidate builds the wipe orchestrator over the single-writer submitter
+// (for snapshots), the meta reader (for run->pipeline attribution), and the data
+// client (ExecuteWipe), and installs it into wp before reporting leader role,
+// clearing on demotion. reader supplies Runs() for attribution; data is the
+// pg.Client.
+func WithWipePlane(wp *wipePlane, reader store.Reader, data dataPlane) CandidateOption {
+	return func(c *Candidate) {
+		c.wipes = wp
+		c.reader = reader
+		c.data = data
+	}
+}
+
+// WithPromotePlane wires the leader-side promote plane on winning leadership
+// (before reporting leader role), using the submitter, promote state reader, and
+// journal promoter (the data client acts as journal promoter via its impl).
+func WithPromotePlane(pp *promotePlane, submit dispatch.Submitter, state store.PromoteStateReader, journal dispatch.JournalPromoter) CandidateOption {
+	return func(c *Candidate) {
+		c.promotes = pp
+		c.promoteState = state
+		c.journalPromoter = journal
+		// submit and runner not needed beyond; the promoter uses submit internally.
+		_ = submit
 	}
 }
 
@@ -396,6 +433,23 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		bo := newBuildOrchestrator(c.workspace, d, c.manualReader, c.objects, c.runner, c.logger)
 		c.builds.install(bo)
 		defer c.builds.clear()
+	}
+
+	// Install promote before wipe (order doesn't matter).
+	if c.promotes != nil {
+		po := newPromoteOrchestrator(d, c.promoteState, c.journalPromoter, c.logger)
+		c.promotes.install(po)
+		defer c.promotes.clear()
+	}
+
+	// Install the leader-side wipe orchestrator over the attribution reader and
+	// data client (ExecuteWipe) before reporting the leader role, so a POST
+	// /workload/wipe that passes the mux's leader gate always finds an installed
+	// handler; clear on demotion.
+	if c.wipes != nil {
+		wo := newWipeOrchestrator(d, c.reader, c.data, c.logger)
+		c.wipes.install(wo)
+		defer c.wipes.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane

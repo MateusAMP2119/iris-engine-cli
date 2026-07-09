@@ -90,6 +90,7 @@ func NewMux(opts ...MuxOption) http.Handler {
 		pipelines:    noPipelines{},
 		build:        noBuild{},
 		promote:      noPromote{},
+		wipe:         noWipe{},
 		stats:        noStats{},
 		info:         noInfo{},
 		inspect:      noInspect{},
@@ -114,6 +115,7 @@ type mux struct {
 	pipelines    PipelineHandler
 	build        BuildHandler
 	promote      PromoteHandler
+	wipe         WipeHandler
 	stats        StatsHandler
 	info         InfoHandler
 	inspect      InspectHandler
@@ -163,6 +165,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePipelinePromote(w, r)
 	case "/pipeline/run":
 		m.servePipelineRun(w, r)
+	case "/workload/wipe":
+		m.serveWorkloadWipe(w, r)
 	case "/pipeline/list":
 		m.servePipelineList(w, r)
 	case "/pipeline/show":

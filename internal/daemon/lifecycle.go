@@ -133,7 +133,13 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	objects := store.NewObjectStore(s.ObjectsPath)
 	prov := NewProvenancePlane(client.Reader(), data, objects, logger)
 
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov)), WithServerLogger(logger))
+	// The wipe and promote planes serve POST /workload/wipe and POST
+	// /pipeline/promote once this daemon leads: the journal-driven revert over
+	// the data database and the promotion that ends wipe-eligibility.
+	wipes := newWipePlane(logger)
+	promos := newPromotePlane(logger)
+
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov), api.WithPromote(promos), api.WithWipe(wipes)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -158,7 +164,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
 		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner(), data),
-		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()))
+		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()),
+		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
+		WithWipePlane(wipes, client.Reader(), data))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 
