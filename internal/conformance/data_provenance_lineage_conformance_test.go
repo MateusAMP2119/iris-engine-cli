@@ -100,12 +100,12 @@ func TestDataProvenanceLineage(t *testing.T) {
 	// was applied above; insert is idempotent enough for our snapshot).
 	_, _ = metaConn.Exec(context.Background(), `
 		INSERT INTO pipelines (name, folder, run, artifact, data_mode)
-		VALUES ('load_orders', 'pipelines/ingest/load_orders', '["python","main.py"]'::jsonb, 'source', 'disposable')
+		VALUES ('load_orders', 'pipelines/ingest/load_orders', '["python","main.py"]'::json, 'source', 'disposable')
 		ON CONFLICT (name) DO NOTHING
 	`)
 	_, _ = metaConn.Exec(context.Background(), `
 		INSERT INTO pipelines (name, folder, run, artifact, data_mode)
-		VALUES ('extract_orders', 'pipelines/ingest/extract_orders', '["python","main.py"]'::jsonb, 'source', 'disposable')
+		VALUES ('extract_orders', 'pipelines/ingest/extract_orders', '["python","main.py"]'::json, 'source', 'disposable')
 		ON CONFLICT (name) DO NOTHING
 	`)
 
@@ -182,7 +182,7 @@ func TestDataProvenanceLineage(t *testing.T) {
 		_, _ = metaConn.Exec(context.Background(), `DELETE FROM runs WHERE id = $1`, authorRunID)
 		_, _ = metaConn.Exec(context.Background(), `
 			INSERT INTO run_summaries (run_id, pipeline, state, artifact_hash, declaration_checksum, consumed_upstream_run_ids, snapshot_lsn, journal_floor, journal_ceiling, recorded_at)
-			VALUES ($1, 'load_orders', 'succeeded', 'sha256-bin-author', 'sha256-decl-author', '[424241]'::jsonb, '0/ABC', 100, 200, '2026-07-09T00:00:00Z')
+			VALUES ($1, 'load_orders', 'succeeded', 'sha256-bin-author', 'sha256-decl-author', '[424241]'::json, '0/ABC', 100, 200, '2026-07-09T00:00:00Z')
 			ON CONFLICT (run_id) DO NOTHING
 		`, authorRunID)
 
@@ -219,8 +219,8 @@ func TestDataProvenanceLineage(t *testing.T) {
 		// and dropped: mark a checkpoint covering the journal id as archived.
 		// Provenance must still return the stamp (spans archive boundary).
 		_, _ = metaConn.Exec(context.Background(), `
-			INSERT INTO journal_checkpoints (id_from, id_to, digest, parent_digest, signature, location)
-			VALUES (90, 300, 'digest-for-test', '', 'sig', 'archived')
+			INSERT INTO journal_checkpoints (id_from, id_to, digest, parent_digest, signature, location, recorded_at)
+			VALUES (90, 300, 'digest-for-test'::bytea, ''::bytea, 'sig'::bytea, 'archived', '2026-07-09T00:00:00Z')
 			ON CONFLICT DO NOTHING
 		`)
 

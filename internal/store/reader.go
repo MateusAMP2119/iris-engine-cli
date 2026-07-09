@@ -217,7 +217,9 @@ func (r *pgxReader) ProvenanceLineage(ctx context.Context) (ProvenanceLineage, e
 			return ProvenanceLineage{}, fmt.Errorf("store: scan lineage summary: %w", err)
 		}
 		if len(consJSON) != 0 {
-			_ = json.Unmarshal(consJSON, &sum.ConsumedUpstreamRunIDs)
+			if uerr := json.Unmarshal(consJSON, &sum.ConsumedUpstreamRunIDs); uerr != nil {
+				return ProvenanceLineage{}, fmt.Errorf("store: unmarshal consumed upstreams for summary %d: %w", sum.RunID, uerr)
+			}
 		}
 		lin.Summaries = append(lin.Summaries, sum)
 	}
