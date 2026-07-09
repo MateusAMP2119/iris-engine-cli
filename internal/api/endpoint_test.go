@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -264,4 +265,163 @@ sort: id
 	if r1.code != http.StatusOK || len(r1.env.Data) != 1 || r1.env.Data[0]["served_fields"] != "id,customer_id" {
 		t.Errorf("in-flight request finished = %d %v, want 200 with its starting shape id,customer_id", r1.code, r1.env.Data)
 	}
+}
+
+// staticSource is a trivial EndpointSource for tests.
+type staticSource map[string]*declare.CompiledEndpoint
+
+func (s staticSource) Endpoint(name string) (*declare.CompiledEndpoint, bool) {
+	e, ok := s[name]
+	return e, ok
+}
+
+// ndjsonRowsReader is a test EndpointReader that returns a fixed list of rows
+// (ordered by the endpoint's sort key) and honors a GT after= cursor bound for
+// resume tests. It ignores shape and other plan parts.
+type ndjsonRowsReader struct {
+	rows []map[string]any
+}
+
+func (r *ndjsonRowsReader) ReadEndpoint(_ context.Context, _ *declare.CompiledEndpoint, plan *api.QueryPlan) ([]map[string]any, error) {
+	if plan == nil || plan.Cursor.Bound == nil || plan.Cursor.Bound.Op != api.OpGt {
+		cp := make([]map[string]any, len(r.rows))
+		copy(cp, r.rows)
+		return cp, nil
+	}
+	after := fmt.Sprintf("%v", plan.Cursor.Bound.Value)
+	start := 0
+	for i, row := range r.rows {
+		if fmt.Sprintf("%v", row["id"]) > after {
+			start = i
+			break
+		}
+	}
+	lim := plan.Cursor.Limit
+	if lim <= 0 {
+		lim = 1000
+	}
+	end := start + lim
+	if end > len(r.rows) {
+		end = len(r.rows)
+	}
+	cp := make([]map[string]any, end-start)
+	copy(cp, r.rows[start:end])
+	return cp, nil
+}
+
+// TestNDJSONStreaming proves every collection route (here /q exercised as the
+// representative wired collection) with Accept: application/x-ndjson streams
+// one JSON row per line with no envelope to the end of the result, on the same
+// route and auth.
+//
+// spec: S07/ndjson-streaming
+func TestNDJSONStreaming(t *testing.T) {
+	t.Run("S07/ndjson-streaming", func(t *testing.T) {
+		shape := compileQEndpoint(t, `endpoint: orders_by_customer
+source: analytics.orders
+fields: [id, customer_id, amount]
+sort: id
+`)
+		reader := &ndjsonRowsReader{rows: []map[string]any{
+			{"id": "11111111-1111-1111-1111-111111111111", "customer_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "amount": "10.00"},
+			{"id": "22222222-2222-2222-2222-222222222222", "customer_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "amount": "20.00"},
+			{"id": "33333333-3333-3333-3333-333333333333", "customer_id": "cccccccc-cccc-cccc-cccc-cccccccccccc", "amount": "30.00"},
+		}}
+		mux := api.NewMux(api.WithEndpoints(staticSource{"orders_by_customer": shape}), api.WithEndpointReader(reader))
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/q/orders_by_customer", nil)
+		if err != nil {
+			t.Fatalf("new req: %v", err)
+		}
+		req.Header.Set("Accept", "application/x-ndjson")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "application/x-ndjson" {
+			t.Errorf("Content-Type = %q, want application/x-ndjson", ct)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		// No envelope: must not contain the keys of the paged envelope.
+		sbody := string(body)
+		if strings.Contains(sbody, `"data"`) || strings.Contains(sbody, `"page"`) {
+			t.Errorf("ndjson body must not be an envelope, got %q", sbody)
+		}
+		lines := strings.Split(strings.TrimSpace(sbody), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("got %d lines, want 3 rows streamed to end", len(lines))
+		}
+		for i, ln := range lines {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(ln), &m); err != nil {
+				t.Errorf("line %d not json object: %v", i, err)
+				continue
+			}
+			if _, ok := m["id"]; !ok {
+				t.Errorf("line %d missing row fields", i)
+			}
+		}
+	})
+}
+
+// TestNDJSONResumeByCursor proves a dropped NDJSON stream resumes from its last
+// received row by passing that row's key as the cursor (after=) on the same
+// route.
+//
+// spec: S07/ndjson-resume-by-cursor
+func TestNDJSONResumeByCursor(t *testing.T) {
+	t.Run("S07/ndjson-resume-by-cursor", func(t *testing.T) {
+		shape := compileQEndpoint(t, `endpoint: orders_by_customer
+source: analytics.orders
+fields: [id, customer_id, amount]
+sort: id
+`)
+		reader := &ndjsonRowsReader{rows: []map[string]any{
+			{"id": "11111111-1111-1111-1111-111111111111", "customer_id": "a", "amount": "10"},
+			{"id": "22222222-2222-2222-2222-222222222222", "customer_id": "b", "amount": "20"},
+			{"id": "33333333-3333-3333-3333-333333333333", "customer_id": "c", "amount": "30"},
+		}}
+		mux := api.NewMux(api.WithEndpoints(staticSource{"orders_by_customer": shape}), api.WithEndpointReader(reader))
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		// Resume after the second row: only the last should come back.
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/q/orders_by_customer?after=22222222-2222-2222-2222-222222222222", nil)
+		if err != nil {
+			t.Fatalf("new req: %v", err)
+		}
+		req.Header.Set("Accept", "application/x-ndjson")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		sbody := strings.TrimSpace(string(body))
+		lines := strings.Split(sbody, "\n")
+		if len(lines) != 1 {
+			t.Fatalf("resume got %d lines %q, want 1", len(lines), sbody)
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(lines[0]), &m); err != nil {
+			t.Fatalf("resume line not json: %v", err)
+		}
+		if m["id"] != "33333333-3333-3333-3333-333333333333" {
+			t.Errorf("resume row id = %v, want the third", m["id"])
+		}
+	})
 }

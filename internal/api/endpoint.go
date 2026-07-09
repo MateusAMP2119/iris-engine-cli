@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
@@ -117,6 +119,64 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 		return
 	}
 
+	// NDJSON streaming (S07/ndjson-streaming, S07/ndjson-resume-by-cursor):
+	// Accept: application/x-ndjson yields one JSON row object per line, no
+	// envelope, streamed through the end of the result set from the provided
+	// cursor onward. The same plan grammar (after=, filters) and auth apply.
+	// We page internally with bounded batches so the fixed LIMIT-bearing
+	// statements stay unchanged while the logical result drains.
+	if wantsNDJSON(r) {
+		cur := *plan
+		cur.Cursor.Limit = 1000 // internal batch size (cap); stream ignores caller's page limit
+		// Fetch first batch before committing to stream; on error we can still
+		// return a proper error envelope.
+		first, err := m.qreader.ReadEndpoint(r.Context(), shape, &cur)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, string(CodeInternal), "api: endpoint "+name+": "+err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for _, row := range first {
+			b, err := json.Marshal(row)
+			if err != nil {
+				// Once streaming, a late marshal fault ends the stream.
+				return
+			}
+			w.Write(b)
+			w.Write([]byte("\n"))
+			if fl, ok := w.(http.Flusher); ok {
+				fl.Flush()
+			}
+		}
+		if len(first) < cur.Cursor.Limit {
+			return
+		}
+		next := cur.Cursor.NextAfter(first)
+		for next != nil {
+			cur.Cursor.Bound = &CursorBound{Op: OpGt, Value: next}
+			batch, err := m.qreader.ReadEndpoint(r.Context(), shape, &cur)
+			if err != nil {
+				return // end stream; caller can resume from last emitted key
+			}
+			for _, row := range batch {
+				b, err := json.Marshal(row)
+				if err != nil {
+					return
+				}
+				w.Write(b)
+				w.Write([]byte("\n"))
+				if fl, ok := w.(http.Flusher); ok {
+					fl.Flush()
+				}
+			}
+			if len(batch) < cur.Cursor.Limit {
+				return
+			}
+			next = cur.Cursor.NextAfter(batch)
+		}
+		return
+	}
+
 	rows, err := m.qreader.ReadEndpoint(r.Context(), shape, plan)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, string(CodeInternal), "api: endpoint "+name+": "+err.Error())
@@ -126,4 +186,16 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 		rows = []map[string]any{}
 	}
 	WriteDataPage(w, http.StatusOK, rows, Page{NextAfter: plan.Cursor.NextAfter(rows), Limit: plan.Cursor.Limit})
+}
+
+// wantsNDJSON reports whether the client requested NDJSON streaming for a
+// collection route (specification section 7).
+func wantsNDJSON(r *http.Request) bool {
+	// Accept may be a list; any token containing the exact NDJSON type wins.
+	for _, v := range r.Header.Values("Accept") {
+		if strings.Contains(v, "application/x-ndjson") {
+			return true
+		}
+	}
+	return false
 }
