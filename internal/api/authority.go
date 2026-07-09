@@ -92,9 +92,15 @@ func requiredScope(path string) pat.Scope {
 			return pat.ScopeRead
 		}
 		return pat.ScopeControl
-	default:
-		return pat.ScopeRead
 	}
+	// Known destructive mutation paths (exact) require control scope even though
+	// their first segment may otherwise be a read surface (e.g. workload reads).
+	// This implements the remote tiering for declare destroy, workload wipe,
+	// deadletter drain over TCP (specification section 12).
+	if path == "/deadletter/drain" || path == "/workload/wipe" {
+		return pat.ScopeControl
+	}
+	return pat.ScopeRead
 }
 
 // authorize checks the request's authority against its route's required scope,

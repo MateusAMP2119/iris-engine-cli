@@ -28,13 +28,20 @@ import (
 // fakeVerifier accepts exactly one bearer token, so the TCP listener's PAT gate
 // can be proven to admit an authenticated request and reject the rest without the
 // real (E09.1) PAT store.
-type fakeVerifier struct{ good string }
+type fakeVerifier struct {
+	good   string
+	scopes []pat.Scope
+}
 
-// VerifyToken accepts only the configured token, resolving it to a full-scope
-// authority.
+// VerifyToken accepts only the configured token, resolving it to the configured
+// scopes (defaults to full if none specified).
 func (f fakeVerifier) VerifyToken(_ context.Context, tok string) (api.Authority, error) {
 	if tok == f.good {
-		return api.Authority{PATID: "fake", Scopes: []pat.Scope{pat.ScopeControl, pat.ScopeRead, pat.ScopeData}}, nil
+		sc := f.scopes
+		if len(sc) == 0 {
+			sc = []pat.Scope{pat.ScopeControl, pat.ScopeRead, pat.ScopeData}
+		}
+		return api.Authority{PATID: "fake", Scopes: sc}, nil
 	}
 	return api.Authority{}, errNoMatch
 }
@@ -305,7 +312,7 @@ func TestDestructiveOpsTCPReachable(t *testing.T) {
 		srv := NewServer(
 			config.Settings{Socket: sock, TCP: "127.0.0.1:0"},
 			api.NewMux(api.WithRole(leaderRole())),
-			WithVerifier(fakeVerifier{good: "ctl"}),
+			WithVerifier(fakeVerifier{good: "ctl", scopes: []pat.Scope{pat.ScopeControl}}),
 		)
 		startServer(t, srv)
 		if !srv.TCPEnabled() {
@@ -330,6 +337,24 @@ func TestDestructiveOpsTCPReachable(t *testing.T) {
 			t.Errorf("declare destroy over TCP got blocked status %d; must be reachable with control PAT", resp.StatusCode)
 		}
 		// 422/404/500 etc ok: later layers or no real handler.
+
+		// workload wipe and deadletter drain must likewise be reachable over TCP
+		// with a control PAT (remote surface tiering); 4xx/5xx after the gate
+		// are acceptable.
+		for _, path := range []string{"/workload/wipe", "/deadletter/drain"} {
+			body := []byte(`{"confirm":true}`)
+			req, _ := http.NewRequest(http.MethodPost, addr+path, bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer ctl")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("POST %s over TCP: %v", path, err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == api.StatusNotLeader {
+				t.Errorf("%s over TCP got blocked status %d; destructive ops must be TCP-reachable with control PAT (S12/destructive-ops-tcp-reachable)", path, resp.StatusCode)
+			}
+		}
 	})
 }
 
