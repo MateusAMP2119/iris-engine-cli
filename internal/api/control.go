@@ -33,6 +33,9 @@ type ControlRequest struct {
 	// Confirm is the explicit confirmation a destructive op requires over the API
 	// (specification section 12: control PAT plus an explicit confirm field).
 	Confirm bool `json:"confirm,omitempty"`
+	// Force requests that soft-blocks be overridden (in-flight runs on scope are
+	// cancelled and dead-lettered stopped).
+	Force bool `json:"force,omitempty"`
 }
 
 // ControlResult is the success payload of a control mutation: what the leader did,

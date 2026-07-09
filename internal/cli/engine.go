@@ -253,14 +253,26 @@ type uninstallResult struct {
 // connection is wired; the on-disk teardown is real from now.
 func (a *app) engineUninstall() runE {
 	return func(cmd *cobra.Command, _ []string) error {
+		// Confirmation gate for teardown: typed name ("engine") or --yes/--force.
+		confirmed, cerr := a.confirmOrFlags(cmd, "engine", true)
 		yes, _ := cmd.Flags().GetBool("yes")
 		force, _ := cmd.Flags().GetBool("force")
-		if !yes && !force {
+		if !confirmed && !yes && !force {
+			if cerr != nil {
+				return cerr
+			}
 			return &fault{
 				code:    exitOpFailed,
 				codeStr: "confirmation_required",
-				message: `iris engine uninstall is an irreversible teardown; re-run with --yes to confirm (it drops meta, the journal, the object store, the socket, and the service unit)`,
+				message: `iris engine uninstall is an irreversible teardown; re-run with --yes or --force, or type the target name to confirm (it drops meta, the journal, the object store, the socket, and the service unit)`,
 			}
+		}
+
+		// Print what will be removed for teardowns (typed-name confirm path) on human output only.
+		if jsonMode, _ := cmd.Flags().GetBool("json"); !jsonMode {
+			fmt.Fprintln(a.out, "engine uninstall: will remove engine state (meta, journal, object store, socket, service unit)")
+		} else {
+			fmt.Fprintln(a.errOut, "engine uninstall: will remove engine state (meta, journal, object store, socket, service unit)")
 		}
 
 		settings := a.resolveTarget(cmd)

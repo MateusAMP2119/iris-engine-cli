@@ -44,20 +44,32 @@ func (a *app) declareApply() runE {
 }
 
 // declareDestroy is the handler for `iris declare destroy`. It resolves and parses the
-// single target declaration locally (a bad target is exit 4), then POSTs the target to
-// the daemon's leader-gated /destroy route with the confirmation the destructive-op
-// gate requires (specification section 12: the API needs an explicit confirm field).
-// --yes and --force both confirm here; the richer confirmation gate (typed-name
-// prompt, y/N, soft-blocks) is a later contract set.
+// single target declaration locally (a bad target is exit 4), enforces the
+// confirmation gate (typed-name on TTY for this teardown, or --yes/--force), then
+// POSTs to the daemon's /destroy with the confirm flag the API requires.
 func (a *app) declareDestroy() runE {
 	return func(cmd *cobra.Command, args []string) error {
 		if _, _, err := declare.LoadDeclarationFile(args[0]); err != nil {
 			return &fault{code: exitOpFailed, codeStr: "declare_target", message: err.Error()}
 		}
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		// Local confirmation gate for teardown (typed-name via seam or flags).
+		// Use the provided path as the name for typed confirmation.
+		targetName := args[0]
+		confirmed, cerr := a.confirmOrFlags(cmd, targetName, true)
+		if cerr != nil {
+			return cerr
+		}
 		yes, _ := cmd.Flags().GetBool("yes")
 		force, _ := cmd.Flags().GetBool("force")
-		return a.postControl(cmd, "/destroy", api.ControlRequest{Path: args[0], DryRun: dryRun, Confirm: yes || force}, "declare destroy")
+		if !confirmed && !yes && !force {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "confirmation_required",
+				message: "declare destroy is an irreversible teardown; re-run with --yes or --force, or type the target name to confirm",
+			}
+		}
+		return a.postControl(cmd, "/destroy", api.ControlRequest{Path: args[0], DryRun: dryRun, Confirm: true, Force: force}, "declare destroy")
 	}
 }
 

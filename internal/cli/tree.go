@@ -256,7 +256,7 @@ func (a *app) workloadCmd() *cobra.Command {
 	}
 	wipe := &cobra.Command{
 		Use: "wipe [pipeline]", Short: "Revert un-promoted disposable data, all of it or one pipeline's",
-		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("workload wipe"),
+		Args: cobra.MaximumNArgs(1), RunE: a.workloadWipe(),
 	}
 	addConfirmFlags(wipe)
 

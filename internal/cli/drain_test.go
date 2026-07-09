@@ -66,7 +66,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 			"data": drainOutcome{Drained: []string{"10"}},
 		})
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "10"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "10", "--yes"})
 		if code != exitOK {
 			t.Fatalf("<run> drain exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 		}
@@ -81,7 +81,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 			"data": drainOutcome{Drained: []string{"20", "21"}},
 		})
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--pipeline", "load_orders"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--pipeline", "load_orders", "--yes"})
 		if code != exitOK {
 			t.Fatalf("--pipeline drain exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 		}
@@ -93,7 +93,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 			"data": drainOutcome{Drained: []string{"10", "20", "21"}},
 		})
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all", "--yes"})
 		if code != exitOK {
 			t.Fatalf("--all drain exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 		}
@@ -105,7 +105,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 			"data": drainOutcome{},
 		})
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all", "--yes"})
 		if code != exitOK {
 			t.Fatalf("empty drain exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 		}
@@ -117,7 +117,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 			"error": map[string]any{"code": "not_leader", "message": "this daemon is not the leader", "leader": "host-b"},
 		})
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "--all", "--yes"})
 		if code != exitNotLeader {
 			t.Fatalf("not-leader drain exit = %d, want %d\nstderr: %s", code, exitNotLeader, errb.String())
 		}
@@ -129,7 +129,7 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 	t.Run("no daemon reachable exits 3", func(t *testing.T) {
 		sock := shortSocket(t) // nothing listening
 		var out, errb bytes.Buffer
-		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "10"})
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "deadletter", "drain", "10", "--yes"})
 		if code != exitNoDaemon {
 			t.Fatalf("no-daemon drain exit = %d, want %d\nstderr: %s", code, exitNoDaemon, errb.String())
 		}

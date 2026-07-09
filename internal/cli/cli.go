@@ -79,6 +79,13 @@ type app struct {
 	// terminal --json envelope carries them as a warnings array, and human output
 	// prints them to stderr. Set per invocation, so the app holds no global state.
 	warnings []declare.Warning
+	// confirm is the E10.2 confirmation seam for interactive prompts (typed-name
+	// for teardowns, y/N for dev-loop ops). When non-nil it is consulted when
+	// neither --yes nor --force was supplied. The name is the target of the
+	// operation (pipeline name, or "engine" for uninstall); isTeardown chooses
+	// the prompt style. Tests inject it to simulate TTY answers without a real
+	// terminal.
+	confirm func(name string, isTeardown bool) (bool, error)
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -259,4 +266,52 @@ func (a *app) describeJSON(root *cobra.Command) error {
 	}
 	_ = json.NewEncoder(a.out).Encode(dataEnvelope{Data: desc})
 	return nil
+}
+
+// workloadWipe is the handler for `iris workload wipe`. It is a gated dev-loop
+// destructive operation (specification section 12). It requires explicit
+// confirmation (--yes/--force or interactive y/N) before proceeding to the
+// daemon. The real execution (and soft-block/force wiring) lives behind the
+// daemon; here we enforce the confirmation surface and forward scope + flags.
+func (a *app) workloadWipe() runE {
+	return func(cmd *cobra.Command, args []string) error {
+		var pipeline string
+		if len(args) == 1 {
+			pipeline = args[0]
+		}
+		name := pipeline
+		if name == "" {
+			name = "the engine"
+		}
+		confirmed, err := a.confirmOrFlags(cmd, name, false)
+		if err != nil {
+			return err
+		}
+		yes, _ := cmd.Flags().GetBool("yes")
+		force, _ := cmd.Flags().GetBool("force")
+		if !confirmed && !yes && !force {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "confirmation_required",
+				message: "workload wipe is destructive; re-run with --yes or --force, or confirm interactively",
+			}
+		}
+		// Confirmed (flag or seam); reach the daemon surface (or fail no-daemon/not-impl).
+		return a.requireDaemon(cmd, "workload wipe")
+	}
+}
+
+// confirmOrFlags returns true if --yes or --force is set, or if the injected
+// confirm seam (for tests or interactive TTY) approves. isTeardown selects
+// prompt flavor for the seam.
+func (a *app) confirmOrFlags(cmd *cobra.Command, name string, isTeardown bool) (bool, error) {
+	yes, _ := cmd.Flags().GetBool("yes")
+	force, _ := cmd.Flags().GetBool("force")
+	if yes || force {
+		return true, nil
+	}
+	if a.confirm != nil {
+		return a.confirm(name, isTeardown)
+	}
+	return false, nil
 }
