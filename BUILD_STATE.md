@@ -142,7 +142,7 @@ Opus, never downgrade.
 - [x] E09.7 Read pool and SQL safety — done (PR #72: https://github.com/MateusAMP2119/iris-engine-cli/pull/72)
 - [x] E09.8 Q and data routes — done (PR #77: https://github.com/MateusAMP2119/iris-engine-cli/pull/77; /q and /data serving surface to green; contracts for caller role execution, physical bounds, disposable visible, forbidden endpoint naming)
 - [x] E09.9 NDJSON streaming — done (PR #83: https://github.com/MateusAMP2119/iris-engine-cli/pull/83)
-- [x] E09.10 Read parity closure — done (3107fac: https://github.com/MateusAMP2119/iris-engine-cli/commit/3107fac76ccf92b888b96443dfe66ef65773df13 + 37bcb53; CLI/API same views, provenance route lineage, parity test live over daemon; S10/api-cli-read-render-parity etc)
+- [x] E09.10 Read parity closure — done (PR #92: https://github.com/MateusAMP2119/iris-engine-cli/pull/92)
 
 ## E10 Destructive Operation Gates — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
