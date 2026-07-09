@@ -125,7 +125,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// recipe toolchain through the exec seam, bytes into the object store at
 	// objects_path, the content hash through the single writer into artifacts.
 	builds := newBuildPlane(logger)
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds)), WithServerLogger(logger))
+	workload := NewWorkloadPlane(client.ShowReader(), logger)
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}

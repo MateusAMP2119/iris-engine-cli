@@ -252,7 +252,7 @@ func (a *app) dataCmd() *cobra.Command {
 func (a *app) workloadCmd() *cobra.Command {
 	show := &cobra.Command{
 		Use: "show [pipeline]", Short: "Show the wiring panel: lanes, composer walk, gate state per edge",
-		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("workload show"),
+		Args: cobra.MaximumNArgs(1), RunE: a.workloadShow(),
 	}
 	wipe := &cobra.Command{
 		Use: "wipe [pipeline]", Short: "Revert un-promoted disposable data, all of it or one pipeline's",

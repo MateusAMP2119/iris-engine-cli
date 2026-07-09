@@ -94,6 +94,7 @@ func NewMux(opts ...MuxOption) http.Handler {
 		info:         noInfo{},
 		inspect:      noInspect{},
 		pipelineShow: noPipelineShow{},
+		workloadShow: noWorkloadShow{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -116,6 +117,7 @@ type mux struct {
 	info         InfoHandler
 	inspect      InspectHandler
 	pipelineShow PipelineShowHandler
+	workloadShow WorkloadShowHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.

@@ -56,6 +56,10 @@ type ShowReader interface {
 	// Consumed reports whether dependent has a run_inputs row recording
 	// upstreamRunID among the upstream runs any of its runs consumed.
 	Consumed(ctx context.Context, dependent string, upstreamRunID int64) (bool, error)
+	// LaneRows returns every persisted (lane, pipeline, pos) row, in (lane, pos) order.
+	LaneRows(ctx context.Context) ([]LaneEntry, error)
+	// RegisteredPipelines returns the names of all registered pipelines in name order.
+	RegisteredPipelines(ctx context.Context) ([]string, error)
 }
 
 // The pipeline-show read statements new to this file. Each is a single plain
@@ -145,4 +149,14 @@ func (r *pgxShowReader) GrantsForRole(ctx context.Context, pgRole string) ([]Gra
 		return nil, fmt.Errorf("store: read grants for role %q: %w", pgRole, err)
 	}
 	return out, nil
+}
+
+// LaneRows delegates to the embedded manual reader (reuses its MVCC query).
+func (r *pgxShowReader) LaneRows(ctx context.Context) ([]LaneEntry, error) {
+	return r.pgxManualReader.LaneRows(ctx)
+}
+
+// RegisteredPipelines delegates to the embedded registry reader.
+func (r *pgxShowReader) RegisteredPipelines(ctx context.Context) ([]string, error) {
+	return r.pgxRegistryReader.RegisteredPipelines(ctx)
 }

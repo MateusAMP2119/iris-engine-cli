@@ -79,11 +79,16 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		default:
 			return false
 		}
-	case "lanes", "dependencies", "workload":
+	case "lanes", "dependencies":
 		if len(segs) != 1 {
 			return false
 		}
 		serveUnwiredRead(w, r, segs[0])
+	case "workload":
+		if len(segs) != 1 {
+			return false
+		}
+		m.serveWorkload(w, r)
 	case "leader":
 		if len(segs) != 1 {
 			return false

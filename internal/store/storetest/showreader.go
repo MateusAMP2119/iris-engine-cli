@@ -30,6 +30,8 @@ type ShowFake struct {
 	latest   map[string]store.LatestRunInfo
 	hasRun   map[string]bool
 	consumed map[string]map[int64]bool
+	lanes    []store.LaneEntry
+	regs     []string
 }
 
 // compile-time proof the fake satisfies the pipeline-show read seam.
@@ -46,6 +48,8 @@ func NewShow() *ShowFake {
 		latest:   map[string]store.LatestRunInfo{},
 		hasRun:   map[string]bool{},
 		consumed: map[string]map[int64]bool{},
+		lanes:    nil,
+		regs:     nil,
 	}
 }
 
@@ -99,6 +103,22 @@ func (f *ShowFake) SetConsumed(dependent string, upstreamRunID int64) *ShowFake 
 	return f
 }
 
+// SeedLaneRows seeds the lanes rows for BuildWalk (returns self for chaining).
+func (f *ShowFake) SeedLaneRows(rows ...store.LaneEntry) *ShowFake {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lanes = append([]store.LaneEntry(nil), rows...)
+	return f
+}
+
+// SeedRegistered seeds the list of registered pipelines (returns self).
+func (f *ShowFake) SeedRegistered(names ...string) *ShowFake {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.regs = append([]string(nil), names...)
+	return f
+}
+
 // PipelineDetail returns a copy of the pipeline's declaration detail, and whether
 // it is registered.
 func (f *ShowFake) PipelineDetail(_ context.Context, name string) (store.PipelineDetail, bool, error) {
@@ -138,4 +158,18 @@ func (f *ShowFake) Consumed(_ context.Context, dependent string, upstreamRunID i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.consumed[dependent][upstreamRunID], nil
+}
+
+// LaneRows returns seeded lane rows.
+func (f *ShowFake) LaneRows(_ context.Context) ([]store.LaneEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]store.LaneEntry(nil), f.lanes...), nil
+}
+
+// RegisteredPipelines returns seeded registered names.
+func (f *ShowFake) RegisteredPipelines(_ context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.regs...), nil
 }
