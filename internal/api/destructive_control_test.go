@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
@@ -135,4 +136,36 @@ func TestDestroyRequiresConfirmEvenWithControlToken(t *testing.T) {
 	if recOK.Code == http.StatusForbidden {
 		t.Errorf("control PAT + confirm got 403 on destroy; control scope must authorize the destructive (S12/api-destructive-control-pat-confirm-field)")
 	}
+}
+
+// TestAPIDrainConfirmField proves the drain destructive op over API also
+// requires explicit confirm even with control authority (defense in depth).
+//
+// spec: S12/api-destructive-control-pat-confirm-field
+func TestAPIDrainConfirmField(t *testing.T) {
+	role := api.NewRoleState()
+	role.SetLeader()
+	mux := api.NewMux(api.WithRole(role))
+
+	// without confirm body: 422, not processed.
+	rec := postJSONDrain(t, mux, `{"all":true}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("drain without confirm status=%d want 422", rec.Code)
+	}
+
+	// with confirm: reaches (currently not-wired 422, not 403).
+	recOK := postJSONDrain(t, mux, `{"all":true,"confirm":true}`)
+	if recOK.Code == http.StatusForbidden || recOK.Code == http.StatusUnauthorized {
+		t.Errorf("control+confirm drain blocked at auth/scope: %d", recOK.Code)
+	}
+}
+
+func postJSONDrain(t *testing.T, h http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/deadletter/drain", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(api.WithAuthority(req.Context(), api.Authority{PATID: "c", Scopes: []pat.Scope{pat.ScopeControl}}))
+	h.ServeHTTP(rec, req)
+	return rec
 }

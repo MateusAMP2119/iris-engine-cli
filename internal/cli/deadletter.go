@@ -220,6 +220,9 @@ type drainScope struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	// All scopes to every outstanding entry (--all).
 	All bool `json:"all,omitempty"`
+	// Confirm is the explicit confirmation field required for destructive ops
+	// over the API (specification section 12); the CLI sets it after its local gate.
+	Confirm bool `json:"confirm,omitempty"`
 }
 
 // drainOutcome is the leader's reply: the dead-lettered runs whose worklist entries
@@ -272,7 +275,7 @@ func (a *app) deadletterDrain() runE {
 				message: "deadletter drain is destructive; re-run with --yes or --force, or confirm interactively",
 			}
 		}
-		return a.postDrain(cmd, drainScope{Run: run, Pipeline: pipeline, All: all})
+		return a.postDrain(cmd, drainScope{Run: run, Pipeline: pipeline, All: all, Confirm: true})
 	}
 }
 
