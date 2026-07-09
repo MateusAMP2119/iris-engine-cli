@@ -35,8 +35,11 @@
 package fixtures
 
 import (
+	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
+	"testing"
 )
 
 // resolveRoot returns the absolute path to this package's testdata directory,
@@ -73,4 +76,61 @@ func InvalidDeclaration(name string) string {
 // root.
 func Path(elem ...string) string {
 	return filepath.Join(append([]string{resolveRoot()}, elem...)...)
+}
+
+// MaterializeGolden copies the golden sample workspace into a fresh temp
+// directory and returns its absolute path. The returned tree is writable and
+// includes the pipelines/, schemas/, and endpoints/ trees exactly as checked
+// in, with traversable directories (0755) and regular files (0644). The
+// testing.TB's cleanup removes the tree on test exit.
+func MaterializeGolden(t testing.TB) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "iris-golden-*")
+	if err != nil {
+		t.Fatalf("materialize golden workspace: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	golden := WorkspaceGolden()
+	// Copy the three top-level trees that make a workspace: pipelines, schemas, endpoints.
+	for _, sub := range []string{"pipelines", "schemas", "endpoints"} {
+		src := filepath.Join(golden, sub)
+		// If the subdir does not exist in this golden snapshot, skip (future-proof).
+		if _, err := os.Stat(src); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			t.Fatalf("stat golden %s: %v", sub, err)
+		}
+		if err := copyTree(src, filepath.Join(dir, sub)); err != nil {
+			t.Fatalf("copy golden %s: %v", sub, err)
+		}
+	}
+	return dir
+}
+
+// copyTree copies src tree to dst, creating parents, using 0755 for dirs and
+// 0644 for files (workspace artifact convention).
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // G304: repo-controlled golden fixture
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644) //nolint:gosec // G306: workspace file content
+	})
 }
