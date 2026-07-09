@@ -18,15 +18,33 @@ import (
 // soft-blocks, --force overrides. A successful wipe exits 0 (counts may be
 // emitted under --json); refusals are operation-failed (4) or other categories.
 
-// workloadWipe is the handler for `iris workload wipe [pipeline]`: POSTs the
-// request (with confirm from flags) and maps outcome.
+// workloadWipe is the handler for `iris workload wipe [pipeline]`: it is a gated
+// dev-loop destructive operation (specification section 12). It first enforces
+// the confirmation surface (--yes/--force or interactive y/N via the confirm
+// seam) and only then POSTs the request to the leader-gated /workload/wipe route,
+// mapping the outcome.
 func (a *app) workloadWipe() runE {
 	return func(cmd *cobra.Command, args []string) error {
-		yes, _ := cmd.Flags().GetBool("yes")
-		force, _ := cmd.Flags().GetBool("force")
 		var pipeline string
 		if len(args) == 1 {
 			pipeline = args[0]
+		}
+		name := pipeline
+		if name == "" {
+			name = "the engine"
+		}
+		confirmed, err := a.confirmOrFlags(cmd, name, false)
+		if err != nil {
+			return err
+		}
+		yes, _ := cmd.Flags().GetBool("yes")
+		force, _ := cmd.Flags().GetBool("force")
+		if !confirmed && !yes && !force {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "confirmation_required",
+				message: "workload wipe is destructive; re-run with --yes or --force, or confirm interactively",
+			}
 		}
 		settings := a.resolveTarget(cmd)
 		client, base, overTCP := a.daemonHTTPClient(settings)
