@@ -238,6 +238,7 @@ func TestStatsPipelineRollup(t *testing.T) {
 // spec: S14/checkpoints-never-pruned
 func TestCheckpointsNeverPruned(t *testing.T) {
 	t.Run("S14/checkpoints-never-pruned", func(t *testing.T) {
+		// spec: S14/checkpoints-never-pruned
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		_ = w.EnsureSchema(context.Background())
@@ -247,9 +248,15 @@ func TestCheckpointsNeverPruned(t *testing.T) {
 				t.Errorf("pruned: %s", s.SQL)
 			}
 		}
-		cp := store.CheckpointRow{IDFrom: 1, IDTo: 2, Digest: []byte("d"), Location: "resident", RecordedAt: "t"}
-		if err := w.InsertCheckpoint(context.Background(), cp); err != nil {
-			t.Fatalf("insert: %v", err)
+		// table of inserts still only insert, no DML other
+		cps := []store.CheckpointRow{
+			{IDFrom: 1, IDTo: 2, Digest: []byte("d"), Location: "resident", RecordedAt: "t"},
+			{IDFrom: 3, IDTo: 4, Digest: []byte("e"), Location: "archived", RecordedAt: "t2"},
+		}
+		for _, cp := range cps {
+			if err := w.InsertCheckpoint(context.Background(), cp); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
 		}
 	})
 }

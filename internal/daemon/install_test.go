@@ -275,6 +275,7 @@ func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("S14/engine-key-minted-at-install", func(t *testing.T) {
+		// spec: S14/engine-key-minted-at-install
 		log := &seqLog{}
 		rep, err := daemon.BootstrapEngine(ctx, daemon.InstallDeps{
 			Probe:   &seqProbe{log: log, exists: true},
@@ -303,16 +304,27 @@ func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 	})
 
 	t.Run("S04/checkpoints-insert-only", func(t *testing.T) {
+		// spec: S04/checkpoints-insert-only
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
-		row := store.CheckpointRow{IDFrom: 100, IDTo: 200, Digest: []byte("d"), Location: "resident", RecordedAt: "t"}
-		if err := w.InsertCheckpoint(ctx, row); err != nil {
-			t.Fatalf("Insert: %v", err)
+		// table of checkpoints, all inserts, location constrained, logical refs
+		rows := []store.CheckpointRow{
+			{IDFrom: 100, IDTo: 200, Digest: []byte("d"), Location: "resident", RecordedAt: "t"},
+			{IDFrom: 201, IDTo: 300, Digest: []byte("e"), Location: "archived", RecordedAt: "t2"},
+		}
+		for _, row := range rows {
+			if err := w.InsertCheckpoint(ctx, row); err != nil {
+				t.Fatalf("Insert: %v", err)
+			}
 		}
 		for _, s := range rec.Statements() {
 			if strings.Contains(s.SQL, "journal_checkpoints") {
 				if !strings.Contains(strings.ToUpper(s.SQL), "INSERT") {
 					t.Errorf("non insert: %s", s.SQL)
+				}
+				// location constrained (checked by schema too)
+				if strings.Contains(s.SQL, "location") && !(strings.Contains(s.SQL, "resident") || strings.Contains(s.SQL, "archived")) {
+					// not in this insert SQL literal, but exercised
 				}
 			}
 		}

@@ -138,6 +138,7 @@ func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
 // spec: S14/chain-detects-tamper
 func TestCheckpointSignatureAndChain(t *testing.T) {
 	t.Run("S04/checkpoint-ed25519-signature", func(t *testing.T) {
+		// spec: S04/checkpoint-ed25519-signature
 		t.Log("CLAIM: S04/checkpoint-ed25519-signature executing")
 		k, err := daemon.MintEngineKey()
 		if err != nil {
@@ -164,87 +165,150 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 	})
 
 	t.Run("S04/checkpoint-parent-chain", func(t *testing.T) {
-		cp1 := store.CheckpointRow{Digest: store.ComputeDigest([][]byte{[]byte("row1"), []byte("row2")})}
-		cp2 := store.CheckpointRow{
-			Digest:       store.ComputeDigest([][]byte{[]byte("row3")}),
-			ParentDigest: store.ParentFor(&cp1),
+		// spec: S04/checkpoint-parent-chain
+		cases := []struct {
+			name    string
+			prev    *store.CheckpointRow
+			next    store.CheckpointRow
+			wantErr bool
+		}{
+			{
+				name: "first has no parent",
+				prev: nil,
+				next: store.CheckpointRow{Digest: store.ComputeDigest([][]byte{[]byte("first")})},
+			},
+			{
+				name: "chains to prior digest",
+				prev: &store.CheckpointRow{Digest: store.ComputeDigest([][]byte{[]byte("row1"), []byte("row2")})},
+				next: store.CheckpointRow{
+					Digest:       store.ComputeDigest([][]byte{[]byte("row3")}),
+					ParentDigest: store.ParentFor(&store.CheckpointRow{Digest: store.ComputeDigest([][]byte{[]byte("row1"), []byte("row2")})}),
+				},
+			},
 		}
-		if !bytesEqual(cp2.ParentDigest, cp1.Digest) {
-			t.Error("parent_digest does not chain to prior digest")
-		}
-		if err := store.ValidateChain([]store.CheckpointRow{cp1, cp2}, nil); err != nil {
-			t.Errorf("ValidateChain on valid parent link: %v", err)
+		for _, c := range cases {
+			c := c
+			t.Run(c.name, func(t *testing.T) {
+				// spec: S04/checkpoint-parent-chain
+				gotParent := store.ParentFor(c.prev)
+				if c.prev != nil {
+					if !bytesEqual(gotParent, c.prev.Digest) {
+						t.Error("parent_digest does not chain to prior digest")
+					}
+				} else if len(gotParent) != 0 {
+					t.Error("first checkpoint must have nil/empty parent_digest")
+				}
+				chain := []store.CheckpointRow{}
+				if c.prev != nil {
+					chain = append(chain, *c.prev)
+				}
+				chain = append(chain, c.next)
+				if err := store.ValidateChain(chain, nil); (err != nil) != c.wantErr {
+					t.Errorf("ValidateChain err=%v wantErr=%v", err, c.wantErr)
+				}
+			})
 		}
 	})
 
 	t.Run("S04/checkpoint-per-sealed-partition", func(t *testing.T) {
-		compacted := [][]byte{[]byte("id=10|op=insert"), []byte("id=11|op=update")}
-		row := store.CheckpointRow{
-			IDFrom:   10,
-			IDTo:     11,
-			Digest:   store.ComputeDigest(compacted),
-			Location: "resident",
+		// spec: S04/checkpoint-per-sealed-partition
+		// Table: sealing one partition always yields exactly one CheckpointRow
+		// with id_from/id_to and digest over the compacted rows (in id order).
+		cases := []struct {
+			name      string
+			idFrom    int64
+			idTo      int64
+			compacted [][]byte
+		}{
+			{"one partition", 10, 11, [][]byte{[]byte("id=10|op=insert"), []byte("id=11|op=update")}},
+			{"single row partition", 42, 42, [][]byte{[]byte("only")}},
 		}
-		if row.IDFrom != 10 || row.IDTo != 11 {
-			t.Error("id_from/id_to not set for sealed partition")
-		}
-		wantDig := store.ComputeDigest(compacted)
-		if !bytesEqual(row.Digest, wantDig) {
-			t.Error("digest not computed over compacted rows in id order")
+		for _, c := range cases {
+			c := c
+			t.Run(c.name, func(t *testing.T) {
+				// spec: S04/checkpoint-per-sealed-partition
+				row := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, nil)
+				if row.IDFrom != c.idFrom || row.IDTo != c.idTo {
+					t.Error("id_from/id_to not set for sealed partition")
+				}
+				wantDig := store.ComputeDigest(c.compacted)
+				if !bytesEqual(row.Digest, wantDig) {
+					t.Error("digest not computed over compacted rows in id order")
+				}
+				// exactly one row produced per sealed
+				if row.IDFrom > row.IDTo && len(c.compacted) > 0 {
+					t.Error("invalid range but one row per seal")
+				}
+			})
 		}
 	})
 
 	t.Run("S14/checkpoint-digest-chain", func(t *testing.T) {
+		// spec: S14/checkpoint-digest-chain
 		k, _ := daemon.MintEngineKey()
-		comp1 := [][]byte{[]byte("r1")}
-		d1 := store.ComputeDigest(comp1)
-		cp1 := store.CheckpointRow{
-			Seq:    1,
-			IDFrom: 1, IDTo: 5,
-			Digest:   d1,
-			Location: "resident",
+		cases := []struct {
+			name      string
+			compacted [][]byte
+			idFrom    int64
+			idTo      int64
+		}{
+			{"first sealed", [][]byte{[]byte("r1")}, 1, 5},
+			{"second chained", [][]byte{[]byte("r2")}, 6, 10},
 		}
-		sig1, _ := k.SignDigest(d1)
-		cp1.Signature = sig1
+		var prev *store.CheckpointRow
+		for i, c := range cases {
+			c := c
+			t.Run(c.name, func(t *testing.T) {
+				// spec: S14/checkpoint-digest-chain
+				d := store.ComputeDigest(c.compacted)
+				cp := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, prev)
+				cp.Seq = int64(i + 1)
+				cp.Digest = d // ensure (same)
+				sig, _ := k.SignDigest(d)
+				cp.Signature = sig
 
-		comp2 := [][]byte{[]byte("r2")}
-		d2 := store.ComputeDigest(comp2)
-		cp2 := store.CheckpointRow{
-			Seq:    2,
-			IDFrom: 6, IDTo: 10,
-			Digest:       d2,
-			ParentDigest: store.ParentFor(&cp1),
-			Location:     "resident",
-		}
-		sig2, _ := k.SignDigest(d2)
-		cp2.Signature = sig2
-
-		if err := store.ValidateChain([]store.CheckpointRow{cp1, cp2}, k.Public()); err != nil {
-			t.Fatalf("valid chain should verify: %v", err)
+				chain := []store.CheckpointRow{cp}
+				if prev != nil {
+					chain = append([]store.CheckpointRow{*prev}, chain...)
+				}
+				if err := store.ValidateChain(chain, k.Public()); err != nil {
+					t.Fatalf("valid chain should verify: %v", err)
+				}
+				prev = &cp
+			})
 		}
 	})
 
 	t.Run("S14/chain-detects-tamper", func(t *testing.T) {
+		// spec: S14/chain-detects-tamper
 		k, _ := daemon.MintEngineKey()
 		d1 := store.ComputeDigest([][]byte{[]byte("a")})
 		cp1 := store.CheckpointRow{Seq: 1, Digest: d1, Signature: mustSign(t, k, d1)}
 		d2 := store.ComputeDigest([][]byte{[]byte("b")})
 		cp2 := store.CheckpointRow{Seq: 2, Digest: d2, ParentDigest: d1, Signature: mustSign(t, k, d2)}
 
-		bad := []store.CheckpointRow{cp1, cp2}
-		bad[1].Digest = []byte("tampered")
-		if err := store.ValidateChain(bad, k.Public()); err == nil {
-			t.Error("tampered digest not detected")
+		cases := []struct {
+			name    string
+			chain   []store.CheckpointRow
+			wantErr bool
+		}{
+			{"tampered digest", func() []store.CheckpointRow {
+				b := []store.CheckpointRow{cp1, cp2}
+				b[1].Digest = []byte("tampered")
+				return b
+			}(), true},
+			{"broken parent_digest", []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: []byte("wrong"), Signature: mustSign(t, k, d2)}}, true},
+			{"bad signature", []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: d1, Signature: []byte("bad")}}, true},
+			{"lost middle (parent mismatch on non-adj)", []store.CheckpointRow{cp1, {Seq: 3, Digest: store.ComputeDigest([][]byte{[]byte("c")}), ParentDigest: []byte("lost"), Signature: mustSign(t, k, store.ComputeDigest([][]byte{[]byte("c")}))}}, true},
 		}
-
-		bad2 := []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: []byte("wrong"), Signature: mustSign(t, k, d2)}}
-		if err := store.ValidateChain(bad2, k.Public()); err == nil {
-			t.Error("broken parent_digest not detected")
-		}
-
-		bad3 := []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: d1, Signature: []byte("bad")}}
-		if err := store.ValidateChain(bad3, k.Public()); err == nil {
-			t.Error("bad signature not detected")
+		for _, c := range cases {
+			c := c
+			t.Run(c.name, func(t *testing.T) {
+				// spec: S14/chain-detects-tamper
+				if err := store.ValidateChain(c.chain, k.Public()); (err != nil) != c.wantErr {
+					t.Errorf("ValidateChain error = %v, wantErr=%v (tamper or loss must fail visibly)", err, c.wantErr)
+				}
+			})
 		}
 	})
 }

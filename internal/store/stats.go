@@ -383,6 +383,21 @@ func ValidateChain(cps []CheckpointRow, pub ed25519.PublicKey) error {
 	return nil
 }
 
+// CheckpointForSealed constructs exactly one journal_checkpoints row for a sealed
+// partition: id_from/id_to, digest = ComputeDigest over the compacted rows in id
+// order, parent_digest chained via ParentFor. Signature is left for the engine
+// key signer. Initial location "resident". Pure unit logic.
+// (S04/checkpoint-per-sealed-partition, S14/checkpoint-digest-chain)
+func CheckpointForSealed(idFrom, idTo int64, compacted [][]byte, prev *CheckpointRow) CheckpointRow {
+	return CheckpointRow{
+		IDFrom:       idFrom,
+		IDTo:         idTo,
+		Digest:       ComputeDigest(compacted),
+		ParentDigest: ParentFor(prev),
+		Location:     "resident",
+	}
+}
+
 func bytesEqual(a, b []byte) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true

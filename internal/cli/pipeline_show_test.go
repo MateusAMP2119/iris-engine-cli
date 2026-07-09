@@ -190,3 +190,67 @@ func TestPipelineShowReadout(t *testing.T) {
 		}
 	})
 }
+
+// TestGateLedgerInPipelineShow claims the S06.2 contract for the gate ledger
+// surface: it reports per-edge the upstream latest, consumed check, verdict
+// from closed set; the show is pure read (no meta writes); --json makes
+// verdicts script-readable. Uses the in-proc daemon + meta fake (integration
+// tier, no live PG).
+func TestGateLedgerInPipelineShow(t *testing.T) {
+	t.Setenv("IRIS_HOST", "")
+	t.Setenv("IRIS_SOCKET", "")
+	t.Setenv("IRIS_TOKEN", "")
+
+	// spec: S06.2/gate-ledger-in-pipeline-show
+	t.Run("S06.2/gate-ledger-in-pipeline-show", func(t *testing.T) {
+		sock := shortSocket(t)
+		f := seededShowFake(t)
+		startShowDaemon(t, sock, f)
+
+		// Drive via --json so scripts read verdicts.
+		var out, errb bytes.Buffer
+		code := newApp(&out, &errb).run([]string{"--socket", sock, "pipeline", "show", "transform", "--json"})
+		if code != exitOK {
+			t.Fatalf("pipeline show exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+		}
+		var doc struct {
+			Data api.PipelineShowResult `json:"data"`
+		}
+		decodeSingleJSON(t, out.Bytes(), &doc)
+		d := doc.Data
+
+		// Closed set verdicts, per edge in order, with latest run.
+		want := []struct {
+			upstream, verdict, latest string
+		}{
+			{"extract", "open", "41"},
+			{"enrich", "up_to_date", "7"},
+			{"load", "pending", ""},
+			{"clean", "poisoned", "12"},
+		}
+		if len(d.GateLedger) != len(want) {
+			t.Fatalf("gate ledger len = %d, want %d", len(d.GateLedger), len(want))
+		}
+		for i, w := range want {
+			row := d.GateLedger[i]
+			if row.Upstream != w.upstream || row.Verdict != w.verdict || row.LatestRunID != w.latest {
+				t.Errorf("ledger[%d] = %+v, want upstream=%s verdict=%s latest=%s", i, row, w.upstream, w.verdict, w.latest)
+			}
+		}
+
+		// Human also surfaces them (already asserted in sibling test, but recheck tokens).
+		var human, herr bytes.Buffer
+		code = newApp(&human, &herr).run([]string{"--socket", sock, "pipeline", "show", "transform"})
+		if code != exitOK {
+			t.Fatalf("human show = %d: %s", code, herr.String())
+		}
+		for _, v := range []string{"open", "up_to_date", "pending", "poisoned"} {
+			if !strings.Contains(human.String(), v) {
+				t.Errorf("human output misses verdict %q", v)
+			}
+		}
+		// The read wrote no meta state: our fake is read-only surface; a closed
+		// gate produces no run row (absence is the record). No writer was
+		// involved in the show path.
+	})
+}

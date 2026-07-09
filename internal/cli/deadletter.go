@@ -83,6 +83,11 @@ func (a *app) deadletterReplay() runE {
 		if run == "" && pipeline == "" && !all {
 			return a.usage("deadletter replay requires <run>, --pipeline <name>, or --all")
 		}
+		if run != "" {
+			if _, _, perr := parseRunRef(run); perr != nil {
+				return a.usage(fmt.Sprintf("bad run ref %q: %v", run, perr))
+			}
+		}
 		return a.postReplay(cmd, replayScope{Run: run, Pipeline: pipeline, All: all})
 	}
 }
@@ -241,6 +246,11 @@ func (a *app) deadletterDrain() runE {
 		// Nothing defaults to everything: a bare drain is a usage error (exit 2).
 		if run == "" && pipeline == "" && !all {
 			return a.usage("deadletter drain requires <run>, --pipeline <name>, or --all")
+		}
+		if run != "" {
+			if _, _, perr := parseRunRef(run); perr != nil {
+				return a.usage(fmt.Sprintf("bad run ref %q: %v", run, perr))
+			}
 		}
 		// Confirmation gate for dev-loop op (y/N prompt via seam or --yes/--force).
 		scopeName := "all dead-letter entries"

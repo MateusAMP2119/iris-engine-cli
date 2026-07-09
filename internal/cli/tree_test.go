@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -228,4 +229,64 @@ func parentName(c *cobra.Command) string {
 		return ""
 	}
 	return c.Parent().Name()
+}
+
+// TestRunRefGrammar proves the <run> grammar: bare pipeline name means latest
+// run of it; <name>~n means nth prior run (0=latest); git ^ and .. are rejected
+// as false cognates. Pure unit logic; resolution to id is I/O later.
+//
+// spec: S08/run-ref-grammar
+func TestRunRefGrammar(t *testing.T) {
+	tests := []struct {
+		ref          string
+		wantName     string
+		wantPrior    int
+		wantErr      bool
+		errSubstring string
+	}{
+		// bare name = latest
+		{ref: "extract", wantName: "extract", wantPrior: 0},
+		{ref: "load_orders", wantName: "load_orders", wantPrior: 0},
+		// ~0 and ~n
+		{ref: "foo~0", wantName: "foo", wantPrior: 0},
+		{ref: "bar~1", wantName: "bar", wantPrior: 1},
+		{ref: "baz~42", wantName: "baz", wantPrior: 42},
+		// git false cognates rejected
+		{ref: "x^1", wantErr: true, errSubstring: "^"},
+		{ref: "y..z", wantErr: true, errSubstring: ".."},
+		{ref: "a^b..c", wantErr: true},
+		// malformed
+		{ref: "", wantErr: true},
+		{ref: "~1", wantErr: true},
+		{ref: "name~", wantErr: true},
+		{ref: "name~-1", wantErr: true},
+		{ref: "name~abc", wantErr: true},
+		{ref: "name~1~2", wantErr: true},
+		{ref: "name~1^", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		name := tt.ref
+		if name == "" {
+			name = "(empty)"
+		}
+		t.Run(name, func(t *testing.T) {
+			gotName, gotPrior, err := parseRunRef(tt.ref)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseRunRef(%q) err = nil, want error", tt.ref)
+				}
+				if tt.errSubstring != "" && !strings.Contains(err.Error(), tt.errSubstring) {
+					t.Errorf("parseRunRef(%q) err = %v, want substring %q", tt.ref, err, tt.errSubstring)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseRunRef(%q) err = %v, want nil", tt.ref, err)
+			}
+			if gotName != tt.wantName || gotPrior != tt.wantPrior {
+				t.Errorf("parseRunRef(%q) = (%q, %d), want (%q, %d)", tt.ref, gotName, gotPrior, tt.wantName, tt.wantPrior)
+			}
+		})
+	}
 }
