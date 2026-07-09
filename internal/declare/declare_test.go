@@ -186,3 +186,67 @@ func TestRunRequiredArgvList(t *testing.T) {
 		}
 	})
 }
+
+// TestSampleDependencySplit pins the sample declarations' use of depends_on
+// (data gate) separately from composer order (walk position source). load_orders
+// declares depends_on, reset_counters declares none; the lane walk order is
+// still the composer's, proving independence.
+//
+// spec: S13/sample-dependency-split
+func TestSampleDependencySplit(t *testing.T) {
+	t.Run("S13/sample-dependency-split", func(t *testing.T) {
+		// load_orders declares depends_on: [extract_orders]
+		loadSrc := goldenDecl(t, "pipelines", "ingest", "load_orders", "iris-declare.yaml")
+		loadDecl, err := declare.ParseDeclaration(loadSrc)
+		if err != nil {
+			t.Fatalf("parse load_orders: %v", err)
+		}
+		if loadDecl.Kind != declare.KindPipeline || loadDecl.Pipeline == nil {
+			t.Fatalf("load_orders not a pipeline decl")
+		}
+		if got := loadDecl.Pipeline.DependsOn; len(got) != 1 || got[0] != "extract_orders" {
+			t.Errorf("load_orders depends_on = %v, want [extract_orders]", got)
+		}
+
+		// reset_counters declares no depends_on
+		resetSrc := goldenDecl(t, "pipelines", "ingest", "reset_counters", "iris-declare.yaml")
+		resetDecl, err := declare.ParseDeclaration(resetSrc)
+		if err != nil {
+			t.Fatalf("parse reset_counters: %v", err)
+		}
+		if resetDecl.Kind != declare.KindPipeline || resetDecl.Pipeline == nil {
+			t.Fatalf("reset_counters not a pipeline decl")
+		}
+		if got := resetDecl.Pipeline.DependsOn; len(got) != 0 {
+			t.Errorf("reset_counters depends_on = %v, want [] (none)", got)
+		}
+
+		// Composer order is independent of the depends_on edges.
+		// (walk positions come from composer alone)
+		compSrc := goldenDecl(t, "pipelines", "ingest", "iris-declare.yaml")
+		compDecl, err := declare.ParseDeclaration(compSrc)
+		if err != nil {
+			t.Fatalf("parse composer: %v", err)
+		}
+		if compDecl.Kind != declare.KindComposer || compDecl.Composer == nil {
+			t.Fatalf("ingest composer not parsed as composer")
+		}
+		wantOrder := []string{"extract_orders", "reset_counters", "load_orders"}
+		if got := compDecl.Composer.Order; !equalOrder(got, wantOrder) {
+			t.Errorf("composer order = %v, want %v (independent of depends_on)", got, wantOrder)
+		}
+	})
+}
+
+// equalOrder is a local helper (dupe of unexported in sibling test) for order compare.
+func equalOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
