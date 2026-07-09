@@ -230,7 +230,7 @@ func (a *app) runCmd() *cobra.Command {
 	}
 	cancel := &cobra.Command{
 		Use: "cancel <run>", Short: "Cancel one running run (kills its process group)",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("run cancel"),
+		Args: cobra.ExactArgs(1), RunE: a.runCancel(),
 	}
 
 	return a.group("run", "Inspect and control execution records",

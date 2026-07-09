@@ -46,6 +46,22 @@ func (r *inflightRuns) untrack(runID string) {
 	r.mu.Unlock()
 }
 
+// kill best-effort SIGKILLs one tracked run's process group, reporting whether it was
+// in flight (tracked). It is the reach an operator `iris run cancel` uses to end a
+// single running run; the run's own reap path untracks it, and the caller dead-letters
+// it as stopped. An already-gone group is not an error; a run not tracked here (already
+// terminal or never started on this daemon) returns false.
+func (r *inflightRuns) kill(runID string) bool {
+	r.mu.Lock()
+	h, ok := r.runs[runID]
+	r.mu.Unlock()
+	if !ok {
+		return false
+	}
+	_ = h.Kill() // best-effort by design: the group may already be gone
+	return true
+}
+
 // KillInflight best-effort SIGKILLs every tracked run's process group and returns
 // how many groups it signalled -- the deposed side's half of the failover kill
 // (specification sections 15 and 2). It writes nothing to meta: the deposed session

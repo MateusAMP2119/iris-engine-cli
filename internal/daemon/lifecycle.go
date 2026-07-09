@@ -147,7 +147,21 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	wipes := newWipePlane(logger)
 	promos := newPromotePlane(logger)
 
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov), api.WithPromote(promos), api.WithWipe(wipes)), WithServerLogger(logger))
+	// The daemon's in-flight run registry: the production InflightKiller the
+	// self-demotion kill acts through (specification section 15). Both the manual
+	// orchestrator and the perpetual lane loop track each live run's process group in
+	// this ONE registry, so a demotion (lost meta session) kills the daemon's own
+	// in-flight runs -- manual and lane alike -- at once, writing nothing to meta.
+	inflight := newInflightRuns()
+
+	// The lane plane serves POST /run/cancel once this daemon leads: it reaches a
+	// running lane run's process group through the shared in-flight registry and
+	// dead-letters it as stopped through the single writer. The pass counter is the
+	// leader-held per-lane loop count, reset each leadership term.
+	lanes := newLanePlane(logger, inflight)
+	passCounter := dispatch.NewPassCounter()
+
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov), api.WithPromote(promos), api.WithWipe(wipes), api.WithRunCancel(lanes)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -162,13 +176,6 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// daemon must disown it the moment it stops serving, so it is removed right after
 	// srv.Serve returns (listeners drained, socket released), below.
 
-	// The daemon's in-flight run registry: the production InflightKiller the
-	// self-demotion kill acts through (specification section 15). The manual
-	// orchestrator tracks each live run's process group in it, so a demotion (lost
-	// meta session) kills the daemon's own in-flight runs at once, writing nothing to
-	// meta.
-	inflight := newInflightRuns()
-
 	// Run the election in the background: it flips the role and drives the single
 	// dispatcher. It returns when ctx is cancelled (having released the lock). On
 	// winning, the leader runs startup crash reconciliation before any lane dispatch:
@@ -178,6 +185,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// session self-demotes: dispatch stops, in-flight runs are killed (WithInflightKiller),
 	// and the daemon re-enters standby on a FRESH session (WithFreshSessions), so one
 	// process survives any number of demotions (specification section 15).
+	//
+	// The lane loop build closure composes the loop over the single dispatcher on
+	// winning leadership: the walk read, the depends_on gate, the fresh cause=loop
+	// run-start (run-scoped for capture attribution, tracked in the SHARED in-flight
+	// registry so run cancel and the self-demotion kill reach it), and the failure-
+	// propagation post-pass. The run's data connection targets the data database.
+	laneBuild := func(submit dispatch.Submitter) *dispatch.Loop {
+		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
+			exec.NewOSRunner(), data, objects, adminDSN.Source().ConnString(), passCounter, logger)
+	}
+
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
@@ -185,6 +203,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
 		WithWipePlane(wipes, client.Reader(), data),
+		WithLaneLoop(laneBuild),
+		WithLanePlane(lanes),
+		WithPassCounter(passCounter),
 		WithInflightKiller(inflight),
 		WithFreshSessions(freshLeaderSession(ctx, client, logger)))
 	electDone := make(chan error, 1)

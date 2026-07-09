@@ -109,6 +109,12 @@ type Candidate struct {
 	// unaffected (specification sections 6.1 and 6.3).
 	laneLoopBuild func(dispatch.Submitter) *dispatch.Loop
 
+	// lanes is the leader-side run-cancel plane over the lane loop's in-flight runs: on
+	// winning leadership the candidate installs the single-writer submitter so a POST
+	// /run/cancel dead-letters a running lane run as stopped, clearing it on demotion so
+	// a cancel racing a lost lock faults. Nil leaves the candidate without a cancel plane.
+	lanes *lanePlane
+
 	// Self-demotion wiring (specification section 15). inflight kills every in-flight
 	// run's process group when the meta session is lost -- a process kill only, never a
 	// meta write (the deposed session cannot carry one; the new leader dead-letters the
@@ -278,6 +284,15 @@ func WithPromotePlane(pp *promotePlane, submit dispatch.Submitter, state store.P
 // leaves the leader without a lane loop.
 func WithLaneLoop(build func(dispatch.Submitter) *dispatch.Loop) CandidateOption {
 	return func(c *Candidate) { c.laneLoopBuild = build }
+}
+
+// WithLanePlane wires the leader-side run-cancel plane over the lane loop's in-flight
+// runs: on winning leadership the candidate installs the single dispatcher (the sole
+// meta writer) into lanes so a POST /run/cancel dead-letters a running lane run as
+// stopped, clearing it on demotion so a cancel racing a lost lock faults rather than
+// writing off-path. A nil plane leaves the candidate without a cancel plane.
+func WithLanePlane(lanes *lanePlane) CandidateOption {
+	return func(c *Candidate) { c.lanes = lanes }
 }
 
 // WithPassCounter wires the leader-held per-lane pass counter: the candidate
@@ -458,6 +473,15 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		wo := newWipeOrchestrator(d, c.reader, c.data, c.logger)
 		c.wipes.install(wo)
 		defer c.wipes.clear()
+	}
+
+	// Install the leader-side run-cancel plane over the single dispatcher before
+	// reporting the leader role, so a POST /run/cancel that passes the mux's leader gate
+	// finds an installed writer; clear it on demotion so a cancel racing a lost lock
+	// faults rather than dead-lettering off the single-writer path.
+	if c.lanes != nil {
+		c.lanes.install(d)
+		defer c.lanes.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
