@@ -115,6 +115,59 @@ func (s *ObjectStore) Put(r io.Reader) (hash string, size int64, err error) {
 	return hash, size, nil
 }
 
+// Publish writes the bytes from r into the store under the caller-supplied key
+// (the content hash for artifacts via Put; the checkpoint digest for archived
+// journal partitions). It is atomic, durable (fsync file then dir), and
+// write-once: an existing key under the root is left untouched and its size
+// returned. The final file permissions are set to mode (0o555 for executables,
+// 0o444 for data archives). This satisfies object-store use for both artifact
+// bytes and sealed partitions (S10/objects-store-hash-keyed, S14/object-store-*,
+// S14/objects-immutable-write-once).
+func (s *ObjectStore) Publish(key string, r io.Reader, mode os.FileMode) (size int64, err error) {
+	if err := os.MkdirAll(s.root, 0o750); err != nil {
+		return 0, fmt.Errorf("store: object store: create root %s: %w", s.root, err)
+	}
+	tmp, err := os.CreateTemp(s.root, ".ingest-*")
+	if err != nil {
+		return 0, fmt.Errorf("store: object store: create ingest file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	size, err = io.Copy(tmp, r)
+	if err != nil {
+		_ = tmp.Close()
+		return 0, fmt.Errorf("store: object store: ingest bytes: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return 0, fmt.Errorf("store: object store: flush ingest file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, fmt.Errorf("store: object store: close ingest file: %w", err)
+	}
+
+	final := s.Path(key)
+
+	// Write-once: existing object under the key is left as-is.
+	if fi, err := os.Lstat(final); err == nil {
+		return fi.Size(), nil
+	} else if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("store: object store: probe object %s: %w", final, err)
+	}
+
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return 0, fmt.Errorf("store: object store: set object mode: %w", err)
+	}
+	if err := os.Rename(tmpName, final); err != nil {
+		return 0, fmt.Errorf("store: object store: publish object %s: %w", key, err)
+	}
+	if err := syncDir(s.root); err != nil {
+		return 0, fmt.Errorf("store: object store: flush store dir: %w", err)
+	}
+	return size, nil
+}
+
 // syncDir fsyncs a directory so a rename into it is durable across a crash: the
 // published object name survives even if the OS has not yet flushed the directory
 // entry. A close error after a successful sync is still reported.

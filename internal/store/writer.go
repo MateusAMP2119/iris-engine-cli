@@ -185,3 +185,24 @@ func (w *Writer) InsertCheckpoint(ctx context.Context, row CheckpointRow) error 
 	}
 	return nil
 }
+
+const archiveCheckpointSQL = `UPDATE journal_checkpoints SET location = 'archived' WHERE digest = $1`
+
+// ArchiveCheckpoint flips the location of the checkpoint identified by its
+// digest from "resident" to "archived" after the partition has been exported
+// to the object store and dropped. It is a single statement; callers perform
+// the surrounding steps (export, re-validate, drop) in the order required by
+// the archive-then-drop flow.
+func (w *Writer) ArchiveCheckpoint(ctx context.Context, digest []byte) error {
+	if err := w.conn.Exec(ctx, archiveCheckpointSQL, digest); err != nil {
+		return fmt.Errorf("store: writer archive checkpoint %x: %w", digest, err)
+	}
+	return nil
+}
+
+// Archive implements the MetaFlipper seam for the archive export flow. It
+// delegates to ArchiveCheckpoint with a background context; the call is
+// a small metadata update after the heavy export and drop have completed.
+func (w *Writer) Archive(digest []byte) error {
+	return w.ArchiveCheckpoint(context.Background(), digest)
+}
