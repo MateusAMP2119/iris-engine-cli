@@ -121,3 +121,37 @@ func (w *Writer) RetirePipeline(ctx context.Context, name string) error {
 	}
 	return nil
 }
+
+// RetirePipelineWithSummaries writes archival summaries for the listed runs and
+// then retires the pipeline's registration and related rows in one atomic meta
+// transaction. Summaries are inserted first so that journal stamps resolve to a
+// summary after the runs are deleted (S12/destroy-summaries-before-delete).
+func (w *Writer) RetirePipelineWithSummaries(ctx context.Context, name string, sums []RunSummary) error {
+	stmts := make([]Statement, 0, len(sums)+9)
+	for _, s := range sums {
+		stmts = append(stmts, Statement{
+			SQL: insertRunSummarySQL,
+			Args: []any{
+				s.RunID, s.Pipeline, string(s.State), s.ArtifactHash, s.DeclarationChecksum,
+				s.ConsumedUpstreamRunIDsJSON, s.SnapshotLSN, s.JournalFloor, s.JournalCeiling,
+			},
+		})
+	}
+	// Then the standard retirement deletes (order preserved: children before parents).
+	stmts = append(stmts,
+		Statement{SQL: retireRunInputsSQL, Args: []any{name}},
+		Statement{SQL: retireDeadLettersSQL, Args: []any{name}},
+		Statement{SQL: retireRunsSQL, Args: []any{name}},
+		Statement{SQL: retireArtifactsSQL, Args: []any{name}},
+		Statement{SQL: retireDependenciesSQL, Args: []any{name}},
+		Statement{SQL: retireLanesSQL, Args: []any{name}},
+		Statement{SQL: retireGrantsSQL, Args: []any{name}},
+		Statement{SQL: retireCredentialsSQL, Args: []any{name}},
+		Statement{SQL: retireRolesSQL, Args: []any{name}},
+		Statement{SQL: retirePipelineSQL, Args: []any{name}},
+	)
+	if err := w.execTx(ctx, stmts); err != nil {
+		return fmt.Errorf("store: writer retire pipeline %q with summaries: %w", name, err)
+	}
+	return nil
+}

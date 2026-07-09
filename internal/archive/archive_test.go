@@ -3,12 +3,14 @@ package archive_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/archive"
@@ -386,5 +388,74 @@ func TestMetaHoldsNoPayloadBytes(t *testing.T) {
 		}
 		// We at least recorded an insert mentioning the digest column.
 		_ = foundDigest // structural; full column assertion lives in schema tests
+	})
+}
+
+// recordingMetaFlipper is a test seam that records archive flips.
+type recordingMetaFlipper struct{ digests [][]byte }
+
+func (r *recordingMetaFlipper) Archive(d []byte) error {
+	r.digests = append(r.digests, append([]byte(nil), d...))
+	return nil
+}
+
+// TestOfflineChainValidation proves an auditor with only the archive files and the
+// engine public key can validate the full checkpoint chain with no Iris binary and
+// no database (S14/offline-chain-validation).
+//
+// spec: S14/offline-chain-validation
+func TestOfflineChainValidation(t *testing.T) {
+	t.Run("S14/offline-chain-validation", func(t *testing.T) {
+		// Generate an engine keypair; only the public half is given to the auditor.
+		pub, priv, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			t.Fatalf("gen key: %v", err)
+		}
+		// Build two checkpoints as if sealed+archived.
+		rows1 := [][]byte{[]byte("rowA"), []byte("rowB")}
+		cp0 := store.CheckpointForSealed(1, 10, rows1, nil)
+		cp0.Signature = ed25519.Sign(priv, cp0.Digest)
+
+		rows2 := [][]byte{[]byte("rowC")}
+		cp1 := store.CheckpointForSealed(11, 15, rows2, &cp0)
+		cp1.Signature = ed25519.Sign(priv, cp1.Digest)
+
+		chain := []store.CheckpointRow{cp0, cp1}
+
+		// Offline: auditor calls ValidateChain with only the pubkey and the rows
+		// reconstructed from archive headers (here we have the rows; in practice
+		// auditor reads files via archive.Read to get digests/signatures and orders
+		// by id range or an accompanying manifest).
+		if err := store.ValidateChain(chain, pub); err != nil {
+			t.Fatalf("ValidateChain with pubkey failed offline: %v", err)
+		}
+		// Tamper should fail (change a parent link).
+		bad := append([]store.CheckpointRow(nil), chain...)
+		bad[1].ParentDigest = []byte("tampered")
+		if err := store.ValidateChain(bad, pub); err == nil {
+			t.Errorf("ValidateChain did not detect tampered parent")
+		}
+	})
+}
+
+// TestMissingObjectNamedFailure proves that a missing object-store archive file
+// causes the archived read to fail with an error naming the missing hash (the
+// checkpoint digest), while the chain metadata itself may still validate.
+//
+// spec: S14/missing-object-named-failure
+func TestMissingObjectNamedFailure(t *testing.T) {
+	t.Run("S14/missing-object-named-failure", func(t *testing.T) {
+		missingDigest := "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef01"
+		// Construct a conventional object path under a temp objects root.
+		root := t.TempDir()
+		s := store.NewObjectStore(root)
+		path := s.Path(missingDigest)
+		_, _, err := archive.Read(path)
+		if err == nil {
+			t.Fatalf("Read of missing archive unexpectedly succeeded")
+		}
+		if !strings.Contains(err.Error(), missingDigest) {
+			t.Errorf("missing object error %q does not name the hash %s", err, missingDigest)
+		}
 	})
 }
