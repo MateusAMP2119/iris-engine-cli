@@ -118,7 +118,7 @@ Opus, never downgrade.
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E07.1 Provenance walk — done (PR #74: https://github.com/MateusAMP2119/iris-engine-cli/pull/74)
-- [x] E07.2 Snapshot pin — done (PR #78: https://github.com/MateusAMP2119/iris-engine-cli/pull/78)
+- [x] E07.2 Snapshot pin — done (PR #88: https://github.com/MateusAMP2119/iris-engine-cli/pull/88)
 - [x] E07.3 Seal and compaction — done (PR #79: https://github.com/MateusAMP2119/iris-engine-cli/pull/79)
 - [x] E07.4 Checkpoint chain and engine key — done (PR #82: https://github.com/MateusAMP2119/iris-engine-cli/pull/82)
 - [x] E07.5 Object store and export — done (PR #86: https://github.com/MateusAMP2119/iris-engine-cli/pull/86)
