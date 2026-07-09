@@ -208,3 +208,20 @@ func PartitionOf(boundaries []int64, id int64) int {
 	// at or below id: the first boundary strictly greater than id.
 	return sort.Search(len(boundaries), func(i int) bool { return id < boundaries[i] })
 }
+
+// CanSeal reports whether a journal partition is sealable under the seal
+// condition (S14/seal-condition): it must have crossed the row threshold,
+// hold zero open (undo=open) entries, and have no in-flight runs still writing
+// into it (every run that wrote into the partition range has finished).
+func CanSeal(threshold, rows int64, openEntries, overlappingInflight int) bool {
+	if threshold <= 0 || rows < threshold {
+		return false
+	}
+	if openEntries != 0 {
+		return false
+	}
+	if overlappingInflight != 0 {
+		return false
+	}
+	return true
+}

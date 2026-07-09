@@ -350,3 +350,52 @@ func TestWipeRevertsCursorWithData(t *testing.T) {
 		t.Fatalf("summary counts wiped=%d skipped=%d, want wiped=3 skipped=0", plan.Wiped, plan.Skipped)
 	}
 }
+
+// TestCompactCollapseRule proves the compaction collapse rule (specification
+// section 14): released pre-images (undo != open) are nulled, and duplicate
+// stamps per (schema, table, row_pk, run_id) collapse to the latest op while
+// every run's exact set of written rows survives exactly (different rows from
+// the same run are never dropped).
+//
+// spec: S14/compaction-collapse-rule
+func TestCompactCollapseRule(t *testing.T) {
+	t.Run("S14/compaction-collapse-rule", func(t *testing.T) {
+		// A run wrote the same row twice (update then another), plus an insert
+		// on a different row; an old open pre-image on a promoted entry; and a
+		// released pre-image that must be nulled.
+		journal := []pg.JournalEntry{
+			{ID: 1, RunID: 10, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpInsert, PreImage: "", Undo: pg.UndoOpen},
+			{ID: 2, RunID: 10, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpUpdate, PreImage: `{"old":1}`, Undo: pg.UndoOpen},
+			{ID: 3, RunID: 10, Schema: "s", Table: "t", RowPK: "r2", Op: pg.OpInsert, PreImage: "", Undo: pg.UndoOpen},
+			{ID: 4, RunID: 11, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpUpdate, PreImage: `{"old":2}`, Undo: pg.UndoPromoted}, // released: pre must null
+			{ID: 5, RunID: 11, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpUpdate, PreImage: `{"old":3}`, Undo: pg.UndoOpen},
+		}
+		got := pg.CompactJournal(journal)
+
+		// For run 10: r1 collapsed to latest op (update id=2), r2 kept; preimages on open stay.
+		// For run 11: the two r1 collapse to latest (id=5), and the promoted id=4's pre is nulled but wait:
+		// wait, id=4 and id=5 are both for same (s,t,r1,11); collapse keeps only latest id=5, its pre (open) stays.
+		// id=4's pre is released so would be nulled if kept, but since collapsed away, only id=5 remains.
+		// Also the open id=1,2 for r1 of run10: collapse to id=2.
+		want := []pg.JournalEntry{
+			{ID: 2, RunID: 10, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpUpdate, PreImage: `{"old":1}`, Undo: pg.UndoOpen},
+			{ID: 3, RunID: 10, Schema: "s", Table: "t", RowPK: "r2", Op: pg.OpInsert, PreImage: "", Undo: pg.UndoOpen},
+			{ID: 5, RunID: 11, Schema: "s", Table: "t", RowPK: "r1", Op: pg.OpUpdate, PreImage: `{"old":3}`, Undo: pg.UndoOpen},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("CompactJournal = %+v, want %+v (collapse dups per (s,t,pk,run), null released pre, keep per-run write sets)", got, want)
+		}
+	})
+
+	t.Run("S14/compaction-collapse-rule/nulls_released_preimages", func(t *testing.T) {
+		journal := []pg.JournalEntry{
+			{ID: 10, RunID: 7, Schema: "a", Table: "b", RowPK: "k", Op: pg.OpUpdate, PreImage: `{"x":1}`, Undo: pg.UndoPromoted},
+			{ID: 11, RunID: 7, Schema: "a", Table: "b", RowPK: "k", Op: pg.OpUpdate, PreImage: `{"x":2}`, Undo: pg.UndoWiped},
+		}
+		got := pg.CompactJournal(journal)
+		// Collapsed to the latest (11), and since its undo != open, pre must be nulled.
+		if len(got) != 1 || got[0].ID != 11 || got[0].PreImage != "" || got[0].Undo != pg.UndoWiped {
+			t.Fatalf("CompactJournal released pre not nulled: %+v", got)
+		}
+	})
+}
