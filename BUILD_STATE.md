@@ -121,7 +121,7 @@ Opus, never downgrade.
 - [x] E07.2 Snapshot pin — done (PR #78: https://github.com/MateusAMP2119/iris-engine-cli/pull/78)
 - [x] E07.3 Seal and compaction — done (PR #79: https://github.com/MateusAMP2119/iris-engine-cli/pull/79)
 - [x] E07.4 Checkpoint chain and engine key — done (PR #82: https://github.com/MateusAMP2119/iris-engine-cli/pull/82)
-- [x] E07.5 Object store and export — done (cda1807: https://github.com/MateusAMP2119/iris-engine-cli/commit/cda18071ea2e1b34899078bd1604071c1e038acd + priors; S14/archive-*, S14/object-store-*, S10/objects-store-hash-keyed; real FS tests, roundtrip, export-then-drop, immutable; tests green)
+- [x] E07.5 Object store and export — done (PR #86: https://github.com/MateusAMP2119/iris-engine-cli/pull/86)
 - [x] E07.6 Archived reads and destroy closure — done (2efc2d2: https://github.com/MateusAMP2119/iris-engine-cli/commit/2efc2d21d470aec0e600205438d102f943458aa6 + priors; S14/provenance-spans-archive-boundary, missing-object, offline-chain, provenance-cli-readout, S12/destroy-*; tests green for archive spans + destroy summaries + CLI readout)
 
 ## E08 Build, Artifacts and Modes — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
