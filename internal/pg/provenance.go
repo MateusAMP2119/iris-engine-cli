@@ -294,6 +294,52 @@ func (l Lineage) Ancestry(root int64, depth int) []AncestryEdge {
 	return edges
 }
 
+// Descendants walks run_inputs downward from root: the runs that (transitively)
+// consumed this run as an upstream input (for run show --trace --down). Mirrors
+// Ancestry directionally; resolves through summaries for pruned at any depth.
+// Reuses the walk machinery (parents data, expanded, frontier) rather than new logic.
+func (l Lineage) Descendants(root int64, depth int) []AncestryEdge {
+	if depth == 0 {
+		depth = DefaultAncestryDepth
+	}
+	var edges []AncestryEdge
+	expanded := map[int64]bool{}
+	// reverse index: upstream_run -> consumers (from inputs + summaries for pruned)
+	rev := map[int64][]int64{}
+	for _, in := range l.Inputs {
+		rev[in.UpstreamRunID] = append(rev[in.UpstreamRunID], in.RunID)
+	}
+	for _, s := range l.Summaries {
+		for _, up := range s.ConsumedUpstreamRunIDs {
+			rev[up] = append(rev[up], s.RunID)
+		}
+	}
+	frontier := []int64{root}
+	for level := 1; len(frontier) > 0 && (depth < 0 || level <= depth); level++ {
+		var next []int64
+		var levelEdges []AncestryEdge
+		for _, up := range frontier {
+			if expanded[up] {
+				continue
+			}
+			expanded[up] = true
+			for _, child := range rev[up] {
+				levelEdges = append(levelEdges, AncestryEdge{RunID: child, UpstreamRunID: up, Depth: level})
+				next = append(next, child)
+			}
+		}
+		sort.Slice(levelEdges, func(i, j int) bool {
+			if levelEdges[i].RunID != levelEdges[j].RunID {
+				return levelEdges[i].RunID < levelEdges[j].RunID
+			}
+			return levelEdges[i].UpstreamRunID < levelEdges[j].UpstreamRunID
+		})
+		edges = append(edges, levelEdges...)
+		frontier = next
+	}
+	return edges
+}
+
 // RenderAncestryTrace returns the single WITH RECURSIVE statement that
 // answers full ancestry live (specification section 14: "full ancestry one
 // WITH RECURSIVE"; surfaced as `iris run show <run> --trace`). One statement,

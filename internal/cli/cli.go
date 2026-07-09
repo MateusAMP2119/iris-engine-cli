@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -162,6 +163,36 @@ func (a *app) noDaemon(cmd *cobra.Command, op string) error {
 // arg/flag errors cobra raises before a handler runs.
 func (a *app) usage(msg string) error {
 	return &fault{code: exitUsage, codeStr: "usage", message: msg}
+}
+
+// parseRunRef parses a <run> token per S08/run-ref-grammar (unit contract):
+// a bare pipeline name stands for its latest run; <name>~n stands for the nth
+// prior run of that pipeline (n>=0; ~0 is latest). Git ^ and .. forms are
+// rejected as false cognates. The parse is pure; resolution of the (name, prior)
+// to a concrete run id is the caller's I/O (latest run + offset by id desc).
+func parseRunRef(s string) (pipeline string, prior int, err error) {
+	if s == "" {
+		return "", 0, fmt.Errorf("empty run ref")
+	}
+	if strings.Contains(s, "^") || strings.Contains(s, "..") {
+		return "", 0, fmt.Errorf("git reachability forms ^ and .. are not run refs: %s", s)
+	}
+	if idx := strings.Index(s, "~"); idx >= 0 {
+		name := s[:idx]
+		if name == "" {
+			return "", 0, fmt.Errorf("run ref must have pipeline name before ~: %s", s)
+		}
+		nstr := s[idx+1:]
+		if nstr == "" {
+			return "", 0, fmt.Errorf("~ requires a number: %s", s)
+		}
+		var n int
+		if _, scanErr := fmt.Sscanf(nstr, "%d", &n); scanErr != nil || n < 0 || fmt.Sprintf("%d", n) != nstr {
+			return "", 0, fmt.Errorf("~n requires non-negative integer n: %s", s)
+		}
+		return name, n, nil
+	}
+	return s, 0, nil
 }
 
 // errEnvelope is the --json error document: the read-API error envelope shape of
