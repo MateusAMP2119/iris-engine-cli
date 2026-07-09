@@ -120,7 +120,7 @@ Opus, never downgrade.
 - [x] E07.1 Provenance walk — done (PR #74: https://github.com/MateusAMP2119/iris-engine-cli/pull/74)
 - [x] E07.2 Snapshot pin — done (PR #78: https://github.com/MateusAMP2119/iris-engine-cli/pull/78; finalize/verify S14/pin-* ; tests + gate green)
 - [x] E07.3 Seal and compaction — done (PR #79: https://github.com/MateusAMP2119/iris-engine-cli/pull/79)
-- [x] E07.4 Checkpoint chain and engine key — done (4ee6522: https://github.com/MateusAMP2119/iris-engine-cli/commit/4ee6522267602461d0e1c611015205a6a5ee0bc5 + 423e360: https://github.com/MateusAMP2119/iris-engine-cli/commit/423e360764359e3c96283609792fbcc81ad94abe; S04/S14 checkpoint contracts; table-driven asserts + chain + signature + engine key green)
+- [x] E07.4 Checkpoint chain and engine key — done (PR #82: https://github.com/MateusAMP2119/iris-engine-cli/pull/82)
 - [x] E07.5 Object store and export — done (cda1807: https://github.com/MateusAMP2119/iris-engine-cli/commit/cda18071ea2e1b34899078bd1604071c1e038acd + priors; S14/archive-*, S14/object-store-*, S10/objects-store-hash-keyed; real FS tests, roundtrip, export-then-drop, immutable; tests green)
 - [x] E07.6 Archived reads and destroy closure — done (2efc2d2: https://github.com/MateusAMP2119/iris-engine-cli/commit/2efc2d21d470aec0e600205438d102f943458aa6 + priors; S14/provenance-spans-archive-boundary, missing-object, offline-chain, provenance-cli-readout, S12/destroy-*; tests green for archive spans + destroy summaries + CLI readout)
 
@@ -141,7 +141,7 @@ Opus, never downgrade.
 - [x] E09.6 Endpoint apply lifecycle — done (PR #71: https://github.com/MateusAMP2119/iris-engine-cli/pull/71)
 - [x] E09.7 Read pool and SQL safety — done (PR #72: https://github.com/MateusAMP2119/iris-engine-cli/pull/72)
 - [x] E09.8 Q and data routes — done (PR #77: https://github.com/MateusAMP2119/iris-engine-cli/pull/77; /q and /data serving surface to green; contracts for caller role execution, physical bounds, disposable visible, forbidden endpoint naming)
-- [x] E09.9 NDJSON streaming — done (e121c71: https://github.com/MateusAMP2119/iris-engine-cli/commit/e121c71e54163baaab70a5dc386cf361682d3462 + 74a3fdb; S07/ndjson-streaming and resume-by-cursor implemented and documented)
+- [x] E09.9 NDJSON streaming — done (PR #83: https://github.com/MateusAMP2119/iris-engine-cli/pull/83)
 - [x] E09.10 Read parity closure — done (3107fac: https://github.com/MateusAMP2119/iris-engine-cli/commit/3107fac76ccf92b888b96443dfe66ef65773df13 + 37bcb53; CLI/API same views, provenance route lineage, parity test live over daemon; S10/api-cli-read-render-parity etc)
 
 ## E10 Destructive Operation Gates — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
@@ -165,7 +165,7 @@ Opus, never downgrade.
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13; complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E14.1 Ref grammar and triage shows — done (PR #81: https://github.com/MateusAMP2119/iris-engine-cli/pull/81)
-- [x] E14.2 Workload wiring panel — done (e264601: https://github.com/MateusAMP2119/iris-engine-cli/commit/e2646010c1ef9dd5a189d398bb78f0fcc087d277 + 0b06263)
+- [x] E14.2 Workload wiring panel — done (PR #84: https://github.com/MateusAMP2119/iris-engine-cli/pull/84)
 - [x] E14.3 Rail renderer and golden files — done (d6b5eaa: https://github.com/MateusAMP2119/iris-engine-cli/commit/d6b5eaa61f2988e1d2a60297c3eaa137771cc8c4 + b6a9168)
 - [x] E14.4 Read routes and before cursor — done (5ef94c6: https://github.com/MateusAMP2119/iris-engine-cli/commit/5ef94c6dd4828f7fcdf8c3c0444c35e64574d0ef)
 
