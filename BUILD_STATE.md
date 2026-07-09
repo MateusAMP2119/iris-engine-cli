@@ -118,18 +118,18 @@ Opus, never downgrade.
 ## E07 Provenance, Journal Lifecycle and Object Store — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E07.1 Provenance walk — done (PR #74: https://github.com/MateusAMP2119/iris-engine-cli/pull/74)
-- [x] E07.2 Snapshot pin — done (8839366: finalize/verify S14/pin-* ; tests + gate green)
-- [x] E07.3 Seal and compaction — done (13ad7df: S14/compaction-collapse-rule + seal-condition + seal-dispatcher-step; pure unit collapse/seal + post-pass integration green)
-- [x] E07.4 Checkpoint chain and engine key — done (4ee6522 + 423e360: S04/S14 checkpoint contracts; table-driven asserts + chain + signature + engine key green)
-- [x] E07.5 Object store and export — done (E07.5 worktree cda1807 + priors: S14/archive-*, S14/object-store-*, S10/objects-store-hash-keyed; real FS tests, roundtrip, export-then-drop, immutable; tests green)
-- [x] E07.6 Archived reads and destroy closure — done (E07.6 worktree 2efc2d2 + priors: S14/provenance-spans-archive-boundary, missing-object, offline-chain, provenance-cli-readout, S12/destroy-*; tests green for archive spans + destroy summaries + CLI readout)
+- [x] E07.2 Snapshot pin — done (PR #78: https://github.com/MateusAMP2119/iris-engine-cli/pull/78; finalize/verify S14/pin-* ; tests + gate green)
+- [x] E07.3 Seal and compaction — done (13ad7df: https://github.com/MateusAMP2119/iris-engine-cli/commit/13ad7df7892236b3a2362621450b8d143bf63c99; S14/compaction-collapse-rule + seal-condition + seal-dispatcher-step; pure unit collapse/seal + post-pass integration green)
+- [x] E07.4 Checkpoint chain and engine key — done (4ee6522: https://github.com/MateusAMP2119/iris-engine-cli/commit/4ee6522267602461d0e1c611015205a6a5ee0bc5 + 423e360: https://github.com/MateusAMP2119/iris-engine-cli/commit/423e360764359e3c96283609792fbcc81ad94abe; S04/S14 checkpoint contracts; table-driven asserts + chain + signature + engine key green)
+- [x] E07.5 Object store and export — done (cda1807: https://github.com/MateusAMP2119/iris-engine-cli/commit/cda18071ea2e1b34899078bd1604071c1e038acd + priors; S14/archive-*, S14/object-store-*, S10/objects-store-hash-keyed; real FS tests, roundtrip, export-then-drop, immutable; tests green)
+- [x] E07.6 Archived reads and destroy closure — done (2efc2d2: https://github.com/MateusAMP2119/iris-engine-cli/commit/2efc2d21d470aec0e600205438d102f943458aa6 + priors; S14/provenance-spans-archive-boundary, missing-object, offline-chain, provenance-cli-readout, S12/destroy-*; tests green for archive spans + destroy summaries + CLI readout)
 
 ## E08 Build, Artifacts and Modes — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E08.1 Recipe inference and matrix — done (PR #62: https://github.com/MateusAMP2119/iris-engine-cli/pull/62)
 - [x] E08.2 Build and artifact storage — done (PR #66: https://github.com/MateusAMP2119/iris-engine-cli/pull/66, merged by A 14:32). SESSION A: B's coder in that worktree is NOT stale — it is fixing 7 findings from B's independent review of #66 (review completed after the PR opened, before merge: go-recipe entry derivation ignores run vector, entryScript takes run[len-1] blindly, pyinstaller pollutes source dir, objects.go missing fsync-before-rename, 3 nits). Lands as follow-up PR "E08.2 review fixes". Do not kill it; do not remove the E08.2 worktree.
 - [x] E08.3 Promote gating — done (PR #76: https://github.com/MateusAMP2119/iris-engine-cli/pull/76)
-- [x] E08.4 Mode execution and retirement — done (E08.4 worktree eacffd4 + priors: S01/both-modes-fully-wired, mode-selects-exec-target, S03/built-mode-ignores-run, S04/artifact-retirement-post-prune; tests green in buildplane/prune)
+- [x] E08.4 Mode execution and retirement — done (eacffd4: https://github.com/MateusAMP2119/iris-engine-cli/commit/eacffd40118980b7270357da1c73fc6fc7f9ea6a + priors; S01/both-modes-fully-wired, mode-selects-exec-target, S03/built-mode-ignores-run, S04/artifact-retirement-post-prune; tests green in buildplane/prune)
 
 ## E09 Read API, Endpoints and PATs — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
@@ -140,22 +140,22 @@ Opus, never downgrade.
 - [x] E09.5 Route mux and auth — done (PR #69: https://github.com/MateusAMP2119/iris-engine-cli/pull/69)
 - [x] E09.6 Endpoint apply lifecycle — done (PR #71: https://github.com/MateusAMP2119/iris-engine-cli/pull/71)
 - [x] E09.7 Read pool and SQL safety — done (PR #72: https://github.com/MateusAMP2119/iris-engine-cli/pull/72)
-- [x] E09.8 Q and data routes — done (E09.8 worktree 5c82b93: /q and /data serving surface to green; contracts for caller role execution, physical bounds, disposable visible, forbidden endpoint naming)
-- [x] E09.9 NDJSON streaming — done (E09.9 worktree e121c71 + 74a3fdb: S07/ndjson-streaming and resume-by-cursor implemented and documented)
-- [x] E09.10 Read parity closure — done (E09.10 worktree 3107fac + 37bcb53: CLI/API same views, provenance route lineage, parity test live over daemon; S10/api-cli-read-render-parity etc)
+- [x] E09.8 Q and data routes — done (PR #77: https://github.com/MateusAMP2119/iris-engine-cli/pull/77; /q and /data serving surface to green; contracts for caller role execution, physical bounds, disposable visible, forbidden endpoint naming)
+- [x] E09.9 NDJSON streaming — done (e121c71: https://github.com/MateusAMP2119/iris-engine-cli/commit/e121c71e54163baaab70a5dc386cf361682d3462 + 74a3fdb; S07/ndjson-streaming and resume-by-cursor implemented and documented)
+- [x] E09.10 Read parity closure — done (3107fac: https://github.com/MateusAMP2119/iris-engine-cli/commit/3107fac76ccf92b888b96443dfe66ef65773df13 + 37bcb53; CLI/API same views, provenance route lineage, parity test live over daemon; S10/api-cli-read-render-parity etc)
 
 ## E10 Destructive Operation Gates — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E10.1 Gate and blocker predicates — done (PR #75: https://github.com/MateusAMP2119/iris-engine-cli/pull/75)
-- [x] E10.2 Confirmation flows — done (E10.2 worktree 3a4cdb1: added red tests for confirmation contracts S12/five-ops-confirmation-gated etc; tests now green in dispatch)
-- [x] E10.3 Remote tiering and failover — done (E10.3 worktree 563e7ac + 89e0c59: API destructive confirm/PAT/leader, failover no-resume destructive; related tests green)
+- [x] E10.2 Confirmation flows — done (3a4cdb1: https://github.com/MateusAMP2119/iris-engine-cli/commit/3a4cdb1472859b34509d72d83b295e0134a63188; added red tests for confirmation contracts S12/five-ops-confirmation-gated etc; tests now green in dispatch)
+- [x] E10.3 Remote tiering and failover — done (563e7ac: https://github.com/MateusAMP2119/iris-engine-cli/commit/563e7acbfffab74ea6c272a7de4d5ccaa64958bf + 89e0c59; API destructive confirm/PAT/leader, failover no-resume destructive; related tests green)
 
 ## E11 High Availability and Failover — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E11.1 Leader lock election — done (PR #63: https://github.com/MateusAMP2119/iris-engine-cli/pull/63)
-- [x] E11.2 Standby reads and rejection — done (E11.2 worktree c7778ac: standby serves reads, rejects mutations exit 6 with leader guidance; tests green)
+- [x] E11.2 Standby reads and rejection — done (c7778ac: https://github.com/MateusAMP2119/iris-engine-cli/commit/c7778ac083f7670e989f728fd34e079986f44fe9; standby serves reads, rejects mutations exit 6 with leader guidance; tests green)
 - [x] E11.3 Promotion and self demotion — done (PR #67: https://github.com/MateusAMP2119/iris-engine-cli/pull/67, merged 14:38: B audited inherited impl, mutation-tested red state, independent review 0 critical, CI 9/9)
-- [x] E11.4 Host prerequisites and live failover — done (E11.4 worktree a2d9cb1 + ca2b06c: implement prereqs (workspace tree, own objects path), activate/polish failover standby takeover and real leader kill; tests green)
+- [x] E11.4 Host prerequisites and live failover — done (a2d9cb1: https://github.com/MateusAMP2119/iris-engine-cli/commit/a2d9cb1c31ddf672f03c37647344b5376f928732 + ca2b06c: https://github.com/MateusAMP2119/iris-engine-cli/commit/ca2b06cf3a4a933da613b4a70f7a17253396e14c; implement prereqs (workspace tree, own objects path), activate/polish failover standby takeover and real leader kill; tests green)
 
 ## E12 Stats, Info and Inspect — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
@@ -164,18 +164,18 @@ Opus, never downgrade.
 
 ## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13; complete on development; awaiting epic checkpoint PR to master)
 
-- [x] E14.1 Ref grammar and triage shows — done (57b9152: S08/run-ref-grammar + S14/trace-up-down etc)
-- [x] E14.2 Workload wiring panel — done (e264601 + 0b06263)
-- [x] E14.3 Rail renderer and golden files — done (d6b5eaa + b6a9168)
-- [x] E14.4 Read routes and before cursor — done (5ef94c6)
+- [x] E14.1 Ref grammar and triage shows — done (57b9152: https://github.com/MateusAMP2119/iris-engine-cli/commit/57b9152c014ae00c994b75a9af3b3e079fe4cc04; S08/run-ref-grammar + S14/trace-up-down etc)
+- [x] E14.2 Workload wiring panel — done (e264601: https://github.com/MateusAMP2119/iris-engine-cli/commit/e2646010c1ef9dd5a189d398bb78f0fcc087d277 + 0b06263)
+- [x] E14.3 Rail renderer and golden files — done (d6b5eaa: https://github.com/MateusAMP2119/iris-engine-cli/commit/d6b5eaa61f2988e1d2a60297c3eaa137771cc8c4 + b6a9168)
+- [x] E14.4 Read routes and before cursor — done (5ef94c6: https://github.com/MateusAMP2119/iris-engine-cli/commit/5ef94c6dd4828f7fcdf8c3c0444c35e64574d0ef)
 
 ## E13 Golden Sample and Acceptance — epic PR: — (last; the spine; complete on development; awaiting epic checkpoint PR to master)
 
-- [x] E13.1 Golden workspace fixture — done (E13.1 worktree + main: four_applies green conformance 9.9s + unit claims in declare; S13/sample-* + four-applies)
+- [x] E13.1 Golden workspace fixture — done (E13.1 worktree + main; four_applies green conformance 9.9s + unit claims in declare; S13/sample-* + four-applies)
 - [x] E13.2 Install and binary boot — done (exercised+green by all E13 conformance harnesses: install/start/wait leader/socket)
 - [x] E13.3 Lane runs and failures — done (exercised by E13 runs, dev-runs, failures in scenario + promotion + wipe legs)
-- [x] E13.4 Journal capture and wipe — done (E13.4 worktree: 57f2249 test activation + 92bd1f0 wiring + f82b721; contracts S13/wipe-reverts-dev-run etc green in worktree)
-- [x] E13.5 Sealing and archival — done (45b9ce4)
-- [x] E13.6 Data provenance lineage — done (40d175f: wired CLI+API+daemon+store over WalkProvenance; S13/data-provenance-* green conformance)
-- [x] E13.7 Endpoint reads and grants — done (de045e9 on main: endpoint_reads_grants_conformance_test + wiring for data-pat + ungranted; green per agent)
+- [x] E13.4 Journal capture and wipe — done (57f2249: https://github.com/MateusAMP2119/iris-engine-cli/commit/57f224931a4ac7111844700ba7d419a6e0a1328b + 92bd1f0: https://github.com/MateusAMP2119/iris-engine-cli/commit/92bd1f018c412948715e747a9d04c3a55c1b94df + f82b721: https://github.com/MateusAMP2119/iris-engine-cli/commit/f82b7212879b15808abc46cfb7892a653814a039; contracts S13/wipe-reverts-dev-run etc green in worktree)
+- [x] E13.5 Sealing and archival — done (45b9ce4: https://github.com/MateusAMP2119/iris-engine-cli/commit/45b9ce47d3fa9c5c2a67fe1e42d6e4011465b554)
+- [x] E13.6 Data provenance lineage — done (40d175f: https://github.com/MateusAMP2119/iris-engine-cli/commit/40d175f7fa8694ec623f956ebd387500cf8c95f9; wired CLI+API+daemon+store over WalkProvenance; S13/data-provenance-* green conformance)
+- [x] E13.7 Endpoint reads and grants — done (de045e9: https://github.com/MateusAMP2119/iris-engine-cli/commit/de045e9c8a2a52d22be87c2be885bfc2b145177a on main; endpoint_reads_grants_conformance_test + wiring for data-pat + ungranted; green per agent)
 - [x] E13.8 Failover and unattended closure — done (E13.8 worktree: test activate + bypass/wire commits; failover_unattended_conformance_test.go; scenario green 12.8s with build toolchain; failover/standby-mutation guarded on shared DSN env)
