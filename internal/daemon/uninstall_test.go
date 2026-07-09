@@ -2,6 +2,7 @@ package daemon_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -187,4 +188,39 @@ func containsString(xs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestUninstallRefusesLiveCandidate proves engine uninstall refuses while any
+// daemon candidate holds a meta connection (so shared meta is never dropped
+// under a live candidate).
+//
+// spec: S12/uninstall-refuses-live-candidate
+func TestUninstallRefusesLiveCandidate(t *testing.T) {
+	t.Run("S12/uninstall-refuses-live-candidate", func(t *testing.T) {
+		s := teardownWorkspace(t)
+		cluster := storetest.NewRecorder()
+		data := pgtest.New()
+
+		alwaysHeld := &heldPredicate{held: true}
+		_, err := daemon.UninstallEngine(context.Background(), daemon.UninstallDeps{
+			LiveCandidate: alwaysHeld,
+			Cluster:       cluster,
+			Data:          data,
+			Settings:      s,
+			Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		if err == nil || !errors.Is(err, daemon.ErrLiveCandidate) {
+			t.Fatalf("UninstallEngine with live candidate = %v, want ErrLiveCandidate", err)
+		}
+		if stmts := cluster.Statements(); len(stmts) != 0 {
+			t.Errorf("live-candidate guard let cluster execs %v; meta must not be touched", stmts)
+		}
+	})
+}
+
+// heldPredicate is a LiveCandidatePredicate that reports held for the test.
+type heldPredicate struct{ held bool }
+
+func (h *heldPredicate) LiveCandidateHoldsMeta(context.Context) (bool, error) {
+	return h.held, nil
 }

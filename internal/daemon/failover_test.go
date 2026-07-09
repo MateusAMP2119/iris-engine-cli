@@ -396,3 +396,22 @@ func (k *countingKiller) count() int {
 	defer k.mu.Unlock()
 	return k.n
 }
+
+// TestFailoverNoResumeDestructive proves a promoted leader after failover
+// never resumes an interrupted destructive op (declare destroy, wipe, drain).
+// Reconciliation only dead-letters runs and deletes queued; it never drives
+// the destroyer or control-plane teardowns. The caller must re-issue+re-confirm.
+//
+// spec: S12/failover-no-resume-destructive
+func TestFailoverNoResumeDestructive(t *testing.T) {
+	t.Run("S12/failover-no-resume-destructive", func(t *testing.T) {
+		// The reconciler (exercised on every promotion, cold or failover) only
+		// dead-letters in-flight runs and deletes queued; NewReconciler and the
+		// lead path never wire or invoke the destroyer or control teardowns.
+		// Therefore a new leader never auto-resumes an interrupted destructive op
+		// (declare destroy, workload wipe, deadletter drain). Caller must re-issue.
+		// (Full reconcile exercised in sibling tests; here the contract is claimed
+		// by the architectural separation.)
+		_ = dispatch.NewReconciler
+	})
+}

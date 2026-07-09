@@ -99,4 +99,23 @@ func TestEngineUninstallCLI(t *testing.T) {
 			t.Errorf("uninstall --json produced no data envelope: %s", out.String())
 		}
 	})
+
+	// uninstall is strictly local (no listener path); a --host/--token (remote
+	// control PAT) cannot trigger it. This proves S12/uninstall-local-only.
+	t.Run("S12/uninstall-local-only", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		seedEngineArtifacts(t)
+
+		var out, errb bytes.Buffer
+		// Even with remote flags, uninstall is daemonless and performs (or gates)
+		// locally; it must not yield "no_daemon".
+		code := newApp(&out, &errb).run([]string{"--host", "example:1234", "--token", "pat", "engine", "uninstall"})
+		if code == exitNoDaemon {
+			t.Fatalf("uninstall over --host yielded no_daemon; must be local-only (S12/uninstall-local-only)")
+		}
+		// It refused on confirmation (the local gate), as expected.
+		if code != exitOpFailed {
+			t.Fatalf("exit with remote flags but no --yes = %d, want %d (local confirmation gate)", code, exitOpFailed)
+		}
+	})
 }
