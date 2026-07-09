@@ -21,6 +21,9 @@ import (
 // distinct bytes land under distinct hashes with earlier objects untouched.
 //
 // spec: S09/build-records-hash-and-bytes
+// spec: S10/objects-store-hash-keyed
+// spec: S14/object-store-content-addressed
+// spec: S14/objects-immutable-write-once
 func TestObjectStoreContentAddressed(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "objects")
 	s := store.NewObjectStore(root)
