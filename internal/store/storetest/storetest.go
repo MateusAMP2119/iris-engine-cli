@@ -23,6 +23,8 @@ type Fake struct {
 	mu   sync.Mutex
 	seq  int64
 	runs []store.Run // creation order preserved
+
+	provenanceLineage store.ProvenanceLineage
 }
 
 // New returns an empty in-memory meta-store fake.
@@ -141,4 +143,21 @@ func cloneRun(r store.Run) store.Run {
 		c.ExitCode = &code
 	}
 	return c
+}
+
+// ProvenanceLineage satisfies the extended Reader seam for provenance tests.
+// The test fake returns whatever was seeded (default empty).
+func (f *Fake) ProvenanceLineage(context.Context) (store.ProvenanceLineage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Return a copy of the seeded lineage (value types).
+	return f.provenanceLineage, nil
+}
+
+// SetProvenanceLineage seeds the lineage snapshot the fake will return for
+// ProvenanceLineage. Used by integration tests that drive provenance over fakes.
+func (f *Fake) SetProvenanceLineage(l store.ProvenanceLineage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.provenanceLineage = l
 }

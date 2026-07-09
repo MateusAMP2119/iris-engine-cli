@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,41 @@ type Reader interface {
 	// Runs returns the runs matching filter, in ordering-identity order. It reads a
 	// plain MVCC snapshot; on error the error is returned immediately, never retried.
 	Runs(ctx context.Context, filter RunFilter) ([]Run, error)
+
+	// ProvenanceLineage returns the runs, run_summaries and run_inputs needed to
+	// build a lineage for provenance walk. One MVCC snapshot; errors abort.
+	ProvenanceLineage(ctx context.Context) (ProvenanceLineage, error)
+}
+
+// ProvenanceLineage is the snapshot of meta rows the provenance walk consumes
+// (live runs, archival summaries with consumed list, consumption edges). It
+// avoids importing pg at store layer; daemon maps it to pg.Lineage.
+type ProvenanceLineage struct {
+	Runs []struct {
+		RunID               int64
+		Pipeline            string
+		State               string
+		ArtifactHash        *string
+		DeclarationChecksum string
+		SnapshotLSN         *string
+		JournalFloor        *int64
+		JournalCeiling      *int64
+	}
+	Summaries []struct {
+		RunID                  int64
+		Pipeline               string
+		State                  string
+		ArtifactHash           *string
+		DeclarationChecksum    string
+		ConsumedUpstreamRunIDs []int64
+		SnapshotLSN            *string
+		JournalFloor           *int64
+		JournalCeiling         *int64
+	}
+	Inputs []struct {
+		RunID         int64
+		UpstreamRunID int64
+	}
 }
 
 // poolRows is the minimal row-cursor surface the reader consumes, so a test can
@@ -125,3 +161,93 @@ func runMatchesFilter(r Run, filter RunFilter) bool {
 // a value satisfying pgx.Rows also satisfies the reader's poolRows seam, so the
 // pool adapter can hand its result set straight through.
 var _ = func(r pgx.Rows) poolRows { return r }
+
+// ProvenanceLineage implements the three meta reads for the provenance walk:
+// live runs (for facts), run_summaries (facts + consumed list fallback), run_inputs.
+func (r *pgxReader) ProvenanceLineage(ctx context.Context) (ProvenanceLineage, error) {
+	var lin ProvenanceLineage
+
+	// Live runs.
+	runRows, err := r.pool.query(ctx, `SELECT id, pipeline, state, artifact_hash, declaration_checksum, snapshot_lsn, journal_floor, journal_ceiling FROM runs`)
+	if err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: read lineage runs: %w", err)
+	}
+	defer runRows.Close()
+	for runRows.Next() {
+		var rec struct {
+			RunID               int64
+			Pipeline            string
+			State               string
+			ArtifactHash        *string
+			DeclarationChecksum string
+			SnapshotLSN         *string
+			JournalFloor        *int64
+			JournalCeiling      *int64
+		}
+		if err := runRows.Scan(&rec.RunID, &rec.Pipeline, &rec.State, &rec.ArtifactHash, &rec.DeclarationChecksum, &rec.SnapshotLSN, &rec.JournalFloor, &rec.JournalCeiling); err != nil {
+			return ProvenanceLineage{}, fmt.Errorf("store: scan lineage run: %w", err)
+		}
+		lin.Runs = append(lin.Runs, rec)
+	}
+	if err := runRows.Err(); err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: lineage runs iter: %w", err)
+	}
+	runRows.Close()
+
+	// Summaries (pruned runs).
+	sumRows, err := r.pool.query(ctx, `SELECT run_id, pipeline, state, artifact_hash, declaration_checksum, consumed_upstream_run_ids, snapshot_lsn, journal_floor, journal_ceiling FROM run_summaries`)
+	if err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: read lineage summaries: %w", err)
+	}
+	defer sumRows.Close()
+	for sumRows.Next() {
+		var sum struct {
+			RunID                  int64
+			Pipeline               string
+			State                  string
+			ArtifactHash           *string
+			DeclarationChecksum    string
+			ConsumedUpstreamRunIDs []int64
+			SnapshotLSN            *string
+			JournalFloor           *int64
+			JournalCeiling         *int64
+		}
+		var consJSON []byte
+		if err := sumRows.Scan(&sum.RunID, &sum.Pipeline, &sum.State, &sum.ArtifactHash, &sum.DeclarationChecksum, &consJSON, &sum.SnapshotLSN, &sum.JournalFloor, &sum.JournalCeiling); err != nil {
+			return ProvenanceLineage{}, fmt.Errorf("store: scan lineage summary: %w", err)
+		}
+		if len(consJSON) != 0 {
+			if uerr := json.Unmarshal(consJSON, &sum.ConsumedUpstreamRunIDs); uerr != nil {
+				return ProvenanceLineage{}, fmt.Errorf("store: unmarshal consumed upstreams for summary %d: %w", sum.RunID, uerr)
+			}
+		}
+		lin.Summaries = append(lin.Summaries, sum)
+	}
+	if err := sumRows.Err(); err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: lineage summaries iter: %w", err)
+	}
+	sumRows.Close()
+
+	// Inputs (consumption edges for ancestry).
+	inRows, err := r.pool.query(ctx, `SELECT run_id, upstream_run_id FROM run_inputs`)
+	if err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: read lineage inputs: %w", err)
+	}
+	defer inRows.Close()
+	for inRows.Next() {
+		var in struct {
+			RunID         int64
+			UpstreamRunID int64
+		}
+		if err := inRows.Scan(&in.RunID, &in.UpstreamRunID); err != nil {
+			return ProvenanceLineage{}, fmt.Errorf("store: scan lineage input: %w", err)
+		}
+		lin.Inputs = append(lin.Inputs, in)
+	}
+	if err := inRows.Err(); err != nil {
+		return ProvenanceLineage{}, fmt.Errorf("store: lineage inputs iter: %w", err)
+	}
+	inRows.Close()
+
+	return lin, nil
+}

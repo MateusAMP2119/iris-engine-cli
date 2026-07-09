@@ -343,3 +343,38 @@ func (c *Client) EnsureCaptureFunction(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Stamps reads the data_journal stamps for one provenance key (schema.table + row_pk).
+// It returns entries in id order (WalkProvenance sorts newest-first). Pre-image is
+// not loaded: provenance is lineage only.
+func (c *Client) Stamps(ctx context.Context, key RowKey) ([]JournalEntry, error) {
+	if c.pool == nil {
+		return nil, errors.New("pg: closed")
+	}
+	rows, err := c.pool.Query(ctx, `
+		SELECT id, run_id, "schema", "table", row_pk, op, undo
+		FROM public.data_journal
+		WHERE "schema" = $1 AND "table" = $2 AND row_pk = $3
+		ORDER BY id
+	`, key.Schema, key.Table, key.RowPK)
+	if err != nil {
+		return nil, fmt.Errorf("pg: query stamps %s.%s %s: %w", key.Schema, key.Table, key.RowPK, err)
+	}
+	defer rows.Close()
+
+	var out []JournalEntry
+	for rows.Next() {
+		var e JournalEntry
+		var opStr, undoStr string
+		if err := rows.Scan(&e.ID, &e.RunID, &e.Schema, &e.Table, &e.RowPK, &opStr, &undoStr); err != nil {
+			return nil, fmt.Errorf("pg: scan stamp: %w", err)
+		}
+		e.Op = WriteOp(opStr)
+		e.Undo = UndoState(undoStr)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pg: iterate stamps: %w", err)
+	}
+	return out, nil
+}
