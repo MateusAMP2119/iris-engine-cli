@@ -20,6 +20,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
+// placeholderProvenance satisfies api.ProvenanceHandler for the production
+// mux construction until the live implementation is wired. It produces the
+// internal fault the unwired routes do, keeping behavior consistent for
+// roster routes not yet fully live.
+type placeholderProvenance struct{}
+
+func (placeholderProvenance) Provenance(context.Context, string, string, string) (api.ProvenanceResult, error) {
+	return api.ProvenanceResult{}, api.ErrProvenanceUnavailable
+}
+
 // This file is the daemon's foreground/detached lifecycle at the process edge
 // (specification section 2): a foreground daemon (Run) that serves the listeners
 // and blocks until signalled; the detach re-exec (Detach) that backgrounds a
@@ -126,7 +136,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// objects_path, the content hash through the single writer into artifacts.
 	builds := newBuildPlane(logger)
 	workload := NewWorkloadPlane(client.ShowReader(), logger)
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload)), WithServerLogger(logger))
+	// provenance wired with placeholder (unwired behavior) until live reader
+	// (journal stamps from data + lineage from meta) lands; the read parity
+	// contracts are proven with explicit fakes in integration and conformance.
+	prov := placeholderProvenance{}
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}

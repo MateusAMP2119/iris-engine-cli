@@ -366,3 +366,39 @@ func TestStandbyServesReads(t *testing.T) {
 		}
 	})
 }
+
+// TestStatsReadPATAccess proves a monitor with only the read scope can fetch
+// GET /stats over TCP (specification section 11).
+//
+// spec: S11/stats-read-pat-access
+func TestStatsReadPATAccess(t *testing.T) {
+	t.Run("S11/stats-read-pat-access", func(t *testing.T) {
+		role := api.NewRoleState()
+		role.SetLeader()
+		readTok := "read-pat"
+		_, _, _ = startReadServer(t, role,
+			map[string]api.Authority{
+				readTok: {PATID: "r1", Scopes: []pat.Scope{pat.ScopeRead}},
+			},
+			api.WithStats(matrixStats{}),
+		)
+		// We use the unix socket client for this claim (ambient full), but the
+		// important is the scope matrix allows read for /stats. A dedicated TCP
+		// read-only test is covered by the matrix in TestHTTPStatusMatrix using
+		// data vs full; here we assert explicitly a read PAT path would be allowed
+		// by requiredScope returning read.
+		// To drive TCP read, recreate with TCP client.
+		srv2, _, _ := startReadServer(t, role,
+			map[string]api.Authority{
+				readTok: {PATID: "r2", Scopes: []pat.Scope{pat.ScopeRead}},
+			},
+			api.WithStats(matrixStats{}),
+		)
+		tcp := &http.Client{}
+		base := "http://" + srv2.TCPAddr()
+		resp, env := fetch(t, tcp, http.MethodGet, base+"/stats", "Bearer "+readTok)
+		if resp.StatusCode != http.StatusOK || env.Error != nil {
+			t.Fatalf("read-scoped PAT GET /stats = %d err=%+v, want 200", resp.StatusCode, env.Error)
+		}
+	})
+}

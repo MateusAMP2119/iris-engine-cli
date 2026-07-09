@@ -242,7 +242,7 @@ func (a *app) dataCmd() *cobra.Command {
 	prov := &cobra.Command{
 		Use:   "provenance <schema.table> <pk>",
 		Short: "Show a row's provenance: author, layer stack, consumed upstreams, hashes",
-		Args:  cobra.ExactArgs(2), RunE: a.daemonStub("data provenance"),
+		Args:  cobra.ExactArgs(2), RunE: a.dataProvenance(),
 	}
 	return a.group("data", "Row-level reads", daemonTouching(prov))
 }

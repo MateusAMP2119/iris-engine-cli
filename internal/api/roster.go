@@ -99,7 +99,7 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		if len(segs) != 4 {
 			return false
 		}
-		serveUnwiredRead(w, r, "provenance")
+		m.serveProvenance(w, r, segs[1], segs[2], segs[3])
 	case "data":
 		// /data/{schema}/{table}: the raw table read (E09.6).
 		if len(segs) != 3 {
