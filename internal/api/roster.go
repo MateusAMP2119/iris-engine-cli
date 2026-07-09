@@ -99,7 +99,7 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		if len(segs) != 4 {
 			return false
 		}
-		serveUnwiredRead(w, r, "provenance")
+		m.serveProvenance(w, r, segs[1], segs[2], segs[3])
 	case "data":
 		// /data/{schema}/{table}: the raw table read (E09.6).
 		if len(segs) != 3 {
@@ -153,6 +153,27 @@ func (m *mux) serveLeader(w http.ResponseWriter, r *http.Request) {
 		Role:   string(m.role.Role()),
 		Leader: m.role.LeaderHint(),
 	})
+}
+
+// serveProvenance handles GET /provenance/{schema}/{table}/{pk}.
+func (m *mux) serveProvenance(w http.ResponseWriter, r *http.Request, schema, table, pk string) {
+	if r.Method != http.MethodGet {
+		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
+		return
+	}
+	if !noParams(w, r) {
+		return
+	}
+	if m.provenance == nil {
+		serveUnwiredRead(w, r, "provenance")
+		return
+	}
+	rep, err := m.provenance.Provenance(r.Context(), schema, table, pk)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	WriteData(w, http.StatusOK, rep)
 }
 
 // serveUnwiredRead answers a roster route whose reader is not wired yet: the

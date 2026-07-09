@@ -464,3 +464,46 @@ func TestTraceUpDown(t *testing.T) {
 		}
 	})
 }
+
+// TestProvenanceSpansArchiveBoundary proves the provenance walk produces
+// equivalent results for resident journal ranges (from Postgres) and archived
+// ranges (from object-store files): a row's stamps are the same whether its
+// journal entries are served from the live table or reconstructed from sealed
+// archived partitions.
+//
+// spec: S14/provenance-spans-archive-boundary
+func TestProvenanceSpansArchiveBoundary(t *testing.T) {
+	t.Run("S14/provenance-spans-archive-boundary", func(t *testing.T) {
+		key := pg.RowKey{Schema: "analytics", Table: "orders", RowPK: "9f3c"}
+		// "Resident" slice as if read from data_journal for an id range.
+		resident := []pg.JournalEntry{
+			{ID: 100, RunID: 7, Schema: "analytics", Table: "orders", RowPK: "9f3c", Op: pg.OpInsert, Undo: pg.UndoOpen},
+		}
+		// "Archived" slice as if decoded from an object-store archive file for a later range.
+		archived := []pg.JournalEntry{
+			{ID: 205, RunID: 9, Schema: "analytics", Table: "orders", RowPK: "9f3c", Op: pg.OpUpdate, Undo: pg.UndoPromoted},
+		}
+		// Combined as the spanning reader would present.
+		combined := append(append([]pg.JournalEntry(nil), resident...), archived...)
+
+		repR, _ := pg.WalkProvenance(resident, pg.Lineage{}, key, 0)
+		repA, _ := pg.WalkProvenance(archived, pg.Lineage{}, key, 0)
+		repC, _ := pg.WalkProvenance(combined, pg.Lineage{}, key, 0)
+
+		// The union contains exactly the layers from both sides; order newest first.
+		if len(repC.Stamps) != 2 {
+			t.Fatalf("combined stamps = %d, want 2 (one resident, one archived)", len(repC.Stamps))
+		}
+		// Authoritative author is the latest surviving across the boundary.
+		if !repC.Authored || repC.Author.RunID != 9 {
+			t.Errorf("author across boundary = run %d, want archived run 9", repC.Author.RunID)
+		}
+		// Individual sides report their own layers.
+		if len(repR.Stamps) != 1 || repR.Stamps[0].RunID != 7 {
+			t.Errorf("resident side did not isolate its layer: %+v", repR.Stamps)
+		}
+		if len(repA.Stamps) != 1 || repA.Stamps[0].RunID != 9 {
+			t.Errorf("archived side did not isolate its layer: %+v", repA.Stamps)
+		}
+	})
+}

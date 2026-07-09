@@ -21,6 +21,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -118,11 +119,18 @@ type mux struct {
 	inspect      InspectHandler
 	pipelineShow PipelineShowHandler
 	workloadShow WorkloadShowHandler
+	provenance   ProvenanceHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
 	endpoints EndpointSource
 	qreader   EndpointReader
+}
+
+// ProvenanceHandler serves the row-level provenance readout (GET
+// /provenance/{schema}/{table}/{pk}) for `iris data provenance`.
+type ProvenanceHandler interface {
+	Provenance(ctx context.Context, schema, table, pk string) (any, error)
 }
 
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority
@@ -211,4 +219,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// WithProvenance wires the provenance handler for GET /provenance/... . A nil
+// handler keeps the route unwired (internal error).
+func WithProvenance(h ProvenanceHandler) MuxOption {
+	return func(m *mux) {
+		if h != nil {
+			m.provenance = h
+		}
+	}
 }

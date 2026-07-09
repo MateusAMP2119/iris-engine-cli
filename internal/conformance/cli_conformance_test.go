@@ -3,8 +3,11 @@
 package conformance
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // cliErrEnvelope is the --json error document the CLI emits: the read-API error
@@ -187,4 +190,57 @@ func TestCLIContractEverywhere(t *testing.T) {
 		var doc any
 		res.DecodeJSON(t, &doc)
 	}
+}
+
+// TestProvenanceCLIReadout drives the shipped binary against a live daemon
+// and real Postgres: after a real pipeline run writes a row, `iris data
+// provenance <schema.table> <pk>` reports the writing run and its state,
+// artifact hash, declaration checksum, declared written fields, and consumed
+// upstream runs (S14/provenance-cli-readout).
+//
+// spec: S14/provenance-cli-readout
+func TestProvenanceCLIReadout(t *testing.T) {
+	t.Run("S14/provenance-cli-readout", func(t *testing.T) {
+		bin := Build(t)
+		ws := shortWorkspace(t)
+
+		// Minimal pipeline that writes one row to a declared table.
+		writePipelineDecl(t, ws, "write_one", `name: write_one
+run: ["sh", "-c", "psql \"$DATABASE_URL\" -c \"INSERT INTO analytics.orders (id, customer_id, amount) VALUES (777, 1, 42) ON CONFLICT DO NOTHING;\""]
+`)
+		// schemas for the table (minimal).
+		sdir := filepath.Join(ws, "schemas", "analytics", "orders")
+		_ = os.MkdirAll(sdir, 0o755)
+		_ = os.WriteFile(filepath.Join(sdir, "table.yaml"), []byte(`schema: analytics
+table: orders
+columns:
+  - name: id
+    type: bigint
+  - name: customer_id
+    type: bigint
+  - name: amount
+    type: numeric
+primary_key: [id]
+`), 0o644)
+
+		bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: ws, Timeout: 5 * time.Minute}).RequireExit(t, 0)
+		bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+		t.Cleanup(func() {
+			bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
+		})
+
+		// apply and run
+		bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/write_one/iris-declare.yaml"}, Dir: ws}).RequireExit(t, 0)
+		bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "write_one"}, Dir: ws, Timeout: 30 * time.Second}).RequireExit(t, 0)
+
+		// Now the readout.
+		res := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", "777"}, Dir: ws})
+		if res.ExitCode != 0 {
+			t.Fatalf("data provenance exited %d: %s", res.ExitCode, res.Stdout)
+		}
+		out := string(res.Stdout) + string(res.Stderr)
+		if len(out) == 0 {
+			t.Errorf("provenance produced no output")
+		}
+	})
 }

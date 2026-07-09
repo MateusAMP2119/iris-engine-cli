@@ -81,6 +81,21 @@ type DestroyBlocker interface {
 	Blocked(ctx context.Context, pipeline string) (blocked bool, reason string, err error)
 }
 
+// RunLister lists the prunable runs for a pipeline so destroy can write their
+// archival summaries before deleting the run rows (S12/destroy-summaries-before-delete).
+// The default (noopRunLister) returns no runs, so summaries are a later wiring.
+type RunLister interface {
+	ListPrunableRuns(ctx context.Context, pipeline string) ([]store.PrunableRun, error)
+}
+
+// noopRunLister is the default RunLister: no runs listed, no summaries written
+// until the archival tier wires the real reader.
+type noopRunLister struct{}
+
+func (noopRunLister) ListPrunableRuns(context.Context, string) ([]store.PrunableRun, error) {
+	return nil, nil
+}
+
 // openBlocker is the default DestroyBlocker: it never blocks (destroy proceeds). It
 // is the honest E03.10 default -- the real downstream predicates arrive with E10.1.
 type openBlocker struct{}
@@ -136,11 +151,12 @@ func (e *BlockedError) Error() string {
 // options supply the DataReverter, ObjectDeleter, and DestroyBlocker seams, each
 // defaulting to the honest open/no-op value.
 type Destroyer struct {
-	reg      store.RegistryReader
-	submit   Submitter
-	reverter DataReverter
-	objects  ObjectDeleter
-	blocker  DestroyBlocker
+	reg       store.RegistryReader
+	submit    Submitter
+	reverter  DataReverter
+	objects   ObjectDeleter
+	blocker   DestroyBlocker
+	runLister RunLister
 }
 
 // DestroyerOption configures a Destroyer's seams at construction.
@@ -176,15 +192,26 @@ func WithDestroyBlocker(b DestroyBlocker) DestroyerOption {
 	}
 }
 
+// WithRunLister sets the run lister used to archive remaining runs' summaries
+// during destroy (S12/destroy-summaries-before-delete). A nil lister is ignored.
+func WithRunLister(l RunLister) DestroyerOption {
+	return func(d *Destroyer) {
+		if l != nil {
+			d.runLister = l
+		}
+	}
+}
+
 // NewDestroyer builds the destroy op over the registry reader and the single-writer
 // submitter, with the seams defaulting to open/no-op.
 func NewDestroyer(reg store.RegistryReader, submit Submitter, opts ...DestroyerOption) *Destroyer {
 	d := &Destroyer{
-		reg:      reg,
-		submit:   submit,
-		reverter: noopReverter{},
-		objects:  noopObjectDeleter{},
-		blocker:  openBlocker{},
+		reg:       reg,
+		submit:    submit,
+		reverter:  noopReverter{},
+		objects:   noopObjectDeleter{},
+		blocker:   openBlocker{},
+		runLister: noopRunLister{},
 	}
 	for _, o := range opts {
 		o(d)
@@ -214,8 +241,20 @@ func (d *Destroyer) DestroyPipeline(ctx context.Context, name string) error {
 		return fmt.Errorf("dispatch: destroy pipeline %q: revert un-promoted data: %w", name, err)
 	}
 
+	// Archive summaries for remaining runs before the retirement deletes, inside
+	// the same transaction so stamps keep resolving (S12/destroy-summaries-before-delete).
+	var sums []store.RunSummary
+	if runs, err := d.runLister.ListPrunableRuns(ctx, name); err == nil && len(runs) > 0 {
+		for _, r := range runs {
+			sums = append(sums, store.BuildRunSummary(r))
+		}
+	}
+
 	// Retire the pipeline's rows in one atomic meta transaction, pipelines row last.
 	if err := d.submit.Submit(ctx, func(w *store.Writer) error {
+		if len(sums) > 0 {
+			return w.RetirePipelineWithSummaries(ctx, name, sums)
+		}
 		return w.RetirePipeline(ctx, name)
 	}); err != nil {
 		return fmt.Errorf("dispatch: destroy pipeline %q: %w", name, err)
