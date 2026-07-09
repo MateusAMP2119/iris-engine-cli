@@ -44,17 +44,15 @@ type installResult struct {
 }
 
 // engineInstall is the handler for `iris engine install`: a daemonless lifecycle
-// command (it dials no daemon) that performs the managed-Postgres install leg and
-// sets up the control socket. In managed mode it downloads and places the pinned,
-// checksum-verified Postgres under <workspace>/.iris/pg through the daemon's
-// managed-Postgres supervisor; in external mode there is no local instance to
-// install. It then prepares the control socket directory. It fails fast (operation
-// failed, exit 4) on any install error.
-//
-// The socket setup runs here for real. The meta bootstrap and engine-key legs are
-// orchestrated by daemon.BootstrapEngine (proven at the integration tier); they
-// run against the cluster once the daemon's live admin connection is wired, and
-// the CLI drives BootstrapEngine at that point.
+// command (it dials no daemon) that performs the engine bootstrap (specification
+// section 4). Through the one Manager code path it brings up Postgres for the
+// configured mode -- downloading and placing the pinned, checksum-verified managed
+// Postgres under <workspace>/.iris/pg and starting it, or resolving the external
+// admin DSN -- then creates meta alongside the data database, ensures the control
+// tables and the partitioned journal, and sets up the control socket. In managed mode
+// the local instance is stopped again once the bootstrap completes. It fails fast
+// (operation failed, exit 4) on any error. (The engine-key leg is deferred: see
+// daemon.InstallEngine.)
 func (a *app) engineInstall() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
@@ -63,16 +61,7 @@ func (a *app) engineInstall() runE {
 			ctx = context.Background()
 		}
 
-		mgr := daemon.NewManager(settings, daemon.EmbeddedSupervisor)
-		if err := mgr.Install(ctx); err != nil {
-			a.logger.Error("engine install failed", "err", err)
-			return &fault{
-				code:    exitOpFailed,
-				codeStr: "install_failed",
-				message: fmt.Sprintf("engine install failed: %v", err),
-			}
-		}
-		if err := daemon.PrepareSocketDir(settings); err != nil {
+		if _, err := daemon.InstallEngine(ctx, settings, a.logger); err != nil {
 			a.logger.Error("engine install failed", "err", err)
 			return &fault{
 				code:    exitOpFailed,
@@ -596,9 +585,9 @@ func (a *app) emitInstallResult(cmd *cobra.Command, s config.Settings) error {
 		return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
 	}
 	if res.Mode == "managed" {
-		fmt.Fprintf(a.out, "engine managed Postgres installed under %s\n", res.PgDir)
+		fmt.Fprintf(a.out, "engine managed Postgres installed under %s; created meta and data databases\n", res.PgDir)
 	} else {
-		fmt.Fprintln(a.out, "external Postgres configured; no local instance installed")
+		fmt.Fprintln(a.out, "external Postgres configured; created meta and data databases")
 	}
 	return nil
 }
