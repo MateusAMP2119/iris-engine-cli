@@ -142,8 +142,6 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// contracts are proven with explicit fakes in integration and conformance.
 	prov := placeholderProvenance{}
 
-	prov := NewProvenancePlane(logger)
-
 	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err

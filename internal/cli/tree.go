@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
 
@@ -248,56 +245,6 @@ func (a *app) dataCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2), RunE: a.dataProvenance(),
 	}
 	return a.group("data", "Row-level reads", daemonTouching(prov))
-}
-
-// dataProvenance implements `iris data provenance <schema.table> <pk>`: GET
-// /provenance/... and emit the report (under --json the envelope data).
-func (a *app) dataProvenance() runE {
-	return func(cmd *cobra.Command, args []string) error {
-		// args: 0 = schema.table , 1 = pk . Split schema.table.
-		key := args[0]
-		pk := args[1]
-		dot := strings.LastIndex(key, ".")
-		if dot <= 0 || dot == len(key)-1 {
-			return a.usage("data provenance requires schema.table pk")
-		}
-		schema := key[:dot]
-		table := key[dot+1:]
-
-		settings := a.resolveTarget(cmd)
-		client, base, overTCP := a.daemonHTTPClient(settings)
-
-		url := fmt.Sprintf("%s/provenance/%s/%s/%s", base, schema, table, pk)
-		hreq, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, url, nil)
-		if err != nil {
-			return &fault{code: exitOpFailed, codeStr: "request", message: fmt.Sprintf("data provenance: build request: %v", err)}
-		}
-		if overTCP && settings.Token != "" {
-			hreq.Header.Set("Authorization", "Bearer "+settings.Token)
-		}
-		resp, err := client.Do(hreq)
-		if err != nil {
-			a.logger.Debug("no iris daemon reachable", "op", "data provenance", "err", err)
-			return a.noDaemonFault()
-		}
-		defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			return a.controlFailure(resp, "data provenance")
-		}
-		var env struct {
-			Data any `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-			return &fault{code: exitOpFailed, codeStr: "decode", message: fmt.Sprintf("data provenance: decode: %v", err)}
-		}
-		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"data": env.Data})
-		}
-		// Human: simple dump of the report.
-		fmt.Fprintf(cmd.OutOrStdout(), "%v\n", env.Data)
-		return nil
-	}
 }
 
 // workloadCmd builds `iris workload`: the standing wiring panel and the dev

@@ -192,7 +192,6 @@ func TestCLIContractEverywhere(t *testing.T) {
 	}
 }
 
-
 // TestReadSurfacesCLIVsAPI proves at the conformance tier (real binary + live
 // daemon + real Postgres) that CLI readouts and the corresponding API routes
 // serve the same curated views (S07/cli-api-same-views). The detailed parity
@@ -213,6 +212,8 @@ func TestReadSurfacesCLIVsAPI(t *testing.T) {
 		// proving it is a daemon-touching read (not a local stub).
 		res := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", "abc"}})
 		res.RequireExit(t, 3)
+	})
+}
 
 // TestProvenanceCLIReadout drives the shipped binary against a live daemon
 // and real Postgres: after a real pipeline run writes a row, `iris data

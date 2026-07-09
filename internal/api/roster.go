@@ -155,27 +155,6 @@ func (m *mux) serveLeader(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serveProvenance handles GET /provenance/{schema}/{table}/{pk}.
-func (m *mux) serveProvenance(w http.ResponseWriter, r *http.Request, schema, table, pk string) {
-	if r.Method != http.MethodGet {
-		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
-		return
-	}
-	if !noParams(w, r) {
-		return
-	}
-	if m.provenance == nil {
-		serveUnwiredRead(w, r, "provenance")
-		return
-	}
-	rep, err := m.provenance.Provenance(r.Context(), schema, table, pk)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	WriteData(w, http.StatusOK, rep)
-}
-
 // serveUnwiredRead answers a roster route whose reader is not wired yet: the
 // route is mounted (scope-checked by authorize, GET-enforced here) but its
 // payload belongs to a later epic, so a request faults with the 500 internal

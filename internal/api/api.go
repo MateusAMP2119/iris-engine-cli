@@ -21,7 +21,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -128,12 +127,6 @@ type mux struct {
 	qreader   EndpointReader
 }
 
-// ProvenanceHandler serves the row-level provenance readout (GET
-// /provenance/{schema}/{table}/{pk}) for `iris data provenance`.
-type ProvenanceHandler interface {
-	Provenance(ctx context.Context, schema, table, pk string) (any, error)
-}
-
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority
 // against its route, then dispatches the request, or returns the closed-code
 // error envelope for an unknown route or a disallowed method. A mutating request
@@ -220,14 +213,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// WithProvenance wires the provenance handler for GET /provenance/... . A nil
-// handler keeps the route unwired (internal error).
-func WithProvenance(h ProvenanceHandler) MuxOption {
-	return func(m *mux) {
-		if h != nil {
-			m.provenance = h
-		}
-	}
 }
