@@ -80,6 +80,10 @@ type Candidate struct {
 	manualReader store.ManualReader
 	runner       exec.Runner
 
+	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
+	// and seal decisions after runs reach terminal.
+	journalHM dispatch.JournalHighWatermark
+
 	// Build wiring, installed on winning leadership and cleared on demotion so the
 	// api mux's POST /pipeline/build reaches the single meta writer, the object
 	// store, and the exec seam only while this daemon leads (specification sections
@@ -170,15 +174,17 @@ func WithControlPlane(cp *controlPlane, workspace string, reg store.RegistryRead
 // writer), the meta read seams, and the process runner, and installs it into pp before
 // reporting the leader role, clearing it on demotion. workspace is the leader's workspace
 // tree (pipeline folders resolve against it); manual is the plain-MVCC manual-run reader;
-// runner starts subprocesses. A nil pp leaves the candidate without a manual-run plane
+// runner starts subprocesses. journal provides the data journal high id for terminal
+// window stamping. A nil pp leaves the candidate without a manual-run plane
 // (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, runner exec.Runner) CandidateOption {
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, runner exec.Runner, journal dispatch.JournalHighWatermark) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
 		c.registry = reg
 		c.manualReader = manual
 		c.runner = runner
+		c.journalHM = journal
 	}
 }
 
@@ -376,7 +382,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// orchestrator; clear it on demotion so a run racing a lost lock faults rather than
 	// minting off-path.
 	if c.pipelines != nil {
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.runner, c.logger)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.runner, c.journalHM, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

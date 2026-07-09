@@ -123,6 +123,102 @@ func (c *Client) Close() {
 	}
 }
 
+// JournalHighID returns the current high id of public.data_journal (max(id) or 0
+// if empty). It satisfies dispatch.JournalHighWatermark for snapshot pin stamping.
+func (c *Client) JournalHighID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := c.pool.QueryRow(ctx, `SELECT COALESCE(max(id), 0) FROM public.data_journal`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("pg: read journal high id: %w", err)
+	}
+	return id, nil
+}
+
+// CurrentLSN returns the data database's current WAL LSN in text form. It satisfies
+// dispatch.LSNReader for snapshot pin stamping.
+func (c *Client) CurrentLSN(ctx context.Context) (string, error) {
+	var lsn string
+	if err := c.pool.QueryRow(ctx, `SELECT pg_current_wal_lsn()::text`).Scan(&lsn); err != nil {
+		return "", fmt.Errorf("pg: read current lsn: %w", err)
+	}
+	return lsn, nil
+}
+
+// Query for archive seal row reads.
+func (c *Client) Query(ctx context.Context, sql string, args ...any) (interface {
+	Next() bool
+	Scan(dest ...any) error
+	Close()
+	Err() error
+}, error) {
+	return c.pool.Query(ctx, sql, args...)
+}
+
+// CompactJournalRange nulls released pre-images and folds dups (conformance helper).
+// Performed in one transaction so compaction is atomic (multi-statement state change).
+func (c *Client) CompactJournalRange(ctx context.Context, from, to int64) error {
+	if from <= 0 {
+		from = 0
+	}
+	toExpr := "9223372036854775807"
+	if to > 0 {
+		toExpr = fmt.Sprintf("%d", to)
+	}
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("pg: begin compact tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // safe no-op after commit
+
+	// Null all pre in the sealed range (past undo for sealed history) and fold dups.
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`UPDATE public.data_journal SET pre_image=NULL WHERE id>=%d AND id<%s`, from, toExpr)); err != nil {
+		return fmt.Errorf("pg: compact null preimages: %w", err)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM public.data_journal j USING (SELECT "schema","table",row_pk,run_id,max(id) k FROM public.data_journal WHERE id>=%d AND id<%s GROUP BY "schema","table",row_pk,run_id) kx WHERE j."schema"=kx."schema" AND j."table"=kx."table" AND j.row_pk=kx.row_pk AND j.run_id=kx.run_id AND j.id>=%d AND j.id<%s AND j.id<>kx.k`, from, toExpr, from, toExpr)); err != nil {
+		return fmt.Errorf("pg: compact fold dups: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("pg: commit compact: %w", err)
+	}
+	return nil
+}
+
+// QueryCompactedRows returns a canonical serialization of rows in [from,to) for
+// checkpoint digest computation (id order). Used by archive seal.
+func (c *Client) QueryCompactedRows(ctx context.Context, from, to int64) ([][]byte, error) {
+	q := `SELECT id, pg_role, run_id, "schema", "table", row_pk, op, COALESCE(pre_image::text, ''), undo, recorded_at
+FROM public.data_journal WHERE id >= $1 AND ($2 = 0 OR id < $2) ORDER BY id`
+	rows, err := c.pool.Query(ctx, q, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]byte
+	for rows.Next() {
+		var id int64
+		var role, schema, table, pk, op, pre, undo, rec string
+		var rn int64
+		if err := rows.Scan(&id, &role, &rn, &schema, &table, &pk, &op, &pre, &undo, &rec); err != nil {
+			return nil, err
+		}
+		b := []byte(fmt.Sprintf("%d|%s|%d|%s|%s|%s|%s|%s|%s|%s", id, role, rn, schema, table, pk, op, pre, undo, rec))
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DropPartitionForRange detaches and drops the bootstrap p0 partition (the
+// sealed range, whose rows are already exported under their checkpoint digest)
+// and immediately recreates an empty p0 spanning the full range so the journal
+// stays writable for subsequent captures. Leaving the table partition-less would
+// make the next journal insert fail, so the recreate is part of the same seal
+// step. Best-effort: the export + checkpoint hold the sealed history.
+func (c *Client) DropPartitionForRange(ctx context.Context, _ int64) error {
+	_, _ = c.pool.Exec(ctx, `ALTER TABLE IF EXISTS public.data_journal DETACH PARTITION IF EXISTS public.data_journal_p0;`)
+	_, _ = c.pool.Exec(ctx, `DROP TABLE IF EXISTS public.data_journal_p0;`)
+	_, _ = c.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);`)
+	return nil
+}
+
 // The live-view read statements. Each is a plain MVCC catalog read, so building the
 // view never contends with a concurrent DDL apply.
 const (

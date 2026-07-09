@@ -55,6 +55,20 @@ func (w *Writer) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
+const insertJournalCheckpointSQL = `INSERT INTO journal_checkpoints
+(id_from, id_to, digest, parent_digest, signature, location, recorded_at)
+VALUES ($1, $2, $3, $4, $5, $6, now()::text)`
+
+// InsertJournalCheckpoint records one sealed partition's checkpoint (id range,
+// compacted digest, parent for chain, ed25519 signature over digest, location).
+// It is insert-only, leader-only, through the single writer.
+func (w *Writer) InsertJournalCheckpoint(ctx context.Context, idFrom, idTo int64, digest, parentDigest, signature []byte, location string) error {
+	if err := w.conn.Exec(ctx, insertJournalCheckpointSQL, idFrom, idTo, digest, parentDigest, signature, location); err != nil {
+		return fmt.Errorf("store: writer insert journal checkpoint [%d,%d): %w", idFrom, idTo, err)
+	}
+	return nil
+}
+
 // The run-record write statements crash reconciliation submits through the single
 // writer. Both are guarded on the run's source state so they can only ever act on a
 // run that is actually in that state (never one that has since progressed).

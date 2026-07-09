@@ -166,7 +166,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner()),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner(), data),
 		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
