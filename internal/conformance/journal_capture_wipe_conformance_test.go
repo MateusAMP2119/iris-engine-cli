@@ -185,26 +185,45 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 		bin.Run(t, RunOptions{Args: []string{"pipeline", "build", "promo"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 		bin.Run(t, RunOptions{Args: []string{"pipeline", "promote", "promo"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
-		// Re-run after promote: writes still captured but born promoted.
-		bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "promo"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
-		run2 := latestRunForPipeline(t, ws, "promo")
-
 		dsn := dataDSN(t, ws)
 		conn := connectData(t, dsn)
 		defer conn.Close(context.Background())
-		landAttributed(t, conn, run2, false, 9203, "post", 9204, "post")
-		// Rows from both eras present (pre flipped by promote + post born promoted).
-		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM testdata.items")
-		// Promoted stamps exist (pre's flipped + post's born).
-		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM public.data_journal WHERE undo='promoted'")
 
-		// Wipe must leave the promoted rows untouched (immune).
+		// Promote flipped the disposable-era writes from open to promoted: still
+		// captured, no longer wipe-eligible. Assert this now, before the next run's
+		// opportunistic seal (E13.5) archives and drops them from the live journal.
+		assertCount(ctxFor(t), t, conn, 2,
+			fmt.Sprintf("SELECT count(*) FROM public.data_journal WHERE undo='promoted' AND run_id=%d", run1))
+
+		// Re-run after promote: the pipeline is permanent now, so its writes are born
+		// promoted (still captured, never wipe-eligible). The re-run's terminal runs
+		// the opportunistic seal, which exports run1's promoted entries to the archive
+		// and drops the sealed partition -- the data rows are untouched (seal is a
+		// journal operation), so both eras' rows remain in the table.
+		bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "promo"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+		run2 := latestRunForPipeline(t, ws, "promo")
+		landAttributed(t, conn, run2, false, 9203, "post", 9204, "post")
+
+		// Rows from both eras present (pre-promote writes flipped to promoted then
+		// sealed; post-promote writes born promoted): four data rows, seal and all.
+		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM testdata.items")
+		// The re-run's writes are captured in the live journal, born promoted (never
+		// open): the contract's "still captured in the journal but not wipe-eligible".
+		assertCount(ctxFor(t), t, conn, 2,
+			fmt.Sprintf("SELECT count(*) FROM public.data_journal WHERE undo='promoted' AND run_id=%d", run2))
+		assertCount(ctxFor(t), t, conn, 0,
+			fmt.Sprintf("SELECT count(*) FROM public.data_journal WHERE undo='open' AND run_id=%d", run2))
+
+		// Wipe must leave the promoted rows untouched (immune): the journal drives the
+		// wipe, and no promoted entry is in wipe scope.
 		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--yes"}, Dir: ws, Timeout: time.Minute})
 		wres.RequireExit(t, 0)
 
-		// RED until promotion narrows wipe scope and promoted writes are immune.
+		// Both eras' promoted data rows survive the wipe, and the re-run's promoted
+		// journal entries are neither reverted nor retired to wiped.
 		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM testdata.items")
-		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM public.data_journal WHERE undo='promoted'")
+		assertCount(ctxFor(t), t, conn, 2,
+			fmt.Sprintf("SELECT count(*) FROM public.data_journal WHERE undo='promoted' AND run_id=%d", run2))
 	})
 
 	t.Run("S13/concurrent-writes-commit-order", func(t *testing.T) {
