@@ -227,12 +227,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 			c := c
 			t.Run(c.name, func(t *testing.T) {
 				// spec: S04/checkpoint-per-sealed-partition
-				row := store.CheckpointRow{
-					IDFrom:   c.idFrom,
-					IDTo:     c.idTo,
-					Digest:   store.ComputeDigest(c.compacted),
-					Location: "resident",
-				}
+				row := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, nil)
 				if row.IDFrom != c.idFrom || row.IDTo != c.idTo {
 					t.Error("id_from/id_to not set for sealed partition")
 				}
@@ -240,7 +235,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 				if !bytesEqual(row.Digest, wantDig) {
 					t.Error("digest not computed over compacted rows in id order")
 				}
-				// exactly one row produced per sealed (modeled by constructing one row)
+				// exactly one row produced per sealed
 				if row.IDFrom > row.IDTo && len(c.compacted) > 0 {
 					t.Error("invalid range but one row per seal")
 				}
@@ -266,16 +261,9 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) {
 				// spec: S14/checkpoint-digest-chain
 				d := store.ComputeDigest(c.compacted)
-				cp := store.CheckpointRow{
-					Seq:      int64(i + 1),
-					IDFrom:   c.idFrom,
-					IDTo:     c.idTo,
-					Digest:   d,
-					Location: "resident",
-				}
-				if prev != nil {
-					cp.ParentDigest = store.ParentFor(prev)
-				}
+				cp := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, prev)
+				cp.Seq = int64(i + 1)
+				cp.Digest = d // ensure (same)
 				sig, _ := k.SignDigest(d)
 				cp.Signature = sig
 
