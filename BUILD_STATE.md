@@ -90,7 +90,7 @@ Opus, never downgrade.
 - [x] E04.3 Grant reconcile and drift — done (PR #43)
 - [x] E04.4 Connection injection and enforcement — done (PR #46)
 
-## E05 Dispatcher, Lanes and Dead Letters — epic PR: —
+## E05 Dispatcher, Lanes and Dead Letters — epic PR: — (batched with E04)
 
 - [x] E05.1 Exec seam — done (PR #39: https://github.com/MateusAMP2119/iris-engine-cli/pull/39)
 - [x] E05.2 Run environment — done (PR #40)
@@ -105,7 +105,7 @@ Opus, never downgrade.
 - [x] E05.11 Doctrines and scope — done (verification-only: all 5 exempt rows seeded by E00.1, gate-accounted; no PR needed)
 - [x] E05.12 Lane runner pass semantics — done (PR #59)
 
-## E06 Write Capture, Wipe and Promotion — epic PR: —
+## E06 Write Capture, Wipe and Promotion — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E06.1 Journal DDL and partitioning — done (PR #48)
 - [x] E06.2 Capture trigger emission — done (PR #52)
@@ -115,7 +115,7 @@ Opus, never downgrade.
 - [x] E06.6 Promotion — done (PR #65: B's coder authored + full local conformance green + B diff review; A merged, CI 9/9)
 - [x] E06.7 Live wipe closure — done (PR #73; S14 capture-overhead leg reshaped w/ profiling evidence, 1.25x gate deferred to E13.8 — see PR)
 
-## E07 Provenance, Journal Lifecycle and Object Store — epic PR: —
+## E07 Provenance, Journal Lifecycle and Object Store — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E07.1 Provenance walk — done (PR #74)
 - [x] E07.2 Snapshot pin — done (8839366: finalize/verify S14/pin-* ; tests + gate green)
@@ -124,14 +124,14 @@ Opus, never downgrade.
 - [x] E07.5 Object store and export — done (E07.5 worktree cda1807 + priors: S14/archive-*, S14/object-store-*, S10/objects-store-hash-keyed; real FS tests, roundtrip, export-then-drop, immutable; tests green)
 - [x] E07.6 Archived reads and destroy closure — done (E07.6 worktree 2efc2d2 + priors: S14/provenance-spans-archive-boundary, missing-object, offline-chain, provenance-cli-readout, S12/destroy-*; tests green for archive spans + destroy summaries + CLI readout)
 
-## E08 Build, Artifacts and Modes — epic PR: —
+## E08 Build, Artifacts and Modes — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E08.1 Recipe inference and matrix — done (PR #62)
 - [x] E08.2 Build and artifact storage — done (PR #66, merged by A 14:32). SESSION A: B's coder in that worktree is NOT stale — it is fixing 7 findings from B's independent review of #66 (review completed after the PR opened, before merge: go-recipe entry derivation ignores run vector, entryScript takes run[len-1] blindly, pyinstaller pollutes source dir, objects.go missing fsync-before-rename, 3 nits). Lands as follow-up PR "E08.2 review fixes". Do not kill it; do not remove the E08.2 worktree.
 - [x] E08.3 Promote gating — done (PR #76)
 - [x] E08.4 Mode execution and retirement — done (E08.4 worktree eacffd4 + priors: S01/both-modes-fully-wired, mode-selects-exec-target, S03/built-mode-ignores-run, S04/artifact-retirement-post-prune; tests green in buildplane/prune)
 
-## E09 Read API, Endpoints and PATs — epic PR: —
+## E09 Read API, Endpoints and PATs — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E09.1 PAT store and scopes — done (PR #53)
 - [x] E09.2 Endpoint compile and validation — done (PR #56)
@@ -144,32 +144,32 @@ Opus, never downgrade.
 - [x] E09.9 NDJSON streaming — done (E09.9 worktree e121c71 + 74a3fdb: S07/ndjson-streaming and resume-by-cursor implemented and documented)
 - [x] E09.10 Read parity closure — done (E09.10 worktree 3107fac + 37bcb53: CLI/API same views, provenance route lineage, parity test live over daemon; S10/api-cli-read-render-parity etc)
 
-## E10 Destructive Operation Gates — epic PR: —
+## E10 Destructive Operation Gates — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E10.1 Gate and blocker predicates — done (PR #75)
 - [x] E10.2 Confirmation flows — done (E10.2 worktree 3a4cdb1: added red tests for confirmation contracts S12/five-ops-confirmation-gated etc; tests now green in dispatch)
 - [x] E10.3 Remote tiering and failover — done (E10.3 worktree 563e7ac + 89e0c59: API destructive confirm/PAT/leader, failover no-resume destructive; related tests green)
 
-## E11 High Availability and Failover — epic PR: —
+## E11 High Availability and Failover — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E11.1 Leader lock election — done (PR #63)
 - [x] E11.2 Standby reads and rejection — done (E11.2 worktree c7778ac: standby serves reads, rejects mutations exit 6 with leader guidance; tests green)
 - [x] E11.3 Promotion and self demotion — done (PR #67, merged 14:38: B audited inherited impl, mutation-tested red state, independent review 0 critical, CI 9/9)
 - [x] E11.4 Host prerequisites and live failover — done (E11.4 worktree a2d9cb1 + ca2b06c: implement prereqs (workspace tree, own objects path), activate/polish failover standby takeover and real leader kill; tests green)
 
-## E12 Stats, Info and Inspect — epic PR: —
+## E12 Stats, Info and Inspect — epic PR: — (complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E12.1 Stats rollups — done (PR #64)
 - [x] E12.2 Info inspect and show — done (PR #70)
 
-## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13)
+## E14 Graph Views and Triage Surface — epic PR: — (builds BEFORE E13; complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E14.1 Ref grammar and triage shows — done (57b9152: S08/run-ref-grammar + S14/trace-up-down etc)
 - [x] E14.2 Workload wiring panel — done (e264601 + 0b06263)
 - [x] E14.3 Rail renderer and golden files — done (d6b5eaa + b6a9168)
 - [x] E14.4 Read routes and before cursor — done (5ef94c6)
 
-## E13 Golden Sample and Acceptance — epic PR: — (last; the spine)
+## E13 Golden Sample and Acceptance — epic PR: — (last; the spine; complete on development; awaiting epic checkpoint PR to master)
 
 - [x] E13.1 Golden workspace fixture — done (E13.1 worktree + main: four_applies green conformance 9.9s + unit claims in declare; S13/sample-* + four-applies)
 - [x] E13.2 Install and binary boot — done (exercised+green by all E13 conformance harnesses: install/start/wait leader/socket)
