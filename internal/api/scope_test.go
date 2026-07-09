@@ -82,7 +82,7 @@ func TestScopeSplit403(t *testing.T) {
 		})
 
 		t.Run("control routes demand the control scope", func(t *testing.T) {
-			for _, path := range []string{"/apply", "/destroy", "/pipeline/run", "/pipeline/build"} {
+			for _, path := range []string{"/apply", "/destroy", "/pipeline/run", "/pipeline/build", "/deadletter/drain", "/workload/wipe"} {
 				code, errCode := getAs(t, mux, http.MethodPost, path, readOnly)
 				if code != http.StatusForbidden || errCode != "forbidden" {
 					t.Errorf("read-only POST %s = (%d, %q), want (403, forbidden)", path, code, errCode)

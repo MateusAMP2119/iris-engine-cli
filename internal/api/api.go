@@ -147,6 +147,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveApply(w, r)
 	case "/destroy":
 		m.serveDestroy(w, r)
+	case "/deadletter/drain":
+		m.serveDeadletterDrain(w, r)
 	case "/pipeline/build":
 		m.servePipelineBuild(w, r)
 	case "/pipeline/promote":
