@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -437,7 +438,7 @@ func exitDetail(status exec.ExitStatus) string {
 // signs with ed25519, inserts checkpoint (for chain), exports the partition file
 // under objects/ keyed by digest, and drops the sealed partition. Uses the journal
 // holder (which is *pg.Client in prod) for data ops.
-func sealAfterTerminal(m *manualExec, runID string) {
+func sealAfterTerminal(m *manualExec, _ string) {
 	if m == nil || m.submitter == nil {
 		return
 	}
@@ -491,22 +492,33 @@ func digestRows(rows [][]byte) []byte {
 	return h.Sum(nil)
 }
 
-// writeArchivePart writes a simple IRISJP10 archive file (header + rows) for export.
+// writeArchivePart writes a simple IRISJP10 archive file (header + rows) for
+// export. The bytes are assembled in memory then written once and the file is
+// closed before the atomic rename, so a short write or close error surfaces
+// before the object is published (no partial file under the digest key).
 func writeArchivePart(path string, rows [][]byte, dig []byte) error {
+	var buf bytes.Buffer
+	buf.WriteString("IRISJP10")
+	_ = binary.Write(&buf, binary.BigEndian, int64(len(rows)))
+	_ = binary.Write(&buf, binary.BigEndian, int64(len(dig)))
+	buf.Write(dig)
+	for _, r := range rows {
+		_ = binary.Write(&buf, binary.BigEndian, int64(len(r)))
+		buf.Write(r)
+	}
+
 	tmp := path + ".tmp"
+	//nolint:gosec // G304: engine-owned objects path under the workspace, not user-influenced.
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	f.Write([]byte("IRISJP10"))
-	binary.Write(f, binary.BigEndian, int64(len(rows)))
-	binary.Write(f, binary.BigEndian, int32(len(dig)))
-	f.Write(dig)
-	for _, r := range rows {
-		binary.Write(f, binary.BigEndian, int32(len(r)))
-		f.Write(r)
+	if _, werr := f.Write(buf.Bytes()); werr != nil {
+		_ = f.Close()
+		return werr
 	}
-	f.Close()
+	if cerr := f.Close(); cerr != nil {
+		return cerr
+	}
 	return os.Rename(tmp, path)
 }

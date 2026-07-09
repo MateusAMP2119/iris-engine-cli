@@ -167,7 +167,7 @@ func (c *Client) CompactJournalRange(ctx context.Context, from, to int64) error 
 	if err != nil {
 		return fmt.Errorf("pg: begin compact tx: %w", err)
 	}
-	defer tx.Rollback(ctx) // safe no-op after commit
+	defer func() { _ = tx.Rollback(ctx) }() // safe no-op after commit
 
 	// Null all pre in the sealed range (past undo for sealed history) and fold dups.
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`UPDATE public.data_journal SET pre_image=NULL WHERE id>=%d AND id<%s`, from, toExpr)); err != nil {
@@ -206,11 +206,16 @@ FROM public.data_journal WHERE id >= $1 AND ($2 = 0 OR id < $2) ORDER BY id`
 	return out, rows.Err()
 }
 
-// DropPartitionForRange best-effort detaches and drops a partition covering the
-// range (targets the bootstrap p0 for the small-threshold conformance cases).
-func (c *Client) DropPartitionForRange(ctx context.Context, from int64) error {
+// DropPartitionForRange detaches and drops the bootstrap p0 partition (the
+// sealed range, whose rows are already exported under their checkpoint digest)
+// and immediately recreates an empty p0 spanning the full range so the journal
+// stays writable for subsequent captures. Leaving the table partition-less would
+// make the next journal insert fail, so the recreate is part of the same seal
+// step. Best-effort: the export + checkpoint hold the sealed history.
+func (c *Client) DropPartitionForRange(ctx context.Context, _ int64) error {
 	_, _ = c.pool.Exec(ctx, `ALTER TABLE IF EXISTS public.data_journal DETACH PARTITION IF EXISTS public.data_journal_p0;`)
 	_, _ = c.pool.Exec(ctx, `DROP TABLE IF EXISTS public.data_journal_p0;`)
+	_, _ = c.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);`)
 	return nil
 }
 
