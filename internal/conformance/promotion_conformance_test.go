@@ -22,6 +22,8 @@ import (
 // captured in the journal at stamp cost (slim: no pre-image, no row copy).
 // Promotion never stops capture; it only changes what the stamps are born as.
 //
+// spec: S05/post-promotion-writes-still-captured  (conformance; also claimed here)
+//
 // The leg stands up one real cluster, provisions the partitioned journal and
 // the real iris.capture() function through the live pg path, declares a user
 // table with the three per-operation capture triggers, and mints a pipeline
