@@ -34,6 +34,9 @@ func (f *controlDataFake) EnsureCaptureFunction(context.Context) error {
 	f.ensureCalls++
 	return f.ensureErr
 }
+func (f *controlDataFake) ExecuteWipe(context.Context, pg.WipeTarget) (pg.WipeResult, error) {
+	return pg.WipeResult{}, nil
+}
 
 // controlHeadsFake is a store.AppliedHeadReader over a fixed head map.
 type controlHeadsFake struct{ heads map[string]string }
