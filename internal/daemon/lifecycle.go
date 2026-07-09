@@ -15,6 +15,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
@@ -117,7 +118,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// orchestrator.
 	role := api.NewRoleState()
 	control := newControlPlane()
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control)), WithServerLogger(logger))
+	// The pipeline plane serves iris pipeline list from the reader pool (any node) and,
+	// once this daemon leads, POST /pipeline/run through the single writer and exec seam.
+	pipelines := newPipelinePlane(client.PipelineLister(), logger)
+	// The build plane serves POST /pipeline/build once this daemon leads: the pinned
+	// recipe toolchain through the exec seam, bytes into the object store at
+	// objects_path, the content hash through the single writer into artifacts.
+	builds := newBuildPlane(logger)
+	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds)), WithServerLogger(logger))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -125,7 +133,12 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		_ = srv.Shutdown()
 		return err
 	}
-	defer func() { _ = RemovePIDFile(s) }()
+	// The pidfile removal is deliberately NOT deferred: a defer runs only at
+	// function return, which is gated behind the election-lock release (<-electDone
+	// below) and the deferred managed-Postgres and connection teardown -- seconds of
+	// work on a loaded host. The pidfile is the workspace liveness marker, and the
+	// daemon must disown it the moment it stops serving, so it is removed right after
+	// srv.Serve returns (listeners drained, socket released), below.
 
 	// Run the election in the background: it flips the role and drives the single
 	// dispatcher. It returns when ctx is cancelled (having released the lock). On
@@ -135,7 +148,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// through the single writer (specification section 2 crash recovery).
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
-		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data))
+		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner()),
+		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 
@@ -144,9 +159,22 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	serveErr := srv.Serve(ctx)
 
 	// Serve returned because ctx was cancelled (SIGTERM/SIGINT): the listeners have
-	// drained and the socket is released. Record the graceful shutdown before the
-	// deferred managed-Postgres and connection teardown run, so daemon.log carries a
-	// shutdown line for either signal (specification section 2: graceful shutdown).
+	// drained and the socket is released, so the daemon has stopped serving. Remove
+	// the pidfile now -- promptly, before the election-lock release wait and the heavy
+	// deferred teardown (managed Postgres, connection pools) -- because it is the
+	// workspace liveness marker and a signalled daemon must disown it at once
+	// (specification section 2: graceful shutdown). It is removed exactly once here,
+	// not via defer: after Serve returns the socket is free, so a racing
+	// `iris engine start` may bind and record its own pid while this daemon finishes
+	// its slower teardown, and a deferred removal would then delete the successor's
+	// pidfile. RemovePIDFile treats an absent file as success, so this stays clean.
+	if err := RemovePIDFile(s); err != nil {
+		logger.Warn("iris daemon shutdown: remove pidfile", "err", err)
+	}
+
+	// Record the graceful shutdown before the deferred managed-Postgres and
+	// connection teardown run, so daemon.log carries a shutdown line for either signal
+	// (specification section 2: graceful shutdown).
 	logger.Info("iris daemon shut down", "socket", srv.SocketPath())
 
 	// Wait for the candidate to release the leader lock (and demote) before the

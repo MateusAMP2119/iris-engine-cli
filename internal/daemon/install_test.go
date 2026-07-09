@@ -16,6 +16,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/golden"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
 // seqLog is a shared, ordered record of the operations engine bootstrap issues
@@ -261,6 +262,59 @@ func TestPrepareSocketDir(t *testing.T) {
 	t.Run("idempotent with no stale socket", func(t *testing.T) {
 		if err := daemon.PrepareSocketDir(settings); err != nil {
 			t.Fatalf("PrepareSocketDir (no stale socket): %v", err)
+		}
+	})
+}
+
+// TestEngineKeyMintedAtInstall and checkpoints insert-only prove the integration
+// contracts using fakes (per E00.4).
+//
+// spec: S14/engine-key-minted-at-install
+// spec: S04/checkpoints-insert-only
+func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("S14/engine-key-minted-at-install", func(t *testing.T) {
+		log := &seqLog{}
+		rep, err := daemon.BootstrapEngine(ctx, daemon.InstallDeps{
+			Probe:   &seqProbe{log: log, exists: true},
+			Cluster: &seqExec{log: log, tag: "cluster"},
+			Meta:    &seqExec{log: log, tag: "meta"},
+			Data:    &seqExec{log: log, tag: "data"},
+			Key:     daemon.EngineKey{},
+			Socket:  &seqSocket{log: log},
+			Logger:  nil,
+		})
+		if err != nil {
+			t.Fatalf("BootstrapEngine zero key: %v", err)
+		}
+		if rep.EngineKeyPublic == "" {
+			t.Error("no key public minted at install")
+		}
+		found := false
+		for _, l := range log.snapshot() {
+			if strings.Contains(l, "SET iris.engine_key") {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("no key SET during install")
+		}
+	})
+
+	t.Run("S04/checkpoints-insert-only", func(t *testing.T) {
+		rec := storetest.NewWriteRecorder()
+		w := store.NewWriter(rec)
+		row := store.CheckpointRow{IDFrom: 100, IDTo: 200, Digest: []byte("d"), Location: "resident", RecordedAt: "t"}
+		if err := w.InsertCheckpoint(ctx, row); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
+		for _, s := range rec.Statements() {
+			if strings.Contains(s.SQL, "journal_checkpoints") {
+				if !strings.Contains(strings.ToUpper(s.SQL), "INSERT") {
+					t.Errorf("non insert: %s", s.SQL)
+				}
+			}
 		}
 	})
 }

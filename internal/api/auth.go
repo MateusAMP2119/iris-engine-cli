@@ -7,16 +7,19 @@ import (
 	"strings"
 )
 
-// TokenVerifier verifies a PAT presented over a TCP request (specification
-// section 7: "TCP: Authorization: Bearer <token> per request"). It is the seam
-// the real PAT store (argon2id prefix+hash, scope checks) plugs into at E09.1;
-// until then the daemon uses RejectAllVerifier, the honest state of a fresh
-// deployment with no PAT minted.
+// TokenVerifier resolves a PAT presented over a TCP request (specification
+// section 7: "TCP: Authorization: Bearer <token> per request") to the
+// authority it carries. It is the seam the real PAT store (argon2id
+// prefix+hash lookup over the E09.1 store) plugs into; until that wiring lands
+// the daemon uses RejectAllVerifier, the honest state of a fresh deployment
+// with no PAT minted.
 type TokenVerifier interface {
-	// VerifyToken reports whether the bearer token authenticates: nil accepts the
-	// request, a non-nil error rejects it (the daemon answers 401). The context is
-	// the request's, so a verifier that reaches a store honors cancellation.
-	VerifyToken(ctx context.Context, token string) error
+	// VerifyToken resolves the bearer token: on success it returns the PAT's
+	// authority (identity plus minted scopes) the mux scope-checks each route
+	// against; a non-nil error rejects the request (the daemon answers 401).
+	// The context is the request's, so a verifier that reaches a store honors
+	// cancellation.
+	VerifyToken(ctx context.Context, token string) (Authority, error)
 }
 
 // ErrNoPATsMinted is the rejection the default verifier returns: TCP control is
@@ -36,14 +39,17 @@ func RejectAllVerifier() TokenVerifier { return rejectAllVerifier{} }
 type rejectAllVerifier struct{}
 
 // VerifyToken always rejects, naming the no-PAT state.
-func (rejectAllVerifier) VerifyToken(context.Context, string) error { return ErrNoPATsMinted }
+func (rejectAllVerifier) VerifyToken(context.Context, string) (Authority, error) {
+	return Authority{}, ErrNoPATsMinted
+}
 
 // RequirePAT wraps h so every request must present a valid PAT as
 // Authorization: Bearer <token>, verified by v (specification sections 2 and 7).
 // A missing/malformed header or a rejected token is 401 unauthorized and the
-// wrapped handler is never reached; an accepted token passes the request
-// through. The daemon wraps this around the shared mux for the TCP listener only
-// -- unix-socket requests are ambient and never see it.
+// wrapped handler is never reached; an accepted token passes the request through
+// carrying the PAT's resolved authority in its context, which the mux
+// scope-checks per route. The daemon wraps this around the shared mux for the
+// TCP listener only -- unix-socket requests are ambient and never see it.
 func RequirePAT(v TokenVerifier, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearerToken(r.Header.Get("Authorization"))
@@ -52,11 +58,12 @@ func RequirePAT(v TokenVerifier, h http.Handler) http.Handler {
 				"TCP access requires Authorization: Bearer <pat>")
 			return
 		}
-		if err := v.VerifyToken(r.Context(), token); err != nil {
+		a, err := v.VerifyToken(r.Context(), token)
+		if err != nil {
 			WriteError(w, http.StatusUnauthorized, "unauthorized", err.Error())
 			return
 		}
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, r.WithContext(WithAuthority(r.Context(), a)))
 	})
 }
 

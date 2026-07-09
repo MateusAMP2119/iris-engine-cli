@@ -4,15 +4,20 @@
 // HTTP/JSON views the CLI's read commands print and never reaches back up into
 // the daemon, dispatcher, or a database.
 //
-// The route roster is filled by the read-API epics (E09/E12/E14); today the mux
-// carries GET /healthz -- the liveness probe both the CLI's daemon-reachability
-// check and the conformance harness hit -- plus the closed error envelope for
-// unknown routes and non-GET methods, so the mux is built for extension.
+// The mux mounts the full section-7 read roster (roster.go): the engine-state
+// routes and their item sub-routes, the data surface (/data, /q), and the
+// control-plane mutations, with the closed error envelope for unknown routes
+// and non-GET methods. Routes whose payload lands with a later epic are
+// mounted but answer the internal-fault envelope until their reader is wired.
 //
-// Authorization differs by listener, not by route: a unix-socket request is
-// ambient (local, filesystem-guarded), while a TCP request must present a PAT.
-// That split lives in RequirePAT (auth.go), which the daemon wraps around this
-// mux for the TCP listener only.
+// Authorization is a two-step split. Transport: a unix-socket request is
+// ambient (local, filesystem-guarded), while a TCP request must present a PAT
+// -- that half lives in RequirePAT (auth.go), which the daemon wraps around
+// this mux for the TCP listener only, attaching the PAT's resolved authority
+// to the request. Scope: every route is then scope-checked against that
+// authority (authority.go) -- read for engine state, data for /data and /q,
+// control for mutations -- so a data-only PAT sees no engine internals and a
+// read-only PAT no table data.
 package api
 
 import (
@@ -26,6 +31,10 @@ import (
 type Envelope struct {
 	// Data is the response payload, shaped per route.
 	Data any `json:"data"`
+	// Page is the pagination half on paged collection responses (specification
+	// section 7: {"page": {"next_after": <key|null>, "limit": <n>}}); nil -- and
+	// absent on the wire -- everywhere else.
+	Page *Page `json:"page,omitempty"`
 }
 
 // ErrorEnvelope is the read-API error document of specification section 7:
@@ -75,7 +84,17 @@ func WithRole(r RoleReporter) MuxOption {
 // liveness and the leadership role. With no WithRole option the role is unknown, so
 // mutations are rejected until election confirms a leader.
 func NewMux(opts ...MuxOption) http.Handler {
-	m := &mux{role: unknownRole{}, control: noControl{}}
+	m := &mux{
+		role:         unknownRole{},
+		control:      noControl{},
+		pipelines:    noPipelines{},
+		build:        noBuild{},
+		promote:      noPromote{},
+		stats:        noStats{},
+		info:         noInfo{},
+		inspect:      noInspect{},
+		pipelineShow: noPipelineShow{},
+	}
 	for _, o := range opts {
 		o(m)
 	}
@@ -88,34 +107,83 @@ func NewMux(opts ...MuxOption) http.Handler {
 // mutations to the leader (specification section 15) and routes the control-plane
 // mutations to the injected ControlHandler.
 type mux struct {
-	role    RoleReporter
-	control ControlHandler
+	role         RoleReporter
+	control      ControlHandler
+	pipelines    PipelineHandler
+	build        BuildHandler
+	promote      PromoteHandler
+	stats        StatsHandler
+	info         InfoHandler
+	inspect      InspectHandler
+	pipelineShow PipelineShowHandler
+	// endpoints and qreader are the /q serving seams (endpoint.go): the live
+	// compiled-shape source and the read executor. Both default nil (unwired):
+	// /q then answers the internal-fault envelope, per the noStats doctrine.
+	endpoints EndpointSource
+	qreader   EndpointReader
 }
 
-// ServeHTTP gates mutations to the leader, then dispatches a request to its route,
-// or returns the closed-code error envelope for an unknown route or a disallowed
-// method. A mutating request on any non-leader role is rejected with the not_leader
-// envelope and leader guidance before it ever reaches a route: standbys reject
-// mutations, reads work anywhere.
+// ServeHTTP gates mutations to the leader, scope-checks the request's authority
+// against its route, then dispatches the request, or returns the closed-code
+// error envelope for an unknown route or a disallowed method. A mutating request
+// on any non-leader role is rejected with the not_leader envelope and leader
+// guidance before it ever reaches a route: standbys reject mutations, reads work
+// anywhere. Exact-path routes match first; the parameterized read roster
+// (roster.go) matches next; everything else is not_found.
 func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !isSafeMethod(r.Method) && m.role.Role() != RoleLeader {
 		WriteNotLeader(w, m.role.LeaderHint())
 		return
 	}
+	if !m.authorize(w, r) {
+		return
+	}
 	switch r.URL.Path {
 	case "/healthz":
-		if r.Method != http.MethodGet {
-			WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET /healthz only")
-			return
-		}
-		WriteData(w, http.StatusOK, Health{Status: "ok", Role: string(m.role.Role())})
+		m.serveHealthz(w, r)
 	case "/apply":
 		m.serveApply(w, r)
 	case "/destroy":
 		m.serveDestroy(w, r)
+	case "/pipeline/build":
+		m.servePipelineBuild(w, r)
+	case "/pipeline/promote":
+		m.servePipelinePromote(w, r)
+	case "/pipeline/run":
+		m.servePipelineRun(w, r)
+	case "/pipeline/list":
+		m.servePipelineList(w, r)
+	case "/pipeline/show":
+		m.servePipelineShow(w, r)
+	case "/stats":
+		m.serveStats(w, r)
+	case "/info":
+		m.serveInfo(w, r)
+	case "/inspect":
+		m.serveInspect(w, r)
 	default:
+		if m.serveRoster(w, r) {
+			return
+		}
+		// Deliberately unrouted: /metrics stays a not_found like any unknown
+		// route (specification section 11: no metrics endpoint in core; a
+		// monitor consumes GET /stats instead).
 		WriteError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path)
 	}
+}
+
+// serveHealthz handles GET /healthz: the liveness-plus-role probe both the
+// CLI's daemon-reachability check and the conformance harness hit, served
+// identically on every role (specification sections 7 and 15).
+func (m *mux) serveHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET /healthz only")
+		return
+	}
+	if !noParams(w, r) {
+		return
+	}
+	WriteData(w, http.StatusOK, Health{Status: "ok", Role: string(m.role.Role())})
 }
 
 // WriteData writes a success envelope wrapping v at the given status. It is the

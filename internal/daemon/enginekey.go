@@ -128,6 +128,33 @@ func (EngineKey) GoString() string { return engineKeyRedacted }
 // not). BootstrapEngine rejects a zero key so install never stores empty material.
 func (k EngineKey) valid() bool { return len(k.private) == ed25519.PrivateKeySize }
 
+// SignDigest returns the ed25519 signature over the given digest (the checkpoint's
+// own digest). This is the signature stored in journal_checkpoints.signature.
+// (S04/checkpoint-ed25519-signature, S14/checkpoint-digest-chain)
+func (k EngineKey) SignDigest(digest []byte) ([]byte, error) {
+	if !k.valid() {
+		return nil, fmt.Errorf("daemon: sign digest: invalid engine key")
+	}
+	return ed25519.Sign(k.private, digest), nil
+}
+
+// VerifyDigest reports whether sig is a valid ed25519 signature over digest for
+// this key's public half. Used to verify checkpoint signatures.
+// (S04/checkpoint-ed25519-signature)
+func (k EngineKey) VerifyDigest(digest, sig []byte) bool {
+	if !k.valid() {
+		return false
+	}
+	pub, _ := k.private.Public().(ed25519.PublicKey)
+	return ed25519.Verify(pub, digest, sig)
+}
+
+// Public returns a copy of the public key (for offline chain validation etc).
+func (k EngineKey) Public() ed25519.PublicKey {
+	pub, _ := k.private.Public().(ed25519.PublicKey)
+	return append(ed25519.PublicKey(nil), pub...)
+}
+
 // EngineKeyReader reads the engine key back from where install stored it, so
 // `iris engine info` can derive and show its public half. The live meta-connection
 // reader lands with the daemon's connection wiring; a test fake and the

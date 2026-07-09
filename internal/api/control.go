@@ -131,6 +131,19 @@ func (m *mux) serveControl(w http.ResponseWriter, r *http.Request, op func(conte
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "malformed control request body: "+err.Error())
 		return
 	}
+	// Destructive ops over the API (here: /destroy) require a control PAT
+	// (enforced by scope) plus an explicit confirm body field (specification
+	// section 12). The confirm gate runs after decode but before the handler,
+	// so a !Confirm destroy never reaches the control plane and is rejected
+	// as an operation failure.
+	if r.URL.Path == "/destroy" {
+		if !req.Confirm {
+			WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "confirm required for destructive operation")
+			return
+		}
+		// debug marker: if we reach here with Confirm, we will proceed
+		_ = req.Confirm
+	}
 	res, err := op(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, ErrControlUnavailable) {

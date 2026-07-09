@@ -198,6 +198,17 @@ func JournalTable() Table {
 	}
 }
 
+// JournalSelectGrantDDL renders the journal's read grant: GRANT SELECT on
+// public.data_journal TO PUBLIC (specification section 4). public is the readable
+// surface, so every engine role -- present and future -- may SELECT the journal,
+// and no write privilege is ever granted here: writes reach the journal only
+// through the capture triggers, which run as the table owner. Granting to PUBLIC
+// rather than role-by-role is what makes "every role may SELECT, none may write" a
+// standing property rather than a per-role reconcile. It is idempotent.
+func JournalSelectGrantDDL() string {
+	return "GRANT SELECT ON " + JournalTable().Qualified() + " TO PUBLIC;"
+}
+
 // JournalTeardownDDL renders the statements that drop the data journal in full:
 // the engine uninstall teardown of the data database (specification sections 4 and
 // 12). It is a single cascading DROP TABLE, so the journal's partitions and any
@@ -209,12 +220,20 @@ func JournalTeardownDDL() []string {
 	return []string{"DROP TABLE IF EXISTS " + JournalTable().Qualified() + " CASCADE;"}
 }
 
-// EnsureJournal issues the embedded data_journal DDL create-if-missing through db:
-// the partitioned CREATE TABLE IF NOT EXISTS public.data_journal plus its
-// provenance index. Like the meta schema it is applied at provisioning and
-// re-checkable, idempotent, with no ALTER or migration ledger.
+// EnsureJournal issues the embedded data_journal DDL create-if-missing through db,
+// ensuring a fully writable and readable journal in one call: the partitioned
+// CREATE TABLE IF NOT EXISTS public.data_journal and its provenance index, then its
+// initial open tail partition (so the partitioned journal can accept writes -- a
+// partitioned table with no partition rejects every insert), then the SELECT grant
+// to PUBLIC (so every engine role may read it). Both provisioning paths -- engine
+// install and declare apply -- end by calling this, so the journal a partition and
+// grant would otherwise be a latent half-provisioned, unwritable table is never
+// left behind. Like the meta schema it is applied at provisioning and re-checkable,
+// idempotent (every statement is create-if-missing or an idempotent grant), with no
+// ALTER or migration ledger.
 func EnsureJournal(ctx context.Context, db DB) error {
-	for _, stmt := range JournalTable().DDL() {
+	stmts := append(JournalTable().DDL(), InitialPartition().CreateDDL(), JournalSelectGrantDDL())
+	for _, stmt := range stmts {
 		if err := db.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("pg: apply data_journal DDL: %w", err)
 		}

@@ -46,8 +46,9 @@ type SocketPreparer interface {
 // InstallDeps bundles the seams `iris engine install` orchestrates over. Probe,
 // Cluster, Meta, and Data are the connection seams (the pgx-backed ones land with
 // the live-connection wiring; recording fakes drive them in tests); Key is the
-// freshly minted engine key; Socket sets up the control socket; Logger receives
-// progress diagnostics and must never be handed the key.
+// (optional) ed25519 engine key (minted inside if not supplied, at install time);
+// Socket sets up the control socket; Logger receives progress diagnostics and must
+// never be handed the key.
 type InstallDeps struct {
 	// Probe answers the meta-existence guard (admin/maintenance connection).
 	Probe MetaProbe
@@ -57,7 +58,8 @@ type InstallDeps struct {
 	Meta store.Execer
 	// Data creates the partitioned journal (data connection).
 	Data pg.DB
-	// Key is the minted ed25519 engine key whose private half is stored in meta.
+	// Key is optional: if the zero value, a fresh ed25519 key is minted inside
+	// (minted at engine install time for signing checkpoints).
 	Key EngineKey
 	// Socket sets up the control socket location.
 	Socket SocketPreparer
@@ -92,6 +94,17 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 
 	var report InstallReport
 
+	// Mint the engine key at install time if none was supplied (S14/engine-key-minted-at-install).
+	// The private half is stored in meta; only the public is reported.
+	key := deps.Key
+	if !key.valid() {
+		var err error
+		key, err = MintEngineKey()
+		if err != nil {
+			return report, fmt.Errorf("daemon: mint engine key at install: %w", err)
+		}
+	}
+
 	exists, err := deps.Probe.MetaExists(ctx)
 	if err != nil {
 		return report, fmt.Errorf("daemon: probe meta database: %w", err)
@@ -124,7 +137,7 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 
 	// Store the engine key on the meta connection. The DDL carries the private half,
 	// so it is issued directly and never logged.
-	if err := deps.Meta.Exec(ctx, SetEngineKeyDDL(deps.Key)); err != nil {
+	if err := deps.Meta.Exec(ctx, SetEngineKeyDDL(key)); err != nil {
 		return report, fmt.Errorf("daemon: store engine key: %w", err)
 	}
 	log.Info("engine install: stored engine key")
@@ -135,7 +148,7 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 	}
 	log.Info("engine install: control socket ready")
 
-	report.EngineKeyPublic = deps.Key.PublicBase64()
+	report.EngineKeyPublic = key.PublicBase64()
 	return report, nil
 }
 
@@ -153,8 +166,8 @@ func (d InstallDeps) validate() error {
 		return errors.New("daemon: install requires a data connection")
 	case d.Socket == nil:
 		return errors.New("daemon: install requires a socket preparer")
-	case !d.Key.valid():
-		return errors.New("daemon: install requires a minted engine key")
+		// Key is optional: BootstrapEngine mints a fresh ed25519 key if not supplied
+		// (the key used to sign checkpoints is minted at engine install time).
 	}
 	return nil
 }

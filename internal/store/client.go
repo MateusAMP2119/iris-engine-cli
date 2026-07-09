@@ -37,6 +37,10 @@ type Client struct {
 	reader   Reader
 	registry RegistryReader
 	ledger   AppliedHeadReader
+	pipes    PipelineLister
+	manual   ManualReader
+	show     ShowReader
+	promote  PromoteStateReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -78,15 +82,31 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
+	// The write connection is the SAME session the leader lock is pinned to, and it
+	// is lock-guarded: every meta write first checks that this session currently
+	// holds the leader lock, so a write is never issued over a session that has not
+	// re-acquired it (specification section 15) -- not before election, and not
+	// after a demotion.
+	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
+	if err != nil {
+		pool.Close()
+		_ = session.Close(ctx)
+		return nil, err
+	}
+
 	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
 		session:  session,
 		pool:     pool,
 		lock:     lock,
-		writer:   &pgxWriteConn{conn: session},
+		writer:   writer,
 		reader:   newPgxReader(readPoolSeam),
 		registry: &pgxRegistryReader{pool: readPoolSeam},
 		ledger:   &pgxAppliedHeadReader{pool: readPoolSeam},
+		pipes:    newPgxPipelineLister(readPoolSeam),
+		manual:   newPgxManualReader(readPoolSeam),
+		show:     newPgxShowReader(readPoolSeam),
+		promote:  &pgxPromoteReader{pool: readPoolSeam},
 	}, nil
 }
 
@@ -108,6 +128,25 @@ func (c *Client) RegistryReader() RegistryReader { return c.registry }
 // AppliedHeadReader returns the plain-MVCC applied-migration-head reader (the pool):
 // the meta migrations read seam provisioning builds its per-table ledger view from.
 func (c *Client) AppliedHeadReader() AppliedHeadReader { return c.ledger }
+
+// PipelineLister returns the plain-MVCC pipeline-list reader (the pool): the iris
+// pipeline list read seam (active-run default and --all every-registered views).
+func (c *Client) PipelineLister() PipelineLister { return c.pipes }
+
+// ManualReader returns the plain-MVCC manual-run reader (the pool): the pipeline run
+// target, latest-run, run_inputs consumed, and lane-roster reads the manual `iris
+// pipeline run` op composes.
+func (c *Client) ManualReader() ManualReader { return c.manual }
+
+// ShowReader returns the plain-MVCC pipeline-show reader (the pool): the
+// declaration detail, role grants, runs, and gate-ledger input reads the `iris
+// pipeline show` readout composes.
+func (c *Client) ShowReader() ShowReader { return c.show }
+
+// PromoteStateReader returns the plain-MVCC promote-gate reader (the pool): the
+// registration/data-mode, built-state, and upstream-data-mode reads the promote
+// op's gate and cross-mode warning are decided from.
+func (c *Client) PromoteStateReader() PromoteStateReader { return c.promote }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

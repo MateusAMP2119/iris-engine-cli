@@ -182,24 +182,24 @@ func (a *app) declareCmd() *cobra.Command {
 func (a *app) pipelineCmd() *cobra.Command {
 	build := &cobra.Command{
 		Use: "build <name>", Short: "Build source into the self-contained binary, recording its content hash",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline build"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineBuild(),
 	}
 	promote := &cobra.Command{
 		Use: "promote <name>", Short: "Mark the pipeline's data permanent (gated on built)",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline promote"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelinePromote(),
 	}
 	run := &cobra.Command{
 		Use: "run <name>", Short: "Trigger a manual one-off run",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline run"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineRun(),
 	}
 	list := &cobra.Command{
 		Use: "list", Short: "List pipelines with a queued or running run",
-		Args: cobra.NoArgs, RunE: a.daemonStub("pipeline list"),
+		Args: cobra.NoArgs, RunE: a.pipelineList(),
 	}
 	list.Flags().Bool("all", false, "list every pipeline, not only active ones")
 	show := &cobra.Command{
 		Use: "show <name>", Short: "Show a pipeline's resolved declaration, role, grants, recent runs, and gate ledger",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("pipeline show"),
+		Args: cobra.ExactArgs(1), RunE: a.pipelineShow(),
 	}
 
 	return a.group("pipeline", "Operate on a single pipeline",
@@ -305,11 +305,11 @@ func (a *app) engineCmd() *cobra.Command {
 	}
 	inspect := &cobra.Command{
 		Use: "inspect", Short: "Dump the engine-table DDL, read-only",
-		Args: cobra.NoArgs, RunE: a.daemonStub("engine inspect"),
+		Args: cobra.NoArgs, RunE: a.engineInspect(),
 	}
 	stats := &cobra.Command{
 		Use: "stats", Short: "Show rollups: run, lane, and dead-letter counts",
-		Args: cobra.NoArgs, RunE: a.daemonStub("engine stats"),
+		Args: cobra.NoArgs, RunE: a.engineStats(),
 	}
 
 	svcInstall := &cobra.Command{
@@ -344,12 +344,12 @@ func (a *app) deadletterCmd() *cobra.Command {
 	}
 	replay := &cobra.Command{
 		Use: "replay [run]", Short: "Replay root causes (auto-walks failed_upstream)",
-		Args: cobra.MaximumNArgs(1), RunE: a.deadletterScopedStub("deadletter replay"),
+		Args: cobra.MaximumNArgs(1), RunE: a.deadletterReplay(),
 	}
 	addScopeFlags(replay)
 	drain := &cobra.Command{
 		Use: "drain [run]", Short: "Discard entries: worklist only, nothing re-runs (gated)",
-		Args: cobra.MaximumNArgs(1), RunE: a.deadletterScopedStub("deadletter drain"),
+		Args: cobra.MaximumNArgs(1), RunE: a.deadletterDrain(),
 	}
 	addScopeFlags(drain)
 	addConfirmFlags(drain)
@@ -358,20 +358,6 @@ func (a *app) deadletterCmd() *cobra.Command {
 		daemonTouching(list), daemonTouching(show), daemonTouching(replay), daemonTouching(drain))
 	c.Aliases = []string{"dl"} // the one and only alias in the tree
 	return c
-}
-
-// deadletterScopedStub validates that a replay/drain names a scope before it
-// would reach the daemon: a bare invocation is a usage error (exit 2), a scoped
-// one reports no-daemon (exit 3) while none is reachable.
-func (a *app) deadletterScopedStub(op string) runE {
-	return func(cmd *cobra.Command, args []string) error {
-		all, _ := cmd.Flags().GetBool("all")
-		pipeline, _ := cmd.Flags().GetString("pipeline")
-		if len(args) == 0 && !all && pipeline == "" {
-			return a.usage(op + " requires <run>, --pipeline <name>, or --all")
-		}
-		return a.requireDaemon(cmd, op)
-	}
 }
 
 // endpointCmd builds `iris endpoint`: declared read surfaces with their own
@@ -402,8 +388,12 @@ func (a *app) endpointCmd() *cobra.Command {
 func (a *app) patCmd() *cobra.Command {
 	create := &cobra.Command{
 		Use: "create", Short: "Mint a new PAT",
-		Args: cobra.ArbitraryArgs, RunE: a.daemonStub("pat create"),
+		Args: cobra.NoArgs, RunE: a.patCreate(),
 	}
+	create.Flags().StringSlice("scope", nil, "PAT scope (repeatable): any non-empty subset of {control, read, data}")
+	create.Flags().String("label", "", "human label recorded for the PAT")
+	create.Flags().StringSlice("read", nil, "data-PAT read grant (repeatable): schema.table.field, or bare schema.table for all fields declared at mint")
+	create.Flags().StringSlice("endpoint", nil, "data-PAT read grant (repeatable): expand an endpoint's source fields")
 	list := &cobra.Command{
 		Use: "list", Short: "List PATs",
 		Args: cobra.NoArgs, RunE: a.daemonStub("pat list"),

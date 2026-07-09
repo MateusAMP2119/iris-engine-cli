@@ -55,13 +55,18 @@ type PgxLeaderLock struct {
 	conn pinnedConn
 
 	mu       sync.Mutex
+	held     bool
 	released bool
 	lost     chan struct{}
 }
 
 // compile-time proof the pgx lock satisfies the behavioral seam the daemon elects
-// against.
-var _ LeaderLock = (*PgxLeaderLock)(nil)
+// against, and the gate the lock-guarded write connection consults before every
+// meta write.
+var (
+	_ LeaderLock = (*PgxLeaderLock)(nil)
+	_ LeaderGate = (*PgxLeaderLock)(nil)
+)
 
 // newPgxLeaderLock builds a leader lock over a pinned session connection. It is
 // unexported: the only way to obtain one is through the meta client (Connect),
@@ -82,7 +87,21 @@ func (l *PgxLeaderLock) Acquire(ctx context.Context) error {
 	if err := l.conn.exec(ctx, AcquireLeaderLockSQL, LeaderLockKey); err != nil {
 		return fmt.Errorf("store: acquire leader lock: %w", err)
 	}
+	l.mu.Lock()
+	l.held = true
+	l.mu.Unlock()
 	return nil
+}
+
+// Held reports whether this session currently holds the leader lock: true from a
+// successful Acquire until Release ends the session. It is the gate the
+// lock-guarded write connection consults before every meta write, so a write is
+// never issued over a session that has not (re-)acquired the lock (specification
+// section 15).
+func (l *PgxLeaderLock) Held() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.held && !l.released
 }
 
 // Release relinquishes the advisory lock and closes the pinned session. It runs
@@ -96,6 +115,7 @@ func (l *PgxLeaderLock) Release(ctx context.Context) error {
 		return nil
 	}
 	l.released = true
+	l.held = false
 	close(l.lost)
 	l.mu.Unlock()
 

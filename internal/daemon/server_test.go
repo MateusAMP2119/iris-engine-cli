@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
 // fakeVerifier accepts exactly one bearer token, so the TCP listener's PAT gate
@@ -28,12 +30,13 @@ import (
 // real (E09.1) PAT store.
 type fakeVerifier struct{ good string }
 
-// VerifyToken accepts only the configured token.
-func (f fakeVerifier) VerifyToken(_ context.Context, tok string) error {
+// VerifyToken accepts only the configured token, resolving it to a full-scope
+// authority.
+func (f fakeVerifier) VerifyToken(_ context.Context, tok string) (api.Authority, error) {
 	if tok == f.good {
-		return nil
+		return api.Authority{PATID: "fake", Scopes: []pat.Scope{pat.ScopeControl, pat.ScopeRead, pat.ScopeData}}, nil
 	}
-	return errNoMatch
+	return api.Authority{}, errNoMatch
 }
 
 var errNoMatch = errTest("unknown token")
@@ -286,4 +289,53 @@ func selfSignedCertFiles(t *testing.T) (certPath, keyPath string, pool *x509.Cer
 		t.Fatalf("append cert to pool")
 	}
 	return certPath, keyPath, pool
+}
+
+// TestDestructiveOpsTCPReachable proves declare destroy (and by tiering the
+// dev-loop destructive surfaces) are reachable over the TCP listener with a
+// control PAT (specification section 12). They must pass the PAT transport gate
+// and the mux leader/scope gates (not refused as unauthorized/forbidden/not_leader).
+// 4xx/5xx from later handler or no route is acceptable; the contract is the
+// remote surface tiering, in contrast to engine uninstall which is local-only.
+//
+// spec: S12/destructive-ops-tcp-reachable
+func TestDestructiveOpsTCPReachable(t *testing.T) {
+	t.Run("S12/destructive-ops-tcp-reachable", func(t *testing.T) {
+		sock := shortSocket(t)
+		srv := NewServer(
+			config.Settings{Socket: sock, TCP: "127.0.0.1:0"},
+			api.NewMux(api.WithRole(leaderRole())),
+			WithVerifier(fakeVerifier{good: "ctl"}),
+		)
+		startServer(t, srv)
+		if !srv.TCPEnabled() {
+			t.Fatal("TCP listener did not come up")
+		}
+		addr := "http://" + srv.TCPAddr()
+
+		client := &http.Client{Timeout: 2 * time.Second}
+
+		// declare destroy is wired as /destroy and must accept a confirmed
+		// control-PAT request over TCP (not blocked at auth/leader/scope).
+		destroyBody := []byte(`{"path":"ws/iris-declare.yaml","confirm":true}`)
+		req, _ := http.NewRequest(http.MethodPost, addr+"/destroy", bytes.NewReader(destroyBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer ctl")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("POST /destroy over TCP: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == api.StatusNotLeader {
+			t.Errorf("declare destroy over TCP got blocked status %d; must be reachable with control PAT", resp.StatusCode)
+		}
+		// 422/404/500 etc ok: later layers or no real handler.
+	})
+}
+
+// leaderRole returns a RoleReporter that is the leader.
+func leaderRole() api.RoleReporter {
+	r := api.NewRoleState()
+	r.SetLeader()
+	return r
 }

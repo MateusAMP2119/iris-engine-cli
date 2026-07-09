@@ -162,3 +162,26 @@ func (w *Writer) RecordMigrationHead(ctx context.Context, head MigrationHead) er
 	}
 	return nil
 }
+
+// insertCheckpointSQL inserts one journal_checkpoints row. It is insert-only by
+// design (specification section 4): callers never UPDATE or DELETE from the table;
+// retention and prune paths never touch it (S04/checkpoints-insert-only,
+// S14/checkpoints-never-pruned).
+const insertCheckpointSQL = `INSERT INTO journal_checkpoints (id_from, id_to, digest, parent_digest, signature, location, recorded_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`
+
+// InsertCheckpoint records a sealed partition checkpoint (one row per seal).
+// Digest is the hash over compacted rows; parent_digest chains; signature is
+// engine-key ed25519 over the digest. Location is "resident" or "archived".
+// This is the write leg of the checkpoint chain.
+func (w *Writer) InsertCheckpoint(ctx context.Context, row CheckpointRow) error {
+	var parent any
+	if len(row.ParentDigest) > 0 {
+		parent = row.ParentDigest
+	}
+	if err := w.conn.Exec(ctx, insertCheckpointSQL,
+		row.IDFrom, row.IDTo, row.Digest, parent, row.Signature, row.Location, row.RecordedAt); err != nil {
+		return fmt.Errorf("store: writer insert checkpoint [%d-%d]: %w", row.IDFrom, row.IDTo, err)
+	}
+	return nil
+}

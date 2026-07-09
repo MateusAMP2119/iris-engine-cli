@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -202,6 +204,31 @@ func (m *RunManager) CancelRun(ctx context.Context, runID string) error {
 	return nil
 }
 
+// KillInflight best-effort SIGKILLs every in-flight run's process group and
+// returns how many groups it signalled. It is the self-demotion kill
+// (specification section 15): a daemon that loses its meta session stops
+// dispatching and kills its in-flight runs at once. It deliberately writes NOTHING
+// to meta -- a deposed session cannot carry a meta write (the lock guard refuses a
+// session that has not re-acquired the leader lock), and the runs' records are the
+// NEW leader's to dead-letter during its startup reconciliation, which cannot
+// reach these processes across hosts; this kill is the deposed side's half of that
+// contract (S02/crosshost-failover-no-kill). An already-gone group is not an
+// error. The per-run reap goroutines StartRun launched observe each kill, close
+// the log sinks, and clear the in-flight table, exactly as a cancel would.
+func (m *RunManager) KillInflight() int {
+	m.mu.Lock()
+	handles := make([]exec.Handle, 0, len(m.inflight))
+	for _, h := range m.inflight {
+		handles = append(handles, h)
+	}
+	m.mu.Unlock()
+
+	for _, h := range handles {
+		_ = h.Kill() // best-effort by design: the group may already be gone
+	}
+	return len(handles)
+}
+
 // ErrRunStateUnknown reports a run state value outside the closed lifecycle enum
 // (queued, running, succeeded, dead_lettered): a mistyped or invented state that must
 // never reach a meta write.
@@ -251,10 +278,28 @@ func CheckRunTransition(from, to store.RunState) error {
 // composeEnv builds a run's child environment: the inherited daemon environment
 // first, then the declared entries, then the injected scoped DB connection last, so
 // each later group overrides an earlier duplicate key (os/exec keeps the last value
-// for a duplicate key).
+// for a duplicate key). The injected connection carries the run's id as the per-session
+// iris.run_id setting the capture trigger reads (see injectedDBURL), so every write the
+// run makes is attributed to it.
 func composeEnv(spec RunSpec) []string {
 	env := os.Environ()
 	env = append(env, spec.Env...)
-	env = append(env, DBConnEnvVar+"="+spec.DBURL)
+	env = append(env, DBConnEnvVar+"="+injectedDBURL(spec))
 	return env
+}
+
+// injectedDBURL is the scoped connection URL the run receives as IRIS_DB_URL, carrying
+// the run's id so the capture trigger attributes every write to it in-transaction
+// (specification section 4: the run id rides the injected connection as a per-session
+// setting at spawn). The id rides the DSN via pg.InjectRunID, the same mechanism the
+// capture path reads back with current_setting('iris.run_id'). A run id that is not a
+// bigint meta identity (only a synthetic non-numeric id, never a real run) leaves the
+// URL unchanged; the capture trigger then fails any such run's write loudly rather than
+// stamping an unattributed row -- fail-closed, never a silent unattributed write.
+func injectedDBURL(spec RunSpec) string {
+	id, err := strconv.ParseInt(spec.RunID, 10, 64)
+	if err != nil {
+		return spec.DBURL
+	}
+	return pg.InjectRunID(spec.DBURL, id)
 }

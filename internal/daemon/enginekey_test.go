@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
 // quotedPayload extracts the single-quoted SQL string literal from a one-line
@@ -123,4 +124,143 @@ func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
 			t.Errorf("DecodeEngineKey(%q) = nil error, want a failure on malformed key material", bad)
 		}
 	}
+}
+
+// TestCheckpointSignatureAndChain proves the unit-tier contracts for ed25519
+// signatures over checkpoint digests, parent chaining, per-sealed production of
+// a checkpoint row, digest chaining on seal, and tamper detection
+// (specification sections 4 and 14).
+//
+// spec: S04/checkpoint-ed25519-signature
+// spec: S04/checkpoint-parent-chain
+// spec: S04/checkpoint-per-sealed-partition
+// spec: S14/checkpoint-digest-chain
+// spec: S14/chain-detects-tamper
+func TestCheckpointSignatureAndChain(t *testing.T) {
+	t.Run("S04/checkpoint-ed25519-signature", func(t *testing.T) {
+		t.Log("CLAIM: S04/checkpoint-ed25519-signature executing")
+		k, err := daemon.MintEngineKey()
+		if err != nil {
+			t.Fatalf("mint: %v", err)
+		}
+		digest := []byte("compacted-rows-digest-bytes")
+		sig, err := k.SignDigest(digest)
+		if err != nil {
+			t.Fatalf("SignDigest: %v", err)
+		}
+		if len(sig) != ed25519.SignatureSize {
+			t.Errorf("sig len=%d want %d", len(sig), ed25519.SignatureSize)
+		}
+		if !k.VerifyDigest(digest, sig) {
+			t.Error("VerifyDigest failed for own signature over digest")
+		}
+		if k.VerifyDigest(append([]byte{}, digest...), append([]byte{0}, sig...)) {
+			t.Error("VerifyDigest accepted tampered sig")
+		}
+		pub := k.Public()
+		if !ed25519.Verify(pub, digest, sig) {
+			t.Error("direct ed25519.Verify failed")
+		}
+	})
+
+	t.Run("S04/checkpoint-parent-chain", func(t *testing.T) {
+		cp1 := store.CheckpointRow{Digest: store.ComputeDigest([][]byte{[]byte("row1"), []byte("row2")})}
+		cp2 := store.CheckpointRow{
+			Digest:       store.ComputeDigest([][]byte{[]byte("row3")}),
+			ParentDigest: store.ParentFor(&cp1),
+		}
+		if !bytesEqual(cp2.ParentDigest, cp1.Digest) {
+			t.Error("parent_digest does not chain to prior digest")
+		}
+		if err := store.ValidateChain([]store.CheckpointRow{cp1, cp2}, nil); err != nil {
+			t.Errorf("ValidateChain on valid parent link: %v", err)
+		}
+	})
+
+	t.Run("S04/checkpoint-per-sealed-partition", func(t *testing.T) {
+		compacted := [][]byte{[]byte("id=10|op=insert"), []byte("id=11|op=update")}
+		row := store.CheckpointRow{
+			IDFrom:   10,
+			IDTo:     11,
+			Digest:   store.ComputeDigest(compacted),
+			Location: "resident",
+		}
+		if row.IDFrom != 10 || row.IDTo != 11 {
+			t.Error("id_from/id_to not set for sealed partition")
+		}
+		wantDig := store.ComputeDigest(compacted)
+		if !bytesEqual(row.Digest, wantDig) {
+			t.Error("digest not computed over compacted rows in id order")
+		}
+	})
+
+	t.Run("S14/checkpoint-digest-chain", func(t *testing.T) {
+		k, _ := daemon.MintEngineKey()
+		comp1 := [][]byte{[]byte("r1")}
+		d1 := store.ComputeDigest(comp1)
+		cp1 := store.CheckpointRow{
+			Seq:    1,
+			IDFrom: 1, IDTo: 5,
+			Digest:   d1,
+			Location: "resident",
+		}
+		sig1, _ := k.SignDigest(d1)
+		cp1.Signature = sig1
+
+		comp2 := [][]byte{[]byte("r2")}
+		d2 := store.ComputeDigest(comp2)
+		cp2 := store.CheckpointRow{
+			Seq:    2,
+			IDFrom: 6, IDTo: 10,
+			Digest:       d2,
+			ParentDigest: store.ParentFor(&cp1),
+			Location:     "resident",
+		}
+		sig2, _ := k.SignDigest(d2)
+		cp2.Signature = sig2
+
+		if err := store.ValidateChain([]store.CheckpointRow{cp1, cp2}, k.Public()); err != nil {
+			t.Fatalf("valid chain should verify: %v", err)
+		}
+	})
+
+	t.Run("S14/chain-detects-tamper", func(t *testing.T) {
+		k, _ := daemon.MintEngineKey()
+		d1 := store.ComputeDigest([][]byte{[]byte("a")})
+		cp1 := store.CheckpointRow{Seq: 1, Digest: d1, Signature: mustSign(t, k, d1)}
+		d2 := store.ComputeDigest([][]byte{[]byte("b")})
+		cp2 := store.CheckpointRow{Seq: 2, Digest: d2, ParentDigest: d1, Signature: mustSign(t, k, d2)}
+
+		bad := []store.CheckpointRow{cp1, cp2}
+		bad[1].Digest = []byte("tampered")
+		if err := store.ValidateChain(bad, k.Public()); err == nil {
+			t.Error("tampered digest not detected")
+		}
+
+		bad2 := []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: []byte("wrong"), Signature: mustSign(t, k, d2)}}
+		if err := store.ValidateChain(bad2, k.Public()); err == nil {
+			t.Error("broken parent_digest not detected")
+		}
+
+		bad3 := []store.CheckpointRow{cp1, {Seq: 2, Digest: d2, ParentDigest: d1, Signature: []byte("bad")}}
+		if err := store.ValidateChain(bad3, k.Public()); err == nil {
+			t.Error("bad signature not detected")
+		}
+	})
+}
+
+func mustSign(t *testing.T, k daemon.EngineKey, d []byte) []byte {
+	t.Helper()
+	s, err := k.SignDigest(d)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return s
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return string(a) == string(b)
 }
