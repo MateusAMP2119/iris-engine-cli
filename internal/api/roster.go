@@ -53,18 +53,18 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		case len(segs) == 2:
 			serveUnwiredRead(w, r, "pipeline")
 		case len(segs) == 3 && segs[2] == "gate":
-			serveUnwiredRead(w, r, "pipeline gate")
+			m.servePipelineGate(w, r, segs[1])
 		default:
 			return false
 		}
 	case "runs":
 		switch {
 		case len(segs) == 1:
-			serveUnwiredRead(w, r, "runs")
+			m.serveRuns(w, r)
 		case len(segs) == 2:
-			serveUnwiredRead(w, r, "run")
+			m.serveRun(w, r, segs[1])
 		case len(segs) == 3 && segs[2] == "trace":
-			serveUnwiredRead(w, r, "run trace")
+			m.serveRunTrace(w, r, segs[1])
 		default:
 			return false
 		}
@@ -75,7 +75,7 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		case len(segs) == 2:
 			serveUnwiredRead(w, r, "dead letter")
 		case len(segs) == 3 && segs[2] == "impact":
-			serveUnwiredRead(w, r, "dead letter impact")
+			m.serveDeadImpact(w, r, segs[1])
 		default:
 			return false
 		}

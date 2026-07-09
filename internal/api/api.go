@@ -97,6 +97,10 @@ func NewMux(opts ...MuxOption) http.Handler {
 		pipelineShow: noPipelineShow{},
 		workloadShow: noWorkloadShow{},
 		provenance:   noProvenance{},
+		runs:         noRuns{},
+		runTrace:     noRunTrace{},
+		pipelineGate: noPipelineGate{},
+		deadImpact:   noDeadImpact{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -122,6 +126,15 @@ type mux struct {
 	pipelineShow PipelineShowHandler
 	workloadShow WorkloadShowHandler
 	provenance   ProvenanceHandler
+	// runs, runTrace, pipelineGate, and deadImpact are the E14 read-route seams
+	// (readroutes.go): the runs collection with its ?include=inputs lineage
+	// attributes and the trace, gate, and impact triage walks. Each defaults to
+	// its no* handler (an unwired seam faults with the internal envelope, never a
+	// silent empty payload), so the daemon wires the pgx-backed implementation.
+	runs         RunsHandler
+	runTrace     RunTraceHandler
+	pipelineGate PipelineGateHandler
+	deadImpact   DeadImpactHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
