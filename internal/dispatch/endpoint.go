@@ -86,6 +86,24 @@ func (r *EndpointRegistry) publish(eps []*declare.CompiledEndpoint) {
 	}
 }
 
+// Reload replaces the whole live shape set with a reloaded set at daemon startup,
+// so a restart or failover serves every persisted endpoint without a re-apply
+// (specification section 7). It swaps the map wholesale in one lock hold: the
+// registry starts empty each process, so the reloaded set IS the truth. Callers
+// pass the endpoints recompiled from the persisted meta rows; a nil or empty set
+// leaves an empty registry (no persisted endpoints to serve).
+func (r *EndpointRegistry) Reload(eps []*declare.CompiledEndpoint) {
+	shapes := make(map[string]*declare.CompiledEndpoint, len(eps))
+	for _, ep := range eps {
+		if ep != nil {
+			shapes[ep.Name] = ep
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.shapes = shapes
+}
+
 // retire removes name from the live shapes. Called only after the removing
 // transaction commits; an in-flight request that already checked its shape out
 // finishes normally.
