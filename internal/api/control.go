@@ -169,9 +169,12 @@ type drainReq struct {
 }
 
 // serveDeadletterDrain handles POST /deadletter/drain: destructive, so like
-// /destroy it requires an explicit confirm body field from a control PAT.
-// Until the real drain handler is wired this returns operation_failed, but the
-// confirm and leader gates are exercised.
+// /destroy it requires an explicit confirm body field from a control PAT. It
+// decodes and validates the scope, checks the confirm gate, and discards the
+// resolved worklist entries through the leader-side drain handler. A bare scope is
+// an operation failure (the CLI refuses it first, but the server never trusts that);
+// a handler error is likewise an operation failure (a run absent from the worklist),
+// never an internal fault.
 func (m *mux) serveDeadletterDrain(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST "+r.URL.Path+" only")
@@ -188,6 +191,14 @@ func (m *mux) serveDeadletterDrain(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "confirm required for destructive operation")
 		return
 	}
-	// No real drain handler wired yet at this layer; surface the gate behavior.
-	WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "deadletter drain not wired")
+	if req.Run == "" && req.Pipeline == "" && !req.All {
+		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "drain requires a scope: <run>, --pipeline, or --all")
+		return
+	}
+	res, err := m.drain.Drain(r.Context(), DrainRequest{Run: req.Run, Pipeline: req.Pipeline, All: req.All})
+	if err != nil {
+		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, err.Error())
+		return
+	}
+	WriteData(w, http.StatusOK, res)
 }

@@ -6,7 +6,6 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -450,15 +449,11 @@ func (m *manualExec) injectedDBURL(runID int64) string {
 }
 
 // checksum reads the pipeline's declaration file and returns its SHA-256 hex digest, the
-// value stamped as the run's declaration_checksum (recorded on every run).
+// value stamped as the run's declaration_checksum (recorded on every run). It shares the
+// declaration-checksum helper the replay path uses, so a manual run and its replay record
+// the same current declaration's checksum.
 func (m *manualExec) checksum(folder string) (string, error) {
-	path := filepath.Join(m.workspace, folder, "iris-declare.yaml")
-	raw, err := os.ReadFile(path) //nolint:gosec // G304: the declaration is an engine-registered pipeline folder under the leader's own workspace.
-	if err != nil {
-		return "", fmt.Errorf("read declaration for checksum (%s): %w", path, err)
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+	return pipelineDeclChecksum(m.workspace, folder)
 }
 
 // exitDetail renders a terminated subprocess's disposition for the dead-letter error

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -374,6 +375,67 @@ func (a *app) emitDrainSuccess(cmd *cobra.Command, out drainOutcome) error {
 	}
 	for _, r := range out.Drained {
 		fmt.Fprintf(a.out, "drained %s\n", r)
+	}
+	return nil
+}
+
+// deadletterShow is the handler for `iris deadletter show <run>`: it GETs the daemon's
+// blast-radius readout for the entry and renders it (specification section 6.2: one
+// entry -- reason, failed_upstream, blast radius). It is a read, served on any node;
+// transport failure is no-daemon (exit 3), any other failure operation-failed (exit 4).
+func (a *app) deadletterShow() runE {
+	return func(cmd *cobra.Command, args []string) error {
+		run := args[0]
+		if _, _, perr := parseRunRef(run); perr != nil {
+			return a.usage(fmt.Sprintf("bad run ref %q: %v", run, perr))
+		}
+		settings := a.resolveTarget(cmd)
+		client, base, overTCP := a.daemonHTTPClient(settings)
+
+		hreq, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, base+"/dead_letters/"+url.PathEscape(run)+"/impact", nil)
+		if err != nil {
+			return &fault{code: exitOpFailed, codeStr: "request", message: fmt.Sprintf("deadletter show: build request: %v", err)}
+		}
+		if overTCP && settings.Token != "" {
+			hreq.Header.Set("Authorization", "Bearer "+settings.Token)
+		}
+
+		resp, err := client.Do(hreq)
+		if err != nil {
+			a.logger.Debug("no iris daemon reachable", "op", "deadletter show", "socket", settings.Socket, "host", settings.Host, "err", err)
+			return a.noDaemonFault()
+		}
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			return a.controlFailure(resp, "deadletter show")
+		}
+		var env struct {
+			Data api.DeadImpactPayload `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+			return &fault{code: exitOpFailed, codeStr: "decode", message: fmt.Sprintf("deadletter show: decode daemon response: %v", err)}
+		}
+		return a.emitDeadImpact(cmd, env.Data)
+	}
+}
+
+// emitDeadImpact renders the blast-radius readout: under --json the single data
+// envelope carrying exactly the route's payload, otherwise a human readout naming the
+// entry's reason, the root cause it walks to, and each pipeline's blast class.
+func (a *app) emitDeadImpact(cmd *cobra.Command, payload api.DeadImpactPayload) error {
+	if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
+		return json.NewEncoder(a.out).Encode(dataEnvelope{Data: payload})
+	}
+	fmt.Fprintf(a.out, "run:         %s\n", payload.Run)
+	fmt.Fprintf(a.out, "reason:      %s\n", payload.Reason)
+	fmt.Fprintf(a.out, "root cause:  run %s (%s)\n", payload.RootCause.Run, payload.RootCause.Pipeline)
+	fmt.Fprintln(a.out, "blast radius:")
+	for _, im := range payload.Impacts {
+		fmt.Fprintf(a.out, "  %-20s %s\n", im.Pipeline, im.Class)
 	}
 	return nil
 }

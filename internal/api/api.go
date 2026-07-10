@@ -104,6 +104,8 @@ func NewMux(opts ...MuxOption) http.Handler {
 		deadImpact:   noDeadImpact{},
 		endpointCtl:  noEndpointControl{},
 		patMint:      noPATMint{},
+		replay:       noReplay{},
+		drain:        noDrain{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -144,6 +146,12 @@ type mux struct {
 	// an internal-fault handler until the daemon installs the real one on leadership.
 	endpointCtl EndpointControlHandler
 	patMint     PATMintHandler
+	// replay and drain are the two leader-only dead-letter dispositions
+	// (deadletter.go): POST /deadletter/replay and POST /deadletter/drain. Each
+	// defaults to its no* handler (an unwired mutation faults), so the leader wires
+	// the real handler on winning leadership.
+	replay ReplayHandler
+	drain  DrainHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
@@ -181,6 +189,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveDestroy(w, r)
 	case "/deadletter/drain":
 		m.serveDeadletterDrain(w, r)
+	case "/deadletter/replay":
+		m.serveDeadletterReplay(w, r)
 	case "/pipeline/build":
 		m.servePipelineBuild(w, r)
 	case "/pipeline/promote":

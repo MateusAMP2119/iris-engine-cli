@@ -340,7 +340,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 	}
 	show := &cobra.Command{
 		Use: "show <run>", Short: "Show one entry: reason, error, failed_upstream, blast radius",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("deadletter show"),
+		Args: cobra.ExactArgs(1), RunE: a.deadletterShow(),
 	}
 	replay := &cobra.Command{
 		Use: "replay [run]", Short: "Replay root causes (auto-walks failed_upstream)",

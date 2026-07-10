@@ -218,6 +218,12 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// passes (it has dispatched none).
 	stats := NewStatsPlane(client.StatsSource(), passCounter, logger)
 
+	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
+	// `iris deadletter show` renders) on any node from the reader pool, and POST
+	// /deadletter/replay and /deadletter/drain once this daemon leads (its executor is
+	// installed on winning leadership, cleared on demotion).
+	deadletters := newDeadletterPlane(client.DeadLetterReader(), client.RegistryReader(), logger)
+
 	srv := NewServer(s, api.NewMux(
 		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
 		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
@@ -226,6 +232,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
 		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
 		api.WithStats(stats),
+		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
 	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err
@@ -272,6 +279,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithLaneLoop(laneBuild),
 		WithLanePlane(lanes),
 		WithPassCounter(passCounter),
+		WithDeadletterPlane(deadletters),
 		WithInflightKiller(inflight),
 		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
 		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),
