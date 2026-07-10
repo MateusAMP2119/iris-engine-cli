@@ -305,6 +305,7 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
+	dbURL     string        // the run's base scoped data-database connection; the run id rides it (empty until the E04.4 scoped connection is provisioned)
 	inflight  *inflightRuns // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	logger    *slog.Logger
 }
@@ -357,7 +358,7 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	h, err := m.runner.Start(ctx, exec.Spec{
 		Dir:  filepath.Join(m.workspace, target.Folder),
 		Argv: argv,
-		Env:  m.childEnv(),
+		Env:  m.childEnv(info.ID),
 	})
 	if err != nil {
 		// Nothing started: remove the queued run so meta carries no phantom.
@@ -423,11 +424,29 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	return dispatch.RunSucceeded, nil
 }
 
-// childEnv builds the manual run's environment: the inherited daemon environment plus an
-// empty injected scoped DB connection (the real per-pipeline scoped connection is E04.4;
-// this keeps the injection seam present so a run resolves it from one place).
-func (m *manualExec) childEnv() []string {
-	return append(os.Environ(), dispatch.DBConnEnvVar+"=")
+// childEnv builds the manual run's environment: the inherited daemon environment plus
+// the run-scoped data-database connection injected as IRIS_DB_URL, exactly as the lane
+// path injects it (dispatch.injectedDBURL). The run id rides the base scoped DSN as the
+// iris.run_id session GUC (pg.InjectRunID), so a manual run's captured writes attribute
+// to its own run just like a lane run's -- attribution is by run id, not by cause. It
+// wins over any IRIS_DB_URL the pipeline author declared, since it is appended last.
+func (m *manualExec) childEnv(runID int64) []string {
+	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.injectedDBURL(runID))
+}
+
+// injectedDBURL rides the run id on the base scoped DSN, mirroring the lane path's
+// dispatch.injectedDBURL. An empty base DSN (before the E04.4 scoped connection is
+// provisioned) stays empty rather than becoming a malformed options-only DSN; a
+// non-positive run id leaves the base unchanged. Otherwise the run id is merged in as
+// the iris.run_id connection option the capture trigger reads in-transaction.
+func (m *manualExec) injectedDBURL(runID int64) string {
+	if m.dbURL == "" {
+		return ""
+	}
+	if runID <= 0 {
+		return m.dbURL
+	}
+	return pg.InjectRunID(m.dbURL, runID)
 }
 
 // checksum reads the pipeline's declaration file and returns its SHA-256 hex digest, the
