@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
 // This file proves the E09.5 transport half of the read API over the daemon's
@@ -399,6 +401,150 @@ func TestStatsReadPATAccess(t *testing.T) {
 		resp, env := fetch(t, tcp, http.MethodGet, base+"/stats", "Bearer "+readTok)
 		if resp.StatusCode != http.StatusOK || env.Error != nil {
 			t.Fatalf("read-scoped PAT GET /stats = %d err=%+v, want 200", resp.StatusCode, env.Error)
+		}
+	})
+}
+
+// nopMetaWrite is a store.MetaWriteConn for candidate wiring in the listener
+// tests: a contended standby never wins the lock, so it issues no meta write and
+// this connection is never exercised.
+type nopMetaWrite struct{}
+
+// Exec satisfies store.MetaWriteConn; a contended standby never calls it.
+func (nopMetaWrite) Exec(context.Context, string, ...any) error { return nil }
+
+// pollRole waits until cond holds or a short deadline passes, so a role
+// transition is observed by condition, never by a fixed sleep (the S16
+// no-fixed-sleeps doctrine): the brief interval only keeps the loop from
+// spinning.
+func pollRole(cond func() bool) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return cond()
+}
+
+// TestCandidateBindsListeners proves every candidate binds its own listeners and
+// serves reads regardless of the role it holds (specification section 15: "every
+// candidate binds its own listeners; reads work anywhere"). It drives a real
+// Candidate contending for a held lock -- so it stays a standby -- over the
+// daemon's real unix listener, and shows the read roster answers on the standby.
+//
+// spec: S15/reads-work-on-any-candidate
+func TestCandidateBindsListeners(t *testing.T) {
+	t.Run("S15/reads-work-on-any-candidate", func(t *testing.T) {
+		// Contend with a held lock so this candidate stays a standby while we
+		// prove its listeners are up and serving reads.
+		set := storetest.NewLockSet()
+		holder := set.New()
+		if err := holder.Acquire(context.Background()); err != nil {
+			t.Fatalf("holder acquire: %v", err)
+		}
+
+		role := api.NewRoleState()
+		sock := shortSocket(t)
+		mux := api.NewMux(api.WithRole(role))
+		srv := NewServer(config.Settings{Socket: sock}, mux)
+		startServer(t, srv)
+
+		cand := NewCandidate(set.New(), role, nopMetaWrite{}, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- cand.Serve(ctx) }()
+		t.Cleanup(func() { cancel(); <-done })
+
+		// The candidate reports standby on its first Serve iteration, before its
+		// Acquire blocks on the held lock.
+		if !pollRole(func() bool { return role.Role() == api.RoleStandby }) {
+			t.Fatalf("candidate never reported standby; role=%s", role.Role())
+		}
+
+		// Listeners are bound and reads succeed on the standby-role candidate:
+		// the same status a leader would give, never a not_leader rejection.
+		client := unixClient(sock)
+		for _, path := range []string{"/healthz", "/leader"} {
+			resp, env := fetch(t, client, http.MethodGet, "http://iris"+path, "")
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s on a contending candidate = %d, want 200", path, resp.StatusCode)
+			}
+			if resp.StatusCode == api.StatusNotLeader || (env.Error != nil && env.Error.Code == api.CodeNotLeader) {
+				t.Errorf("GET %s on a standby was rejected as not_leader; reads work on any role", path)
+			}
+		}
+	})
+}
+
+// TestStandbyDaemonListenerRejectsMutations proves a mutation sent to a standby
+// daemon's real listener is rejected with the not_leader envelope carrying the
+// leader guidance (specification section 15). It drives a real Candidate
+// contending for a held lock (so it stays a standby) and POSTs a mutation over
+// the daemon's unix socket, asserting the 421 not_leader rejection and that the
+// envelope carries the leader the role holds.
+//
+// spec: S15/standby-rejects-mutations-with-leader-guidance
+func TestStandbyDaemonListenerRejectsMutations(t *testing.T) {
+	t.Run("S15/standby-rejects-mutations-with-leader-guidance", func(t *testing.T) {
+		set := storetest.NewLockSet()
+		holder := set.New()
+		if err := holder.Acquire(context.Background()); err != nil {
+			t.Fatalf("holder acquire: %v", err)
+		}
+
+		role := api.NewRoleState()
+		sock := shortSocket(t)
+		mux := api.NewMux(api.WithRole(role))
+		srv := NewServer(config.Settings{Socket: sock}, mux)
+		startServer(t, srv)
+
+		cand := NewCandidate(set.New(), role, nopMetaWrite{}, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- cand.Serve(ctx) }()
+		t.Cleanup(func() { cancel(); <-done })
+
+		if !pollRole(func() bool { return role.Role() == api.RoleStandby }) {
+			t.Fatalf("candidate did not reach standby; role=%s", role.Role())
+		}
+
+		// Record a known leader address on the standby role: the candidate is
+		// blocked in Acquire and will not overwrite it, so the rejection envelope
+		// must surface exactly this guidance.
+		const leaderHint = "leader.example:9876"
+		role.SetStandby(leaderHint)
+
+		client := unixClient(sock)
+		req, err := http.NewRequest(http.MethodPost, "http://iris/apply", strings.NewReader(`{"path":"some/iris-declare.yaml"}`))
+		if err != nil {
+			t.Fatalf("build POST: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("POST to standby listener: %v", err)
+		}
+		defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+
+		if resp.StatusCode != api.StatusNotLeader {
+			t.Fatalf("standby listener mutation status = %d, want %d (not_leader)", resp.StatusCode, api.StatusNotLeader)
+		}
+		var env struct {
+			Error struct {
+				Code   string `json:"code"`
+				Leader string `json:"leader"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+			t.Fatalf("decode not_leader envelope: %v", err)
+		}
+		if env.Error.Code != api.CodeNotLeader {
+			t.Errorf("error code = %q, want %q", env.Error.Code, api.CodeNotLeader)
+		}
+		if env.Error.Leader != leaderHint {
+			t.Errorf("not_leader envelope leader = %q, want %q (guidance to the current leader)", env.Error.Leader, leaderHint)
 		}
 	})
 }
