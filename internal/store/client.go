@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,7 +31,20 @@ import (
 // reader pool, all derived from the one admin DSN. Build it with Connect and tear
 // it down with Close.
 type Client struct {
-	session  *pgx.Conn
+	// adminDSN is the admin-derived connection string the leader session and reader
+	// pool are opened from; retained so a demoted daemon can mint a FRESH leader
+	// session (a new session-pinned connection carrying a new advisory-lock handle
+	// and lock-guarded writer) to re-enter standby -- a dead session can never
+	// re-acquire the lock (specification section 15).
+	adminDSN string
+
+	// mu guards session across a fresh-session renewal: NewLeaderSession swaps in a
+	// new session-pinned connection, and Close reads the current one, so the two must
+	// not race. In practice the daemon calls them from a single election goroutine
+	// and Close only after it returns, but the guard makes the ownership explicit.
+	mu      sync.Mutex
+	session *pgx.Conn
+
 	pool     *pgxpool.Pool
 	lock     *PgxLeaderLock
 	writer   MetaWriteConn
@@ -60,13 +74,9 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
-	metaCfg, err := metaConnConfig(adminDSN)
+	session, lock, writer, err := openLeaderSession(ctx, adminDSN)
 	if err != nil {
 		return nil, err
-	}
-	session, err := pgx.ConnectConfig(ctx, metaCfg)
-	if err != nil {
-		return nil, fmt.Errorf("store: open leader session on meta: %w", err)
 	}
 
 	pool, err := metaReaderPool(ctx, adminDSN)
@@ -75,27 +85,9 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
-	lock, err := newPgxLeaderLock(&pgxSessionConn{conn: session})
-	if err != nil {
-		pool.Close()
-		_ = session.Close(ctx)
-		return nil, err
-	}
-
-	// The write connection is the SAME session the leader lock is pinned to, and it
-	// is lock-guarded: every meta write first checks that this session currently
-	// holds the leader lock, so a write is never issued over a session that has not
-	// re-acquired it (specification section 15) -- not before election, and not
-	// after a demotion.
-	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
-	if err != nil {
-		pool.Close()
-		_ = session.Close(ctx)
-		return nil, err
-	}
-
 	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
+		adminDSN: adminDSN,
 		session:  session,
 		pool:     pool,
 		lock:     lock,
@@ -108,6 +100,61 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		show:     newPgxShowReader(readPoolSeam),
 		promote:  &pgxPromoteReader{pool: readPoolSeam},
 	}, nil
+}
+
+// openLeaderSession opens a fresh session-pinned connection on the meta database and
+// builds the leader lock and the lock-guarded write connection over it: the leader's
+// single session, carrying BOTH the advisory lock and the single-writer meta path, so
+// every meta write rides the exact session that holds the lock (specification section
+// 15). It is the one construction Connect and NewLeaderSession share, so a first
+// election and a post-demotion re-entry open identical sessions. On any error it closes
+// the connection it opened, leaking nothing.
+func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLeaderLock, MetaWriteConn, error) {
+	metaCfg, err := metaConnConfig(adminDSN)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	session, err := pgx.ConnectConfig(ctx, metaCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("store: open leader session on meta: %w", err)
+	}
+
+	lock, err := newPgxLeaderLock(&pgxSessionConn{conn: session})
+	if err != nil {
+		_ = session.Close(ctx)
+		return nil, nil, nil, err
+	}
+
+	// The write connection is the SAME session the leader lock is pinned to, and it
+	// is lock-guarded: every meta write first checks that this session currently
+	// holds the leader lock, so a write is never issued over a session that has not
+	// re-acquired it (specification section 15) -- not before election, and not
+	// after a demotion.
+	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
+	if err != nil {
+		_ = session.Close(ctx)
+		return nil, nil, nil, err
+	}
+	return session, lock, writer, nil
+}
+
+// NewLeaderSession mints a FRESH leader session for standby re-entry after a
+// self-demotion (specification section 15): a NEW session-pinned connection carrying a
+// new advisory-lock handle and its lock-guarded write connection. A demoted daemon's
+// old session is dead -- it can never re-acquire the lock and its write guard refuses
+// forever -- so re-contending requires a genuinely new session, which is exactly what
+// this returns. The client tracks the new connection so Close tears down the live
+// session, not the dead one. The reader pool is untouched (reads never block behind the
+// lock, so they survive a demotion).
+func (c *Client) NewLeaderSession(ctx context.Context) (LeaderLock, MetaWriteConn, error) {
+	session, lock, writer, err := openLeaderSession(ctx, c.adminDSN)
+	if err != nil {
+		return nil, nil, err
+	}
+	c.mu.Lock()
+	c.session = session
+	c.mu.Unlock()
+	return lock, writer, nil
 }
 
 // Lock returns the leader-election lock, held on the session-pinned connection.
@@ -158,11 +205,16 @@ func (c *Client) Close(ctx context.Context) error {
 	if c.pool != nil {
 		c.pool.Close()
 	}
-	if c.session != nil {
-		if c.session.IsClosed() {
+	// Read the current session under the guard: a fresh-session renewal may have
+	// swapped it, and Close must tear down the live one, not a stale reference.
+	c.mu.Lock()
+	session := c.session
+	c.mu.Unlock()
+	if session != nil {
+		if session.IsClosed() {
 			return nil // already released by the lock; nothing to close.
 		}
-		if err := c.session.Close(ctx); err != nil {
+		if err := session.Close(ctx); err != nil {
 			return fmt.Errorf("store: close leader session: %w", err)
 		}
 	}
