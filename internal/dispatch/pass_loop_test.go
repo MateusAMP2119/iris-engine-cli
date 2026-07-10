@@ -619,7 +619,7 @@ type fakeJournalStep struct {
 	events []string
 }
 
-func (s *fakeJournalStep) AfterPass(_ context.Context, report dispatch.PassReport) error {
+func (s *fakeJournalStep) AfterPass(_ context.Context, _ dispatch.PassReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Simulate: for a newly sealable partition (test injects the condition by
