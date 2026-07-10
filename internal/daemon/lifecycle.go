@@ -80,6 +80,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		return ErrManagedNotInstalled
 	}
 
+	// Workspace tree is a per-host prerequisite for every candidate (S15): resolve
+	// early from CWD (the tree the daemon was started in) so a host lacking the
+	// pipelines/dev sources/env_files refuses before bringing up Postgres or listeners.
+	workspace, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("daemon: resolve workspace: %w", err)
+	}
+	if err := requireWorkspaceTree(workspace); err != nil {
+		return err
+	}
+
 	// Bring up Postgres and resolve the admin DSN (managed subprocess or external),
 	// then connect the meta client: ensure the meta database exists and open the
 	// leader session (advisory lock + writes) and the reader pool.
@@ -105,13 +116,10 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer data.Close()
 
-	// The leader's workspace tree: declarations and the schemas/ tree resolve against
-	// it. The daemon runs in the workspace (its socket lives under <workspace>/.iris),
-	// so its working directory is that tree.
-	workspace, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("daemon: resolve workspace: %w", err)
-	}
+	// The leader's workspace tree (already verified for prerequisite above): declarations
+	// and the schemas/ tree resolve against it. The daemon runs in the workspace (its
+	// socket lives under <workspace>/.iris), so its working directory is that tree.
+	// (No re-resolve or re-check: early check already refused lacking trees.)
 
 	// The role state the mux consults and the control plane the mux routes apply/destroy
 	// to: standby/unwired until election confirms leadership and installs the
@@ -154,19 +162,31 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// daemon must disown it the moment it stops serving, so it is removed right after
 	// srv.Serve returns (listeners drained, socket released), below.
 
+	// The daemon's in-flight run registry: the production InflightKiller the
+	// self-demotion kill acts through (specification section 15). The manual
+	// orchestrator tracks each live run's process group in it, so a demotion (lost
+	// meta session) kills the daemon's own in-flight runs at once, writing nothing to
+	// meta.
+	inflight := newInflightRuns()
+
 	// Run the election in the background: it flips the role and drives the single
 	// dispatcher. It returns when ctx is cancelled (having released the lock). On
 	// winning, the leader runs startup crash reconciliation before any lane dispatch:
 	// it reads leftover run records through the plain-MVCC reader, best-effort
 	// SIGKILLs same-host survivors through the exec seam, and disposes of their runs
-	// through the single writer (specification section 2 crash recovery).
+	// through the single writer (specification section 2 crash recovery). A lost meta
+	// session self-demotes: dispatch stops, in-flight runs are killed (WithInflightKiller),
+	// and the daemon re-enters standby on a FRESH session (WithFreshSessions), so one
+	// process survives any number of demotions (specification section 15).
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner(), data),
-		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data),
+		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
-		WithWipePlane(wipes, client.Reader(), data))
+		WithWipePlane(wipes, client.Reader(), data),
+		WithInflightKiller(inflight),
+		WithFreshSessions(freshLeaderSession(ctx, client, logger)))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

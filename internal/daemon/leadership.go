@@ -89,7 +89,7 @@ type Candidate struct {
 	// store, and the exec seam only while this daemon leads (specification sections
 	// 1 and 9). Nil builds skips it.
 	builds  *buildPlane
-	objects dispatch.ObjectPutter
+	objects *store.ObjectStore
 
 	// Wipe wiring, installed on winning leadership and cleared on demotion so the
 	// api mux's POST /workload/wipe reaches the attribution reader and the data
@@ -181,18 +181,21 @@ func WithControlPlane(cp *controlPlane, workspace string, reg store.RegistryRead
 
 // WithPipelinePlane wires the leader-side manual-run plane: on winning leadership the
 // candidate builds the manual-run orchestrator over the single dispatcher (the sole meta
-// writer), the meta read seams, and the process runner, and installs it into pp before
+// writer), the meta read seams, the object store (for built-run resolution from the
+// leader's own objects_path), and the process runner, and installs it into pp before
 // reporting the leader role, clearing it on demotion. workspace is the leader's workspace
 // tree (pipeline folders resolve against it); manual is the plain-MVCC manual-run reader;
-// runner starts subprocesses. journal provides the data journal high id for terminal
-// window stamping. A nil pp leaves the candidate without a manual-run plane
+// objects is this candidate's own object store (built-run argv resolves from the leader's
+// own objects_path); runner starts subprocesses. journal provides the data journal high id
+// for terminal window stamping. A nil pp leaves the candidate without a manual-run plane
 // (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, runner exec.Runner, journal dispatch.JournalHighWatermark) CandidateOption {
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
 		c.registry = reg
 		c.manualReader = manual
+		c.objects = objects
 		c.runner = runner
 		c.journalHM = journal
 	}
@@ -226,9 +229,9 @@ func WithFreshSessions(fresh func() (store.LeaderLock, store.MetaWriteConn)) Can
 // objects_path, and the process runner, and installs it into bp before reporting
 // the leader role, clearing it on demotion. workspace is the leader's workspace
 // tree (pipeline folders resolve against it); manual supplies the run-target read;
-// objects is the object store the binary bytes land in. A nil bp leaves the
-// candidate without a build plane (the shape tests use).
-func WithBuildPlane(bp *buildPlane, workspace string, manual store.ManualReader, objects dispatch.ObjectPutter, runner exec.Runner) CandidateOption {
+// objects is the object store the binary bytes land in (and runs resolve from).
+// A nil bp leaves the candidate without a build plane (the shape tests use).
+func WithBuildPlane(bp *buildPlane, workspace string, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner) CandidateOption {
 	return func(c *Candidate) {
 		c.builds = bp
 		c.workspace = workspace
@@ -419,7 +422,12 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// orchestrator; clear it on demotion so a run racing a lost lock faults rather than
 	// minting off-path.
 	if c.pipelines != nil {
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.runner, c.journalHM, c.logger)
+		// Give the manual orchestrator the daemon's in-flight registry (when the
+		// production InflightKiller is one) so each manual run's process group is
+		// tracked and a self-demotion kills it; a test's fake killer is not a registry,
+		// leaving manual tracking off (those tests do not exercise it).
+		reg, _ := c.inflight.(*inflightRuns)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, reg, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}
@@ -530,4 +538,68 @@ func (c *Candidate) release() error {
 	ctx, cancel := context.WithTimeout(context.Background(), lockReleaseGrace)
 	defer cancel()
 	return c.lock.Release(ctx)
+}
+
+// freshSessionRetryBackoff caps the backoff between attempts to mint a fresh leader
+// session after a demotion. A transient meta-database blip must not kill the daemon:
+// it retries until a fresh session opens or the daemon is shutting down.
+const freshSessionRetryBackoff = 500 * time.Millisecond
+
+// leaderSessionMaker mints a fresh leader session: the store.Client seam
+// (NewLeaderSession) satisfies it. Named so the fresh-session wiring is testable
+// against a fake without a live database.
+type leaderSessionMaker interface {
+	NewLeaderSession(ctx context.Context) (store.LeaderLock, store.MetaWriteConn, error)
+}
+
+// freshLeaderSession builds the WithFreshSessions callback for production Run: on a
+// self-demotion it mints a genuinely NEW leader session (a new session-pinned
+// connection, a new advisory-lock handle, and its lock-guarded writer) so the demoted
+// daemon re-enters standby and can lead again -- a dead session can never re-acquire
+// the lock (specification section 15). Minting can fail transiently (a meta-database
+// blip); rather than end the daemon, it retries with a bounded backoff until a session
+// opens or ctx is cancelled (shutdown), in which case it returns a lock that refuses to
+// acquire so Serve exits cleanly instead of spinning.
+func freshLeaderSession(ctx context.Context, maker leaderSessionMaker, logger *slog.Logger) func() (store.LeaderLock, store.MetaWriteConn) {
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	return func() (store.LeaderLock, store.MetaWriteConn) {
+		for {
+			if err := ctx.Err(); err != nil {
+				return refusingLock{err: err}, nil
+			}
+			lock, writer, err := maker.NewLeaderSession(ctx)
+			if err == nil {
+				return lock, writer
+			}
+			logger.Warn("iris daemon demotion: minting a fresh leader session failed; retrying", "err", err)
+			select {
+			case <-ctx.Done():
+				return refusingLock{err: ctx.Err()}, nil
+			case <-time.After(freshSessionRetryBackoff):
+			}
+		}
+	}
+}
+
+// refusingLock is the fresh-session fallback returned only when the daemon is shutting
+// down: its Acquire refuses with the shutdown error, so Serve's re-entry loop returns
+// cleanly instead of leading on a session that was never opened. It never carries a
+// write connection (the paired writer is nil), which is safe because a failed Acquire
+// means the candidate never reaches the leader path that would use one.
+type refusingLock struct{ err error }
+
+// compile-time proof the fallback satisfies the leader-lock seam.
+var _ store.LeaderLock = refusingLock{}
+
+func (l refusingLock) Acquire(context.Context) error { return l.err }
+func (l refusingLock) Release(context.Context) error { return nil }
+
+// SessionLost returns an already-closed channel: were the fallback ever consulted for
+// liveness it would read as lost, never as a live session.
+func (l refusingLock) SessionLost() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }

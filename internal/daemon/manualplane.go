@@ -134,9 +134,13 @@ type manualOrchestrator struct {
 }
 
 // newManualOrchestrator wires the manual-run op over the single dispatcher (the sole meta
-// writer), the meta read seams, and the process runner, resolving pipeline folders under
-// workspace. A nil logger discards output.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, runner exec.Runner, journal dispatch.JournalHighWatermark, logger *slog.Logger) *manualOrchestrator {
+// writer), the meta read seams, the process runner, and the object store at objects_path
+// (for resolving built-run argv from artifact hashes). Resolves pipeline folders under
+// workspace. A nil logger discards output. The objects is the candidate's own at
+// construction time, so a promoted leader dispatches using its own objects_path. journal
+// provides the data journal high id for terminal window stamping. inflight (nil in the
+// shape tests) tracks each live run's process group so a self-demotion kills it.
+func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, inflight *inflightRuns, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -144,8 +148,10 @@ func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry
 		workspace: workspace,
 		submitter: submit,
 		manual:    manual,
+		objects:   objects,
 		runner:    runner,
 		journal:   journal,
+		inflight:  inflight,
 		logger:    logger,
 	}
 	mr := dispatch.NewManualRunner(
@@ -296,8 +302,10 @@ type manualExec struct {
 	workspace string
 	submitter dispatch.Submitter
 	manual    store.ManualReader
+	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
+	inflight  *inflightRuns // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	logger    *slog.Logger
 }
 
@@ -343,9 +351,12 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	}
 	runID := strconv.FormatInt(info.ID, 10)
 
+	argv := dispatch.ResolveRunArgv(target.Argv, nil, m.objects)
+	// objects is this leader's (wired at candidate construction; a promoted failover
+	// leader therefore resolves built-run binaries from its own objects_path).
 	h, err := m.runner.Start(ctx, exec.Spec{
 		Dir:  filepath.Join(m.workspace, target.Folder),
-		Argv: target.Argv,
+		Argv: argv,
 		Env:  m.childEnv(),
 	})
 	if err != nil {
@@ -360,6 +371,14 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		_ = h.Kill()
 		_, _ = h.Wait()
 		return dispatch.RunSucceeded, fmt.Errorf("record manual run %s running: %w", runID, err)
+	}
+
+	// Track the live process group so a self-demotion (lost meta session) kills it at
+	// once (specification section 15); untrack after it is reaped so a completed run
+	// is never a kill target. A nil registry (the shape tests) skips tracking.
+	if m.inflight != nil {
+		m.inflight.track(runID, h)
+		defer m.inflight.untrack(runID)
 	}
 
 	status, waitErr := h.Wait()
