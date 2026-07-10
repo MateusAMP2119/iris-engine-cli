@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
@@ -63,6 +64,31 @@ func TestIrisDirDefaultPaths(t *testing.T) {
 		wantRun := filepath.Join(ws, ".iris", "logs", "run-42.log")
 		if got := RunLogPath(settings, "42"); got != wantRun {
 			t.Errorf("per-run log path = %q, want %q", got, wantRun)
+		}
+	})
+}
+
+// TestCandidateRequiresWorkspaceTree proves the per-host prerequisite
+// (specification section 15): a daemon candidate started on a host lacking
+// the workspace tree the leader dispatches from (pipeline folders, dev source,
+// env_files) refuses to start.
+//
+// spec: S15/candidate-requires-workspace-tree
+func TestCandidateRequiresWorkspaceTree(t *testing.T) {
+	t.Run("S15/candidate-requires-workspace-tree", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "no-tree-here")
+		err := requireWorkspaceTree(missing)
+		if err == nil {
+			t.Fatal("requireWorkspaceTree on missing path succeeded, want refusal error")
+		}
+		if !strings.Contains(err.Error(), "workspace tree") || !strings.Contains(err.Error(), "refuses to start") {
+			t.Errorf("error %q does not mention workspace tree refusal", err)
+		}
+
+		// Existing dir is accepted (candidate may start; declarations may be absent until apply).
+		good := t.TempDir()
+		if err := requireWorkspaceTree(good); err != nil {
+			t.Errorf("requireWorkspaceTree on existing dir: %v", err)
 		}
 	})
 }
