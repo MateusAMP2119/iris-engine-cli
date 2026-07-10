@@ -5,7 +5,7 @@
 # Iris 🌈
 
 <p align="center">
-  <strong>Provenance-first data engine and pipeline orchestrator — git blame for every database row.</strong>
+  <strong>A new approach to lakehousing — self-hostable, provenance-first, local by default.</strong>
 </p>
 
 <p align="center">
@@ -16,19 +16,7 @@
   <img src="https://img.shields.io/badge/Contracts-517%20traced-blueviolet?style=for-the-badge" alt="517 contracts">
 </p>
 
-**Iris is a single Go binary that runs your data pipelines and remembers where every row came from.** Every write is attributed **in-transaction** to its exact run, binary, and declaration — so `iris data provenance` can answer any row's origin, forever, backed by an ed25519-signed, tamper-evident journal. Think *Docker Compose for routines*: a pipeline is a folder with one script (any language) and one `iris-declare.yaml`. No cron, no retries, no YAML programming language — a deliberately small model with hard guarantees.
-
-<table>
-<tr><td><b>Provenance is core, not a plugin</b></td><td>Statement-level triggers journal every write into <code>data_journal</code> in the same transaction as the write itself. No opt-out, no sidecar, no eventual consistency. One journal feeds two consumers: row-level provenance and undo.</td></tr>
-<tr><td><b>Tamper-evident history</b></td><td>Journal partitions are sealed, compacted, and archived into a content-addressed object store, chained together with ed25519-signed checkpoints. History can be verified, not just trusted.</td></tr>
-<tr><td><b>Authors never touch credentials</b></td><td>The engine owns least-privilege Postgres roles and injects connections into pipeline processes. <code>reads</code>/<code>writes</code> in the declaration are access control, enforced at the database — not documentation.</td></tr>
-<tr><td><b>No clock, anywhere</b></td><td>Orchestration is purely reactive: <code>depends_on</code> gates eligibility, lane <code>order</code> is the sole sequence, perpetual lanes loop. No cron, no schedules, no timeouts, no retries-with-backoff. A run ends by exiting or by <code>iris run cancel</code>.</td></tr>
-<tr><td><b>Failures are a worklist</b></td><td>A failed run parks in the dead-letter queue with its full context. Triage with <code>iris dl list</code>, replay on demand, drain when resolved. Failure propagates through <code>depends_on</code> — downstream never runs on missing input.</td></tr>
-<tr><td><b>Reproducible by construction</b></td><td>Two artifact modes (dev source / built binary) × two data modes (disposable / permanent). Permanent data requires a built, content-addressed binary, and every run is snapshot-pinned.</td></tr>
-<tr><td><b>Any language, no shell</b></td><td>Pipelines are direct-exec engine-owned subprocesses — Python, R, Bash, a compiled binary, anything with a shebang or an entry point. No DSL to learn, no shell-injection surface.</td></tr>
-<tr><td><b>HA built in</b></td><td>Any number of daemon candidates, exactly one leader via Postgres advisory lock. Standbys serve reads and redirect mutations to the leader with explicit guidance.</td></tr>
-<tr><td><b>A real read API</b></td><td>One GET-only HTTP server (unix socket, optional TCP+TLS) guarded by scoped PATs. Raw tables at <code>/data/{schema}/{table}</code>, declared data products at <code>/q/{endpoint}</code>, NDJSON streaming, keyset pagination.</td></tr>
-</table>
+**Big data can be local data.** The modern lakehouse is a fleet of managed services — object store, catalog, warehouse, orchestrator, lineage tool — each with its own bill, credentials, and failure modes. Iris is a bet that most of that fleet is unnecessary: one self-hostable Go binary and one Postgres cluster you own replace the lot. Pipelines in any language, orchestration without a clock, a scoped read API for your data products, and provenance as the foundation — every write attributed **in-transaction** to its exact run, binary, and declaration, sealed into an ed25519-signed journal. `iris data provenance` is git blame for every row, forever. Runs on your laptop, a homelab box, or one VPS — no cloud account required.
 
 ---
 
