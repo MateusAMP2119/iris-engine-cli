@@ -210,7 +210,7 @@ func (a *app) pipelineCmd() *cobra.Command {
 func (a *app) runCmd() *cobra.Command {
 	list := &cobra.Command{
 		Use: "list", Short: "List run history",
-		Args: cobra.NoArgs, RunE: a.daemonStub("run list"),
+		Args: cobra.NoArgs, RunE: a.runList(),
 	}
 	list.Flags().Bool("graph", false, "draw lineage rails instead of a flat list")
 	list.Flags().Bool("ascii", false, "render the graph with ASCII glyphs")
@@ -230,7 +230,7 @@ func (a *app) runCmd() *cobra.Command {
 	}
 	cancel := &cobra.Command{
 		Use: "cancel <run>", Short: "Cancel one running run (kills its process group)",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("run cancel"),
+		Args: cobra.ExactArgs(1), RunE: a.runCancel(),
 	}
 
 	return a.group("run", "Inspect and control execution records",
@@ -242,7 +242,7 @@ func (a *app) dataCmd() *cobra.Command {
 	prov := &cobra.Command{
 		Use:   "provenance <schema.table> <pk>",
 		Short: "Show a row's provenance: author, layer stack, consumed upstreams, hashes",
-		Args:  cobra.ExactArgs(2), RunE: a.daemonStub("data provenance"),
+		Args:  cobra.ExactArgs(2), RunE: a.dataProvenance(),
 	}
 	return a.group("data", "Row-level reads", daemonTouching(prov))
 }
@@ -340,7 +340,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 	}
 	show := &cobra.Command{
 		Use: "show <run>", Short: "Show one entry: reason, error, failed_upstream, blast radius",
-		Args: cobra.ExactArgs(1), RunE: a.daemonStub("deadletter show"),
+		Args: cobra.ExactArgs(1), RunE: a.deadletterShow(),
 	}
 	replay := &cobra.Command{
 		Use: "replay [run]", Short: "Replay root causes (auto-walks failed_upstream)",
@@ -365,7 +365,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 func (a *app) endpointCmd() *cobra.Command {
 	apply := &cobra.Command{
 		Use: "apply [name]", Short: "Publish endpoints/ (or one): validate, compile, atomic",
-		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("endpoint apply"),
+		Args: cobra.MaximumNArgs(1), RunE: a.endpointApply(),
 	}
 	remove := &cobra.Command{
 		Use: "remove <name>", Short: "Retire a read surface (shape only, no data touched)",

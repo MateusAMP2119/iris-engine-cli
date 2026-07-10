@@ -25,7 +25,7 @@ func countPrefix(stmts []string, prefix string) int {
 }
 
 // TestBootstrapCreatesDedicatedMetaDatabase proves the engine bootstrap creates
-// the dedicated meta database and, in its public schema, exactly the seventeen
+// the dedicated meta database and, in its public schema, exactly the eighteen
 // control tables with no warehouse schemas.
 //
 // spec: S02/meta-dedicated-db
@@ -45,7 +45,7 @@ func TestBootstrapCreatesDedicatedMetaDatabase(t *testing.T) {
 		t.Errorf("bootstrap issued %d CREATE DATABASE %s statements, want exactly 1", n, store.MetaDatabase)
 	}
 	if n := countPrefix(stmts, "CREATE TABLE"); n != len(metaRoster) {
-		t.Errorf("bootstrap created %d tables, want %d (the seventeen control tables)", n, len(metaRoster))
+		t.Errorf("bootstrap created %d tables, want %d (the nineteen control tables)", n, len(metaRoster))
 	}
 	// No warehouse schemas: bootstrap creates nothing in analytics/raw and issues no
 	// CREATE SCHEMA at all (the tables live in the default public schema).

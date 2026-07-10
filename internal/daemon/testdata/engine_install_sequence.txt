@@ -61,8 +61,7 @@ meta: CREATE TABLE IF NOT EXISTS run_inputs (
     run_id bigint,
     upstream_run_id bigint,
     PRIMARY KEY (run_id, upstream_run_id),
-    FOREIGN KEY (run_id) REFERENCES runs (id),
-    FOREIGN KEY (upstream_run_id) REFERENCES runs (id)
+    FOREIGN KEY (run_id) REFERENCES runs (id)
 );
 meta: CREATE INDEX IF NOT EXISTS run_inputs_upstream_run_id_idx ON run_inputs (upstream_run_id);
 meta: CREATE TABLE IF NOT EXISTS dead_letters (
@@ -99,6 +98,27 @@ meta: CREATE TABLE IF NOT EXISTS journal_checkpoints (
     recorded_at text NOT NULL,
     PRIMARY KEY (seq),
     CHECK (location IN ('resident', 'archived'))
+);
+meta: CREATE TABLE IF NOT EXISTS engine_key (
+    id bigint,
+    private_key bytea NOT NULL,
+    created_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+meta: CREATE TABLE IF NOT EXISTS read_pool_credential (
+    id bigint,
+    secret text NOT NULL,
+    created_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+meta: CREATE TABLE IF NOT EXISTS leadership (
+    id bigint,
+    advertised_addr text NOT NULL,
+    recorded_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
 );
 meta: CREATE TABLE IF NOT EXISTS pats (
     id text,
@@ -180,5 +200,5 @@ data: CREATE TABLE IF NOT EXISTS public.data_journal (
 data: CREATE INDEX IF NOT EXISTS data_journal_provenance_idx ON public.data_journal ("schema", "table", row_pk, run_id);
 data: CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);
 data: GRANT SELECT ON public.data_journal TO PUBLIC;
-meta: ALTER DATABASE meta SET iris.engine_key = '<engine-key>';
+meta: INSERT INTO engine_key (id, private_key, created_at) VALUES (1, '\x<engine-key>', now()::text) ON CONFLICT (id) DO NOTHING;
 socket: prepare

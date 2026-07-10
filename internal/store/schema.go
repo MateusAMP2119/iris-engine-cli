@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// This file holds the embedded meta schema: the seventeen control tables of the
+// This file holds the embedded meta schema: the twenty control tables of the
 // dedicated meta database (specification section 4), modeled as Go data that
 // renders deterministically to create-if-missing DDL and is directly assertable
 // for the roster, foreign-key graph, and identity-ordering contracts. The model
@@ -263,7 +263,7 @@ func dependenciesSatisfied(t Table, emitted map[string]bool) bool {
 	return true
 }
 
-// MetaSchema returns the meta control-plane schema: the seventeen tables of
+// MetaSchema returns the meta control-plane schema: the twenty tables of
 // specification section 4, in the spec's own roster order. Roster order is not a
 // safe DDL emission order (runs precedes artifacts it references); DDL() emits in
 // FK-dependency order instead. Ordering keys are monotonic bigint identity
@@ -352,6 +352,14 @@ func MetaSchema() Schema {
 				},
 			},
 			// run_inputs: consumption ledger. Reverse-indexed on upstream_run_id.
+			// run_id (the downstream's own run) is a FK to runs.id, cascaded before the
+			// run in the prune. upstream_run_id is deliberately FK-free (precedent:
+			// data_journal.run_id): count-based retention (section 6.2, no reference pin)
+			// prunes an upstream run while a cross-pipeline downstream's ledger row
+			// survives, so it resolves to a live run OR its archival summary. A hard FK
+			// there could only block the prune (RESTRICT) or cascade-delete a surviving
+			// run's consumption record (erasing lineage, re-opening its gate), and the
+			// composite NOT NULL primary key forbids SET NULL.
 			{
 				Name: "run_inputs",
 				Columns: []Column{
@@ -361,7 +369,6 @@ func MetaSchema() Schema {
 				PrimaryKey: []string{"run_id", "upstream_run_id"},
 				ForeignKeys: []ForeignKey{
 					{Column: "run_id", RefTable: "runs", RefColumn: "id"},
-					{Column: "upstream_run_id", RefTable: "runs", RefColumn: "id"},
 				},
 				Indexes: []Index{
 					{Name: "run_inputs_upstream_run_id_idx", Columns: []string{"upstream_run_id"}},
@@ -433,6 +440,69 @@ func MetaSchema() Schema {
 				Checks: []Check{
 					{Column: "location", Values: []string{"resident", "archived"}},
 				},
+			},
+			// engine_key: the engine-owned ed25519 signing key (specification section 4,
+			// bootstrap Q/A: "private half in meta"). Single row, pinned to id = 1: minted
+			// once at install (INSERT ... ON CONFLICT DO NOTHING, create-once so two
+			// candidates converge on one key) and read back by the leader-side seal to sign
+			// the checkpoint chain. It lives in meta, not a per-database GUC (which needs
+			// SUPERUSER the external admin role lacks) and not a workspace file (which
+			// forces a shared filesystem for HA); the shared meta database standbys already
+			// read gives HA superuser-free. No grant renderer touches it -- pipeline,
+			// data-PAT, and read-pool roles are denied CONNECT on meta entirely
+			// (internal/pg/roles.go), so only the engine admin role reaches the private half.
+			{
+				Name: "engine_key",
+				Columns: []Column{
+					{Name: "id", Type: "bigint"},
+					{Name: "private_key", Type: "bytea"},
+					{Name: "created_at", Type: "text"},
+				},
+				PrimaryKey: []string{"id"},
+				RawChecks:  []string{"id = 1"},
+			},
+			// read_pool_credential: the engine-owned shared read-pool login secret
+			// (specification section 4; the devdebt 2026-07-10 E13.7 follow-up spec delta).
+			// Single row, id pinned to 1: secret (the base64url password of the shared
+			// iris_engine_read login) and created_at. Minted once at first daemon start
+			// (INSERT ... ON CONFLICT DO NOTHING, create-once so two daemons on one data
+			// cluster converge on ONE secret) and read back by every node's read-pool
+			// open; a restart or HA standby reuses the stored secret rather than minting a
+			// fresh one and resetting the shared login's password (last-starter-wins, which
+			// killed an earlier node's pool). It lives in meta, engine-admin-only like
+			// engine_key: no grant renderer touches it and every pipeline/data-PAT/read-pool
+			// role is denied CONNECT on meta, so the secret is unreachable to any caller.
+			// The shared meta database standbys already read gives HA superuser-free.
+			{
+				Name: "read_pool_credential",
+				Columns: []Column{
+					{Name: "id", Type: "bigint"},
+					{Name: "secret", Type: "text"},
+					{Name: "created_at", Type: "text"},
+				},
+				PrimaryKey: []string{"id"},
+				RawChecks:  []string{"id = 1"},
+			},
+			// leadership: the leader's advertised address (specification section 4,
+			// leadership Q/A). Single row, pinned to id = 1: advertised_addr is the
+			// leader's TCP listen address -- what a standby names for retargeting (exit 6,
+			// GET /leader) and an operator passes to --host -- empty when the leader is
+			// socket-only. The leader upserts it through the single writer on winning the
+			// advisory lock and re-advertises each term, so a failover leader supersedes
+			// the prior address; a deposed leader writes nothing (its dead session cannot),
+			// so the row converges on the live leader. Standbys read it (shared meta, the
+			// HA model). It stands alone (no FKs, like engine_key), engine-owned: no grant
+			// renderer touches it, and every pipeline/data-PAT/read-pool role is denied
+			// CONNECT on meta. recorded_at is an opaque audit string, never a clock.
+			{
+				Name: "leadership",
+				Columns: []Column{
+					{Name: "id", Type: "bigint"},
+					{Name: "advertised_addr", Type: "text"},
+					{Name: "recorded_at", Type: "text"},
+				},
+				PrimaryKey: []string{"id"},
+				RawChecks:  []string{"id = 1"},
 			},
 			// pats: the unified PAT store. id PK (token prefix), argon2id hash.
 			{

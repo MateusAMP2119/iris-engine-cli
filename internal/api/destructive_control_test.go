@@ -31,12 +31,12 @@ type capturingControl struct {
 	err   error
 }
 
-func (c *capturingControl) Apply(ctx context.Context, req api.ControlRequest) (api.ControlResult, error) {
+func (c *capturingControl) Apply(_ context.Context, req api.ControlRequest) (api.ControlResult, error) {
 	c.calls = append(c.calls, controlCall{path: "/apply", req: req})
 	return api.ControlResult{}, c.err
 }
 
-func (c *capturingControl) Destroy(ctx context.Context, req api.ControlRequest) (api.ControlResult, error) {
+func (c *capturingControl) Destroy(_ context.Context, req api.ControlRequest) (api.ControlResult, error) {
 	c.calls = append(c.calls, controlCall{path: "/destroy", req: req})
 	return api.ControlResult{}, c.err
 }
@@ -70,8 +70,8 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 		// invoked and the request must be rejected as an operation failure.
 		role := api.NewRoleState()
 		role.SetLeader()
-		cap := &capturingControl{}
-		mux := api.NewMux(api.WithRole(role), api.WithControl(cap))
+		capCtl := &capturingControl{}
+		mux := api.NewMux(api.WithRole(role), api.WithControl(capCtl))
 
 		controlAuth := api.Authority{PATID: "ctl", Scopes: []pat.Scope{pat.ScopeControl}}
 
@@ -80,7 +80,7 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 		if rec.Code != http.StatusUnprocessableEntity {
 			t.Errorf("destroy without confirm status = %d, want 422 (op failed)", rec.Code)
 		}
-		if len(cap.calls) != 0 {
+		if len(capCtl.calls) != 0 {
 			t.Errorf("destroy handler was invoked with Confirm=false; API must require explicit confirm for destructive ops (S12/api-destructive-control-pat-confirm-field)")
 		}
 	})
@@ -90,8 +90,8 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 		// A standby must reject with not_leader before reaching any control handler.
 		role := api.NewRoleState()
 		role.SetStandby("leader.example:1234")
-		cap := &capturingControl{}
-		mux := api.NewMux(api.WithRole(role), api.WithControl(cap))
+		capCtl := &capturingControl{}
+		mux := api.NewMux(api.WithRole(role), api.WithControl(capCtl))
 
 		controlAuth := api.Authority{PATID: "ctl", Scopes: []pat.Scope{pat.ScopeControl}}
 
@@ -104,7 +104,7 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 		if env.Error.Code != api.CodeNotLeader {
 			t.Errorf("standby destroy error code = %q, want %q", env.Error.Code, api.CodeNotLeader)
 		}
-		if len(cap.calls) != 0 {
+		if len(capCtl.calls) != 0 {
 			t.Errorf("standby destroy invoked the control handler; leader-only gate must prevent it (S12/api-destructive-leader-only)")
 		}
 	})
@@ -117,8 +117,8 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 func TestDestroyRequiresConfirmEvenWithControlToken(t *testing.T) {
 	role := api.NewRoleState()
 	role.SetLeader()
-	cap := &capturingControl{}
-	mux := api.NewMux(api.WithRole(role), api.WithControl(cap))
+	capCtl := &capturingControl{}
+	mux := api.NewMux(api.WithRole(role), api.WithControl(capCtl))
 
 	ctl := api.Authority{PATID: "c", Scopes: []pat.Scope{pat.ScopeControl}}
 
@@ -126,7 +126,7 @@ func TestDestroyRequiresConfirmEvenWithControlToken(t *testing.T) {
 	if rec.Code == http.StatusOK {
 		t.Errorf("destroy without confirm returned 200; expected refusal (S12/api-destructive-control-pat-confirm-field)")
 	}
-	for _, c := range cap.calls {
+	for _, c := range capCtl.calls {
 		if c.path == "/destroy" && !c.req.Confirm {
 			t.Errorf("captured a !Confirm destroy call -- gate missing (S12/api-destructive-control-pat-confirm-field)")
 		}

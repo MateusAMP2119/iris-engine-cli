@@ -66,8 +66,7 @@ CREATE TABLE IF NOT EXISTS run_inputs (
     run_id bigint,
     upstream_run_id bigint,
     PRIMARY KEY (run_id, upstream_run_id),
-    FOREIGN KEY (run_id) REFERENCES runs (id),
-    FOREIGN KEY (upstream_run_id) REFERENCES runs (id)
+    FOREIGN KEY (run_id) REFERENCES runs (id)
 );
 
 CREATE INDEX IF NOT EXISTS run_inputs_upstream_run_id_idx ON run_inputs (upstream_run_id);
@@ -108,6 +107,30 @@ CREATE TABLE IF NOT EXISTS journal_checkpoints (
     recorded_at text NOT NULL,
     PRIMARY KEY (seq),
     CHECK (location IN ('resident', 'archived'))
+);
+
+CREATE TABLE IF NOT EXISTS engine_key (
+    id bigint,
+    private_key bytea NOT NULL,
+    created_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+
+CREATE TABLE IF NOT EXISTS read_pool_credential (
+    id bigint,
+    secret text NOT NULL,
+    created_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+
+CREATE TABLE IF NOT EXISTS leadership (
+    id bigint,
+    advertised_addr text NOT NULL,
+    recorded_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
 );
 
 CREATE TABLE IF NOT EXISTS pats (

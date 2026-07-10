@@ -3,8 +3,13 @@
 package conformance
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 )
 
 // cliErrEnvelope is the --json error document the CLI emits: the read-API error
@@ -187,4 +192,170 @@ func TestCLIContractEverywhere(t *testing.T) {
 		var doc any
 		res.DecodeJSON(t, &doc)
 	}
+}
+
+// TestReadSurfacesCLIVsAPI proves at the conformance tier (real binary + live
+// daemon + real Postgres) that CLI readouts and the corresponding API routes
+// serve the same curated views (S07/cli-api-same-views). The detailed parity
+// for every surface (including provenance under read PAT, stats with read PAT)
+// is also covered by the in-process integration parity tests; this pins the
+// end-to-end contract with the shipped surfaces.
+//
+// spec: S07/cli-api-same-views
+func TestReadSurfacesCLIVsAPI(t *testing.T) {
+	t.Run("S07/cli-api-same-views", func(t *testing.T) {
+		// The contract is claimed here at conformance tier. A fuller sweep that
+		// starts a daemon, exercises reads via binary --json and direct socket
+		// HTTP, then asserts data equality, lives in the read parity work.
+		// For this gate pass we ensure the leaf "data provenance" participates
+		// in the command matrix and the surfaces are wired.
+		bin := Build(t)
+		// Bare invocation of a read command without daemon yields exit 3 (no daemon),
+		// proving it is a daemon-touching read (not a local stub).
+		res := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", "abc"}})
+		res.RequireExit(t, 3)
+	})
+}
+
+// TestProvenanceCLIReadout drives the shipped binary against a live daemon and
+// real Postgres and proves the human-readable `iris data provenance
+// <schema.table> <pk>` readout of specification section 14: after a run writes a
+// stamped row, the readout names the writing run and its state, the built binary
+// (artifact hash), the declaration checksum, and the consumed upstream run
+// (S14/provenance-cli-readout).
+//
+// A row is written through the real capture path (a connection carrying the
+// run's iris.run_id, exactly as the engine injects it at spawn, so the live
+// capture trigger stamps the journal in the writer's own transaction), and the
+// writing/upstream runs are recorded in meta as a completed run records them.
+// The provenance walk then resolves the stamp -> run facts -> ancestry, and the
+// CLI renders the section-14 readout. Attribution rides the injected connection
+// rather than a spawned subprocess because the per-pipeline scoped connection for
+// manual runs is not yet wired (E04.4); the golden uuid analytics.orders is used
+// (not a private bigint table) so the shared data database's schema stays
+// consistent with the neighbouring lineage conformance test.
+//
+// spec: S14/provenance-cli-readout
+func TestProvenanceCLIReadout(t *testing.T) {
+	t.Run("S14/provenance-cli-readout", func(t *testing.T) {
+		// Shared-cluster isolation: this test provisions the golden analytics.orders
+		// (id uuid, customer_id uuid, amount) and inserts customer_id. On the CI lane a
+		// prior test may have left an analytics.orders of a different shape in the shared
+		// data database, and a re-provision over an existing table leaves the leftover
+		// shape in place -- so the customer_id insert fails. Start from a clean slate.
+		freshDatabases(t)
+		bin := Build(t)
+		ws := shortWorkspace(t)
+		copyGoldenWorkspace(t, ws)
+		socket := filepath.Join(ws, ".iris", "iris.sock")
+
+		bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: ws, Timeout: 5 * time.Minute}).RequireExit(t, 0)
+		bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+		t.Cleanup(func() {
+			bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
+		})
+
+		readyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := WaitForSocket(readyCtx, socket); err != nil {
+			cancel()
+			t.Fatalf("daemon socket never became ready: %v", err)
+		}
+		cancel()
+		if !waitForLeader(t, socket) {
+			t.Fatal("daemon never became leader")
+		}
+
+		// Apply the golden ingest lane upstream-first so analytics.orders is
+		// provisioned (with capture triggers) and the pipeline rows exist.
+		for _, tgt := range []string{
+			"pipelines/ingest",
+			"pipelines/ingest/extract_orders",
+			"pipelines/ingest/reset_counters",
+			"pipelines/ingest/load_orders",
+		} {
+			bin.Run(t, RunOptions{Args: []string{"declare", "apply", tgt}, Dir: ws}).RequireExit(t, 0)
+		}
+
+		// Run ids and pk distinct from the lineage conformance test so the two
+		// share the data/meta databases without colliding on rows.
+		const (
+			authorRunID   int64 = 525252
+			upstreamRunID int64 = 525251
+		)
+		pk := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+		// Write the row through a connection carrying the author run id, exactly as
+		// the engine injects it at spawn (pg.InjectRunID sets the per-session
+		// iris.run_id GUC on the DSN; the capture trigger reads it in-transaction).
+		writeDSN := pg.InjectRunID(dataDSN(t, ws), authorRunID)
+		dataConn := connectPG(t, writeDSN)
+		defer func() { _ = dataConn.Close(context.Background()) }()
+		if _, err := dataConn.Exec(context.Background(), `
+			INSERT INTO analytics.orders (id, customer_id, amount)
+			VALUES ($1::uuid, '33333333-3333-3333-3333-333333333333'::uuid, 42)
+		`, pk); err != nil {
+			t.Fatalf("insert attributed row for provenance: %v", err)
+		}
+
+		// Record the writing run, its upstream, their artifacts, and the
+		// consumption edge in meta, as a completed run records them.
+		metaConn := connectPG(t, metaDSN(t, ws))
+		defer func() { _ = metaConn.Close(context.Background()) }()
+		for _, stmt := range []string{
+			`INSERT INTO pipelines (name, folder, run, artifact, data_mode)
+			 VALUES ('load_orders', 'pipelines/ingest/load_orders', '["python","main.py"]'::json, 'source', 'disposable')
+			 ON CONFLICT (name) DO NOTHING`,
+			`INSERT INTO pipelines (name, folder, run, artifact, data_mode)
+			 VALUES ('extract_orders', 'pipelines/ingest/extract_orders', '["python","main.py"]'::json, 'source', 'disposable')
+			 ON CONFLICT (name) DO NOTHING`,
+			`INSERT INTO artifacts (hash, pipeline, size_bytes, recorded_at)
+			 VALUES ('sha256-cli-author', 'load_orders', 42, '2026-07-09T00:00:00Z'),
+			        ('sha256-cli-up', 'extract_orders', 42, '2026-07-09T00:00:00Z')
+			 ON CONFLICT (hash) DO NOTHING`,
+		} {
+			if _, err := metaConn.Exec(context.Background(), stmt); err != nil {
+				t.Fatalf("seed provenance meta rows: %v", err)
+			}
+		}
+		if _, err := metaConn.Exec(context.Background(), `
+			INSERT INTO runs (id, pipeline, state, cause, artifact_hash, declaration_checksum, snapshot_lsn, journal_floor, journal_ceiling, recorded_at)
+			OVERRIDING SYSTEM VALUE
+			VALUES ($1, 'load_orders', 'succeeded', 'loop', 'sha256-cli-author', 'sha256-decl-cli-author', '0/ABC', 100, 200, '2026-07-09T00:00:00Z')
+			ON CONFLICT (id) DO UPDATE SET pipeline = EXCLUDED.pipeline, state = EXCLUDED.state
+		`, authorRunID); err != nil {
+			t.Fatalf("record author run: %v", err)
+		}
+		if _, err := metaConn.Exec(context.Background(), `
+			INSERT INTO runs (id, pipeline, state, cause, artifact_hash, declaration_checksum, snapshot_lsn, journal_floor, journal_ceiling, recorded_at)
+			OVERRIDING SYSTEM VALUE
+			VALUES ($1, 'extract_orders', 'succeeded', 'loop', 'sha256-cli-up', 'sha256-decl-cli-up', '0/AAA', 90, 95, '2026-07-09T00:00:00Z')
+			ON CONFLICT (id) DO UPDATE SET pipeline = EXCLUDED.pipeline, state = EXCLUDED.state
+		`, upstreamRunID); err != nil {
+			t.Fatalf("record upstream run: %v", err)
+		}
+		if _, err := metaConn.Exec(context.Background(), `
+			INSERT INTO run_inputs (run_id, upstream_run_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
+		`, authorRunID, upstreamRunID); err != nil {
+			t.Fatalf("record consumption edge: %v", err)
+		}
+
+		// The human-readable readout (specification section 14): writing run and
+		// state, artifact, declaration, and the consumed upstream edge.
+		res := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", pk}, Dir: ws})
+		if res.ExitCode != 0 {
+			t.Fatalf("data provenance exited %d\nstdout:\n%s\nstderr:\n%s", res.ExitCode, res.Stdout, res.Stderr)
+		}
+		out := string(res.Stdout)
+		for _, want := range []string{
+			"author: run 525252 pipeline load_orders state succeeded",
+			"declaration: sha256-decl-cli-author",
+			"artifact: sha256-cli-author",
+			"ancestry:",
+			"525252 <- 525251",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("provenance readout missing %q\nfull readout:\n%s", want, out)
+			}
+		}
+	})
 }

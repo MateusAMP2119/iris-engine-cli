@@ -92,7 +92,7 @@ func TestNoCallerSQL(t *testing.T) {
 			}
 
 			plan, err := PlanDataQuery([]string{"id"}, fields, url.Values{
-				"status": {hostileValue}, "after": {"42"}, "limit": {"5"},
+				"status": {hostileValue}, "status_from": {hostileValue}, "after": {"42"}, "limit": {"5"},
 			})
 			if err != nil {
 				t.Fatalf("PlanDataQuery: %v", err)
@@ -110,21 +110,28 @@ func TestNoCallerSQL(t *testing.T) {
 					t.Errorf("/data SQL missing %q:\n%s", want, ds.SQL)
 				}
 			}
-			// Slots in deterministic order: id eq, status eq, after, limit.
-			if len(args) != 4 {
-				t.Fatalf("BindArgs returned %d args, want 4", len(args))
+			// Slots in deterministic order, one eq plus one inclusive range pair per
+			// filter column (the /data grammar is eq/range, specification section 7):
+			// id eq, id_from, id_to, status eq, status_from, status_to, after, limit.
+			if len(args) != 8 {
+				t.Fatalf("BindArgs returned %d args, want 8", len(args))
 			}
-			if args[0] != nil {
-				t.Errorf("args[0] (id eq, omitted) = %v, want nil", args[0])
+			for i, slot := range map[int]string{0: "id eq", 1: "id_from", 2: "id_to", 5: "status_to"} {
+				if args[i] != nil {
+					t.Errorf("args[%d] (%s, omitted) = %v, want nil", i, slot, args[i])
+				}
 			}
-			if args[1] != hostileValue {
-				t.Errorf("args[1] (status eq) = %v, want the caller value", args[1])
+			if args[3] != hostileValue {
+				t.Errorf("args[3] (status eq) = %v, want the caller value", args[3])
 			}
-			if args[2] != int64(42) {
-				t.Errorf("args[2] (after) = %v, want int64(42)", args[2])
+			if args[4] != hostileValue {
+				t.Errorf("args[4] (status_from) = %v, want the caller value bound, never spliced", args[4])
 			}
-			if args[3] != 5 {
-				t.Errorf("args[3] (limit) = %v, want 5", args[3])
+			if args[6] != int64(42) {
+				t.Errorf("args[6] (after) = %v, want int64(42)", args[6])
+			}
+			if args[7] != 5 {
+				t.Errorf("args[7] (limit) = %v, want 5", args[7])
 			}
 		})
 

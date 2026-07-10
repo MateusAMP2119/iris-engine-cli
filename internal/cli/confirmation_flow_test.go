@@ -97,11 +97,6 @@ func TestFiveOpsConfirmationGated(t *testing.T) {
 				t.Fatalf("destroy no-confirm unexpectedly succeeded; rec=%v", rec)
 			}
 			// The local gate or API confirm rejection should surface as opfailed confirmation-ish
-			combined := errb.String() + out.String()
-			if !strings.Contains(combined, "confirm") && !strings.Contains(combined, "teardown") && !strings.Contains(combined, "destructive") {
-				// API path yields "confirm required..." or local gate message; accept either as gated
-				// but ensure it did not treat as plain success.
-			}
 		})
 
 		// workload wipe (now has gate before daemon reach)
@@ -144,7 +139,7 @@ func TestTeardownTypedNameConfirm(t *testing.T) {
 		// Simulate TTY typed confirm by injecting confirm seam returning true for teardown.
 		app := newApp(&bytes.Buffer{}, &bytes.Buffer{})
 		typed := false
-		app.confirm = func(name string, isTeardown bool) (bool, error) {
+		app.confirm = func(_ string, isTeardown bool) (bool, error) {
 			if isTeardown {
 				typed = true
 			}
@@ -182,7 +177,7 @@ func TestDevloopYNConfirm(t *testing.T) {
 	t.Run("S12/devloop-yn-confirm", func(t *testing.T) {
 		yn := false
 		a := newApp(&bytes.Buffer{}, &bytes.Buffer{})
-		a.confirm = func(name string, isTeardown bool) (bool, error) {
+		a.confirm = func(_ string, isTeardown bool) (bool, error) {
 			if !isTeardown {
 				yn = true
 			}

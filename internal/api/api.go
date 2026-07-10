@@ -90,11 +90,22 @@ func NewMux(opts ...MuxOption) http.Handler {
 		pipelines:    noPipelines{},
 		build:        noBuild{},
 		promote:      noPromote{},
+		wipe:         noWipe{},
+		runCancel:    noRunCancel{},
 		stats:        noStats{},
 		info:         noInfo{},
 		inspect:      noInspect{},
 		pipelineShow: noPipelineShow{},
 		workloadShow: noWorkloadShow{},
+		provenance:   noProvenance{},
+		runs:         noRuns{},
+		runTrace:     noRunTrace{},
+		pipelineGate: noPipelineGate{},
+		deadImpact:   noDeadImpact{},
+		endpointCtl:  noEndpointControl{},
+		patMint:      noPATMint{},
+		replay:       noReplay{},
+		drain:        noDrain{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -113,16 +124,45 @@ type mux struct {
 	pipelines    PipelineHandler
 	build        BuildHandler
 	promote      PromoteHandler
+	wipe         WipeHandler
+	runCancel    RunCancelHandler
 	stats        StatsHandler
 	info         InfoHandler
 	inspect      InspectHandler
 	pipelineShow PipelineShowHandler
 	workloadShow WorkloadShowHandler
+	provenance   ProvenanceHandler
+	// runs, runTrace, pipelineGate, and deadImpact are the E14 read-route seams
+	// (readroutes.go): the runs collection with its ?include=inputs lineage
+	// attributes and the trace, gate, and impact triage walks. Each defaults to
+	// its no* handler (an unwired seam faults with the internal envelope, never a
+	// silent empty payload), so the daemon wires the pgx-backed implementation.
+	runs         RunsHandler
+	runTrace     RunTraceHandler
+	pipelineGate PipelineGateHandler
+	deadImpact   DeadImpactHandler
+	// endpointCtl runs the leader-side POST /endpoint/apply (endpointapply.go);
+	// patMint runs the leader-side POST /pat/create (patcreate.go). Both default to
+	// an internal-fault handler until the daemon installs the real one on leadership.
+	endpointCtl EndpointControlHandler
+	patMint     PATMintHandler
+	// replay and drain are the two leader-only dead-letter dispositions
+	// (deadletter.go): POST /deadletter/replay and POST /deadletter/drain. Each
+	// defaults to its no* handler (an unwired mutation faults), so the leader wires
+	// the real handler on winning leadership.
+	replay ReplayHandler
+	drain  DrainHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
 	endpoints EndpointSource
 	qreader   EndpointReader
+	// datasrc and readexec are the /data serving seams (dataroute.go,
+	// readexec.go): the declared-table shape source and the shared read pool's
+	// statement executor. Both default nil (unwired): /data then answers the
+	// internal-fault envelope, per the noStats doctrine.
+	datasrc  DataSource
+	readexec ReadExecutor
 }
 
 // ServeHTTP gates mutations to the leader, scope-checks the request's authority
@@ -149,12 +189,22 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveDestroy(w, r)
 	case "/deadletter/drain":
 		m.serveDeadletterDrain(w, r)
+	case "/deadletter/replay":
+		m.serveDeadletterReplay(w, r)
 	case "/pipeline/build":
 		m.servePipelineBuild(w, r)
 	case "/pipeline/promote":
 		m.servePipelinePromote(w, r)
 	case "/pipeline/run":
 		m.servePipelineRun(w, r)
+	case "/workload/wipe":
+		m.serveWorkloadWipe(w, r)
+	case "/run/cancel":
+		m.serveRunCancel(w, r)
+	case "/endpoint/apply":
+		m.serveEndpointApply(w, r)
+	case "/pat/create":
+		m.servePATCreate(w, r)
 	case "/pipeline/list":
 		m.servePipelineList(w, r)
 	case "/pipeline/show":

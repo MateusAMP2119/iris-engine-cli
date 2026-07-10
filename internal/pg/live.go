@@ -2,6 +2,8 @@ package pg
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -116,11 +118,180 @@ func (c *Client) Exec(ctx context.Context, sql string) error {
 	return nil
 }
 
+// PrepareVerify prepare-verifies a derived endpoint statement against the data
+// database (specification section 7: endpoint apply prepare-verifies the derived
+// SQL). It checks one connection out of the data pool and issues a server-side
+// Parse (Postgres itself vets the statement -- source present, columns real, types
+// castable), then deallocates it so a pooled reuse can re-prepare, returning
+// Postgres's refusal verbatim on failure. It runs as the engine's own data role, so
+// it verifies statement validity only, never a per-caller grant (grants are enforced
+// at read time, per role). name is prefixed and hashed so a re-verify never collides
+// with a prior prepared name on a reused session, satisfying dispatch.PrepareVerifier.
+func (c *Client) PrepareVerify(ctx context.Context, name, sql string) error {
+	conn, err := c.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("pg: prepare-verify %q: acquire connection: %w", name, err)
+	}
+	defer conn.Release()
+
+	sum := sha256.Sum256([]byte(sql))
+	stmtName := "iris_epverify_" + name + "_" + hex.EncodeToString(sum[:4])
+	if _, err := conn.Conn().Prepare(ctx, stmtName, sql); err != nil {
+		// Postgres refused the statement: return its message verbatim (the applier
+		// wraps it), so a bad endpoint never publishes.
+		return fmt.Errorf("pg: prepare-verify %q against the data database: %w", name, err)
+	}
+	// Deallocate so the pooled session can re-prepare on a later verify with the same
+	// name; a deallocate failure is non-fatal (the statement is session-scoped and the
+	// verification already succeeded).
+	_ = conn.Conn().Deallocate(ctx, stmtName)
+	return nil
+}
+
 // Close releases the pool. It is safe to call once at teardown.
 func (c *Client) Close() {
 	if c.pool != nil {
 		c.pool.Close()
 	}
+}
+
+// JournalHighID returns the current high id of public.data_journal (max(id) or 0
+// if empty). It satisfies dispatch.JournalHighWatermark for snapshot pin stamping.
+func (c *Client) JournalHighID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := c.pool.QueryRow(ctx, `SELECT COALESCE(max(id), 0) FROM public.data_journal`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("pg: read journal high id: %w", err)
+	}
+	return id, nil
+}
+
+// ResidentJournalStats reports the resident (unsealed) journal partition's current
+// row count and its inclusive id span (min and max id), all zero when the journal
+// is empty. The seal step reads it to decide whether the live partition has crossed
+// the journal_partition_rows threshold and, when it seals, to stamp the checkpoint's
+// exact id_from/id_to from the partition's actual entries (specification section
+// 14). It is one plain-MVCC read; the count is over the resident tail only, since
+// sealed partitions are exported and dropped.
+func (c *Client) ResidentJournalStats(ctx context.Context) (count, minID, maxID int64, err error) {
+	if err := c.pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(min(id), 0), COALESCE(max(id), 0) FROM public.data_journal`,
+	).Scan(&count, &minID, &maxID); err != nil {
+		return 0, 0, 0, fmt.Errorf("pg: read resident journal stats: %w", err)
+	}
+	return count, minID, maxID, nil
+}
+
+// ResidentRunIDs returns the distinct run ids that have written entries into the
+// resident (unsealed) journal partition. The seal step reads it to identify which
+// runs have written into the partition, so it can check whether any of them is still
+// in flight before it cuts a seal (specification section 14: a partition seals only
+// when every in-flight run writing into it has finished). A run that writes nothing
+// -- an idle-lane no-op pass -- never appears here, so it never blocks a seal. It is
+// one plain-MVCC read over the resident tail.
+func (c *Client) ResidentRunIDs(ctx context.Context) ([]int64, error) {
+	rows, err := c.pool.Query(ctx, `SELECT DISTINCT run_id FROM public.data_journal`)
+	if err != nil {
+		return nil, fmt.Errorf("pg: read resident journal run ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("pg: scan resident journal run id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pg: iterate resident journal run ids: %w", err)
+	}
+	return ids, nil
+}
+
+// CurrentLSN returns the data database's current WAL LSN in text form. It satisfies
+// dispatch.LSNReader for snapshot pin stamping.
+func (c *Client) CurrentLSN(ctx context.Context) (string, error) {
+	var lsn string
+	if err := c.pool.QueryRow(ctx, `SELECT pg_current_wal_lsn()::text`).Scan(&lsn); err != nil {
+		return "", fmt.Errorf("pg: read current lsn: %w", err)
+	}
+	return lsn, nil
+}
+
+// Query for archive seal row reads.
+func (c *Client) Query(ctx context.Context, sql string, args ...any) (interface {
+	Next() bool
+	Scan(dest ...any) error
+	Close()
+	Err() error
+}, error) {
+	return c.pool.Query(ctx, sql, args...)
+}
+
+// CompactJournalRange nulls released pre-images and folds dups (conformance helper).
+// Performed in one transaction so compaction is atomic (multi-statement state change).
+func (c *Client) CompactJournalRange(ctx context.Context, from, to int64) error {
+	if from <= 0 {
+		from = 0
+	}
+	toExpr := "9223372036854775807"
+	if to > 0 {
+		toExpr = fmt.Sprintf("%d", to)
+	}
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("pg: begin compact tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // safe no-op after commit
+
+	// Null all pre in the sealed range (past undo for sealed history) and fold dups.
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`UPDATE public.data_journal SET pre_image=NULL WHERE id>=%d AND id<%s`, from, toExpr)); err != nil {
+		return fmt.Errorf("pg: compact null preimages: %w", err)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM public.data_journal j USING (SELECT "schema","table",row_pk,run_id,max(id) k FROM public.data_journal WHERE id>=%d AND id<%s GROUP BY "schema","table",row_pk,run_id) kx WHERE j."schema"=kx."schema" AND j."table"=kx."table" AND j.row_pk=kx.row_pk AND j.run_id=kx.run_id AND j.id>=%d AND j.id<%s AND j.id<>kx.k`, from, toExpr, from, toExpr)); err != nil {
+		return fmt.Errorf("pg: compact fold dups: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("pg: commit compact: %w", err)
+	}
+	return nil
+}
+
+// QueryCompactedRows returns a canonical serialization of rows in [from,to) for
+// checkpoint digest computation (id order). Used by archive seal.
+func (c *Client) QueryCompactedRows(ctx context.Context, from, to int64) ([][]byte, error) {
+	q := `SELECT id, pg_role, run_id, "schema", "table", row_pk, op, COALESCE(pre_image::text, ''), undo, recorded_at
+FROM public.data_journal WHERE id >= $1 AND ($2 = 0 OR id < $2) ORDER BY id`
+	rows, err := c.pool.Query(ctx, q, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][]byte
+	for rows.Next() {
+		var id int64
+		var role, schema, table, pk, op, pre, undo, rec string
+		var rn int64
+		if err := rows.Scan(&id, &role, &rn, &schema, &table, &pk, &op, &pre, &undo, &rec); err != nil {
+			return nil, err
+		}
+		b := []byte(fmt.Sprintf("%d|%s|%d|%s|%s|%s|%s|%s|%s|%s", id, role, rn, schema, table, pk, op, pre, undo, rec))
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DropPartitionForRange detaches and drops the bootstrap p0 partition (the
+// sealed range, whose rows are already exported under their checkpoint digest)
+// and immediately recreates an empty p0 spanning the full range so the journal
+// stays writable for subsequent captures. Leaving the table partition-less would
+// make the next journal insert fail, so the recreate is part of the same seal
+// step. Best-effort: the export + checkpoint hold the sealed history.
+func (c *Client) DropPartitionForRange(ctx context.Context, _ int64) error {
+	_, _ = c.pool.Exec(ctx, `ALTER TABLE IF EXISTS public.data_journal DETACH PARTITION IF EXISTS public.data_journal_p0;`)
+	_, _ = c.pool.Exec(ctx, `DROP TABLE IF EXISTS public.data_journal_p0;`)
+	_, _ = c.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.data_journal_p0 PARTITION OF public.data_journal FOR VALUES FROM (MINVALUE) TO (MAXVALUE);`)
+	return nil
 }
 
 // The live-view read statements. Each is a plain MVCC catalog read, so building the
@@ -246,4 +417,39 @@ func (c *Client) EnsureCaptureFunction(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Stamps reads the data_journal stamps for one provenance key (schema.table + row_pk).
+// It returns entries in id order (WalkProvenance sorts newest-first). Pre-image is
+// not loaded: provenance is lineage only.
+func (c *Client) Stamps(ctx context.Context, key RowKey) ([]JournalEntry, error) {
+	if c.pool == nil {
+		return nil, errors.New("pg: closed")
+	}
+	rows, err := c.pool.Query(ctx, `
+		SELECT id, run_id, "schema", "table", row_pk, op, undo
+		FROM public.data_journal
+		WHERE "schema" = $1 AND "table" = $2 AND row_pk = $3
+		ORDER BY id
+	`, key.Schema, key.Table, key.RowPK)
+	if err != nil {
+		return nil, fmt.Errorf("pg: query stamps %s.%s %s: %w", key.Schema, key.Table, key.RowPK, err)
+	}
+	defer rows.Close()
+
+	var out []JournalEntry
+	for rows.Next() {
+		var e JournalEntry
+		var opStr, undoStr string
+		if err := rows.Scan(&e.ID, &e.RunID, &e.Schema, &e.Table, &e.RowPK, &opStr, &undoStr); err != nil {
+			return nil, fmt.Errorf("pg: scan stamp: %w", err)
+		}
+		e.Op = WriteOp(opStr)
+		e.Undo = UndoState(undoStr)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pg: iterate stamps: %w", err)
+	}
+	return out, nil
 }

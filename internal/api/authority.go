@@ -28,6 +28,12 @@ type Authority struct {
 	// Scopes are the PAT's minted scopes, any non-empty subset of
 	// {control, read, data}.
 	Scopes []pat.Scope
+	// DataRole is the engine-managed read-only Postgres role a data-scope PAT
+	// owns (specification section 7): the role every data-surface read this
+	// authority makes executes as, via SET ROLE on the shared read pool. Empty
+	// for a PAT without the data scope and for ambient authority (an ambient
+	// read runs as the engine itself).
+	DataRole string
 	// Ambient marks a unix-socket request: local and filesystem-guarded, it
 	// passes every scope check without a PAT (specification section 7:
 	// "Socket: ambient authorization").
@@ -93,11 +99,15 @@ func requiredScope(path string) pat.Scope {
 		}
 		return pat.ScopeControl
 	}
-	// Known destructive mutation paths (exact) require control scope even though
+	// Known control-plane mutation paths (exact) require control scope even though
 	// their first segment may otherwise be a read surface (e.g. workload reads).
 	// This implements the remote tiering for declare destroy, workload wipe,
-	// deadletter drain over TCP (specification section 12).
-	if path == "/deadletter/drain" || path == "/workload/wipe" {
+	// deadletter drain/replay, run cancel, endpoint apply, and PAT mint over TCP
+	// (specification sections 7 and 12). Publishing a read surface and minting a PAT
+	// are control-plane mutations; the endpoint reads themselves are /q, gated as data.
+	switch path {
+	case "/deadletter/drain", "/deadletter/replay", "/workload/wipe", "/run/cancel",
+		"/endpoint/apply", "/pat/create":
 		return pat.ScopeControl
 	}
 	return pat.ScopeRead

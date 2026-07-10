@@ -55,6 +55,43 @@ func (w *Writer) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
+const insertJournalCheckpointSQL = `INSERT INTO journal_checkpoints
+(id_from, id_to, digest, parent_digest, signature, location, recorded_at)
+VALUES ($1, $2, $3, $4, $5, $6, now()::text)`
+
+// advertiseLeaderSQL upserts the leader's advertised address into the single-row
+// leadership table (specification section 4, leadership Q/A). It is one atomic
+// statement pinned to id = 1: the leader writes it on winning the advisory lock and
+// re-advertises each term, so a re-elected or failover leader supersedes the prior
+// address rather than appending a second row. now()::text stamps the opaque audit
+// column, matching the recorded_at convention elsewhere in meta.
+const advertiseLeaderSQL = `INSERT INTO leadership (id, advertised_addr, recorded_at)
+VALUES (1, $1, now()::text)
+ON CONFLICT (id) DO UPDATE SET advertised_addr = EXCLUDED.advertised_addr, recorded_at = EXCLUDED.recorded_at`
+
+// AdvertiseLeader records this leader's advertised address so a standby can name it
+// for retargeting (exit 6, GET /leader -- specification sections 7, 8, and 15). addr
+// is the leader's TCP listen address (empty when socket-only: a socket-only leader
+// still advertises, clearing any stale prior address, and the empty value renders as
+// "unknown"). The upsert is one atomic statement, so re-advertising a term never
+// leaves two leadership rows. It is a leader-only meta write, riding the single Writer.
+func (w *Writer) AdvertiseLeader(ctx context.Context, addr string) error {
+	if err := w.conn.Exec(ctx, advertiseLeaderSQL, addr); err != nil {
+		return fmt.Errorf("store: writer advertise leader %q: %w", addr, err)
+	}
+	return nil
+}
+
+// InsertJournalCheckpoint records one sealed partition's checkpoint (id range,
+// compacted digest, parent for chain, ed25519 signature over digest, location).
+// It is insert-only, leader-only, through the single writer.
+func (w *Writer) InsertJournalCheckpoint(ctx context.Context, idFrom, idTo int64, digest, parentDigest, signature []byte, location string) error {
+	if err := w.conn.Exec(ctx, insertJournalCheckpointSQL, idFrom, idTo, digest, parentDigest, signature, location); err != nil {
+		return fmt.Errorf("store: writer insert journal checkpoint [%d,%d): %w", idFrom, idTo, err)
+	}
+	return nil
+}
+
 // The run-record write statements crash reconciliation submits through the single
 // writer. Both are guarded on the run's source state so they can only ever act on a
 // run that is actually in that state (never one that has since progressed).

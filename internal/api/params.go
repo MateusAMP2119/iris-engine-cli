@@ -323,14 +323,81 @@ func PlanCollectionQuery(c Collection, fields map[string]string, q url.Values) (
 	return planKeyedQuery(key, fields, q)
 }
 
-// PlanDataQuery resolves a request against the raw /data route: it is keyed by the
-// source table's primary key and filters on exact field equality over the table's
-// columns (specification section 7: /data is column projection plus eq/range
-// filters keyset-paged by table PK; the eq/exact filtering and paging live here,
-// projection lives in the route layer). primaryKey is the table's PK columns;
-// fields is the table's filterable columns and their types.
+// PlanDataQuery resolves a request against the raw /data route (specification
+// section 7: /data is column projection plus eq/range filters keyset-paged by
+// table PK; the filtering and paging grammar lives here, projection in the
+// route layer). It is keyed by the source table's primary key, and every
+// declared column takes the full filter grammar: <col>= binds exact equality
+// and <col>_from / <col>_to bind an inclusive range, either side omittable --
+// the same eq/range wire grammar a /q endpoint declares, ad hoc. A declared
+// column whose name collides with another column's range param keeps its own
+// name (the declared column always wins). primaryKey is the table's PK
+// columns; fields is the table's filterable columns and their types.
 func PlanDataQuery(primaryKey []string, fields map[string]string, q url.Values) (*QueryPlan, error) {
-	return planKeyedQuery(DataCursorKey(primaryKey), fields, q)
+	type rangeRef struct {
+		column string
+		op     PredicateOp
+	}
+	allowed := map[string]struct{}{"after": {}, "limit": {}}
+	ranges := make(map[string]rangeRef)
+	for f := range fields {
+		allowed[f] = struct{}{}
+	}
+	for f := range fields {
+		for _, r := range []struct {
+			suffix string
+			op     PredicateOp
+		}{{"_from", OpGte}, {"_to", OpLte}} {
+			p := f + r.suffix
+			if _, isColumn := fields[p]; isColumn {
+				continue // the declared column name wins the param
+			}
+			allowed[p] = struct{}{}
+			ranges[p] = rangeRef{column: f, op: r.op}
+		}
+	}
+	if err := checkKnownSingle(q, allowed); err != nil {
+		return nil, err
+	}
+
+	// Equality predicates in sorted column order, then range predicates in
+	// sorted param order, so the plan is deterministic regardless of query
+	// iteration order.
+	var preds []Predicate
+	for _, f := range presentFields(fields, q) {
+		raw, _ := single(q, f)
+		v, err := parseParam(f, fields[f], raw)
+		if err != nil {
+			return nil, err
+		}
+		preds = append(preds, Predicate{Column: f, Op: OpEq, Value: v})
+	}
+	var present []string
+	for p := range ranges {
+		if _, ok := q[p]; ok {
+			present = append(present, p)
+		}
+	}
+	sort.Strings(present)
+	for _, p := range present {
+		raw, _ := single(q, p)
+		ref := ranges[p]
+		v, err := parseParam(p, fields[ref.column], raw)
+		if err != nil {
+			return nil, err
+		}
+		preds = append(preds, Predicate{Column: ref.column, Op: ref.op, Value: v})
+	}
+
+	limit, err := resolveLimit(q)
+	if err != nil {
+		return nil, err
+	}
+	cursor, err := planCursor(DataCursorKey(primaryKey), fields, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &QueryPlan{Predicates: preds, Cursor: cursor}, nil
 }
 
 // planKeyedQuery is the shared grammar for the exact-equality routes (fixed

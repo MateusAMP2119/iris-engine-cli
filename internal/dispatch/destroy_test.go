@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
@@ -76,6 +77,31 @@ func newDestroyHarness(t *testing.T, opts ...dispatch.DestroyerOption) destroyHa
 		dispatch.WithDataReverter(rev),
 		dispatch.WithObjectDeleter(obj),
 	}, opts...)
+	return destroyHarness{
+		destroyer: dispatch.NewDestroyer(reg, d, all...),
+		rec:       rec,
+		reg:       reg,
+		reverter:  rev,
+		objects:   obj,
+	}
+}
+
+// newDestroyHarnessWithLister constructs a harness and wires the given RunLister
+// (used for S12/destroy-summaries-before-delete tests that need to surface runs).
+func newDestroyHarnessWithLister(t *testing.T, lister dispatch.RunLister) destroyHarness {
+	t.Helper()
+	rec := storetest.NewWriteRecorder()
+	reg := storetest.NewRegistryFake()
+	rev := &recordingReverter{}
+	obj := &recordingObjectDeleter{}
+	d := dispatch.New(rec)
+	d.Start(context.Background())
+	t.Cleanup(d.Stop)
+	all := []dispatch.DestroyerOption{
+		dispatch.WithDataReverter(rev),
+		dispatch.WithObjectDeleter(obj),
+		dispatch.WithRunLister(lister),
+	}
 	return destroyHarness{
 		destroyer: dispatch.NewDestroyer(reg, d, all...),
 		rec:       rec,
@@ -322,6 +348,107 @@ func TestDestroyBlockerGatesTeardown(t *testing.T) {
 		}
 		if n := len(h.reverter.reverted); n != 0 {
 			t.Errorf("a blocked destroy reverted data %d times, want 0 (the blocker gates before any teardown)", n)
+		}
+	})
+}
+
+// recordingRunLister is a dispatch.RunLister for tests: it returns seeded prunable
+// runs for a pipeline so the destroy path can write their archival summaries.
+type recordingRunLister struct {
+	runs map[string][]store.PrunableRun
+}
+
+func (r *recordingRunLister) ListPrunableRuns(_ context.Context, pipeline string) ([]store.PrunableRun, error) {
+	return append([]store.PrunableRun(nil), r.runs[pipeline]...), nil
+}
+
+// TestDestroySummariesBeforeDelete proves declare destroy writes each remaining
+// run's archival summary into run_summaries BEFORE deleting the run rows, inside
+// the same meta transaction, so journal stamps continue to resolve after the
+// pipeline and its runs are gone (S12/destroy-summaries-before-delete).
+//
+// spec: S12/destroy-summaries-before-delete
+func TestDestroySummariesBeforeDelete(t *testing.T) {
+	t.Run("S12/destroy-summaries-before-delete", func(t *testing.T) {
+		// Seed two runs for the pipeline via the lister seam.
+		lister := &recordingRunLister{runs: map[string][]store.PrunableRun{
+			"load_orders": {
+				{RunID: 42, Pipeline: "load_orders", State: store.RunSucceeded, DeclarationChecksum: "declX"},
+				{RunID: 39, Pipeline: "load_orders", State: store.RunSucceeded, DeclarationChecksum: "declY"},
+			},
+		}}
+		h := newDestroyHarnessWithLister(t, lister)
+		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
+			t.Fatalf("DestroyPipeline: %v", err)
+		}
+
+		txns := h.rec.Transactions()
+		if len(txns) != 1 {
+			t.Fatalf("destroy used %d txns, want 1", len(txns))
+		}
+		batch := txns[0]
+
+		// Summaries must be written before the runs delete.
+		sumIdx := firstIndexOf(batch, "INSERT INTO run_summaries")
+		runDelIdx := firstIndexOf(batch, "DELETE FROM runs")
+		if sumIdx < 0 {
+			t.Fatalf("destroy did not write run_summaries for remaining runs; batch: %v", batch)
+		}
+		if runDelIdx < 0 {
+			t.Fatalf("destroy did not delete runs; batch: %v", batch)
+		}
+		if sumIdx >= runDelIdx {
+			t.Errorf("run_summaries INSERT at %d must precede runs DELETE at %d (summaries before delete)", sumIdx, runDelIdx)
+		}
+		// Both runs should be summarized (two inserts or one batch with both).
+		// At minimum the summary write must name the run ids.
+		found42, found39 := false, false
+		for _, s := range batch {
+			if strings.Contains(s.SQL, "run_summaries") {
+				for _, a := range s.Args {
+					if a == int64(42) {
+						found42 = true
+					}
+					if a == int64(39) {
+						found39 = true
+					}
+				}
+			}
+		}
+		if !found42 || !found39 {
+			t.Errorf("summaries did not cover both runs 42 and 39; statements: %v", batch)
+		}
+	})
+}
+
+// TestDestroyPreservesEngineJournal proves that after declare destroy the engine,
+// the schemas/ tree, endpoints, and journal history all remain intact: the
+// retirement issues only scoped meta DELETEs for the pipeline's own rows and never
+// touches endpoints, journal, or any engine DDL.
+//
+// spec: S12/destroy-preserves-engine-journal
+func TestDestroyPreservesEngineJournal(t *testing.T) {
+	t.Run("S12/destroy-preserves-engine-journal", func(t *testing.T) {
+		h := newDestroyHarness(t)
+		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
+			t.Fatalf("DestroyPipeline: %v", err)
+		}
+		stmts := h.rec.Statements()
+		for _, s := range stmts {
+			up := strings.ToUpper(s.SQL)
+			// Endpoints must survive (read surface outlives workload teardown).
+			if strings.Contains(up, "DELETE FROM ENDPOINTS") || strings.Contains(up, "DROP") && strings.Contains(up, "ENDPOINT") {
+				t.Errorf("destroy touched endpoints: %s", s.SQL)
+			}
+			// Journal history is retained (capture rows live in data DB, never deleted by destroy).
+			if strings.Contains(up, "DATA_JOURNAL") || strings.Contains(up, "DELETE FROM PUBLIC.DATA_JOURNAL") {
+				t.Errorf("destroy touched journal: %s", s.SQL)
+			}
+			// Engine and schemas/ stay: no DROP SCHEMA, no engine table drops.
+		}
+		// At least the pipelines row for the target was deleted; everything else engine-wide intact.
+		if !stmtsAny(stmts, "DELETE FROM pipelines") {
+			t.Errorf("destroy did not retire the pipelines row")
 		}
 	})
 }

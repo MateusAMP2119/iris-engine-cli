@@ -48,6 +48,10 @@ type dataPlane interface {
 	// EnsureCaptureFunction ensures iris.capture() exists so provisioning's capture
 	// triggers bind (the E03.10 forward seam; E06.2 owns the real body).
 	EnsureCaptureFunction(ctx context.Context) error
+	// ExecuteWipe runs a workload wipe (or destroy revert) on the data database.
+	// Added here so the same client instance wires to wipe plane without extra
+	// seam (wipe and provision share the data client).
+	ExecuteWipe(ctx context.Context, target pg.WipeTarget) (pg.WipeResult, error)
 }
 
 // controlPlane is the daemon's api.ControlHandler: a stable handle the mux binds to

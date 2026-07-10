@@ -11,12 +11,14 @@ import (
 )
 
 // TestRunInputsTableShape proves the run_inputs consumption ledger's DDL shape
-// (specification section 4): run_id and upstream_run_id are both bigint foreign keys
-// to runs, the primary key is the composite of both columns, and there is a secondary
-// index on upstream_run_id alone -- the reverse lookup the downstream walk (run show
-// --trace --down, the dead-letter blast radius) needs, which the composite primary key
-// cannot serve. The model is the single source the DDL renders from, so a shape
-// assertion here is a DDL-shape assertion; the rendered CREATE INDEX is checked too.
+// (specification section 4): run_id and upstream_run_id are both bigint columns, the
+// primary key is the composite of both columns, and there is a secondary index on
+// upstream_run_id alone -- the reverse lookup the downstream walk (run show --trace
+// --down, the dead-letter blast radius) needs, which the composite primary key cannot
+// serve. run_id is a foreign key to runs.id; upstream_run_id is deliberately FK-free
+// (see TestRunInputsUpstreamNotFK). The model is the single source the DDL renders
+// from, so a shape assertion here is a DDL-shape assertion; the rendered CREATE INDEX
+// is checked too.
 //
 // spec: S04/run-inputs-table-shape
 func TestRunInputsTableShape(t *testing.T) {
@@ -35,10 +37,10 @@ func TestRunInputsTableShape(t *testing.T) {
 		t.Errorf("run_inputs primary key = %v, want composite %v", ri.PrimaryKey, want)
 	}
 
-	// Both columns are foreign keys to runs.id.
+	// run_id -- the downstream's OWN run -- is a foreign key to runs.id; it is the sole
+	// FK on the table (upstream_run_id is FK-free, proven separately).
 	wantFKs := map[string]string{
-		"run_id":          "runs.id",
-		"upstream_run_id": "runs.id",
+		"run_id": "runs.id",
 	}
 	gotFKs := map[string]string{}
 	for _, fk := range ri.ForeignKeys {
@@ -72,6 +74,43 @@ func TestRunInputsTableShape(t *testing.T) {
 		t.Errorf("rendered run_inputs DDL has no CREATE INDEX on (upstream_run_id); statements = %v", ri.IndexDDL())
 	} else if !strings.HasPrefix(indexStmt, "CREATE INDEX IF NOT EXISTS") {
 		t.Errorf("run_inputs reverse index is not create-if-missing:\n%s", indexStmt)
+	}
+}
+
+// TestRunInputsUpstreamNotFK proves run_inputs.upstream_run_id is deliberately FK-free
+// (specification section 4, the precedent is data_journal.run_id): it references a run
+// logically only, resolving to a live run OR its archival summary. Count-based
+// retention (section 6.2, no reference pin) prunes an upstream run while a cross-
+// pipeline downstream still holds a run_inputs row naming it; a hard FK there could
+// only block the prune (RESTRICT, a live violation) or cascade-delete the surviving
+// downstream's consumption record (erasing a live run's lineage and re-opening its
+// gate), and the composite NOT NULL primary key forbids SET NULL. So the column carries
+// no FK and no reference-to-runs appears for it in the rendered CREATE TABLE, exactly
+// like data_journal.run_id. run_id (the downstream's own run) keeps its FK.
+//
+// spec: S04/run-inputs-upstream-not-fk
+func TestRunInputsUpstreamNotFK(t *testing.T) {
+	s := store.MetaSchema()
+	ri := tableByName(t, s, "run_inputs")
+
+	// No foreign key names upstream_run_id.
+	for _, fk := range ri.ForeignKeys {
+		if fk.Column == "upstream_run_id" {
+			t.Errorf("run_inputs.upstream_run_id must be FK-free (resolves to a run or its summary), but it has FK -> %s.%s", fk.RefTable, fk.RefColumn)
+		}
+	}
+
+	// The rendered CREATE TABLE carries no FOREIGN KEY clause for upstream_run_id: a
+	// stray reference would re-enforce the constraint the doctrine removes.
+	ddl := ri.CreateTableDDL()
+	if strings.Contains(ddl, "FOREIGN KEY (upstream_run_id)") {
+		t.Errorf("rendered run_inputs DDL still declares a FOREIGN KEY on upstream_run_id:\n%s", ddl)
+	}
+
+	// run_id, by contrast, is still a FOREIGN KEY -- the doctrine drops only the
+	// upstream edge, not the downstream's own-run edge.
+	if !strings.Contains(ddl, "FOREIGN KEY (run_id) REFERENCES runs (id)") {
+		t.Errorf("rendered run_inputs DDL dropped the run_id -> runs.id FK, which must stay:\n%s", ddl)
 	}
 }
 

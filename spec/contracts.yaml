@@ -507,6 +507,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
     status: unclaimed
+  - id: S04/engine-key-in-meta-table
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: integration
+    status: unclaimed
   - id: S04/engine-key-public-via-info
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
@@ -548,6 +552,10 @@ contracts:
     tier: integration
     status: unclaimed
   - id: S04/lanes-table-shape
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: integration
+    status: unclaimed
+  - id: S04/leadership-advertisement-table
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
     status: unclaimed
@@ -595,6 +603,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: conformance
     status: unclaimed
+  - id: S04/read-pool-credential-in-meta-table
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: integration
+    status: unclaimed
   - id: S04/run-attribution-via-connection
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: conformance
@@ -603,7 +615,15 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
     status: unclaimed
+  - id: S04/pipeline-role-reaches-capture
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: unit
+    status: unclaimed
   - id: S04/run-inputs-table-shape
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: integration
+    status: unclaimed
+  - id: S04/run-inputs-upstream-not-fk
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
     status: unclaimed
@@ -891,6 +911,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#62-the-depends_on-gate"
     tier: integration
     status: unclaimed
+  - id: S06.2/prune-upstream-survivor-no-violation
+    anchor: "docs/Iris Specification Inventory.md#62-the-depends_on-gate"
+    tier: conformance
+    status: unclaimed
   - id: S06.2/prune-never-touches-journal
     anchor: "docs/Iris Specification Inventory.md#62-the-depends_on-gate"
     tier: unit
@@ -1078,6 +1102,14 @@ contracts:
   - id: S07/endpoint-sql-deterministic
     anchor: "docs/Iris Specification Inventory.md#7-read-api--credentials"
     tier: unit
+    status: unclaimed
+  - id: S07/endpoints-reload-from-meta
+    anchor: "docs/Iris Specification Inventory.md#7-read-api--credentials"
+    tier: integration
+    status: unclaimed
+  - id: S07/endpoints-reload-on-restart
+    anchor: "docs/Iris Specification Inventory.md#7-read-api--credentials"
+    tier: conformance
     status: unclaimed
   - id: S07/endpoint-yaml-file-shape
     anchor: "docs/Iris Specification Inventory.md#7-read-api--credentials"
@@ -1783,6 +1815,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
     tier: integration
     status: unclaimed
+  - id: S14/engine-key-stable-across-restart
+    anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
+    tier: conformance
+    status: unclaimed
   - id: S14/meta-holds-no-payload-bytes
     anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
     tier: integration
@@ -1887,6 +1923,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
     tier: conformance
     status: unclaimed
+  - id: S15/advertisement-updates-on-failover
+    anchor: "docs/Iris Specification Inventory.md#15-high-availability-one-meta"
+    tier: conformance
+    status: unclaimed
   - id: S15/advisory-lock-leader-election
     anchor: "docs/Iris Specification Inventory.md#15-high-availability-one-meta"
     tier: integration
@@ -1908,6 +1948,10 @@ contracts:
     tier: conformance
     status: unclaimed
   - id: S15/failover-stopped-runs-dead-letter
+    anchor: "docs/Iris Specification Inventory.md#15-high-availability-one-meta"
+    tier: integration
+    status: unclaimed
+  - id: S15/leader-advertises-address
     anchor: "docs/Iris Specification Inventory.md#15-high-availability-one-meta"
     tier: integration
     status: unclaimed

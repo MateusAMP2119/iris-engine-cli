@@ -143,6 +143,42 @@ func NewPgxReadPool(pool *pgxpool.Pool) *ReadPool {
 	return newReadPool(&pgxReadAcquirer{pool: pool})
 }
 
+// NewDataReadPool opens the shared read pool on a data database, deriving every
+// connection setting (host, port, sslmode, socket) from the one admin-derived
+// connection source and swapping only the identity (the engine read-pool login
+// role and its engine-minted secret) and the target database. It refuses the meta
+// database outright (ErrReadPoolMetaDatabase) -- the pool serves the data surface,
+// never engine storage. It returns the pool alongside so the daemon can close it at
+// shutdown. Deriving from the admin source (rather than reassembling a DSN) keeps
+// the read pool reachable in every mode the admin DSN is (external TCP, managed,
+// TLS) without reconstructing connection parameters.
+func NewDataReadPool(ctx context.Context, src ConnSource, database, role string, secret Secret) (*ReadPool, *pgxpool.Pool, error) {
+	if src == nil {
+		return nil, nil, errors.New("store: read pool: nil connection source")
+	}
+	if database == MetaDatabase {
+		return nil, nil, fmt.Errorf("store: open data read pool: %w", ErrReadPoolMetaDatabase)
+	}
+	if role == "" {
+		return nil, nil, fmt.Errorf("store: open data read pool: %w", ErrInvalidRoleOwner)
+	}
+	if secret.IsZero() {
+		return nil, nil, fmt.Errorf("store: open data read pool for %q: %w", role, ErrEmptySecret)
+	}
+	cfg, err := pgxpool.ParseConfig(src.ConnString())
+	if err != nil {
+		return nil, nil, fmt.Errorf("store: parse admin DSN for data read pool: %w", err)
+	}
+	cfg.ConnConfig.Database = database
+	cfg.ConnConfig.User = role
+	cfg.ConnConfig.Password = secret.reveal()
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store: open data read pool as %q: %w", role, err)
+	}
+	return newReadPool(&pgxReadAcquirer{pool: pool}), pool, nil
+}
+
 // BuildReadPoolConn assembles the shared read pool's connection string: the
 // engine's own login role and engine-minted credential on the data database. It
 // refuses the meta database outright (ErrReadPoolMetaDatabase) -- the pool serves
@@ -163,10 +199,20 @@ func BuildReadPoolConn(params ScopedConnParams, role string, secret Secret) (Sco
 // back -- a session whose reset fails is destroyed, never reused. The transaction
 // contains exactly one statement, and it is read-only, so no route through this
 // pool can mutate anything.
-func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) (err error) {
+func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) error {
 	if role == "" {
 		return fmt.Errorf("store: read pool: %w", ErrInvalidRoleOwner)
 	}
+	return p.read(ctx, role, stmt, args, consume)
+}
+
+// read is the checkout cycle under Read and the self-read path (readexec.go):
+// an empty role is the engine's own read -- no SET ROLE is issued, the session
+// keeps the pool's own login identity -- while every other mechanic (the
+// read-only single-statement transaction, session-scoped prepare, and the
+// unconditional RESET ROLE release probe) is identical, so a self read can
+// never mutate either and a session that cannot shed a role is still destroyed.
+func (p *ReadPool) read(ctx context.Context, role string, stmt ReadStatement, args []any, consume func(ReadRows) error) (err error) {
 	if stmt.IsZero() {
 		return errors.New("store: read pool: empty read statement")
 	}
@@ -192,8 +238,10 @@ func (p *ReadPool) Read(ctx context.Context, role string, stmt ReadStatement, ar
 		sess.release(false)
 	}()
 
-	if err := sess.exec(ctx, "SET ROLE "+pgx.Identifier{role}.Sanitize()); err != nil {
-		return fmt.Errorf("store: read pool: set role %q: %w", role, err)
+	if role != "" {
+		if err := sess.exec(ctx, "SET ROLE "+pgx.Identifier{role}.Sanitize()); err != nil {
+			return fmt.Errorf("store: read pool: set role %q: %w", role, err)
+		}
 	}
 	if err := sess.exec(ctx, beginReadOnlySQL); err != nil {
 		return fmt.Errorf("store: read pool: begin read-only transaction: %w", err)

@@ -1,0 +1,7 @@
+* 7  load_orders  succeeded (replayed_from=3)
+:
+* 6  load_orders  succeeded
+|
+* 5  extract_orders  succeeded
+
+* 3  extract_orders  dead_lettered

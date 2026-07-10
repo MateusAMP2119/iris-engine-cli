@@ -5,9 +5,18 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
+
+// idleReadInterval bounds how long the perpetual loop waits before re-reading the walk
+// while WHOLLY idle (no lane running). It is not a dispatch timer and gates nothing on a
+// clock: the running path is event-driven on pass completions (clock doctrine), and this
+// bounded wait only wakes an otherwise-idle loop so a graph applied to a cold leader --
+// which has no in-flight pass whose completion could drive a re-read -- is picked up
+// promptly rather than never (specification section 6.3 apply-while-lanes-loop).
+const idleReadInterval = 250 * time.Millisecond
 
 // This file is the perpetual lane loop: the leader-owned dispatch runtime that turns
 // the persisted walk into runs (specification sections 1, 6.1, and 6.3). It composes
@@ -116,12 +125,15 @@ type PostPass interface {
 // snapshot pin and declaration checksum are filled by the run-start adapter, never here.
 // It carries no replayed_from and no reference to any prior run, so a loop run is always
 // fresh -- never a retry (specification sections 1, 6.3).
-func freshRunRecord(pipeline string, d Decision) store.RunRecord {
-	return store.RunRecord{
+// If artifactHash is non-nil it is recorded (built run); nil for dev.
+func freshRunRecord(pipeline string, d Decision, artifactHash *string) store.RunRecord {
+	rec := store.RunRecord{
 		Pipeline:               pipeline,
 		Cause:                  store.CauseLoop,
 		ConsumedUpstreamRunIDs: d.Consume,
 	}
+	rec.ArtifactHash = artifactHash
+	return rec
 }
 
 // PlanFreshRuns computes the fresh cause=loop runs a lane pass starts, in composer
@@ -150,7 +162,7 @@ func PlanFreshRuns(members []string, decide map[string]Decision) []store.RunReco
 		if d.Poisoned || !d.Run {
 			continue // poisoned propagates post-pass; a closed gate mints no run.
 		}
-		runs = append(runs, freshRunRecord(pipeline, d))
+		runs = append(runs, freshRunRecord(pipeline, d, nil))
 	}
 	return runs
 }
@@ -235,7 +247,7 @@ func (l *Loop) runLanePass(ctx context.Context, lane Lane) (PassReport, error) {
 			// a failed run is isolated and never gates the walk, and it is never
 			// retried -- the next pass starts a fresh run only if the gate re-opens.
 			report.Started = append(report.Started, pipeline)
-			if _, err := l.runner.StartFresh(ctx, freshRunRecord(pipeline, d)); err != nil {
+			if _, err := l.runner.StartFresh(ctx, freshRunRecord(pipeline, d, nil)); err != nil {
 				return report, fmt.Errorf("dispatch: lane %q start %q: %w", lane.Name, pipeline, err)
 			}
 		default:
@@ -313,12 +325,18 @@ func (l *Loop) Run(ctx context.Context) error {
 			l.spawnLanePass(ctx, lane, done)
 		}
 
-		// No lane to run: idle. Wait for cancellation. A brand-new lane applied while
-		// wholly idle is picked up when the loop is next driven; once any lane runs, each
-		// pass boundary re-reads the walk and picks up new lanes.
+		// No lane to run: idle. Re-read the walk after a bounded wait so a graph applied
+		// to a cold (wholly idle) leader is picked up promptly -- while idle there is no
+		// in-flight pass whose completion could drive the re-read, so this wait is the
+		// only driver. Once any lane runs, each pass boundary re-reads the walk and picks
+		// up new lanes, and this idle path is not taken.
 		if len(running) == 0 {
-			<-ctx.Done()
-			return ctx.Err()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(idleReadInterval):
+			}
+			continue
 		}
 
 		// Block until one lane finishes a pass (reconcile: re-read the walk and re-spawn

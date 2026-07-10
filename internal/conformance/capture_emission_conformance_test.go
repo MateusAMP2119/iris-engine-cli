@@ -41,6 +41,7 @@ import (
 // wall time.
 //
 // spec: S04/statement-triggers-one-insert
+// spec: S04/pipeline-role-reaches-capture
 // spec: S05/provision-ensures-capture
 func TestCaptureEmission(t *testing.T) {
 	start := time.Now()
@@ -112,17 +113,22 @@ func TestCaptureEmission(t *testing.T) {
 		t.Fatalf("enable function-call tracking: %v", err)
 	}
 
-	// Mint the dedicated writer role and grant it exactly what a pipeline role needs:
-	// DML on its own table, plus USAGE/EXECUTE to reach the capture function (the
+	// Mint the dedicated writer role and grant it DML on its OWN table. The
+	// iris-schema USAGE + capture EXECUTE that let its write reach the always-on
+	// capture function are no longer hand-written here: they ride the production
+	// provisioning path (pg.RenderCaptureReachabilityGrants, the exact grants
+	// ProvisionPipelineRole issues for every pipeline role). If provisioning stopped
+	// granting them, the capture assertions below would stop firing -- that is the
+	// real proof the pipeline-role provisioning covers capture out of the box (the
 	// function is SECURITY DEFINER, so the journal write itself runs as the owner).
-	for _, stmt := range []string{
+	grantStmts := []string{
 		fmt.Sprintf("CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '%s'", writer, writerpw),
 		fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", pg.DataDatabase, writer),
 		fmt.Sprintf("GRANT USAGE ON SCHEMA analytics TO %s", writer),
 		fmt.Sprintf("GRANT SELECT, INSERT, UPDATE, DELETE ON analytics.orders TO %s", writer),
-		fmt.Sprintf("GRANT USAGE ON SCHEMA iris TO %s", writer),
-		fmt.Sprintf("GRANT EXECUTE ON FUNCTION iris.capture() TO %s", writer),
-	} {
+	}
+	grantStmts = append(grantStmts, pg.RenderCaptureReachabilityGrants(writer)...)
+	for _, stmt := range grantStmts {
 		if err := client.Exec(ctx, stmt); err != nil {
 			t.Fatalf("mint writer role (%q): %v", stmt, err)
 		}

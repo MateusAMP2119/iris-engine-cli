@@ -73,6 +73,98 @@ func TestWorkspaceTreeDiscovery(t *testing.T) {
 	})
 }
 
+// TestSampleWorkspaceShape pins the golden sample workspace shape exactly as
+// described in the specification (two tables, three single-script pipelines
+// under one ingest lane with its composer order, one read endpoint) plus the
+// declared reads/writes on extract_orders and load_orders.
+//
+// spec: S13/sample-workspace-shape
+func TestSampleWorkspaceShape(t *testing.T) {
+	t.Run("S13/sample-workspace-shape", func(t *testing.T) {
+		root := fixtures.WorkspaceGolden()
+
+		ws, err := declare.DiscoverWorkspace(root)
+		if err != nil {
+			t.Fatalf("golden workspace discovery failed: %v", err)
+		}
+
+		// Exactly two tables.
+		if len(ws.Schemas) != 2 {
+			t.Errorf("schemas = %d, want 2 (raw.orders_staging, analytics.orders)", len(ws.Schemas))
+		}
+		tbls := map[string]bool{}
+		for _, s := range ws.Schemas {
+			tbls[s.Schema+"."+s.Table] = true
+		}
+		for _, tc := range []struct{ want string }{
+			{"raw.orders_staging"},
+			{"analytics.orders"},
+		} {
+			if !tbls[tc.want] {
+				t.Errorf("missing table %q", tc.want)
+			}
+		}
+
+		// Three single-script pipelines in one ingest lane, composed by
+		// ingest/iris-declare.yaml with exact order.
+		if len(ws.Pipelines) != 3 {
+			t.Errorf("pipelines = %d, want 3", len(ws.Pipelines))
+		}
+		if len(ws.Composers) != 1 {
+			t.Fatalf("composers = %d, want 1", len(ws.Composers))
+		}
+		comp := ws.Composers[0]
+		if comp.Lane != "ingest" {
+			t.Errorf("composer lane = %q, want ingest", comp.Lane)
+		}
+		wantOrder := []string{"extract_orders", "reset_counters", "load_orders"}
+		if !equalSlices(comp.Spec.Order, wantOrder) {
+			t.Errorf("composer order = %v, want %v", comp.Spec.Order, wantOrder)
+		}
+
+		// Map pipelines by name for content checks.
+		byName := map[string]*declare.DiscoveredPipeline{}
+		for i := range ws.Pipelines {
+			p := &ws.Pipelines[i]
+			byName[p.Declaration.Name] = p
+		}
+		// extract_orders reads and writes raw.orders_staging.
+		ext, ok := byName["extract_orders"]
+		if !ok {
+			t.Fatal("extract_orders not discovered")
+		}
+		if len(ext.Declaration.Reads) != 1 || ext.Declaration.Reads[0].Table != "raw.orders_staging" {
+			t.Errorf("extract_orders reads = %+v, want raw.orders_staging", ext.Declaration.Reads)
+		}
+		if len(ext.Declaration.Writes) != 1 || ext.Declaration.Writes[0].Table != "raw.orders_staging" {
+			t.Errorf("extract_orders writes = %+v, want raw.orders_staging", ext.Declaration.Writes)
+		}
+		// load_orders reads staging and writes analytics.orders.
+		ld, ok := byName["load_orders"]
+		if !ok {
+			t.Fatal("load_orders not discovered")
+		}
+		if len(ld.Declaration.Reads) != 1 || ld.Declaration.Reads[0].Table != "raw.orders_staging" {
+			t.Errorf("load_orders reads = %+v, want raw.orders_staging", ld.Declaration.Reads)
+		}
+		if len(ld.Declaration.Writes) != 1 || ld.Declaration.Writes[0].Table != "analytics.orders" {
+			t.Errorf("load_orders writes = %+v, want analytics.orders", ld.Declaration.Writes)
+		}
+
+		// One declared read endpoint orders_by_customer.
+		eps, err := declare.DiscoverEndpoints(root)
+		if err != nil {
+			t.Fatalf("discover endpoints: %v", err)
+		}
+		if len(eps) != 1 {
+			t.Fatalf("endpoints = %d, want 1", len(eps))
+		}
+		if eps[0].Name != "orders_by_customer" {
+			t.Errorf("endpoint name = %q, want orders_by_customer", eps[0].Name)
+		}
+	})
+}
+
 // equalSlices reports whether two string slices are equal in order.
 func equalSlices(a, b []string) bool {
 	if len(a) != len(b) {

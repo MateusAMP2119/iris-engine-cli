@@ -80,6 +80,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		return ErrManagedNotInstalled
 	}
 
+	// Workspace tree is a per-host prerequisite for every candidate (S15): resolve
+	// early from CWD (the tree the daemon was started in) so a host lacking the
+	// pipelines/dev sources/env_files refuses before bringing up Postgres or listeners.
+	workspace, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("daemon: resolve workspace: %w", err)
+	}
+	if err := requireWorkspaceTree(workspace); err != nil {
+		return err
+	}
+
 	// Bring up Postgres and resolve the admin DSN (managed subprocess or external),
 	// then connect the meta client: ensure the meta database exists and open the
 	// leader session (advisory lock + writes) and the reader pool.
@@ -105,13 +116,75 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer data.Close()
 
-	// The leader's workspace tree: declarations and the schemas/ tree resolve against
-	// it. The daemon runs in the workspace (its socket lives under <workspace>/.iris),
-	// so its working directory is that tree.
-	workspace, err := os.Getwd()
+	// The lane and manual runs' scoped data connection targets the engine-owned data
+	// database (where the declared tables and capture trigger live), retargeted from the
+	// admin/maintenance DSN and injected into each run as IRIS_DB_URL.
+	laneDataDSN, err := pg.DataDSN(adminDSN.Source().ConnString())
 	if err != nil {
-		return fmt.Errorf("daemon: resolve workspace: %w", err)
+		return fmt.Errorf("daemon: derive lane run data DSN: %w", err)
 	}
+
+	// The leader's workspace tree (already verified as a prerequisite above): declarations
+	// and the schemas/ tree resolve against it. The daemon runs in the workspace (its
+	// socket lives under <workspace>/.iris), so its working directory is that tree.
+	// (No re-resolve or re-check: the early check already refused lacking trees.)
+
+	// The declared read surface (specification section 7): the shared read pool on
+	// the data database, the live endpoint registry, and the declared-table shape
+	// source. The read pool connects as the engine's own least-privilege read-pool
+	// login, which holds no table grants of its own -- every data-surface read runs
+	// as the calling PAT's role, assumed via SET ROLE, so the pool login is a
+	// connection identity only.
+	//
+	// The read-pool credential is persisted create-once in engine-owned meta
+	// (read_pool_credential, mirroring engine_key): every daemon start reads the ONE
+	// stored secret back rather than minting a fresh one, so two daemons on one data
+	// cluster (an HA standby, or a restart racing a live leader) converge on a single
+	// credential. The login's password is set to that persisted secret on every start
+	// -- an idempotent password-only ALTER by the role's creator (fine on PG16+, no
+	// attribute assertion): because every node ALTERs to the SAME secret it never
+	// invalidates another node's live pool (unlike the former per-start fresh mint,
+	// where the last starter's secret won and an earlier node's pool then failed to
+	// authenticate). Setting to the persisted secret every start also self-heals the
+	// crash window between the create-once INSERT and the login ALTER.
+	readSecret, err := client.EnsureReadPoolCredential(ctx)
+	if err != nil {
+		return fmt.Errorf("daemon: ensure read-pool credential: %w", err)
+	}
+	if err := pg.ProvisionReadPoolLogin(ctx, data, pg.ReadPoolLoginProvision{
+		Role:          pg.EngineReadPoolRole,
+		CredentialDDL: store.RenderSetRolePassword(pg.EngineReadPoolRole, readSecret),
+		MetaDatabase:  store.MetaDatabase,
+		DataDatabase:  pg.DataDatabase,
+	}); err != nil {
+		return fmt.Errorf("daemon: provision read-pool login: %w", err)
+	}
+	readPool, readPoolConns, err := store.NewDataReadPool(ctx, adminDSN.Source(), pg.DataDatabase, pg.EngineReadPoolRole, readSecret)
+	if err != nil {
+		return fmt.Errorf("daemon: open data read pool: %w", err)
+	}
+	defer readPoolConns.Close()
+
+	// The live endpoint registry (shared by the serving mux and the leader's endpoint
+	// applier: an apply that commits serves the next /q request with no restart), the
+	// declared-table shape source for /data, and the TCP bearer-token verifier.
+	endpointRegistry := dispatch.NewEndpointRegistry()
+
+	// Reload the persisted endpoints into the live registry before serving, so a
+	// restart or failover serves every applied endpoint with no re-apply
+	// (specification section 7). The in-memory registry is empty each process start;
+	// the endpoints/endpoint_filters meta rows are the truth of what was applied. This
+	// runs on every node (the read pool serves /q from any node) and is best-effort:
+	// a reload fault is logged, never fatal -- the control plane must serve even if a
+	// read-surface reload snags.
+	if err := reloadEndpoints(ctx, client.EndpointReader(), endpointRegistry, workspace, logger); err != nil {
+		logger.Warn("iris daemon: reload persisted endpoints", "err", err)
+	}
+
+	dataSource := newWorkspaceDataSource(workspace)
+	verifier := newStoreVerifier(client.PATReader())
+	endpointCtl := newEndpointPlane()
+	patMint := newPATPlane()
 
 	// The role state the mux consults and the control plane the mux routes apply/destroy
 	// to: standby/unwired until election confirms leadership and installs the
@@ -126,7 +199,80 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// objects_path, the content hash through the single writer into artifacts.
 	builds := newBuildPlane(logger)
 	workload := NewWorkloadPlane(client.ShowReader(), logger)
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload)), WithServerLogger(logger))
+
+	// The provenance plane is the live reader: journal stamps from the data
+	// database + run/summary/input lineage from meta, run through the pure
+	// pg.WalkProvenance. Archived-partition stamps resolve via the object store.
+	objects := store.NewObjectStore(s.ObjectsPath)
+	prov := NewProvenancePlane(client.Reader(), data, objects, logger)
+
+	// The wipe and promote planes serve POST /workload/wipe and POST
+	// /pipeline/promote once this daemon leads: the journal-driven revert over
+	// the data database and the promotion that ends wipe-eligibility.
+	wipes := newWipePlane(logger)
+	promos := newPromotePlane(logger)
+
+	// The daemon's in-flight run registry: the production InflightKiller the
+	// self-demotion kill acts through (specification section 15). Both the manual
+	// orchestrator and the perpetual lane loop track each live run's process group in
+	// this ONE registry, so a demotion (lost meta session) kills the daemon's own
+	// in-flight runs -- manual and lane alike -- at once, writing nothing to meta.
+	inflight := newInflightRuns()
+
+	// The lane plane serves POST /run/cancel once this daemon leads: it reaches a
+	// running lane run's process group through the shared in-flight registry and
+	// dead-letters it as stopped through the single writer. The pass counter is the
+	// leader-held per-lane loop count, reset each leadership term.
+	lanes := newLanePlane(logger, inflight)
+	passCounter := dispatch.NewPassCounter()
+
+	// The stats plane serves GET /stats (and `iris engine stats`) on any node: the
+	// meta-backed rollup over the reader pool composed with the leader-held per-lane
+	// pass counts -- the same counter the lane loop increments and the candidate resets
+	// each term, so the readout reports live loop passes. A standby answers with zero
+	// passes (it has dispatched none).
+	stats := NewStatsPlane(client.StatsSource(), passCounter, logger)
+
+	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
+	// `iris deadletter show` renders) on any node from the reader pool, and POST
+	// /deadletter/replay and /deadletter/drain once this daemon leads (its executor is
+	// installed on winning leadership, cleared on demotion).
+	deadletters := newDeadletterPlane(client.DeadLetterReader(), client.RegistryReader(), logger)
+
+	// The engine-info plane serves GET /info (and `iris engine info`) on any node:
+	// the daemon-held runtime facts -- the live leadership role, the resolved
+	// listeners, the data/meta targets, the leader-held per-lane pass counts, and
+	// the display-only uptime. The inspect plane serves GET /inspect: the embedded
+	// engine-table DDL dump, a pure render that touches no database. The pipeline-show
+	// plane serves GET /pipeline/show from the reader pool: the resolved declaration,
+	// role grants, recent runs, and the depends_on gate ledger. All three are reads,
+	// served on any role, mutating nothing.
+	info := NewInfoPlane(role, passCounter, InfoConfig{Socket: s.Socket, TCP: s.TCP})
+	inspect := NewInspectPlane()
+	pipelineShow := NewShowPlane(client.ShowReader(), logger)
+
+	// The E14 read-route planes serve the run-history, trace, and gate readouts on any
+	// node from the reader pool (specification section 7). The runs collection (GET
+	// /runs[?include=inputs], GET /runs/{id}) is the lineage rail `iris run list`
+	// draws; the run trace (GET /runs/{id}/trace) walks run_inputs ancestry up or
+	// descendants down; the pipeline gate (GET /pipelines/{name}/gate) is the
+	// depends_on gate ledger `iris pipeline show` prints, served standalone.
+	runs := newRunsPlane(client.RunLineageReader(), logger)
+	runTrace := newRunTracePlane(client.Reader(), logger)
+	pipelineGate := newPipelineGatePlane(client.ShowReader(), logger)
+
+	srv := NewServer(s, api.NewMux(
+		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
+		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
+		api.WithPromote(promos), api.WithWipe(wipes), api.WithRunCancel(lanes),
+		api.WithEndpoints(endpointRegistry), api.WithEndpointReader(api.NewPoolReader(readPool)),
+		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
+		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
+		api.WithStats(stats),
+		api.WithInfo(info), api.WithInspect(inspect), api.WithPipelineShow(pipelineShow),
+		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
+		api.WithRuns(runs), api.WithRunTrace(runTrace), api.WithPipelineGate(pipelineGate),
+	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -146,12 +292,45 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// winning, the leader runs startup crash reconciliation before any lane dispatch:
 	// it reads leftover run records through the plain-MVCC reader, best-effort
 	// SIGKILLs same-host survivors through the exec seam, and disposes of their runs
-	// through the single writer (specification section 2 crash recovery).
+	// through the single writer (specification section 2 crash recovery). A lost meta
+	// session self-demotes: dispatch stops, in-flight runs are killed (WithInflightKiller),
+	// and the daemon re-enters standby on a FRESH session (WithFreshSessions), so one
+	// process survives any number of demotions (specification section 15).
+	//
+	// The lane loop build closure composes the loop over the single dispatcher on
+	// winning leadership: the walk read, the depends_on gate, the fresh cause=loop
+	// run-start (run-scoped for capture attribution, tracked in the SHARED in-flight
+	// registry so run cancel and the self-demotion kill reach it), and the failure-
+	// propagation post-pass. The run's data connection targets the engine-owned data
+	// database, retargeted from the admin DSN.
+	laneBuild := func(submit dispatch.Submitter) *dispatch.Loop {
+		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
+			exec.NewOSRunner(), data, objects, laneDataDSN, passCounter, logger)
+	}
+
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), exec.NewOSRunner()),
-		WithBuildPlane(builds, workspace, client.ManualReader(), store.NewObjectStore(s.ObjectsPath), exec.NewOSRunner()))
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, laneDataDSN),
+		WithSealer(s.JournalPartitionRows, data, client.SealReader()),
+		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
+		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
+		WithWipePlane(wipes, client.Reader(), data),
+		WithLaneLoop(laneBuild),
+		WithLanePlane(lanes),
+		WithPassCounter(passCounter),
+		WithDeadletterPlane(deadletters),
+		WithInflightKiller(inflight),
+		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
+		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),
+		WithPATPlane(patMint, endpointRegistry, workspace),
+		// Leader advertisement (specification section 15): on winning the lock this
+		// candidate advertises its TCP listen address (empty when socket-only) into the
+		// leadership meta table, and while a standby it polls that table to name the live
+		// leader for retargeting (exit 6, GET /leader). srv.TCPAddr() is the resolved
+		// listen address (the real port even when the configured address used port 0).
+		WithLeaderAdvertiser(srv.TCPAddr()),
+		WithLeaderAddrReader(client.LeaderAddrReader()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

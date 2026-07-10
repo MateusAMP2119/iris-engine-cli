@@ -64,9 +64,15 @@ func checkBareIdent(kind, name string) error {
 // projected columns, the filterable columns with their Postgres types, and the
 // table's primary key. Every name must be a single bare identifier and every type
 // a plain type token; anything else is refused, so no caller-influenced byte ever
-// reaches statement text. The output is deterministic: filters bind in sorted
-// column order, then the keyset after cursor (single-column primary keys only),
-// then the limit, mirroring the endpoint compiler's optional-NULL-bound form.
+// reaches statement text. The output is deterministic: each filter column binds
+// one equality slot plus an inclusive range pair (<col>_from / <col>_to, the
+// /data grammar's eq/range filters; a range param whose name collides with
+// another filter column is skipped, the declared column wins), in sorted column
+// order, then the keyset after cursor (single-column primary keys only), then
+// the limit, mirroring the endpoint compiler's optional-NULL-bound form. The
+// statement references only the given columns -- callers pass the columns a
+// request actually addresses, so no unaddressed column's grant is ever dragged
+// into a read.
 func BuildDataStatement(schema, table string, projection []string, filters map[string]string, primaryKey []string) (*DataStatement, error) {
 	if err := checkBareIdent("schema", schema); err != nil {
 		return nil, err
@@ -116,9 +122,20 @@ func BuildDataStatement(schema, table string, projection []string, filters map[s
 	}
 
 	for _, c := range filterCols {
-		clauses = append(clauses, optional(c, filters[c], "="))
-		params = append(params, declare.ParamSlot{Index: idx, Param: c, Kind: declare.ParamEq, Column: c, PgType: filters[c]})
+		pt := filters[c]
+		clauses = append(clauses, optional(c, pt, "="))
+		params = append(params, declare.ParamSlot{Index: idx, Param: c, Kind: declare.ParamEq, Column: c, PgType: pt})
 		idx++
+		if _, taken := filters[c+"_from"]; !taken {
+			clauses = append(clauses, optional(c, pt, ">="))
+			params = append(params, declare.ParamSlot{Index: idx, Param: c + "_from", Kind: declare.ParamRangeFrom, Column: c, PgType: pt})
+			idx++
+		}
+		if _, taken := filters[c+"_to"]; !taken {
+			clauses = append(clauses, optional(c, pt, "<="))
+			params = append(params, declare.ParamSlot{Index: idx, Param: c + "_to", Kind: declare.ParamRangeTo, Column: c, PgType: pt})
+			idx++
+		}
 	}
 
 	// The keyset after cursor exists only for a single-column primary key: a

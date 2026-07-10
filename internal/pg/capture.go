@@ -1,5 +1,7 @@
 package pg
 
+import "fmt"
+
 // This file owns the engine's always-on write-capture function, iris.capture(),
 // and the schema that hosts it (specification section 4: data_journal capture).
 // The per-operation CREATE TRIGGER bindings that reference it live in trigger.go;
@@ -26,6 +28,24 @@ const CaptureFunctionName = "iris.capture"
 // function's schema always exists.
 func CaptureSchemaDDL() string {
 	return "CREATE SCHEMA IF NOT EXISTS " + CaptureSchema + ";"
+}
+
+// RenderCaptureReachabilityGrants renders the two idempotent grants a pipeline login
+// role needs to reach the always-on capture function (specification section 4: capture
+// is always on, every role): USAGE on the engine-owned iris schema and EXECUTE on
+// iris.capture(). A pipeline role's write fires the per-table capture trigger, which
+// calls iris.capture(); without these grants that call is refused and the write fails,
+// so they are part of provisioning every pipeline role, never a per-declaration grant.
+// The function is SECURITY DEFINER, so the journal INSERT still runs as the journal
+// owner -- these grants only let the role invoke it, never write the journal directly.
+// role is double-quoted so a reserved word or a name containing a quote renders as a
+// valid identifier; the engine-owned schema and function names are fixed constants.
+func RenderCaptureReachabilityGrants(role string) []string {
+	r := quoteIdentifier(role)
+	return []string{
+		fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", CaptureSchema, r),
+		fmt.Sprintf("GRANT EXECUTE ON FUNCTION %s() TO %s;", CaptureFunctionName, r),
+	}
 }
 
 // CaptureFunctionDDL renders the always-on write-capture function iris.capture()

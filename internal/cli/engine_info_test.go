@@ -11,8 +11,8 @@ import (
 )
 
 // fakeKeyReader is a daemon.EngineKeyReader that returns a scripted key or error,
-// standing in for the meta-connection read of current_setting('iris.engine_key')
-// so `iris engine info` can be driven with no live meta.
+// standing in for the meta-connection read of the engine_key table so `iris engine
+// info` can be driven with no live meta.
 type fakeKeyReader struct {
 	key daemon.EngineKey
 	err error
@@ -37,10 +37,11 @@ func TestEngineInfoExposesPublicKeyHalf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintEngineKey: %v", err)
 	}
-	// The private half, as it would live in meta -- extracted from the storage DDL
-	// so the test can prove it never reaches an output stream.
-	setDDL := daemon.SetEngineKeyDDL(key)
-	privB64 := setDDL[strings.Index(setDDL, "'")+1 : strings.LastIndex(setDDL, "'")]
+	// The private half, as it would live in meta -- extracted from the engine_key
+	// insert DDL (a bytea hex literal) so the test can prove it never reaches an
+	// output stream.
+	insDDL := daemon.InsertEngineKeyDDL(key)
+	privB64 := insDDL[strings.Index(insDDL, "'")+1 : strings.LastIndex(insDDL, "'")]
 
 	newInstalledApp := func(out, errOut *bytes.Buffer) *app {
 		a := newApp(out, errOut)

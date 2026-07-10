@@ -14,6 +14,12 @@ import (
 // is the other half of the undo marker lifecycle wipe.go owns, and it is
 // marker-only by construction:
 //
+// Contracts satisfied here (via pg unit/integration tests):
+//   S01/promote-ends-wipe-eligibility (unit)
+//   S05/promotion-flips-open-to-promoted (integration)
+//   S05/promotion-no-data-movement (integration)
+//   S01/promote-capture-provenance-continue (integration)
+//
 //   - It flips the pipeline's open journal entries to undo = 'promoted', so
 //     subsequent wipes skip them (S05: wipe scope is exactly the open entries;
 //     promoted is provenance memory, and nothing re-arms it). The released set

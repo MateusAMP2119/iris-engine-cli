@@ -290,51 +290,113 @@ func TestFailedReplayChainsEntry(t *testing.T) {
 	}
 }
 
-// TestBlastRadiusClassification proves the unit contract for deadletter show's
-// blast radius: walks to root via failed_upstream, classifies transitive
-// downstreams over wiring + worklist + run_inputs as poisoned_now/pending/shielded;
-// composer-only neighbors untouched; names dispositions replay/drain.
+// classFor returns the blast class the impacts assign to pipeline, and whether it
+// was named at all.
+func classFor(impacts []dispatch.BlastImpact, pipeline string) (dispatch.BlastClass, bool) {
+	for _, im := range impacts {
+		if im.Pipeline == pipeline {
+			return im.Class, true
+		}
+	}
+	return "", false
+}
+
+// TestBlastRadiusClassification proves deadletter show's blast radius: from the seed
+// entry it walks failed_upstream to the ROOT cause, walks forward over depends_on to
+// the transitive dependents, and classifies each poisoned_now / shielded / pending;
+// the root itself is poisoned_now; a lane neighbor reachable only by composer order
+// (not a dependency) is untouched (specification section 6.2 and the golden sample
+// step 6: "iris deadletter show on the propagated entry names load_orders poisoned
+// and reset_counters untouched -- order is not dependency").
 //
 // spec: S06.2/blast-radius-classification
 func TestBlastRadiusClassification(t *testing.T) {
-	// Simple graph: extract -> load (depends_on), reset is composer-only (no dep edge)
-	// A failed run 10 in extract poisons load's pending run? but use state.
-	// Worklist has the entry for 10 (root), and perhaps propagated 20 in load.
+	// The golden lane: extract_orders (root, failed run 10) -> load_orders depends_on
+	// extract_orders (propagated run 20); reset_counters is composer-ordered only, no
+	// depends_on edge. edges name the single depends_on edge; lane members are the
+	// three-pipeline lane the untouched neighbor is drawn from.
 	worklist := []dispatch.DeadLetterEntry{
-		{RunID: 10, Pipeline: "extract", Reason: store.ReasonFailed},
-		{RunID: 20, Pipeline: "load", Reason: store.ReasonUpstreamDeadLettered, FailedUpstreamRunID: 10},
+		{RunID: 10, Pipeline: "extract_orders", Reason: store.ReasonFailed},
+		{RunID: 20, Pipeline: "load_orders", Reason: store.ReasonUpstreamDeadLettered, FailedUpstreamRunID: 10},
 	}
-	// dep edges as from-dependent's view? use gate Edge for upstreams, but here for blast we walk reverse.
-	// For test, provide edges from upstream to dependents? Use []dispatch.Edge where "Upstream" field repurposed? Better simple: use known that load depends on extract.
-	edges := []dispatch.Edge{
-		{Upstream: "extract"}, // for load? for simplicity, test will hard use names
-	}
-	// run_inputs not needed for minimal.
-	inputs := map[int64][]int64{}
+	edges := []dispatch.BlastEdge{{Dependent: "load_orders", Upstream: "extract_orders"}}
+	laneMembers := []string{"extract_orders", "reset_counters", "load_orders"}
 
 	// spec: S06.2/blast-radius-classification
 	t.Run("S06.2/blast-radius-classification", func(t *testing.T) {
-		impacts, err := dispatch.ClassifyBlastRadius(worklist[0], worklist, edges, inputs)
+		// Show on the PROPAGATED entry (load_orders run 20): it walks to the root
+		// extract_orders and classifies the whole lane.
+		impacts, err := dispatch.ClassifyBlastRadius(worklist[1], worklist, edges, laneMembers, nil)
 		if err != nil {
 			t.Fatalf("ClassifyBlastRadius err = %v, want nil", err)
 		}
-		if len(impacts) == 0 {
-			t.Fatal("blast impacts empty, want classifications")
+		want := map[string]dispatch.BlastClass{
+			"extract_orders": dispatch.BlastPoisonedNow, // the root cause itself
+			"load_orders":    dispatch.BlastPoisonedNow, // the landed propagated rejection
+			"reset_counters": dispatch.BlastUntouched,   // composer order, not a dependency
 		}
-		// At minimum, root cause walk and some class present; impl will fill.
-		foundRoot := false
-		for _, im := range impacts {
-			if im.Pipeline == "extract" || im.Pipeline == "load" {
-				foundRoot = true
+		for pipeline, wantClass := range want {
+			got, ok := classFor(impacts, pipeline)
+			if !ok {
+				t.Errorf("blast radius did not name %q", pipeline)
+				continue
 			}
+			if got != wantClass {
+				t.Errorf("blast class for %q = %q, want %q", pipeline, got, wantClass)
+			}
+		}
+		// The root cause is reported first, deterministically.
+		if len(impacts) == 0 || impacts[0].Pipeline != "extract_orders" {
+			t.Errorf("root cause not reported first: %v", impacts)
+		}
+		// Every class is drawn from the closed set.
+		for _, im := range impacts {
 			switch im.Class {
 			case dispatch.BlastPoisonedNow, dispatch.BlastPending, dispatch.BlastShielded, dispatch.BlastUntouched:
 			default:
-				t.Errorf("bad class %q", im.Class)
+				t.Errorf("blast class %q for %q is outside the closed set", im.Class, im.Pipeline)
 			}
 		}
-		if !foundRoot {
-			t.Error("no impacted pipeline from root")
+	})
+
+	t.Run("shielded when the dependent consumed a later upstream success", func(t *testing.T) {
+		// Only the root remains in the worklist -- load_orders has since consumed a
+		// later extract_orders success, so its rejection is superseded: shielded.
+		wl := []dispatch.DeadLetterEntry{
+			{RunID: 10, Pipeline: "extract_orders", Reason: store.ReasonFailed},
+		}
+		impacts, err := dispatch.ClassifyBlastRadius(wl[0], wl, edges, laneMembers, map[string]bool{"load_orders": true})
+		if err != nil {
+			t.Fatalf("ClassifyBlastRadius err = %v", err)
+		}
+		if got, _ := classFor(impacts, "load_orders"); got != dispatch.BlastShielded {
+			t.Errorf("load_orders class = %q, want shielded", got)
+		}
+	})
+
+	t.Run("pending when the dependent is owed but has not run", func(t *testing.T) {
+		// Only the root is dead-lettered; load_orders has no worklist entry yet and is
+		// not shielded: it is owed the failure but has not run to receive it -- pending.
+		wl := []dispatch.DeadLetterEntry{
+			{RunID: 10, Pipeline: "extract_orders", Reason: store.ReasonFailed},
+		}
+		impacts, err := dispatch.ClassifyBlastRadius(wl[0], wl, edges, laneMembers, nil)
+		if err != nil {
+			t.Fatalf("ClassifyBlastRadius err = %v", err)
+		}
+		if got, _ := classFor(impacts, "load_orders"); got != dispatch.BlastPending {
+			t.Errorf("load_orders class = %q, want pending", got)
+		}
+	})
+
+	t.Run("a broken failed_upstream chain fails loudly", func(t *testing.T) {
+		// A propagated seed whose recorded upstream run is absent from the worklist
+		// cannot resolve a root: classification errors rather than guessing.
+		wl := []dispatch.DeadLetterEntry{
+			{RunID: 20, Pipeline: "load_orders", Reason: store.ReasonUpstreamDeadLettered, FailedUpstreamRunID: 99},
+		}
+		if _, err := dispatch.ClassifyBlastRadius(wl[0], wl, edges, laneMembers, nil); err == nil {
+			t.Error("classification of a dangling chain should error, got nil")
 		}
 	})
 }

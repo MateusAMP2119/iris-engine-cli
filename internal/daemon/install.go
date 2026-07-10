@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
@@ -25,6 +26,126 @@ import (
 // the pgx-backed implementations of the DB seams land with the daemon's live
 // connection wiring, at which point the CLI drives this same function against a
 // real cluster.
+
+// InstallEngine runs the `iris engine install` bootstrap against a live cluster
+// (specification section 4): it brings up Postgres for the configured mode -- the
+// managed local subprocess or the external cluster -- through the one Manager code
+// path, creates meta alongside the dedicated data database, ensures meta's control
+// tables and the partitioned data journal, and sets up the control socket, then shuts
+// a managed instance back down. The pgx-backed connection seams live in store and pg
+// (the daemon never imports pgx); this composes them. Every leg is create-if-missing,
+// so InstallEngine is idempotent and a later `iris engine start` that re-checks the
+// same legs (meta schema at election, journal at apply) touches nothing already
+// present.
+//
+// It mints the ed25519 engine key into the engine_key meta table (a single-row
+// create-once INSERT on the meta connection, superuser-free), superseding the
+// earlier per-database GUC (which needed SUPERUSER the external admin role lacks)
+// and the workspace key file (which forced a shared filesystem for HA). The two-
+// database creation and the key insert both run privilege-safe in managed and
+// external modes.
+func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) (InstallReport, error) {
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
+	mgr := NewManager(s, EmbeddedSupervisor)
+	// Managed mode: download and place the pinned Postgres before it can be started;
+	// external mode: a no-op.
+	if err := mgr.Install(ctx); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: install managed Postgres: %w", err)
+	}
+	// Bring up Postgres and resolve the admin DSN -- the managed subprocess or the
+	// external cluster -- the one code path both modes share. Shutdown stops a managed
+	// instance on return; it is a no-op in external mode.
+	adminDSN, err := mgr.Startup(ctx)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: bring up Postgres for install: %w", err)
+	}
+	defer func() { _ = mgr.Shutdown() }()
+
+	src := adminDSN.Source()
+
+	// Open the admin and meta connections the meta bootstrap rides. Close on a
+	// background context so a cancelled install still tears the connections down.
+	conns, err := store.OpenInstallConns(ctx, src)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: open meta connections for install: %w", err)
+	}
+	defer func() { _ = conns.Close(context.Background()) }()
+
+	// Create meta if missing (CREATE DATABASE has no IF NOT EXISTS; the probe is the
+	// guard), then ensure its control tables -- the one-time install path, the same
+	// embedded DDL a leader re-checks at election.
+	var report InstallReport
+	exists, err := conns.MetaExists(ctx)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: probe meta database for install: %w", err)
+	}
+	if !exists {
+		if err := conns.Cluster().Exec(ctx, store.CreateMetaDatabaseDDL()); err != nil {
+			return InstallReport{}, fmt.Errorf("daemon: create meta database for install: %w", err)
+		}
+		report.MetaCreated = true
+		logger.Info("engine install: created meta database", "database", store.MetaDatabase)
+	} else {
+		logger.Info("engine install: meta database already exists", "database", store.MetaDatabase)
+	}
+	if err := store.EnsureSchema(ctx, conns.Meta()); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: ensure meta schema for install: %w", err)
+	}
+	logger.Info("engine install: ensured meta schema")
+
+	// Create the dedicated data database and its partitioned journal. pg.Connect
+	// creates the data database create-if-missing; EnsureJournal is the same leg a
+	// declare apply ends with, so a later apply re-checks and touches nothing. The
+	// pool Close runs before the deferred managed shutdown (defers are LIFO), so it is
+	// released while Postgres is still up.
+	data, err := pg.Connect(ctx, src)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: connect data database for install: %w", err)
+	}
+	defer data.Close()
+	if err := pg.EnsureJournal(ctx, data); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: ensure data journal for install: %w", err)
+	}
+	logger.Info("engine install: ensured data journal")
+
+	// Set up the control socket (the workspace .iris directory, clearing any stale
+	// socket) -- real local filesystem I/O, no database.
+	if err := PrepareSocketDir(s); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: set up control socket for install: %w", err)
+	}
+	logger.Info("engine install: control socket ready")
+
+	// Mint the engine key at install (specification section 14) and persist it into the
+	// engine_key meta table: a create-once INSERT (ON CONFLICT DO NOTHING) on the meta
+	// connection, superuser-free -- superseding the per-database GUC (needs SUPERUSER)
+	// and the workspace key file (needs a shared filesystem for HA). Re-running install
+	// never overwrites an existing key (the conflict is a no-op); the report's public
+	// half is read back from meta so a re-install reports the stored key's public half,
+	// not the discarded fresh mint. The INSERT carries the private half, so it is issued
+	// directly and never logged.
+	minted, err := MintEngineKey()
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: mint engine key for install: %w", err)
+	}
+	if err := conns.Meta().Exec(ctx, InsertEngineKeyDDL(minted)); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: store engine key for install: %w", err)
+	}
+	stored, err := conns.ReadEngineKey(ctx)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: read engine key after install: %w", err)
+	}
+	key, err := DecodeEngineKeyBytes(stored)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: decode stored engine key: %w", err)
+	}
+	report.EngineKeyPublic = key.PublicBase64()
+	logger.Info("engine install: engine key ready")
+
+	return report, nil
+}
 
 // MetaProbe answers whether the dedicated meta database already exists, so
 // BootstrapEngine issues CREATE DATABASE only when it does not (CREATE DATABASE has
@@ -135,9 +256,10 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 	}
 	log.Info("engine install: ensured data journal")
 
-	// Store the engine key on the meta connection. The DDL carries the private half,
-	// so it is issued directly and never logged.
-	if err := deps.Meta.Exec(ctx, SetEngineKeyDDL(key)); err != nil {
+	// Store the engine key on the meta connection: a create-once INSERT into the
+	// single-row engine_key table (ON CONFLICT DO NOTHING). The statement carries the
+	// private half, so it is issued directly and never logged.
+	if err := deps.Meta.Exec(ctx, InsertEngineKeyDDL(key)); err != nil {
 		return report, fmt.Errorf("daemon: store engine key: %w", err)
 	}
 	log.Info("engine install: stored engine key")

@@ -303,3 +303,24 @@ func injectedDBURL(spec RunSpec) string {
 	}
 	return pg.InjectRunID(spec.DBURL, id)
 }
+
+// ResolveRunArgv selects the direct-exec argv for a run given its declared run
+// vector and (optional) artifact hash. When artifactHash is non-nil the engine
+// executes the content-addressed binary directly and ignores the declared run
+// (built mode); otherwise it executes the declared source vector via its runtime
+// (dev mode). objects may be nil for dev-only resolution in tests.
+func ResolveRunArgv(declared []string, artifactHash *string, objects *store.ObjectStore) []string {
+	if artifactHash != nil && objects != nil {
+		// Built: exec the binary at the content-addressed path; ignore declared.
+		return []string{objects.Path(*artifactHash)}
+	}
+	if artifactHash != nil {
+		// Hash known but no objects seam: caller supplies materialized path; for
+		// pure selection without objects return a distinct form (tests may override).
+		return []string{"<built:" + *artifactHash + ">"}
+	}
+	// Dev: use the declared run vector verbatim.
+	cp := make([]string, len(declared))
+	copy(cp, declared)
+	return cp
+}

@@ -92,7 +92,7 @@ func (p *showPlane) ShowPipeline(ctx context.Context, name string) (api.Pipeline
 		Role:       role,
 		Grants:     make([]api.GrantView, 0, len(grants)),
 		RecentRuns: make([]api.RunView, 0, len(runs)),
-		GateLedger: make([]api.EdgeVerdictView, 0, len(decision.Ledger)),
+		GateLedger: edgeVerdictViews(decision.Ledger),
 	}
 	for _, g := range grants {
 		res.Grants = append(res.Grants, api.GrantView{Schema: g.Schema, Table: g.Table, Field: g.Field, Access: string(g.Access)})
@@ -100,24 +100,26 @@ func (p *showPlane) ShowPipeline(ctx context.Context, name string) (api.Pipeline
 	for _, r := range runs {
 		res.RecentRuns = append(res.RecentRuns, api.RunView{ID: r.ID, State: string(r.State), ExitCode: r.ExitCode})
 	}
-	for _, row := range decision.Ledger {
-		v := api.EdgeVerdictView{Upstream: row.Upstream, Verdict: row.Verdict.String()}
-		if row.LatestRunID != 0 {
-			v.LatestRunID = strconv.FormatInt(row.LatestRunID, 10)
-		}
-		res.GateLedger = append(res.GateLedger, v)
-	}
 	return res, nil
 }
 
-// gateEdges resolves name's depends_on edges from meta for the ledger: the
-// dependency edges in declaration order, each joined to its upstream's most
-// recent run, with the zero awaited-from baseline of the manual read surface. It
-// returns the upstream names (the depends_on list) beside the gate edges.
+// gateEdges resolves name's depends_on edges from meta for the ledger, delegating
+// to the shared resolveGateEdges so the pipeline-show readout and the standalone
+// gate route (pipelinegateplane.go) resolve identical edges.
 func (p *showPlane) gateEdges(ctx context.Context, name string) ([]string, []dispatch.Edge, error) {
-	all, err := p.reader.DependencyEdges(ctx)
+	return resolveGateEdges(ctx, p.reader, name)
+}
+
+// resolveGateEdges resolves a pipeline's depends_on edges from meta for the gate
+// ledger: the dependency edges in declaration order, each joined to its upstream's
+// most recent run, with the zero awaited-from baseline of the manual read surface.
+// It returns the upstream names (the depends_on list) beside the gate edges. Both
+// the pipeline-show plane and the standalone gate route compose their ledger from
+// this, so "why no run" triage reads the same edges everywhere.
+func resolveGateEdges(ctx context.Context, reader store.ShowReader, name string) ([]string, []dispatch.Edge, error) {
+	all, err := reader.DependencyEdges(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("daemon: pipeline show %q: read dependency edges: %w", name, err)
+		return nil, nil, fmt.Errorf("daemon: gate %q: read dependency edges: %w", name, err)
 	}
 	upstreams := []string{}
 	var edges []dispatch.Edge
@@ -125,9 +127,9 @@ func (p *showPlane) gateEdges(ctx context.Context, name string) ([]string, []dis
 		if dep.From != name {
 			continue
 		}
-		info, found, err := p.reader.LatestRun(ctx, dep.To)
+		info, found, err := reader.LatestRun(ctx, dep.To)
 		if err != nil {
-			return nil, nil, fmt.Errorf("daemon: pipeline show %q: read upstream %q latest run: %w", name, dep.To, err)
+			return nil, nil, fmt.Errorf("daemon: gate %q: read upstream %q latest run: %w", name, dep.To, err)
 		}
 		upstreams = append(upstreams, dep.To)
 		edges = append(edges, dispatch.Edge{
@@ -137,4 +139,20 @@ func (p *showPlane) gateEdges(ctx context.Context, name string) ([]string, []dis
 		})
 	}
 	return upstreams, edges, nil
+}
+
+// edgeVerdictViews maps a resolved gate ledger to the wire view rows: the upstream,
+// the closed-set verdict token, and the upstream's latest run id (blank when the
+// upstream has produced no run). It is the one mapping the pipeline-show readout and
+// the standalone gate route share.
+func edgeVerdictViews(ledger []dispatch.EdgeVerdict) []api.EdgeVerdictView {
+	out := make([]api.EdgeVerdictView, 0, len(ledger))
+	for _, row := range ledger {
+		v := api.EdgeVerdictView{Upstream: row.Upstream, Verdict: row.Verdict.String()}
+		if row.LatestRunID != 0 {
+			v.LatestRunID = strconv.FormatInt(row.LatestRunID, 10)
+		}
+		out = append(out, v)
+	}
+	return out
 }

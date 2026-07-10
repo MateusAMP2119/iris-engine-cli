@@ -5,7 +5,7 @@
 // path and that lock.
 //
 // This is the minimal, behavior-focused seam the later epics extend: E02 lands
-// the real Postgres-backed implementation, the eighteen-table roster, and the
+// the real Postgres-backed implementation, the nineteen-table roster, and the
 // leader lock; E05's dispatcher drives run records through it. It is deliberately
 // small -- run records and their states, the surface the dispatch tests need --
 // so the seam can grow without churn. A fake (internal/store/storetest) satisfies

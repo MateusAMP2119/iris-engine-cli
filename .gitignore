@@ -1,2 +1,6 @@
 .iris/
 .worktrees/
+api.test
+.idea/
+*.test
+

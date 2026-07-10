@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,17 +31,37 @@ import (
 // reader pool, all derived from the one admin DSN. Build it with Connect and tear
 // it down with Close.
 type Client struct {
-	session  *pgx.Conn
-	pool     *pgxpool.Pool
-	lock     *PgxLeaderLock
-	writer   MetaWriteConn
-	reader   Reader
-	registry RegistryReader
-	ledger   AppliedHeadReader
-	pipes    PipelineLister
-	manual   ManualReader
-	show     ShowReader
-	promote  PromoteStateReader
+	// adminDSN is the admin-derived connection string the leader session and reader
+	// pool are opened from; retained so a demoted daemon can mint a FRESH leader
+	// session (a new session-pinned connection carrying a new advisory-lock handle
+	// and lock-guarded writer) to re-enter standby -- a dead session can never
+	// re-acquire the lock (specification section 15).
+	adminDSN string
+
+	// mu guards session across a fresh-session renewal: NewLeaderSession swaps in a
+	// new session-pinned connection, and Close reads the current one, so the two must
+	// not race. In practice the daemon calls them from a single election goroutine
+	// and Close only after it returns, but the guard makes the ownership explicit.
+	mu      sync.Mutex
+	session *pgx.Conn
+
+	pool        *pgxpool.Pool
+	lock        *PgxLeaderLock
+	writer      MetaWriteConn
+	reader      Reader
+	registry    RegistryReader
+	ledger      AppliedHeadReader
+	pipes       PipelineLister
+	manual      ManualReader
+	show        ShowReader
+	promote     PromoteStateReader
+	pats        PATReader
+	stats       StatsSource
+	deadletter  DeadLetterReader
+	seal        JournalSealReader
+	endpoints   EndpointRowReader
+	leaderAddr  LeaderAddrReader
+	runLineages RunLineageReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -60,13 +81,9 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
-	metaCfg, err := metaConnConfig(adminDSN)
+	session, lock, writer, err := openLeaderSession(ctx, adminDSN)
 	if err != nil {
 		return nil, err
-	}
-	session, err := pgx.ConnectConfig(ctx, metaCfg)
-	if err != nil {
-		return nil, fmt.Errorf("store: open leader session on meta: %w", err)
 	}
 
 	pool, err := metaReaderPool(ctx, adminDSN)
@@ -75,11 +92,51 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		return nil, err
 	}
 
+	readPoolSeam := &pgxReadPool{pool: pool}
+	return &Client{
+		adminDSN:    adminDSN,
+		session:     session,
+		pool:        pool,
+		lock:        lock,
+		writer:      writer,
+		reader:      newPgxReader(readPoolSeam),
+		registry:    &pgxRegistryReader{pool: readPoolSeam},
+		ledger:      &pgxAppliedHeadReader{pool: readPoolSeam},
+		pipes:       newPgxPipelineLister(readPoolSeam),
+		manual:      newPgxManualReader(readPoolSeam),
+		show:        newPgxShowReader(readPoolSeam),
+		promote:     &pgxPromoteReader{pool: readPoolSeam},
+		pats:        &pgxPATReader{pool: readPoolSeam},
+		stats:       newPgxStatsSource(readPoolSeam),
+		deadletter:  newPgxDeadLetterReader(readPoolSeam),
+		seal:        newPgxSealReader(readPoolSeam),
+		endpoints:   newPgxEndpointReader(readPoolSeam),
+		leaderAddr:  newPgxLeaderAddrReader(readPoolSeam),
+		runLineages: newPgxRunLineageReader(readPoolSeam),
+	}, nil
+}
+
+// openLeaderSession opens a fresh session-pinned connection on the meta database and
+// builds the leader lock and the lock-guarded write connection over it: the leader's
+// single session, carrying BOTH the advisory lock and the single-writer meta path, so
+// every meta write rides the exact session that holds the lock (specification section
+// 15). It is the one construction Connect and NewLeaderSession share, so a first
+// election and a post-demotion re-entry open identical sessions. On any error it closes
+// the connection it opened, leaking nothing.
+func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLeaderLock, MetaWriteConn, error) {
+	metaCfg, err := metaConnConfig(adminDSN)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	session, err := pgx.ConnectConfig(ctx, metaCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("store: open leader session on meta: %w", err)
+	}
+
 	lock, err := newPgxLeaderLock(&pgxSessionConn{conn: session})
 	if err != nil {
-		pool.Close()
 		_ = session.Close(ctx)
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	// The write connection is the SAME session the leader lock is pinned to, and it
@@ -89,25 +146,29 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 	// after a demotion.
 	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
 	if err != nil {
-		pool.Close()
 		_ = session.Close(ctx)
-		return nil, err
+		return nil, nil, nil, err
 	}
+	return session, lock, writer, nil
+}
 
-	readPoolSeam := &pgxReadPool{pool: pool}
-	return &Client{
-		session:  session,
-		pool:     pool,
-		lock:     lock,
-		writer:   writer,
-		reader:   newPgxReader(readPoolSeam),
-		registry: &pgxRegistryReader{pool: readPoolSeam},
-		ledger:   &pgxAppliedHeadReader{pool: readPoolSeam},
-		pipes:    newPgxPipelineLister(readPoolSeam),
-		manual:   newPgxManualReader(readPoolSeam),
-		show:     newPgxShowReader(readPoolSeam),
-		promote:  &pgxPromoteReader{pool: readPoolSeam},
-	}, nil
+// NewLeaderSession mints a FRESH leader session for standby re-entry after a
+// self-demotion (specification section 15): a NEW session-pinned connection carrying a
+// new advisory-lock handle and its lock-guarded write connection. A demoted daemon's
+// old session is dead -- it can never re-acquire the lock and its write guard refuses
+// forever -- so re-contending requires a genuinely new session, which is exactly what
+// this returns. The client tracks the new connection so Close tears down the live
+// session, not the dead one. The reader pool is untouched (reads never block behind the
+// lock, so they survive a demotion).
+func (c *Client) NewLeaderSession(ctx context.Context) (LeaderLock, MetaWriteConn, error) {
+	session, lock, writer, err := openLeaderSession(ctx, c.adminDSN)
+	if err != nil {
+		return nil, nil, err
+	}
+	c.mu.Lock()
+	c.session = session
+	c.mu.Unlock()
+	return lock, writer, nil
 }
 
 // Lock returns the leader-election lock, held on the session-pinned connection.
@@ -148,6 +209,43 @@ func (c *Client) ShowReader() ShowReader { return c.show }
 // op's gate and cross-mode warning are decided from.
 func (c *Client) PromoteStateReader() PromoteStateReader { return c.promote }
 
+// PATReader returns the plain-MVCC PAT authentication reader (the pool): the token
+// prefix -> record lookup the TCP bearer-token verifier resolves each request
+// against, on any node.
+func (c *Client) PATReader() PATReader { return c.pats }
+
+// StatsSource returns the plain-MVCC stats read seam (the pool): the runs,
+// dead-letter worklist, persisted composer, registry, and checkpoint reads the
+// engine-stats rollup (`iris engine stats`, GET /stats) is composed from.
+func (c *Client) StatsSource() StatsSource { return c.stats }
+
+// DeadLetterReader returns the plain-MVCC dead-letter read seam (the pool): the
+// worklist, consumption edges, and lane membership the blast-radius readout
+// (`iris deadletter show`, GET /dead_letters/{run}/impact) and the leader's replay
+// resolution are composed from.
+func (c *Client) DeadLetterReader() DeadLetterReader { return c.deadletter }
+
+// SealReader returns the plain-MVCC seal read seam (the pool): the checkpoint chain
+// head, in-flight run count, and engine key material the leader-side seal step reads
+// to decide whether and how to seal the resident journal partition.
+func (c *Client) SealReader() JournalSealReader { return c.seal }
+
+// EndpointReader returns the plain-MVCC endpoint read seam (the pool): the persisted
+// endpoints and endpoint_filters rows the daemon reloads into the live serving
+// registry at startup, so a restart or failover serves every applied endpoint with
+// no re-apply.
+func (c *Client) EndpointReader() EndpointRowReader { return c.endpoints }
+
+// LeaderAddrReader returns the plain-MVCC leader-address read seam (the pool): the
+// advertised address a standby reads to name the leader for retargeting (exit 6, GET
+// /leader). It reads on any candidate, never blocking behind the leader lock.
+func (c *Client) LeaderAddrReader() LeaderAddrReader { return c.leaderAddr }
+
+// RunLineageReader returns the plain-MVCC run-history read seam (the pool): the run
+// records with their consumed upstream ids and replayed_from the runs collection
+// (`iris run list`, GET /runs[?include=inputs] and GET /runs/{id}) is composed from.
+func (c *Client) RunLineageReader() RunLineageReader { return c.runLineages }
+
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can
 // Release the lock then Close the client. The double-close guard checks IsClosed
@@ -158,11 +256,16 @@ func (c *Client) Close(ctx context.Context) error {
 	if c.pool != nil {
 		c.pool.Close()
 	}
-	if c.session != nil {
-		if c.session.IsClosed() {
+	// Read the current session under the guard: a fresh-session renewal may have
+	// swapped it, and Close must tear down the live one, not a stale reference.
+	c.mu.Lock()
+	session := c.session
+	c.mu.Unlock()
+	if session != nil {
+		if session.IsClosed() {
 			return nil // already released by the lock; nothing to close.
 		}
-		if err := c.session.Close(ctx); err != nil {
+		if err := session.Close(ctx); err != nil {
 			return fmt.Errorf("store: close leader session: %w", err)
 		}
 	}

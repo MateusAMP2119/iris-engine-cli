@@ -53,18 +53,18 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		case len(segs) == 2:
 			serveUnwiredRead(w, r, "pipeline")
 		case len(segs) == 3 && segs[2] == "gate":
-			serveUnwiredRead(w, r, "pipeline gate")
+			m.servePipelineGate(w, r, segs[1])
 		default:
 			return false
 		}
 	case "runs":
 		switch {
 		case len(segs) == 1:
-			serveUnwiredRead(w, r, "runs")
+			m.serveRuns(w, r)
 		case len(segs) == 2:
-			serveUnwiredRead(w, r, "run")
+			m.serveRun(w, r, segs[1])
 		case len(segs) == 3 && segs[2] == "trace":
-			serveUnwiredRead(w, r, "run trace")
+			m.serveRunTrace(w, r, segs[1])
 		default:
 			return false
 		}
@@ -75,7 +75,7 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		case len(segs) == 2:
 			serveUnwiredRead(w, r, "dead letter")
 		case len(segs) == 3 && segs[2] == "impact":
-			serveUnwiredRead(w, r, "dead letter impact")
+			m.serveDeadImpact(w, r, segs[1])
 		default:
 			return false
 		}
@@ -99,13 +99,14 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		if len(segs) != 4 {
 			return false
 		}
-		serveUnwiredRead(w, r, "provenance")
+		m.serveProvenance(w, r, segs[1], segs[2], segs[3])
 	case "data":
-		// /data/{schema}/{table}: the raw table read (E09.6).
+		// /data/{schema}/{table}: the raw ad-hoc table read (dataroute.go),
+		// executing through the shared read pool as the calling PAT's role.
 		if len(segs) != 3 {
 			return false
 		}
-		serveUnwiredRead(w, r, "data")
+		m.serveData(w, r, segs[1], segs[2])
 	case "q":
 		// /q/{endpoint}: the declared endpoint read. E09.6 owns the live-shape
 		// checkout and lifecycle (endpoint.go); the production reader over the
