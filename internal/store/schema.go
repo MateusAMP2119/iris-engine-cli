@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// This file holds the embedded meta schema: the nineteen control tables of the
+// This file holds the embedded meta schema: the twenty control tables of the
 // dedicated meta database (specification section 4), modeled as Go data that
 // renders deterministically to create-if-missing DDL and is directly assertable
 // for the roster, foreign-key graph, and identity-ordering contracts. The model
@@ -263,7 +263,7 @@ func dependenciesSatisfied(t Table, emitted map[string]bool) bool {
 	return true
 }
 
-// MetaSchema returns the meta control-plane schema: the nineteen tables of
+// MetaSchema returns the meta control-plane schema: the twenty tables of
 // specification section 4, in the spec's own roster order. Roster order is not a
 // safe DDL emission order (runs precedes artifacts it references); DDL() emits in
 // FK-dependency order instead. Ordering keys are monotonic bigint identity
@@ -479,6 +479,27 @@ func MetaSchema() Schema {
 					{Name: "id", Type: "bigint"},
 					{Name: "secret", Type: "text"},
 					{Name: "created_at", Type: "text"},
+				},
+				PrimaryKey: []string{"id"},
+				RawChecks:  []string{"id = 1"},
+			},
+			// leadership: the leader's advertised address (specification section 4,
+			// leadership Q/A). Single row, pinned to id = 1: advertised_addr is the
+			// leader's TCP listen address -- what a standby names for retargeting (exit 6,
+			// GET /leader) and an operator passes to --host -- empty when the leader is
+			// socket-only. The leader upserts it through the single writer on winning the
+			// advisory lock and re-advertises each term, so a failover leader supersedes
+			// the prior address; a deposed leader writes nothing (its dead session cannot),
+			// so the row converges on the live leader. Standbys read it (shared meta, the
+			// HA model). It stands alone (no FKs, like engine_key), engine-owned: no grant
+			// renderer touches it, and every pipeline/data-PAT/read-pool role is denied
+			// CONNECT on meta. recorded_at is an opaque audit string, never a clock.
+			{
+				Name: "leadership",
+				Columns: []Column{
+					{Name: "id", Type: "bigint"},
+					{Name: "advertised_addr", Type: "text"},
+					{Name: "recorded_at", Type: "text"},
 				},
 				PrimaryKey: []string{"id"},
 				RawChecks:  []string{"id = 1"},

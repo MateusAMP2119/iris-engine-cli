@@ -127,6 +127,14 @@ CREATE TABLE IF NOT EXISTS read_pool_credential (
     CHECK (id = 1)
 );
 
+CREATE TABLE IF NOT EXISTS leadership (
+    id bigint,
+    advertised_addr text NOT NULL,
+    recorded_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+
 CREATE TABLE IF NOT EXISTS pats (
     id text,
     hash text NOT NULL,

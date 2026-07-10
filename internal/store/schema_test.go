@@ -10,14 +10,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// metaRoster is the exact nineteen-table roster of the meta control-plane
+// metaRoster is the exact twenty-table roster of the meta control-plane
 // database (specification section 4). The order is the spec's own listing order,
 // which is also the create-if-missing emission order. engine_key follows
 // journal_checkpoints: the engine-owned ed25519 signing key moved from a
 // per-database GUC into this single-row meta table (devdebt 2026-07-10 spec delta).
 // read_pool_credential follows engine_key: the engine-owned shared read-pool login
 // secret, persisted create-once so a restart or HA standby reuses one stable
-// credential (devdebt 2026-07-10 E13.7 follow-up spec delta).
+// credential (devdebt 2026-07-10 E13.7 follow-up spec delta). leadership follows it:
+// the leader's advertised address, a single-row engine-owned table a standby reads
+// to name the leader for retargeting (devdebt leader-advertisement spec delta).
 var metaRoster = []string{
 	"pipelines",
 	"dependencies",
@@ -30,6 +32,7 @@ var metaRoster = []string{
 	"journal_checkpoints",
 	"engine_key",
 	"read_pool_credential",
+	"leadership",
 	"pats",
 	"pat_scopes",
 	"endpoints",
@@ -182,6 +185,48 @@ func TestMetaRenderedDDLGolden(t *testing.T) {
 	}
 
 	golden.Assert(t, []byte(strings.Join(stmts, "\n\n")+"\n"), filepath.Join("testdata", "meta_schema.sql"))
+}
+
+// TestLeadershipAdvertisementTable proves the leadership table is the single-row,
+// engine-owned home of the leader's advertised address (specification section 4,
+// leadership Q/A): id pinned to 1, an advertised_addr text column, an opaque
+// recorded_at audit string, and no foreign keys (it stands alone, like engine_key).
+// This is the meta home a standby reads to name the leader for retargeting.
+//
+// spec: S04/leadership-advertisement-table
+func TestLeadershipAdvertisementTable(t *testing.T) {
+	s := store.MetaSchema()
+	tbl := tableByName(t, s, "leadership")
+
+	// Single row, pinned to id = 1 (the singleton pattern engine_key uses).
+	if len(tbl.PrimaryKey) != 1 || tbl.PrimaryKey[0] != "id" {
+		t.Errorf("leadership primary key = %v, want [id]", tbl.PrimaryKey)
+	}
+	var pinned bool
+	for _, rc := range tbl.RawChecks {
+		if strings.ReplaceAll(rc, " ", "") == "id=1" {
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Errorf("leadership carries no id = 1 singleton check: %v", tbl.RawChecks)
+	}
+
+	// It carries the advertised address as text and an opaque recorded_at audit
+	// string (never a clock -- ordering identity never clock, specification section 4).
+	addr := columnByName(t, tbl, "advertised_addr")
+	if addr.Type != "text" {
+		t.Errorf("leadership.advertised_addr type = %q, want text", addr.Type)
+	}
+	rec := columnByName(t, tbl, "recorded_at")
+	if rec.Type != "text" {
+		t.Errorf("leadership.recorded_at type = %q, want text (opaque audit string)", rec.Type)
+	}
+
+	// It stands alone: no foreign keys tie it to the rest of the roster.
+	if len(tbl.ForeignKeys) != 0 {
+		t.Errorf("leadership carries %d FK(s), want none (it stands alone): %+v", len(tbl.ForeignKeys), tbl.ForeignKeys)
+	}
 }
 
 // tableByName returns the named table from the schema, failing the test when it
