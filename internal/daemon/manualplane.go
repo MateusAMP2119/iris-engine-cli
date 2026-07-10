@@ -1,11 +1,7 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -142,7 +138,7 @@ type manualOrchestrator struct {
 // is the base scoped data-database connection each run's IRIS_DB_URL is derived from
 // (the run id rides it), the same DSN the lane loop injects, so a manual run's captured
 // writes attribute to its own run exactly like a lane run's.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string, inflight *inflightRuns, logger *slog.Logger) *manualOrchestrator {
+func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string, inflight *inflightRuns, sealer *journalSealer, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -155,6 +151,7 @@ func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry
 		journal:   journal,
 		dbURL:     dbURL,
 		inflight:  inflight,
+		sealer:    sealer,
 		logger:    logger,
 	}
 	mr := dispatch.NewManualRunner(
@@ -308,8 +305,9 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	dbURL     string        // the run's base scoped data-database connection; the run id rides it (empty until the E04.4 scoped connection is provisioned)
-	inflight  *inflightRuns // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
+	dbURL     string         // the run's base scoped data-database connection; the run id rides it (empty until the E04.4 scoped connection is provisioned)
+	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
+	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
 	logger    *slog.Logger
 }
 
@@ -400,6 +398,7 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		_ = m.submitter.Submit(ctx, func(w *store.Writer) error {
 			return dispatch.StampTerminal(ctx, w, m.journal, runID)
 		})
+		m.sealAfterPass(ctx)
 		return dispatch.RunDeadLettered, nil
 	}
 
@@ -410,21 +409,19 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		return dispatch.StampTerminal(ctx, w, m.journal, runID)
 	})
 
-	// Opportunistic seal after terminal ceiling (E13.5).
-	_ = m.submitter.Submit(ctx, func(w *store.Writer) error {
-		if m.journal == nil {
-			return nil
-		}
-		hi, err := m.journal.JournalHighID(ctx)
-		if err != nil || hi <= 0 {
-			return nil
-		}
-		_ = w.InsertJournalCheckpoint(ctx, 1, hi, []byte("s13"), nil, []byte("sig"), "resident")
-		return nil
-	})
-
-	sealAfterTerminal(m, runID)
+	m.sealAfterPass(ctx)
 	return dispatch.RunSucceeded, nil
+}
+
+// sealAfterPass runs the opportunistic post-terminal seal step (specification
+// section 14): it is invoked once the run is recorded terminal and its journal
+// ceiling stamped, so the just-finished run never counts itself as in-flight. A nil
+// sealer (the shape tests) or a not-due partition leaves the journal untouched.
+func (m *manualExec) sealAfterPass(ctx context.Context) {
+	if m.sealer == nil {
+		return
+	}
+	m.sealer.sealAfterPass(ctx)
 }
 
 // childEnv builds the manual run's environment: the inherited daemon environment plus
@@ -467,95 +464,4 @@ func exitDetail(status exec.ExitStatus) string {
 		return fmt.Sprintf("killed by signal %v", status.Signal)
 	}
 	return fmt.Sprintf("exit code %d", status.Code)
-}
-
-// sealAfterTerminal performs the opportunistic post-terminal seal step for E13.5:
-// waits for the run (by construction, called only after StampTerminal), compacts
-// (nulls released pre-images, folds dups), computes digest over compacted rows,
-// signs with ed25519, inserts checkpoint (for chain), exports the partition file
-// under objects/ keyed by digest, and drops the sealed partition. Uses the journal
-// holder (which is *pg.Client in prod) for data ops.
-func sealAfterTerminal(m *manualExec, _ string) {
-	if m == nil || m.submitter == nil {
-		return
-	}
-	ctx := context.Background()
-
-	var dc *pg.Client
-	if c, ok := m.journal.(*pg.Client); ok {
-		dc = c
-	}
-	if dc != nil {
-		// compact drops consumed preimages and folds (S13/seal-compaction-drops-consumed)
-		_ = dc.CompactJournalRange(ctx, 0, 0)
-	}
-
-	rows, _ := func() ([][]byte, error) {
-		if dc == nil {
-			return nil, nil
-		}
-		return dc.QueryCompactedRows(ctx, 0, 0)
-	}()
-	dig := digestRows(rows)
-
-	// sign (real ed25519; a fixed test key suffices for conformance chain presence)
-	seed := [32]byte{} // deterministic for test repeatability
-	priv := ed25519.NewKeyFromSeed(seed[:])
-	sig := ed25519.Sign(priv, dig)
-
-	// insert checkpoint (chains with parent nil for first)
-	_ = m.submitter.Submit(ctx, func(w *store.Writer) error {
-		return w.InsertJournalCheckpoint(ctx, 0, 999999, dig, nil, sig, "resident")
-	})
-
-	// export to objects (content addressed by digest) and drop partition
-	if m.workspace != "" {
-		objects := filepath.Join(m.workspace, ".iris", "objects")
-		_ = os.MkdirAll(objects, 0o755)
-		_ = writeArchivePart(filepath.Join(objects, fmt.Sprintf("%x.part", dig)), rows, dig)
-	}
-	if dc != nil {
-		_ = dc.DropPartitionForRange(ctx, 0)
-	}
-}
-
-// digestRows mirrors archive digest for compacted row bytes.
-func digestRows(rows [][]byte) []byte {
-	h := sha256.New()
-	for _, r := range rows {
-		h.Write(r)
-		h.Write([]byte{0})
-	}
-	return h.Sum(nil)
-}
-
-// writeArchivePart writes a simple IRISJP10 archive file (header + rows) for
-// export. The bytes are assembled in memory then written once and the file is
-// closed before the atomic rename, so a short write or close error surfaces
-// before the object is published (no partial file under the digest key).
-func writeArchivePart(path string, rows [][]byte, dig []byte) error {
-	var buf bytes.Buffer
-	buf.WriteString("IRISJP10")
-	_ = binary.Write(&buf, binary.BigEndian, int64(len(rows)))
-	_ = binary.Write(&buf, binary.BigEndian, int64(len(dig)))
-	buf.Write(dig)
-	for _, r := range rows {
-		_ = binary.Write(&buf, binary.BigEndian, int64(len(r)))
-		buf.Write(r)
-	}
-
-	tmp := path + ".tmp"
-	//nolint:gosec // G304: engine-owned objects path under the workspace, not user-influenced.
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, werr := f.Write(buf.Bytes()); werr != nil {
-		_ = f.Close()
-		return werr
-	}
-	if cerr := f.Close(); cerr != nil {
-		return cerr
-	}
-	return os.Rename(tmp, path)
 }

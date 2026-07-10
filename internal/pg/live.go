@@ -165,6 +165,49 @@ func (c *Client) JournalHighID(ctx context.Context) (int64, error) {
 	return id, nil
 }
 
+// ResidentJournalStats reports the resident (unsealed) journal partition's current
+// row count and its inclusive id span (min and max id), all zero when the journal
+// is empty. The seal step reads it to decide whether the live partition has crossed
+// the journal_partition_rows threshold and, when it seals, to stamp the checkpoint's
+// exact id_from/id_to from the partition's actual entries (specification section
+// 14). It is one plain-MVCC read; the count is over the resident tail only, since
+// sealed partitions are exported and dropped.
+func (c *Client) ResidentJournalStats(ctx context.Context) (count, minID, maxID int64, err error) {
+	if err := c.pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(min(id), 0), COALESCE(max(id), 0) FROM public.data_journal`,
+	).Scan(&count, &minID, &maxID); err != nil {
+		return 0, 0, 0, fmt.Errorf("pg: read resident journal stats: %w", err)
+	}
+	return count, minID, maxID, nil
+}
+
+// ResidentRunIDs returns the distinct run ids that have written entries into the
+// resident (unsealed) journal partition. The seal step reads it to identify which
+// runs have written into the partition, so it can check whether any of them is still
+// in flight before it cuts a seal (specification section 14: a partition seals only
+// when every in-flight run writing into it has finished). A run that writes nothing
+// -- an idle-lane no-op pass -- never appears here, so it never blocks a seal. It is
+// one plain-MVCC read over the resident tail.
+func (c *Client) ResidentRunIDs(ctx context.Context) ([]int64, error) {
+	rows, err := c.pool.Query(ctx, `SELECT DISTINCT run_id FROM public.data_journal`)
+	if err != nil {
+		return nil, fmt.Errorf("pg: read resident journal run ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("pg: scan resident journal run id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pg: iterate resident journal run ids: %w", err)
+	}
+	return ids, nil
+}
+
 // CurrentLSN returns the data database's current WAL LSN in text form. It satisfies
 // dispatch.LSNReader for snapshot pin stamping.
 func (c *Client) CurrentLSN(ctx context.Context) (string, error) {
