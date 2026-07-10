@@ -480,6 +480,8 @@ iris pat create | list | revoke   # manage PATs with scopes {control, read, data
 
 **Q - JSON output contract?** A: `--json`: every command emits one structured JSON document on stdout (read-API envelope). Default: human-readable. Daemon/per-run logs separate from command output.
 
+**Q - Version surface?** A: `iris --version` prints exactly `iris version <build>` followed by a trailing newline, one line, so the operator and the installer can read which build they hold. `<build>` defaults to `dev` for an unstamped build and is injected at link time (`-ldflags -X`); the release stamps the tag. The stamp is a build-time constant, never mutated at runtime, so it is not an exception to the no-mutable-globals rule.
+
 ## 9. Tooling, Build & Dependencies
 
 **Q - What language and Go version?** A: A single Go program. Target Go 1.26, floor 1.25; CI builds both. Go for the same reason pipelines ship as binaries: one statically-linked, cross-compiled executable per platform.

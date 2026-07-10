@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
 )
 
 // runE is the signature of a cobra command handler.
@@ -57,6 +59,10 @@ func (a *app) newRootCommand() *cobra.Command {
 		SilenceErrors: true, // errors are rendered by renderError, not cobra
 		SilenceUsage:  true, // usage never pollutes stdout under --json
 		Args:          cobra.NoArgs,
+		// A non-empty Version wires cobra's built-in --version flag on the root.
+		// The value is the linker-stamped build id (buildinfo.Version, "dev" when
+		// unstamped), and SetVersionTemplate below pins the exact output line.
+		Version: buildinfo.Version,
 		// A bare `iris` prints help (exit 0), but under --json it must still emit a
 		// single JSON document rather than human help text on stdout.
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -67,6 +73,10 @@ func (a *app) newRootCommand() *cobra.Command {
 		},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
+	// Pin the version surface to exactly "iris version <build>\n" so the installer
+	// and operators parse a stable single line, independent of cobra's default
+	// template.
+	root.SetVersionTemplate("iris version {{.Version}}\n")
 	// Tag flag-parse failures so the error path can tell them from post-parse
 	// errors when resolving the output mode.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &flagError{err: err} })

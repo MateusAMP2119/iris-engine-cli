@@ -1371,6 +1371,14 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
+  - id: S08/version-flag-defaults-dev
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/version-template-format
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
   - id: S08/workload-show-wiring-panel
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
