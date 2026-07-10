@@ -2,10 +2,10 @@
   <img src="docs/assets/iris-goddess.png" alt="Iris, goddess of the rainbow, pouring water from a jug" width="100%">
 </p>
 
-# Iris 🌈
+---
 
 <p align="center">
-  <strong>A new approach to lakehousing — self-hostable, provenance-first, local by default.</strong>
+  <strong>Iris Lakehouse</strong> an engine for data lineage
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/Contracts-517%20traced-blueviolet?style=for-the-badge" alt="517 contracts">
 </p>
 
-**Big data can be local data.** The modern lakehouse is a fleet of managed services — object store, catalog, warehouse, orchestrator, lineage tool — each with its own bill, credentials, and failure modes. Iris is a bet that most of that fleet is unnecessary: one self-hostable Go binary and one Postgres cluster you own replace the lot. Pipelines in any language, orchestration without a clock, a scoped read API for your data products, and provenance as the foundation — every write attributed **in-transaction** to its exact run, binary, and declaration, sealed into an ed25519-signed journal. `iris data provenance` is git blame for every row, forever. Runs on your laptop, a homelab box, or one VPS — no cloud account required.
+Iris is a self-hostable lakehouse in a single Go binary. It orchestrates data pipelines written in any language, keeps all state in one Postgres cluster you own, and records the lineage of every row as a first-class feature: each write is attributed **in-transaction** to the run, binary, and declaration that produced it, then sealed into an ed25519-signed, tamper-evident journal. `iris data provenance <table> <pk>` answers where any row came from, at any point in its history. There are no managed services to wire together — no external object store, catalog, warehouse, or scheduler — and it runs the same on a laptop, a homelab server, or a single VPS.
 
 ---
 
