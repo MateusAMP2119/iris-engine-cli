@@ -64,13 +64,17 @@ func TestEngineInfoShowsEngineKeyPublic(t *testing.T) {
 		privHex := hex.EncodeToString(priv)
 
 		// --json: the data envelope carries the public half, read the production way
-		// from meta; it never carries private material. (The daemon-held runtime fields
-		// like role merge in separately through GET /info, out of scope here.)
+		// from meta; it never carries private material. The daemon-held runtime fields
+		// merge in through GET /info -- now that the info plane is wired into Run(), the
+		// merged document also reports the elected leadership role and the display-only
+		// uptime (specification section 15), so this asserts them here too.
 		jres := bin.Run(t, RunOptions{Args: []string{"--json", "engine", "info"}, Dir: ws, Timeout: time.Minute})
 		jres.RequireExit(t, 0)
 		var doc struct {
 			Data struct {
 				EngineKeyPublic string `json:"engine_key_public"`
+				Role            string `json:"role"`
+				Uptime          string `json:"uptime"`
 			} `json:"data"`
 		}
 		jres.DecodeJSON(t, &doc)
@@ -81,8 +85,19 @@ func TestEngineInfoShowsEngineKeyPublic(t *testing.T) {
 		if s := string(jres.Stdout); strings.Contains(s, privB64) || strings.Contains(s, privHex) {
 			t.Errorf("engine info --json leaked the private key half")
 		}
+		// The daemon-held runtime readout merges through GET /info: an unwired info
+		// plane 500s and the CLI falls back to the daemonless local readout, leaving
+		// role and uptime empty. Against a live leader they are populated.
+		if doc.Data.Role != "leader" {
+			t.Errorf("engine info --json role = %q, want leader (GET /info must merge the daemon's runtime readout)", doc.Data.Role)
+		}
+		if doc.Data.Uptime == "" {
+			t.Error("engine info --json reports no uptime; the wired info plane always renders one")
+		}
 
-		// Human readout: shows the public half, never the private material.
+		// Human readout: shows the public half, never the private material, and -- with
+		// the info plane wired -- names the leadership role instead of the not-reachable
+		// fallback line.
 		hres := bin.Run(t, RunOptions{Args: []string{"engine", "info"}, Dir: ws, Timeout: time.Minute})
 		hres.RequireExit(t, 0)
 		out := string(hres.Stdout)
@@ -91,6 +106,9 @@ func TestEngineInfoShowsEngineKeyPublic(t *testing.T) {
 		}
 		if both := out + string(hres.Stderr); strings.Contains(both, privB64) || strings.Contains(both, privHex) {
 			t.Errorf("human engine info leaked the private key half")
+		}
+		if !strings.Contains(out, "role:") || strings.Contains(out, "not reachable") {
+			t.Errorf("human engine info did not merge the daemon role (info plane unwired?):\n%s", out)
 		}
 	})
 }
