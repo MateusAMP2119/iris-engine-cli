@@ -365,7 +365,7 @@ func (a *app) deadletterCmd() *cobra.Command {
 func (a *app) endpointCmd() *cobra.Command {
 	apply := &cobra.Command{
 		Use: "apply [name]", Short: "Publish endpoints/ (or one): validate, compile, atomic",
-		Args: cobra.MaximumNArgs(1), RunE: a.daemonStub("endpoint apply"),
+		Args: cobra.MaximumNArgs(1), RunE: a.endpointApply(),
 	}
 	remove := &cobra.Command{
 		Use: "remove <name>", Short: "Retire a read surface (shape only, no data touched)",
