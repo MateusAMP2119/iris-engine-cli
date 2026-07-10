@@ -1,4 +1,4 @@
-<img src="docs/assets/iris-goddess.png" alt="Iris, goddess of the rainbow, pouring water from a jug" width="100%">
+<img src="docs/assets/iris-banner.png" alt="Iris, goddess of the rainbow, pouring water from a jug" width="100%">
 
 <p align="center">
   <strong>Provenance-first data engine and pipeline orchestrator — git blame for every database row.</strong>
