@@ -33,6 +33,13 @@ import (
 // spec: S13/data-provenance-after-prune
 // spec: S13/archived-partition-provenance-answers
 func TestDataProvenanceLineage(t *testing.T) {
+	// Shared-cluster isolation: this test provisions the golden analytics.orders
+	// (id uuid, customer_id uuid, amount, ...) and inserts customer_id. On the CI lane a
+	// prior test may have left an analytics.orders of a different shape (e.g. the sealing
+	// tests' id integer, amount numeric) in the shared data database, and a re-provision
+	// over an existing table leaves the leftover shape in place -- so the customer_id
+	// insert fails. Start from a clean slate; the daemon recreates the databases on start.
+	freshDatabases(t)
 	bin := Build(t)
 	ws := shortWorkspace(t)
 	copyGoldenWorkspace(t, ws)

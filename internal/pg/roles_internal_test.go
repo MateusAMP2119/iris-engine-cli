@@ -98,7 +98,7 @@ func TestRenderProvisionPipelineRoleEnsuresCaptureSurface(t *testing.T) {
 		t.Fatalf("provisioning must ensure the iris schema and iris.capture() function; schema@%d func@%d in\n%s",
 			schemaIdx, funcIdx, strings.Join(stmts, "\n"))
 	}
-	if !(schemaIdx < funcIdx && funcIdx < usageIdx && funcIdx < execIdx) {
+	if schemaIdx >= funcIdx || funcIdx >= usageIdx || funcIdx >= execIdx {
 		t.Errorf("capture surface must be ensured before the capture grants; schema@%d func@%d usage@%d exec@%d",
 			schemaIdx, funcIdx, usageIdx, execIdx)
 	}

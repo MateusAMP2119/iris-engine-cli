@@ -238,6 +238,12 @@ func TestReadSurfacesCLIVsAPI(t *testing.T) {
 // spec: S14/provenance-cli-readout
 func TestProvenanceCLIReadout(t *testing.T) {
 	t.Run("S14/provenance-cli-readout", func(t *testing.T) {
+		// Shared-cluster isolation: this test provisions the golden analytics.orders
+		// (id uuid, customer_id uuid, amount) and inserts customer_id. On the CI lane a
+		// prior test may have left an analytics.orders of a different shape in the shared
+		// data database, and a re-provision over an existing table leaves the leftover
+		// shape in place -- so the customer_id insert fails. Start from a clean slate.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		copyGoldenWorkspace(t, ws)

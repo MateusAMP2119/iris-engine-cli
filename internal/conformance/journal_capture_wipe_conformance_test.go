@@ -554,37 +554,37 @@ func freshDatabases(t *testing.T) {
 	}
 }
 
-// dropSharedDatabase drops one shared database, tolerating a just-stopped prior
-// daemon whose connections have not yet drained. The engine's admin (the IRIS_PG_DSN
-// role) is a deliberately non-superuser CREATEDB/CREATEROLE role and holds only
-// INHERIT FALSE membership over the engine-created login roles (the read-pool login,
-// pipeline roles), so it cannot pg_terminate_backend their sessions -- and DROP
-// DATABASE ... WITH (FORCE) fails with a bare "permission denied to terminate process"
-// while such a session lingers. Those sessions belong to the prior test's daemon,
-// which its cleanup already signalled, so they drain within moments of the process
-// exiting; this retries a plain (non-FORCE) DROP until the last connection is gone,
-// which needs no terminate privilege at all. A DROP that keeps failing because a
-// connection never drains surfaces the last error when ctx expires, rather than
-// hanging.
+// dropSharedDatabase drops one shared database, evicting whatever a just-stopped prior
+// daemon still holds and tolerating the one session kind the admin may not terminate.
+// FORCE terminates every session the admin owns -- a leftover daemon's own meta/data
+// connections and its leader-lock connection (all opened as the non-superuser IRIS_PG_DSN
+// admin) -- so a slow-to-exit prior daemon never wedges the reset (a plain DROP, unable
+// to evict it, would hang until ctx). The one session FORCE cannot terminate is the
+// engine read-pool login's on the data database: the admin holds only INHERIT FALSE
+// membership over that engine-created role (post read-pool-provision hardening), so
+// terminating it raises 42501 "permission denied to terminate process". That session
+// belongs to the prior daemon and drains within moments of the process exiting, so retry
+// until it is gone; 55006 (a plain in-use race) clears the same way. Any other error is a
+// real fault, and ctx bounds the wait so a connection that never drains surfaces the last
+// error rather than hanging.
 func dropSharedDatabase(ctx context.Context, t *testing.T, conn *pgx.Conn, db string) {
 	t.Helper()
-	stmt := fmt.Sprintf("DROP DATABASE IF EXISTS %s", db)
-	var lastErr error
+	stmt := fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", db)
 	for {
-		if _, err := conn.Exec(ctx, stmt); err == nil {
+		_, err := conn.Exec(ctx, stmt)
+		if err == nil {
 			return
-		} else {
-			lastErr = err
 		}
-		// 55006 object_in_use (a connection is still attached): the prior daemon's
-		// sessions are draining -- wait and retry. Any other error is a real fault.
+		// 42501 (a session owned by a role the admin may not terminate) and 55006
+		// (object_in_use) both clear once the prior daemon's sessions drain; wait and
+		// retry. Any other error is a real fault.
 		var pgErr *pgconn.PgError
-		if !errors.As(lastErr, &pgErr) || pgErr.Code != "55006" {
-			t.Fatalf("drop shared %s database for a clean slate: %v", db, lastErr)
+		if !errors.As(err, &pgErr) || (pgErr.Code != "42501" && pgErr.Code != "55006") {
+			t.Fatalf("drop shared %s database for a clean slate: %v", db, err)
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("drop shared %s database for a clean slate: connections never drained: %v", db, lastErr)
+			t.Fatalf("drop shared %s database for a clean slate: connections never drained: %v", db, err)
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
