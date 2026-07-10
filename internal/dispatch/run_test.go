@@ -342,9 +342,13 @@ func TestCancelKillsGroupDeadLetters(t *testing.T) {
 // TestNoEngineTimeout proves the engine never kills a run on elapsed time: a
 // long-running run started with an ordinary (deadline-free) context stays alive on
 // its own and ends only when an explicit cancel kills it. The API carries no timeout
-// or deadline knob to trip -- StartRun and RunSpec expose none.
+// or deadline knob to trip -- StartRun and RunSpec expose none. A run reaches a
+// terminal state only by its process exiting or by an explicit cancel; no clock
+// ever ends one (specification section 6.1 clock doctrine: runs end only by exit
+// or cancellation).
 //
 // spec: S01/no-engine-timeout
+// spec: S06.1/run-ends-only-exit-or-cancel
 func TestNoEngineTimeout(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()

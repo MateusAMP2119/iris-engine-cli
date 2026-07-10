@@ -133,6 +133,13 @@ func TestOSRunnerCwdAndEnv(t *testing.T) {
 // verbatim, never expanded or interpreted.
 //
 // spec: S16/real-process-io-throwaway-scripts
+// TestOSRunnerDirectExecNoShell proves the runner execs the argv vector directly
+// and never through a shell: a shell metacharacter argument -- a variable, a
+// command chain, a glob -- reaches the process verbatim, with no expansion,
+// substitution, or word splitting (specification section 3: the run vector is a
+// plain direct-exec argv, no shell).
+//
+// spec: S03/run-exec-no-shell
 func TestOSRunnerDirectExecNoShell(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "arg.sh", "printf 'arg=%s' \"$1\"\n")
