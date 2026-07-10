@@ -143,4 +143,8 @@ jobs:
       - name: Conformance suite (real binary over the socket, real Postgres)
         # -tags conformance drives the actual shipped binary; the failover leg
         # and every acceptance step join this suite as later epics fill it in.
-        run: go test -race -tags conformance ./internal/conformance/...
+        # -timeout 20m: the suite spins ~15 embedded-Postgres clusters plus the
+        # shared-cluster legs under -race and runs ~11m end to end, over `go test`'s
+        # default 10m package timeout -- an explicit ceiling keeps the lane green on
+        # a slow runner instead of tripping the default mid-suite.
+        run: go test -race -tags conformance -timeout 20m ./internal/conformance/...
