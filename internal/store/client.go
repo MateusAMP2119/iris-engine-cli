@@ -55,6 +55,7 @@ type Client struct {
 	manual   ManualReader
 	show     ShowReader
 	promote  PromoteStateReader
+	pats     PATReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -99,6 +100,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		manual:   newPgxManualReader(readPoolSeam),
 		show:     newPgxShowReader(readPoolSeam),
 		promote:  &pgxPromoteReader{pool: readPoolSeam},
+		pats:     &pgxPATReader{pool: readPoolSeam},
 	}, nil
 }
 
@@ -194,6 +196,11 @@ func (c *Client) ShowReader() ShowReader { return c.show }
 // registration/data-mode, built-state, and upstream-data-mode reads the promote
 // op's gate and cross-mode warning are decided from.
 func (c *Client) PromoteStateReader() PromoteStateReader { return c.promote }
+
+// PATReader returns the plain-MVCC PAT authentication reader (the pool): the token
+// prefix -> record lookup the TCP bearer-token verifier resolves each request
+// against, on any node.
+func (c *Client) PATReader() PATReader { return c.pats }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

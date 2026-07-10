@@ -2,6 +2,8 @@ package pg
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -113,6 +115,36 @@ func (c *Client) Exec(ctx context.Context, sql string) error {
 	if _, err := c.pool.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("pg: exec data-database statement: %w", err)
 	}
+	return nil
+}
+
+// PrepareVerify prepare-verifies a derived endpoint statement against the data
+// database (specification section 7: endpoint apply prepare-verifies the derived
+// SQL). It checks one connection out of the data pool and issues a server-side
+// Parse (Postgres itself vets the statement -- source present, columns real, types
+// castable), then deallocates it so a pooled reuse can re-prepare, returning
+// Postgres's refusal verbatim on failure. It runs as the engine's own data role, so
+// it verifies statement validity only, never a per-caller grant (grants are enforced
+// at read time, per role). name is prefixed and hashed so a re-verify never collides
+// with a prior prepared name on a reused session, satisfying dispatch.PrepareVerifier.
+func (c *Client) PrepareVerify(ctx context.Context, name, sql string) error {
+	conn, err := c.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("pg: prepare-verify %q: acquire connection: %w", name, err)
+	}
+	defer conn.Release()
+
+	sum := sha256.Sum256([]byte(sql))
+	stmtName := "iris_epverify_" + name + "_" + hex.EncodeToString(sum[:4])
+	if _, err := conn.Conn().Prepare(ctx, stmtName, sql); err != nil {
+		// Postgres refused the statement: return its message verbatim (the applier
+		// wraps it), so a bad endpoint never publishes.
+		return fmt.Errorf("pg: prepare-verify %q against the data database: %w", name, err)
+	}
+	// Deallocate so the pooled session can re-prepare on a later verify with the same
+	// name; a deallocate failure is non-fatal (the statement is session-scoped and the
+	// verification already succeeded).
+	_ = conn.Conn().Deallocate(ctx, stmtName)
 	return nil
 }
 
