@@ -16,9 +16,10 @@ import (
 // non-superuser-safe unlike the per-database GUC install cannot set in external mode.
 
 // JournalSealReader is the meta read seam the seal step consults: the checkpoint
-// chain head to link to and the in-flight run count that gates whether a seal may
-// cut. A meta-backed implementation and a test fake both satisfy it; reads are plain
-// MVCC through the reader pool, never serialized through the writer.
+// chain head to link to, the in-flight run count that gates whether a seal may
+// cut, and the engine key material the checkpoint is signed with. A meta-backed
+// implementation and a test fake both satisfy it; reads are plain MVCC through the
+// reader pool, never serialized through the writer.
 type JournalSealReader interface {
 	// LatestCheckpoint returns the chain head (highest seq journal_checkpoints row),
 	// or nil when the chain is empty (the next checkpoint is the first, parent nil).
@@ -27,6 +28,13 @@ type JournalSealReader interface {
 	// state: the in-flight runs that wrote into the resident partition and a seal must
 	// wait for before it may cut. An empty id set counts zero (no writer is in flight).
 	RunningAmong(ctx context.Context, runIDs []int64) (int64, error)
+	// ReadEngineKey returns the raw ed25519 private key bytes stored in the
+	// single-row engine_key meta table (specification section 4, bootstrap Q/A:
+	// "private half in meta"). It returns (nil, nil) when the table holds no key yet,
+	// so the seal can mint one on first need; the daemon decodes the bytes into its
+	// EngineKey (store never imports crypto). The bytes are the private half: a
+	// caller must never log or render them.
+	ReadEngineKey(ctx context.Context) ([]byte, error)
 }
 
 // The seal read statements. Each is a single plain SELECT (an MVCC snapshot), no

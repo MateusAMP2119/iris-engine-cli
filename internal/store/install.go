@@ -72,6 +72,36 @@ func (c *InstallConns) Cluster() Execer { return adminExec{conn: c.admin} }
 // so it is dialed only after CREATE DATABASE meta has created the database.
 func (c *InstallConns) Meta() Execer { return &lazyMetaExec{conns: c} }
 
+// ReadEngineKey reads the raw ed25519 private key bytes back from the single-row
+// engine_key meta table on the install meta connection, so `iris engine install`
+// can report the stored key's public half (idempotent: a re-install that hit the
+// ON CONFLICT no-op still reports the pre-existing key, never the discarded fresh
+// mint). It opens the meta connection lazily if the caller has not issued a meta
+// statement yet, exactly like the Meta Execer. The bytes are the private half: the
+// caller decodes and exposes only the public half, and never logs them.
+func (c *InstallConns) ReadEngineKey(ctx context.Context) ([]byte, error) {
+	if c.meta == nil {
+		cfg, err := metaConnConfig(c.adminDSN)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("store: open meta connection to read engine key: %w", err)
+		}
+		c.meta = conn
+	}
+	var priv []byte
+	err := c.meta.QueryRow(ctx, selectEngineKeySQL).Scan(&priv)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: read engine key: %w", err)
+	}
+	return priv, nil
+}
+
 // Close releases the meta connection (if it was opened) and the admin connection,
 // joining any close errors so neither is silently dropped.
 func (c *InstallConns) Close(ctx context.Context) error {
