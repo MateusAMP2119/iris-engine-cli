@@ -111,6 +111,15 @@ func (d *Dispatcher) EnsureSchema(ctx context.Context) error {
 	return d.Submit(ctx, func(w *store.Writer) error { return w.EnsureSchema(ctx) })
 }
 
+// AdvertiseLeader submits the leader-address advertisement through the single-writer
+// path: the upsert of this leader's advertised address into the single-row
+// leadership table the leader issues on winning the advisory lock (specification
+// sections 4 and 15). It is a leader-only meta write, so it runs on the dispatcher
+// goroutine like every other.
+func (d *Dispatcher) AdvertiseLeader(ctx context.Context, addr string) error {
+	return d.Submit(ctx, func(w *store.Writer) error { return w.AdvertiseLeader(ctx, addr) })
+}
+
 // Stop shuts the dispatcher goroutine down and waits for it to exit. It is
 // idempotent and safe to call from a defer.
 func (d *Dispatcher) Stop() {

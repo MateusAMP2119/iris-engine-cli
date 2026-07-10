@@ -48,11 +48,14 @@ func TestStandbyMutationRejection(t *testing.T) {
 	bin := Build(t)
 
 	// Leader candidate: install (external no-op that ensures the shared meta) and
-	// start detached, then wait until it holds the advisory lock and leads.
+	// start detached with a TCP listener, so the leader advertises a concrete address
+	// the standby's exit-6 guidance can name for retargeting, then wait until it holds
+	// the advisory lock and leads.
+	leaderAddr := freeTCPAddr(t)
 	leaderWS := shortWorkspace(t)
 	leaderSock := filepath.Join(leaderWS, ".iris", "iris.sock")
 	bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: leaderWS, Timeout: 5 * time.Minute}).RequireExit(t, 0)
-	bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d"}, Dir: leaderWS, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+	bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d", "--tcp", leaderAddr}, Dir: leaderWS, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 	t.Cleanup(func() {
 		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: leaderWS, Timeout: 30 * time.Second})
 	})
@@ -90,6 +93,15 @@ func TestStandbyMutationRejection(t *testing.T) {
 	// not a dead listener.
 	requireHealthzOK(t, standbySock)
 
+	// The standby reads the leader's advertisement from the shared meta and names the
+	// leader's concrete TCP address on GET /leader -- the guidance is a real retarget
+	// address, not "unknown" (the gap E11.2 flagged). Wait for the poll to pick it up
+	// before asserting the exit-6 envelope carries the same address.
+	if !waitLeaderReport(t, standbySock, leaderAddr) {
+		_, got := leaderReport(t, standbySock)
+		t.Fatalf("standby GET /leader named %q, want the live leader's advertised address %q", got, leaderAddr)
+	}
+
 	// spec: S15/standby-mutation-exit-6
 	t.Run("S15/standby-mutation-exit-6", func(t *testing.T) {
 		// A control mutation POSTed to the standby's socket is gated to the leader:
@@ -114,9 +126,11 @@ func TestStandbyMutationRejection(t *testing.T) {
 	t.Run("S08/exit6-names-leader", func(t *testing.T) {
 		res := bin.Run(t, RunOptions{Args: []string{"--socket", standbySock, "--json", "pipeline", "promote", "any_pipeline"}, Dir: standbyWS})
 		res.RequireExit(t, 6)
-		// Under --json the single stdout document is the not_leader error envelope:
-		// its machine code is not_leader and its message names the leader for
-		// retargeting.
+		// Under --json the single stdout document is the not_leader error envelope: its
+		// machine code is not_leader and its message names the leader by its concrete
+		// advertised TCP address for retargeting -- no longer "unknown" (the gap E11.2
+		// flagged, now closed by leader advertisement). The CLI folds the daemon's leader
+		// hint into the retarget guidance, so the address appears in the message text.
 		var env struct {
 			Error struct {
 				Code    string `json:"code"`
@@ -129,6 +143,9 @@ func TestStandbyMutationRejection(t *testing.T) {
 		}
 		if !strings.Contains(strings.ToLower(env.Error.Message), "leader") {
 			t.Errorf("--json message did not name the leader for retargeting: %q", env.Error.Message)
+		}
+		if !strings.Contains(env.Error.Message, leaderAddr) {
+			t.Errorf("--json message did not carry the leader's concrete address %q for retargeting: %q", leaderAddr, env.Error.Message)
 		}
 	})
 }

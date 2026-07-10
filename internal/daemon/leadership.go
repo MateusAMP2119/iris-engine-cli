@@ -21,6 +21,13 @@ import (
 // unlock.
 const lockReleaseGrace = 5 * time.Second
 
+// leaderAdPollInterval bounds how often a contending standby re-reads the leader's
+// advertised address from meta to refresh its guidance hint (specification section
+// 15). A standby learns the current leader on its first read (the poll reads
+// immediately, then on this interval); the interval only keeps a long-running standby
+// current across a leader change while it stays blocked on the lock.
+const leaderAdPollInterval = 500 * time.Millisecond
+
 // This file is leader election and the leadership transitions around it: the step
 // that turns a daemon candidate into the one leader, the sole dispatcher, and the
 // step that takes leadership away again (specification sections 2 and 15).
@@ -167,6 +174,17 @@ type Candidate struct {
 	// candidate's workspace, data client, and the shared endpoint registry
 	// (--endpoint grant expansion). Nil skips it.
 	patsPlane *patPlane
+
+	// Leader-advertisement wiring (specification sections 4, 7, 8, and 15).
+	// advertiseAddr is this candidate's own address -- its TCP listen address, empty
+	// when socket-only -- written into the single-row leadership meta table through
+	// the single writer on winning the lock, so a standby can name the leader for
+	// retargeting (exit 6, GET /leader). leaderAddrReader is the plain-MVCC read a
+	// standby polls while contending to learn the current leader's advertised address;
+	// nil leaves a standby without a hint (it reports "unknown"). Both are absent in
+	// the election-only wiring the shape tests use.
+	advertiseAddr    string
+	leaderAddrReader store.LeaderAddrReader
 }
 
 // InflightKiller kills every in-flight run's process group, the self-demotion kill
@@ -411,6 +429,26 @@ func WithPATPlane(pp *patPlane, registry *dispatch.EndpointRegistry, workspace s
 	}
 }
 
+// WithLeaderAdvertiser sets the address this candidate advertises when it wins
+// leadership: its own listen address (the TCP listen address an operator retargets to
+// via --host), written into the single-row leadership meta table through the single
+// writer so a standby can name it for retargeting (specification sections 4, 7, 8, and
+// 15). An empty address is advertised too (a socket-only leader clears any stale prior
+// address); absent this option, a leader advertises the empty address.
+func WithLeaderAdvertiser(addr string) CandidateOption {
+	return func(c *Candidate) { c.advertiseAddr = addr }
+}
+
+// WithLeaderAddrReader wires the read a standby polls to learn the current leader's
+// advertised address while it contends for the lock (specification section 15): each
+// read updates the standby's leader hint so a not_leader rejection and GET /leader
+// name the live leader. It reads plain MVCC off the reader pool, on any candidate. A
+// nil reader leaves a standby without a hint (its guidance stays "unknown"), which is
+// the election-only wiring the shape tests use.
+func WithLeaderAddrReader(r store.LeaderAddrReader) CandidateOption {
+	return func(c *Candidate) { c.leaderAddrReader = r }
+}
+
 // NewCandidate builds a leadership candidate over the leader lock, the role state
 // its listeners consult, and the leader's meta write connection (which the
 // dispatcher wraps in the single Writer on winning). A nil logger discards output.
@@ -441,7 +479,29 @@ func (c *Candidate) Serve(ctx context.Context) error {
 		c.role.SetStandby("")
 		c.logger.Info("iris daemon standby: contending for leadership")
 
-		if err := c.lock.Acquire(ctx); err != nil {
+		// While contending, refresh the standby's leader hint from the meta
+		// advertisement so a not_leader rejection names the live leader (specification
+		// section 15). The poll is bound to a child context cancelled the instant the
+		// lock is acquired, so no stale SetStandby races the SetLeader in lead().
+		var stopPoll context.CancelFunc
+		pollDone := make(chan struct{})
+		if c.leaderAddrReader != nil {
+			var pollCtx context.Context
+			pollCtx, stopPoll = context.WithCancel(ctx)
+			go func() { defer close(pollDone); c.pollLeaderAddress(pollCtx) }()
+		} else {
+			close(pollDone)
+		}
+
+		err := c.lock.Acquire(ctx)
+		// Stop the advertisement poll before any leader transition, and wait for it to
+		// exit, so it can never call SetStandby after lead() reports the leader role.
+		if stopPoll != nil {
+			stopPoll()
+		}
+		<-pollDone
+
+		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				// Cancelled while still a standby (never won the lock): a clean shutdown,
 				// not an error.
@@ -468,6 +528,28 @@ func (c *Candidate) Serve(ctx context.Context) error {
 		}
 		c.lock, c.writeConn = c.fresh()
 		c.logger.Info("iris daemon demoted: re-entering standby on a fresh session")
+	}
+}
+
+// pollLeaderAddress refreshes the standby's leader hint from the meta advertisement
+// while this candidate contends for the lock (specification section 15): each read
+// updates the role's standby hint, so a not_leader rejection and GET /leader name the
+// live leader. It reads immediately, then on leaderAdPollInterval, until ctx is
+// cancelled (the lock was acquired, or the daemon is shutting down). A read error is
+// non-fatal -- the hint keeps its last value, degrading to "unknown" rather than
+// failing the standby -- and it never flips the role, only refreshes the standby hint.
+func (c *Candidate) pollLeaderAddress(ctx context.Context) {
+	for {
+		if addr, err := c.leaderAddrReader.LeaderAddr(ctx); err == nil {
+			c.role.SetStandby(addr)
+		} else if ctx.Err() == nil {
+			c.logger.Debug("iris daemon standby: reading leader advertisement failed", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(leaderAdPollInterval):
+		}
 	}
 }
 
@@ -639,6 +721,21 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
 	// dispatcher waits on it) before reporting the leader role, so no lane is ever
 	// dispatched ahead of reconciliation.
+	// Advertise this leader's address into the single-row leadership meta table
+	// through the single writer, so a standby (sharing meta) can name it for
+	// retargeting (specification sections 4, 7, 8, and 15). It rides the same pre-
+	// dispatch establishment as the schema re-check and reconciliation -- before the
+	// dispatch-ready latch and the leader role -- so the advertisement is in place by
+	// the time this daemon reports itself leader. The upsert supersedes any prior
+	// leader's address, so the advertisement converges on the live leader across a
+	// failover, and a socket-only leader (empty address) clears a stale prior one. A
+	// failure is non-fatal: the leader is still correct (mutations stay gated to it),
+	// only the standby guidance degrades to "unknown", so a transient advertise error
+	// must not cost leadership.
+	if err := d.AdvertiseLeader(ctx, c.advertiseAddr); err != nil && ctx.Err() == nil {
+		c.logger.Warn("iris daemon leader: advertising leader address failed; standby guidance degrades to unknown", "err", err)
+	}
+
 	if c.onDispatchReady != nil {
 		c.onDispatchReady()
 	}

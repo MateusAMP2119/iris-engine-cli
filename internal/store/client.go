@@ -60,6 +60,7 @@ type Client struct {
 	deadletter DeadLetterReader
 	seal       JournalSealReader
 	endpoints  EndpointRowReader
+	leaderAddr LeaderAddrReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -109,6 +110,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		deadletter: newPgxDeadLetterReader(readPoolSeam),
 		seal:       newPgxSealReader(readPoolSeam),
 		endpoints:  newPgxEndpointReader(readPoolSeam),
+		leaderAddr: newPgxLeaderAddrReader(readPoolSeam),
 	}, nil
 }
 
@@ -231,6 +233,11 @@ func (c *Client) SealReader() JournalSealReader { return c.seal }
 // registry at startup, so a restart or failover serves every applied endpoint with
 // no re-apply.
 func (c *Client) EndpointReader() EndpointRowReader { return c.endpoints }
+
+// LeaderAddrReader returns the plain-MVCC leader-address read seam (the pool): the
+// advertised address a standby reads to name the leader for retargeting (exit 6, GET
+// /leader). It reads on any candidate, never blocking behind the leader lock.
+func (c *Client) LeaderAddrReader() LeaderAddrReader { return c.leaderAddr }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

@@ -299,7 +299,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithInflightKiller(inflight),
 		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
 		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),
-		WithPATPlane(patMint, endpointRegistry, workspace))
+		WithPATPlane(patMint, endpointRegistry, workspace),
+		// Leader advertisement (specification section 15): on winning the lock this
+		// candidate advertises its TCP listen address (empty when socket-only) into the
+		// leadership meta table, and while a standby it polls that table to name the live
+		// leader for retargeting (exit 6, GET /leader). srv.TCPAddr() is the resolved
+		// listen address (the real port even when the configured address used port 0).
+		WithLeaderAdvertiser(srv.TCPAddr()),
+		WithLeaderAddrReader(client.LeaderAddrReader()))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 
