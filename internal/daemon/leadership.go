@@ -79,6 +79,10 @@ type Candidate struct {
 	pipelines    *pipelinePlane
 	manualReader store.ManualReader
 	runner       exec.Runner
+	// manualDataDSN is the base scoped data-database connection a manual run's
+	// IRIS_DB_URL is derived from (the run id rides it), the same DSN the lane loop
+	// injects; empty leaves a manual run without a data connection.
+	manualDataDSN string
 
 	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
 	// and seal decisions after runs reach terminal.
@@ -226,9 +230,10 @@ func WithDeadletterPlane(dp *deadletterPlane) CandidateOption {
 // tree (pipeline folders resolve against it); manual is the plain-MVCC manual-run reader;
 // objects is this candidate's own object store (built-run argv resolves from the leader's
 // own objects_path); runner starts subprocesses. journal provides the data journal high id
-// for terminal window stamping. A nil pp leaves the candidate without a manual-run plane
-// (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark) CandidateOption {
+// for terminal window stamping. dbURL is the base scoped data-database connection a manual
+// run's IRIS_DB_URL is derived from (the same DSN the lane loop injects). A nil pp leaves
+// the candidate without a manual-run plane (the shape tests use).
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
@@ -237,6 +242,7 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.objects = objects
 		c.runner = runner
 		c.journalHM = journal
+		c.manualDataDSN = dbURL
 	}
 }
 
@@ -506,7 +512,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// tracked and a self-demotion kills it; a test's fake killer is not a registry,
 		// leaving manual tracking off (those tests do not exercise it).
 		reg, _ := c.inflight.(*inflightRuns)
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, reg, c.logger)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.manualDataDSN, reg, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

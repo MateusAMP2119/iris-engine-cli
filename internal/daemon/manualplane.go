@@ -38,10 +38,10 @@ import (
 // Scope note: an own-lane manual run executes synchronously here (mint cause=manual, run,
 // record terminal). A lane member is queued as a cause=manual run for the lane runner to
 // start in turn (E05.12 owns the perpetual lane loop); the manual path never starts a
-// lane member out of band, so same-lane serialization holds. The scoped per-pipeline
-// database connection (E04.4) is not yet wired, so a manual run inherits the daemon
-// environment with an empty IRIS_DB_URL; run output is not captured to a log file yet
-// (E05 run logs), so log_ref stays null.
+// lane member out of band, so same-lane serialization holds. Each run's IRIS_DB_URL is
+// the base data-database connection carrying the run id (the same injection the lane
+// loop applies), so a manual run's captured writes attribute to its own run; run output
+// is not captured to a log file yet (E05 run logs), so log_ref stays null.
 
 // pipelinePlane is the daemon's api.PipelineHandler: it serves the pipeline listing from
 // the reader pool always, and delegates the manual run to the live orchestrator when the
@@ -138,8 +138,11 @@ type manualOrchestrator struct {
 // workspace. A nil logger discards output. The objects is the candidate's own at
 // construction time, so a promoted leader dispatches using its own objects_path. journal
 // provides the data journal high id for terminal window stamping. inflight (nil in the
-// shape tests) tracks each live run's process group so a self-demotion kills it.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, inflight *inflightRuns, logger *slog.Logger) *manualOrchestrator {
+// shape tests) tracks each live run's process group so a self-demotion kills it. dbURL
+// is the base scoped data-database connection each run's IRIS_DB_URL is derived from
+// (the run id rides it), the same DSN the lane loop injects, so a manual run's captured
+// writes attribute to its own run exactly like a lane run's.
+func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string, inflight *inflightRuns, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -150,6 +153,7 @@ func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry
 		objects:   objects,
 		runner:    runner,
 		journal:   journal,
+		dbURL:     dbURL,
 		inflight:  inflight,
 		logger:    logger,
 	}
