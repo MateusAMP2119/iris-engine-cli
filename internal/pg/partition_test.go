@@ -224,3 +224,37 @@ func equalInts(a, b []int64) bool {
 	}
 	return true
 }
+
+// TestSealCondition proves the seal condition (specification section 14): a
+// journal partition seals only when it is past the row threshold, every
+// in-flight run writing into it has finished (no overlapping open window), and
+// it holds zero open (undo=open) entries.
+//
+// spec: S14/seal-condition
+func TestSealCondition(t *testing.T) {
+	t.Run("S14/seal-condition", func(t *testing.T) {
+		cases := []struct {
+			name      string
+			threshold int64
+			rows      int64
+			open      int
+			inflight  int // overlapping in-flight runs writing into the partition
+			want      bool
+		}{
+			{name: "below threshold never seals", threshold: 100, rows: 50, open: 0, inflight: 0, want: false},
+			{name: "threshold met but has open entries", threshold: 100, rows: 120, open: 3, inflight: 0, want: false},
+			{name: "threshold met, no opens, but in-flight run still writing", threshold: 100, rows: 120, open: 0, inflight: 1, want: false},
+			{name: "exactly at threshold, zero open, zero inflight seals", threshold: 100, rows: 100, open: 0, inflight: 0, want: true},
+			{name: "past threshold, all done, no opens seals", threshold: 10, rows: 55, open: 0, inflight: 0, want: true},
+			{name: "open entries block even with no inflight", threshold: 10, rows: 20, open: 1, inflight: 0, want: false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got := pg.CanSeal(tc.threshold, tc.rows, tc.open, tc.inflight)
+				if got != tc.want {
+					t.Fatalf("CanSeal(th=%d, rows=%d, open=%d, inflight=%d) = %v, want %v", tc.threshold, tc.rows, tc.open, tc.inflight, got, tc.want)
+				}
+			})
+		}
+	})
+}

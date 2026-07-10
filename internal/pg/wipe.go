@@ -319,3 +319,40 @@ func revertOf(e JournalEntry) RowRevert {
 	r.PreImage = e.PreImage
 	return r
 }
+
+// CompactJournal applies the compaction collapse rule to a set of journal
+// entries (S14/compaction-collapse-rule). It is pure unit logic.
+//
+// Rules:
+//   - Pre-images are nulled for any entry whose undo is not UndoOpen (released
+//     past undo eligibility).
+//   - Within each (schema, table, row_pk, run_id) group, only the entry with
+//     the highest ID (latest op) is kept; its op and (possibly nulled) pre-image
+//     survive.
+//   - Each run's distinct rows survive exactly: no cross-row dropping within a run.
+//
+// Entries are returned in ascending id order of the survivors.
+func CompactJournal(entries []JournalEntry) []JournalEntry {
+	// Group by (schema, table, row_pk, run_id) and keep only the highest-id per group.
+	type key struct {
+		schema, table, rowPK string
+		runID                int64
+	}
+	best := map[key]JournalEntry{}
+	for _, e := range entries {
+		k := key{schema: e.Schema, table: e.Table, rowPK: e.RowPK, runID: e.RunID}
+		if cur, ok := best[k]; !ok || e.ID > cur.ID {
+			best[k] = e
+		}
+	}
+	// Collect survivors, null released pre-images on them, sort by id asc.
+	out := make([]JournalEntry, 0, len(best))
+	for _, e := range best {
+		if e.Undo != UndoOpen {
+			e.PreImage = ""
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
