@@ -119,6 +119,19 @@ func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) 
 	}
 	logger.Info("engine install: control socket ready")
 
+	// Mint the engine key at install (specification section 14) and persist it to the
+	// engine-owned workspace key file. The per-database GUC storage the original design
+	// chose (enginekey.go) requires SUPERUSER the external admin role lacks, so the key
+	// lands in the workspace .iris tree at 0600 instead -- non-superuser-safe, and, like
+	// the object store, a per-host prerequisite pointable at shared storage for HA. It
+	// is create-once, so re-running install never overwrites an existing key.
+	key, err := LoadOrMintEngineKey(EngineKeyFilePath(s))
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: mint engine key for install: %w", err)
+	}
+	report.EngineKeyPublic = key.PublicBase64()
+	logger.Info("engine install: engine key ready")
+
 	return report, nil
 }
 

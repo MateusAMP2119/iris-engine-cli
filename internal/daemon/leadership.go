@@ -88,6 +88,16 @@ type Candidate struct {
 	// and seal decisions after runs reach terminal.
 	journalHM dispatch.JournalHighWatermark
 
+	// Seal wiring: the opportunistic post-terminal seal step reads the resident
+	// partition through sealData (the *pg.Client, satisfying sealDataStore), consults
+	// the meta seal seam sealMeta (chain head, in-flight count, engine key), and seals
+	// once the resident partition crosses sealThreshold rows. A zero threshold or nil
+	// seam leaves sealing off (the shape/manual tests that wire no seal).
+	sealThreshold int64
+	sealData      sealDataStore
+	sealMeta      store.JournalSealReader
+	sealKeyPath   string
+
 	// Build wiring, installed on winning leadership and cleared on demotion so the
 	// api mux's POST /pipeline/build reaches the single meta writer, the object
 	// store, and the exec seam only while this daemon leads (specification sections
@@ -244,6 +254,33 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.journalHM = journal
 		c.manualDataDSN = dbURL
 	}
+}
+
+// WithSealer wires the opportunistic post-terminal seal step: the resident-partition
+// data store (the *pg.Client, satisfying sealDataStore), the meta seal read seam
+// (chain head, in-flight run count), the journal_partition_rows threshold the
+// resident partition must cross before it seals, and the engine key file the
+// checkpoint is signed with. A zero threshold, nil seam, or empty key path leaves
+// sealing off, so the manual/shape tests that wire no seal are unaffected
+// (specification section 14).
+func WithSealer(threshold int64, data sealDataStore, meta store.JournalSealReader, keyPath string) CandidateOption {
+	return func(c *Candidate) {
+		c.sealThreshold = threshold
+		c.sealData = data
+		c.sealMeta = meta
+		c.sealKeyPath = keyPath
+	}
+}
+
+// buildSealer builds the leader-side seal step over the single dispatcher (submit),
+// or returns nil when no seal seam is wired (a zero threshold, nil data/meta, or
+// empty key path), leaving the manual orchestrator without a seal step exactly as the
+// shape tests expect.
+func (c *Candidate) buildSealer(submit dispatch.Submitter) *journalSealer {
+	if c.sealThreshold <= 0 || c.sealData == nil || c.sealMeta == nil || c.objects == nil || c.sealKeyPath == "" {
+		return nil
+	}
+	return newJournalSealer(c.sealThreshold, c.sealData, c.sealMeta, submit, c.objects, c.sealKeyPath, c.logger)
 }
 
 // WithInflightKiller wires the self-demotion kill seam: on losing its meta
@@ -512,7 +549,11 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// tracked and a self-demotion kills it; a test's fake killer is not a registry,
 		// leaving manual tracking off (those tests do not exercise it).
 		reg, _ := c.inflight.(*inflightRuns)
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.manualDataDSN, reg, c.logger)
+		// The opportunistic post-terminal seal step: threshold-gated, over the data
+		// store (the *pg.Client that also serves as the journal high-watermark), the
+		// meta seal read seam, the single dispatcher (checkpoint insert + archive
+		// flip), and the object store. Nil seams (the shape tests) leave sealing off.
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.manualDataDSN, reg, c.buildSealer(d), c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}
