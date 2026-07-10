@@ -36,8 +36,8 @@ func PipelineRoleName(pipeline string) string {
 // bearing password DDL the meta layer renders, the meta database the role must not
 // reach, the data database it connects to, and the declared field grants.
 type RoleProvision struct {
-	// Role is the pipeline's login-role name (PipelineRoleName), created NOLOGIN then
-	// altered LOGIN with the least-privilege attributes.
+	// Role is the pipeline's login-role name (PipelineRoleName), created LOGIN with the
+	// least-privilege attributes baked in at creation and never re-asserted.
 	Role string
 	// CredentialDDL is the ALTER ROLE ... PASSWORD statement the meta layer renders
 	// from the engine-minted secret (store.RenderSetRolePassword). It carries the raw
@@ -56,17 +56,25 @@ type RoleProvision struct {
 
 // ProvisionPipelineRole ensures a pipeline's least-privilege login role exists on the
 // data cluster with exactly its declared access, issuing the DDL through db in order
-// (specification sections 4 and 7). It is idempotent: the role is created if missing
-// then always re-asserted, and every GRANT/REVOKE is idempotent, so a re-provision
-// (including a credential rotation) is a safe no-op-or-update. The ordered steps are:
+// (specification sections 4 and 7). It is idempotent: the role is created (with its
+// least-privilege attributes baked in) if missing, and every credential/GRANT/REVOKE is
+// idempotent, so a re-provision (including a credential rotation) is a safe
+// no-op-or-update. Crucially it never re-asserts the role's attributes with an
+// ALTER ROLE -- changing an existing role's SUPERUSER attribute requires the SUPERUSER
+// attribute itself (PG16+), which the engine's non-superuser CREATEROLE admin lacks --
+// so a repeat provision never hard-fails on the already-provisioned role. The ordered
+// steps are:
 //
-//  1. create the role NOLOGIN if it does not yet exist;
-//  2. assert its least-privilege attributes (LOGIN, NOSUPERUSER, NOCREATEDB,
-//     NOCREATEROLE);
+//  1. ensure the engine capture surface -- the iris schema and iris.capture() function --
+//     so the role's capture-reachability grants below resolve even when the role is
+//     provisioned before capture is otherwise installed (self-healing, order-independent);
+//  2. create the role LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE if it does not yet
+//     exist (attributes at CREATE, never a re-asserting ALTER);
 //  3. set the engine-minted credential (the meta-rendered CredentialDDL);
 //  4. deny the meta database -- revoke CONNECT from PUBLIC (default-deny) and from the
 //     role -- so the control plane is unreachable to the pipeline (section 2);
-//  5. grant CONNECT on the data database and USAGE on each granted schema;
+//  5. grant CONNECT on the data database, capture reachability (USAGE on iris + EXECUTE
+//     on iris.capture()), and USAGE on each granted schema;
 //  6. apply each declared field grant (RenderGrant).
 //
 // It stops and returns on the first failing statement, naming it; because every step
@@ -108,18 +116,38 @@ func renderProvisionPipelineRole(spec RoleProvision) ([]string, error) {
 	data := quoteIdentifier(spec.DataDatabase)
 
 	stmts := []string{
-		// 1. Create the role NOLOGIN if missing. The role name is a quoted identifier
-		// for CREATE ROLE and a quoted string literal for the pg_roles existence check.
+		// 1. Ensure the engine capture surface exists before the role is granted
+		// reachability on it. The capture-reachability grants below (USAGE on the iris
+		// schema, EXECUTE on iris.capture()) fail with `schema "iris" does not exist`
+		// when role provisioning runs before capture install, so provisioning ensures
+		// the schema and the always-on capture function itself first -- self-healing and
+		// order-independent (specification section 4: capture is always on, every role).
+		// Both are idempotent (CREATE SCHEMA IF NOT EXISTS, CREATE OR REPLACE FUNCTION);
+		// the same iris.capture() body EnsureCaptureFunction applies, so provisioning a
+		// role never diverges from the engine's capture install.
+		CaptureSchemaDDL(),
+		CaptureFunctionDDL(),
+		// 2. Create the role LOGIN with its least-privilege attributes baked in at
+		// creation -- LOGIN plus the NOSUPERUSER/NOCREATEDB/NOCREATEROLE defaults spelled
+		// out. The attributes are set AT CREATE, never re-asserted by a later ALTER ROLE:
+		// changing an existing role's SUPERUSER attribute requires the SUPERUSER attribute
+		// itself (PG16+), so a re-asserting `ALTER ROLE ... NOSUPERUSER` would fail for the
+		// engine's non-superuser CREATEROLE admin on every subsequent provision. Creating
+		// with these attributes is allowed for a CREATEROLE admin (it never grants an
+		// attribute it lacks). On a repeat provision the role already exists and the DO
+		// block skips creation; the credential and database-scoping statements below are
+		// idempotent, so a re-provision never hard-fails because a previous run already
+		// provisioned the role. The role name is a quoted identifier for CREATE ROLE and a
+		// quoted string literal for the pg_roles existence check.
 		fmt.Sprintf(`DO $iris_pipeline_role$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN
-        CREATE ROLE %s NOLOGIN;
+        CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
     END IF;
 END
 $iris_pipeline_role$;`, quoteStringLiteral(spec.Role), role),
-		// 2. Assert least-privilege attributes (idempotent).
-		fmt.Sprintf("ALTER ROLE %s WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;", role),
-		// 3. Set the engine-minted credential (rendered by the meta layer).
+		// 3. Set the engine-minted credential (rendered by the meta layer). A CREATEROLE
+		// admin may set a password on a role it owns, so this is safe on repeat.
 		spec.CredentialDDL,
 		// 4. Deny the meta control database: default-deny for every non-owner role, plus
 		// an explicit role-scoped revoke.

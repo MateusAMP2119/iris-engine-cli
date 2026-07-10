@@ -67,6 +67,79 @@ func TestRenderProvisionPipelineRoleGrantsCapture(t *testing.T) {
 	}
 }
 
+// TestRenderProvisionPipelineRoleEnsuresCaptureSurface proves the pipeline-role
+// provisioning stream is self-healing and order-independent: it ensures the engine
+// capture surface (the iris schema and the iris.capture() function) BEFORE it grants
+// the role reachability on that function, so a role provisioned on a cluster where the
+// capture function is not yet installed still provisions successfully and the capture
+// EXECUTE grant resolves. Without this ensure, GRANT EXECUTE ON FUNCTION iris.capture()
+// fails with `schema "iris" does not exist` when role provisioning runs before capture
+// install (specification section 4: capture is always on, every role -- the role must
+// be able to reach it out of the box).
+//
+// spec: S04/pipeline-role-reaches-capture
+func TestRenderProvisionPipelineRoleEnsuresCaptureSurface(t *testing.T) {
+	role := PipelineRoleName("ingest")
+	stmts, err := renderProvisionPipelineRole(RoleProvision{
+		Role:          role,
+		CredentialDDL: "ALTER ROLE " + quoteIdentifier(role) + " PASSWORD 'x';",
+		MetaDatabase:  "meta",
+		DataDatabase:  "data",
+	})
+	if err != nil {
+		t.Fatalf("renderProvisionPipelineRole: %v", err)
+	}
+
+	schemaIdx := indexOfContaining(stmts, "CREATE SCHEMA IF NOT EXISTS iris")
+	funcIdx := indexOfContaining(stmts, "CREATE OR REPLACE FUNCTION iris.capture()")
+	usageIdx := indexOf(stmts, "GRANT USAGE ON SCHEMA iris TO "+quoteIdentifier(role)+";")
+	execIdx := indexOf(stmts, "GRANT EXECUTE ON FUNCTION iris.capture() TO "+quoteIdentifier(role)+";")
+	if schemaIdx < 0 || funcIdx < 0 {
+		t.Fatalf("provisioning must ensure the iris schema and iris.capture() function; schema@%d func@%d in\n%s",
+			schemaIdx, funcIdx, strings.Join(stmts, "\n"))
+	}
+	if !(schemaIdx < funcIdx && funcIdx < usageIdx && funcIdx < execIdx) {
+		t.Errorf("capture surface must be ensured before the capture grants; schema@%d func@%d usage@%d exec@%d",
+			schemaIdx, funcIdx, usageIdx, execIdx)
+	}
+}
+
+// TestRenderProvisionPipelineRoleAttributesAtCreate proves the pipeline login role's
+// least-privilege attributes ride the CREATE ROLE and are never re-asserted by a later
+// ALTER ROLE. Re-asserting a role's SUPERUSER attribute (even NOSUPERUSER) requires the
+// SUPERUSER attribute itself on PG16+, which the engine's non-superuser CREATEROLE admin
+// lacks, so a re-provision that issued `ALTER ROLE ... NOSUPERUSER` would hard-fail on
+// every repeat. The attributes are set at creation (allowed for a CREATEROLE admin, which
+// never grants an attribute it lacks) and the DO-block existence guard keeps a
+// re-provision idempotent.
+//
+// spec: S05/provision-idempotent
+func TestRenderProvisionPipelineRoleAttributesAtCreate(t *testing.T) {
+	role := PipelineRoleName("ingest")
+	stmts, err := renderProvisionPipelineRole(RoleProvision{
+		Role:          role,
+		CredentialDDL: "ALTER ROLE " + quoteIdentifier(role) + " PASSWORD 'x';",
+		MetaDatabase:  "meta",
+		DataDatabase:  "data",
+	})
+	if err != nil {
+		t.Fatalf("renderProvisionPipelineRole: %v", err)
+	}
+	joined := strings.Join(stmts, "\n")
+
+	wantCreate := "CREATE ROLE " + quoteIdentifier(role) + " LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;"
+	if !strings.Contains(joined, wantCreate) {
+		t.Errorf("role must be created with its least-privilege attributes baked in; want %q in\n%s", wantCreate, joined)
+	}
+	// No attribute-asserting ALTER ROLE: the only ALTER ROLE issued is the meta-rendered
+	// credential (PASSWORD) statement, which a CREATEROLE admin may issue on repeat.
+	for _, s := range stmts {
+		if strings.HasPrefix(s, "ALTER ROLE") && strings.Contains(s, "NOSUPERUSER") {
+			t.Errorf("provisioning must not re-assert attributes with an ALTER ROLE (PG16+ needs SUPERUSER for that): %q", s)
+		}
+	}
+}
+
 // TestRenderCaptureReachabilityGrants proves the shared helper renders exactly the two
 // idempotent capture-reachability grants, with the role as a quoted identifier and the
 // engine-owned iris schema and iris.capture() function named.
