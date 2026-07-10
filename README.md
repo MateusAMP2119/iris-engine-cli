@@ -16,19 +16,31 @@
   <img src="https://img.shields.io/badge/Contracts-517%20traced-blueviolet?style=for-the-badge" alt="517 contracts">
 </p>
 
-Iris is a lakehouse engine bundled with a CLI tool, developed in Go. The engine is built in the image of a glorified cron: a daemon that orchestrates routine tasks — pipelines written in any language — and stores their state and the data they produce in one Postgres cluster (with one twist: there is no clock; runs are chained by dependency, not by schedule). On top of that, it records the lineage of every row as a first-class feature: each write is attributed **in-transaction** to the run, binary, and declaration that produced it, then sealed into an ed25519-signed, tamper-evident journal. `iris data provenance <table> <pk>` answers where any row came from, at any point in its history. There are no managed services to wire together, and it runs the same on a laptop, a homelab server, or a single VPS.
+----
+
+**Iris Lakehouse** is a data engine bundled with a CLI tool, developed in Go. The engine is built in the image of a glorified cron: a daemon that orchestrates routine tasks.<br/>Here those tasks are called pipelines — written in any language — and their state and produced data are stored in an extendable Postgres cluster.
+
+On top of that, every row's lineage is recorded and treated as a first-class feature. Each write is attributed in-transaction to the run, binary, and declaration that produced it, then sealed into an ed25519-signed, tamper-evident journal. `iris data provenance <table> <pk>` answers where any row came from, at any point in its history.<br/>There are no managed services to wire up and no external dependencies — made to run on machines of any size, scaling from a single server to a multi-instance, high-availability deployment.
 
 ---
 
-## Install
+## Quick install
+
+One command, needs only Go 1.25+:
+
+```sh
+go install github.com/MateusAMP2119/iris-engine-cli/cmd/iris@latest
+```
+
+Or build from source:
 
 ```sh
 git clone https://github.com/MateusAMP2119/iris-engine-cli.git
 cd iris-engine-cli
-go build -o iris .        # cgo-free static binary — no toolchain beyond Go 1.25+
+go build -o iris ./cmd/iris    # cgo-free static binary
 ```
 
-Iris manages its own Postgres (embedded) or points at an external cluster (Postgres 16+) via `--pg-dsn`.
+Then bootstrap the engine — Iris provisions and manages its own Postgres (or point it at an external Postgres 16+ cluster via `--pg-dsn`):
 
 ```sh
 iris engine install       # provision managed Postgres + meta schema
