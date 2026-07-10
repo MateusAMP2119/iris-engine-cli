@@ -251,6 +251,16 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	inspect := NewInspectPlane()
 	pipelineShow := NewShowPlane(client.ShowReader(), logger)
 
+	// The E14 read-route planes serve the run-history, trace, and gate readouts on any
+	// node from the reader pool (specification section 7). The runs collection (GET
+	// /runs[?include=inputs], GET /runs/{id}) is the lineage rail `iris run list`
+	// draws; the run trace (GET /runs/{id}/trace) walks run_inputs ancestry up or
+	// descendants down; the pipeline gate (GET /pipelines/{name}/gate) is the
+	// depends_on gate ledger `iris pipeline show` prints, served standalone.
+	runs := newRunsPlane(client.RunLineageReader(), logger)
+	runTrace := newRunTracePlane(client.Reader(), logger)
+	pipelineGate := newPipelineGatePlane(client.ShowReader(), logger)
+
 	srv := NewServer(s, api.NewMux(
 		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
 		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
@@ -261,6 +271,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithStats(stats),
 		api.WithInfo(info), api.WithInspect(inspect), api.WithPipelineShow(pipelineShow),
 		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
+		api.WithRuns(runs), api.WithRunTrace(runTrace), api.WithPipelineGate(pipelineGate),
 	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err

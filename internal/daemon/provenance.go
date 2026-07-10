@@ -67,25 +67,7 @@ func (p *provenancePlane) Provenance(ctx context.Context, schema, table, pk stri
 		return api.ProvenanceResult{}, fmt.Errorf("daemon: provenance %s.%s %s: read lineage: %w", schema, table, pk, err)
 	}
 	// Map store local snapshot (avoids store->pg import) to pg model for the walk.
-	var lin pg.Lineage
-	for _, r := range linStore.Runs {
-		lin.Runs = append(lin.Runs, pg.RunRecord{
-			RunID: r.RunID, Pipeline: r.Pipeline, State: r.State,
-			ArtifactHash: r.ArtifactHash, DeclarationChecksum: r.DeclarationChecksum,
-			Pin: pg.SnapshotPin{SnapshotLSN: r.SnapshotLSN, JournalFloor: r.JournalFloor, JournalCeiling: r.JournalCeiling},
-		})
-	}
-	for _, s := range linStore.Summaries {
-		lin.Summaries = append(lin.Summaries, pg.ArchivalSummary{
-			RunID: s.RunID, Pipeline: s.Pipeline, State: s.State,
-			ArtifactHash: s.ArtifactHash, DeclarationChecksum: s.DeclarationChecksum,
-			ConsumedUpstreamRunIDs: s.ConsumedUpstreamRunIDs,
-			Pin:                    pg.SnapshotPin{SnapshotLSN: s.SnapshotLSN, JournalFloor: s.JournalFloor, JournalCeiling: s.JournalCeiling},
-		})
-	}
-	for _, in := range linStore.Inputs {
-		lin.Inputs = append(lin.Inputs, pg.RunInput{RunID: in.RunID, UpstreamRunID: in.UpstreamRunID})
-	}
+	lin := metaLineageToPg(linStore)
 
 	report, found := pg.WalkProvenance(journal, lin, key, 0)
 	if !found {

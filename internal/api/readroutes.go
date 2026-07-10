@@ -289,10 +289,19 @@ func writeRunsNDJSON(w http.ResponseWriter, res any) {
 }
 
 // asRows coerces a runs payload into an iterable row slice for NDJSON streaming.
-// The handler returns any (its concrete row shape is the daemon's), so both the
-// map-slice and interface-slice forms are accepted; anything else streams empty.
+// The handler returns any (its concrete row shape is the daemon's), so the
+// production RunsCollection (an object wrapping the rows) is unwrapped to its rows,
+// and both the map-slice and interface-slice forms are accepted; anything else
+// streams empty. Unwrapping the collection keeps the NDJSON stream envelope-free
+// (one row per line) while the enveloped read stays { "data": { "runs": [...] } }.
 func asRows(res any) []any {
 	switch rows := res.(type) {
+	case RunsCollection:
+		out := make([]any, len(rows.Runs))
+		for i, r := range rows.Runs {
+			out[i] = r
+		}
+		return out
 	case []any:
 		return rows
 	case []map[string]any:

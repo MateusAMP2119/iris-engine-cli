@@ -45,22 +45,23 @@ type Client struct {
 	mu      sync.Mutex
 	session *pgx.Conn
 
-	pool       *pgxpool.Pool
-	lock       *PgxLeaderLock
-	writer     MetaWriteConn
-	reader     Reader
-	registry   RegistryReader
-	ledger     AppliedHeadReader
-	pipes      PipelineLister
-	manual     ManualReader
-	show       ShowReader
-	promote    PromoteStateReader
-	pats       PATReader
-	stats      StatsSource
-	deadletter DeadLetterReader
-	seal       JournalSealReader
-	endpoints  EndpointRowReader
-	leaderAddr LeaderAddrReader
+	pool        *pgxpool.Pool
+	lock        *PgxLeaderLock
+	writer      MetaWriteConn
+	reader      Reader
+	registry    RegistryReader
+	ledger      AppliedHeadReader
+	pipes       PipelineLister
+	manual      ManualReader
+	show        ShowReader
+	promote     PromoteStateReader
+	pats        PATReader
+	stats       StatsSource
+	deadletter  DeadLetterReader
+	seal        JournalSealReader
+	endpoints   EndpointRowReader
+	leaderAddr  LeaderAddrReader
+	runLineages RunLineageReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -93,24 +94,25 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 
 	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
-		adminDSN:   adminDSN,
-		session:    session,
-		pool:       pool,
-		lock:       lock,
-		writer:     writer,
-		reader:     newPgxReader(readPoolSeam),
-		registry:   &pgxRegistryReader{pool: readPoolSeam},
-		ledger:     &pgxAppliedHeadReader{pool: readPoolSeam},
-		pipes:      newPgxPipelineLister(readPoolSeam),
-		manual:     newPgxManualReader(readPoolSeam),
-		show:       newPgxShowReader(readPoolSeam),
-		promote:    &pgxPromoteReader{pool: readPoolSeam},
-		pats:       &pgxPATReader{pool: readPoolSeam},
-		stats:      newPgxStatsSource(readPoolSeam),
-		deadletter: newPgxDeadLetterReader(readPoolSeam),
-		seal:       newPgxSealReader(readPoolSeam),
-		endpoints:  newPgxEndpointReader(readPoolSeam),
-		leaderAddr: newPgxLeaderAddrReader(readPoolSeam),
+		adminDSN:    adminDSN,
+		session:     session,
+		pool:        pool,
+		lock:        lock,
+		writer:      writer,
+		reader:      newPgxReader(readPoolSeam),
+		registry:    &pgxRegistryReader{pool: readPoolSeam},
+		ledger:      &pgxAppliedHeadReader{pool: readPoolSeam},
+		pipes:       newPgxPipelineLister(readPoolSeam),
+		manual:      newPgxManualReader(readPoolSeam),
+		show:        newPgxShowReader(readPoolSeam),
+		promote:     &pgxPromoteReader{pool: readPoolSeam},
+		pats:        &pgxPATReader{pool: readPoolSeam},
+		stats:       newPgxStatsSource(readPoolSeam),
+		deadletter:  newPgxDeadLetterReader(readPoolSeam),
+		seal:        newPgxSealReader(readPoolSeam),
+		endpoints:   newPgxEndpointReader(readPoolSeam),
+		leaderAddr:  newPgxLeaderAddrReader(readPoolSeam),
+		runLineages: newPgxRunLineageReader(readPoolSeam),
 	}, nil
 }
 
@@ -238,6 +240,11 @@ func (c *Client) EndpointReader() EndpointRowReader { return c.endpoints }
 // advertised address a standby reads to name the leader for retargeting (exit 6, GET
 // /leader). It reads on any candidate, never blocking behind the leader lock.
 func (c *Client) LeaderAddrReader() LeaderAddrReader { return c.leaderAddr }
+
+// RunLineageReader returns the plain-MVCC run-history read seam (the pool): the run
+// records with their consumed upstream ids and replayed_from the runs collection
+// (`iris run list`, GET /runs[?include=inputs] and GET /runs/{id}) is composed from.
+func (c *Client) RunLineageReader() RunLineageReader { return c.runLineages }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can
