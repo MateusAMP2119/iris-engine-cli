@@ -45,6 +45,11 @@ func TestStandbyMutationRejection(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("standby rejection needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")
 	}
+	// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a prior
+	// test's lingering daemon sessions (including a still-held leader advisory lock), so
+	// the first candidate here wins the lock and leads instead of timing out behind a
+	// stale leader (the second candidate then contends this run's own leader as intended).
+	freshDatabases(t)
 	bin := Build(t)
 
 	// Leader candidate: install (external no-op that ensures the shared meta) and

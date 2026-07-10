@@ -108,6 +108,12 @@ func TestInstallStartOneCodepath(t *testing.T) {
 		c := c
 		t.Run("S13/install-start-one-codepath/"+c.name, func(t *testing.T) {
 			c.set(t)
+			// Freshen the shared external cluster first (managed leg sets IRIS_PG_DSN="",
+			// where freshDatabases is a no-op): FORCE-dropping meta/data evicts a prior
+			// test's lingering daemon sessions -- including a still-held leader advisory
+			// lock -- so this daemon elects promptly instead of timing out behind a stale
+			// leader.
+			freshDatabases(t)
 			bin := Build(t)
 			ws := shortWorkspace(t)
 
@@ -245,6 +251,11 @@ func TestCrossCompileSmoke(t *testing.T) {
 				return
 			}
 
+			// Freshen the shared external cluster first: FORCE-dropping meta/data
+			// evicts a prior test's lingering daemon sessions (including a still-held
+			// leader advisory lock), so this daemon elects promptly instead of timing
+			// out behind a stale leader.
+			freshDatabases(t)
 			bin := &Binary{path: out}
 			ws := shortWorkspace(t)
 			copyGoldenWorkspace(t, ws)

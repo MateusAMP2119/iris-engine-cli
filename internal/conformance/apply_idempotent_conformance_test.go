@@ -32,6 +32,10 @@ import (
 func TestApplyRepeatNoop(t *testing.T) {
 	t.Run("S13/apply-repeat-noop", func(t *testing.T) {
 		start := time.Now()
+		// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a
+		// prior test's lingering daemon sessions (including a still-held leader advisory
+		// lock), so this daemon elects promptly instead of timing out behind a stale leader.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		copyGoldenWorkspace(t, ws)

@@ -332,7 +332,10 @@ if __name__ == "__main__": main()
 			t.Errorf("cancelled run %d dead_letters reason=%q, want stopped", hungID, reason)
 		}
 		// The lane proceeds past the cancelled member: load_orders (composer-after) gets a
-		// succeeded run in the pass the cancel freed.
-		waitState(t, meta, "load_orders", "succeeded", 45*time.Second)
+		// succeeded run in the pass the cancel freed. The ceiling is generous (event-driven
+		// poll of meta for the run row): under -race on a shared cluster a lane pass can take
+		// well over the old 45s, so wait up to 120s for the condition rather than flaking on
+		// elapsed time.
+		waitState(t, meta, "load_orders", "succeeded", 120*time.Second)
 	})
 }

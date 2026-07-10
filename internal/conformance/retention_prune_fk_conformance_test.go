@@ -30,6 +30,11 @@ import (
 //
 // spec: S06.2/prune-upstream-survivor-no-violation
 func TestRetentionPruneUpstreamSurvivorNoViolation(t *testing.T) {
+	// Freshen the shared external cluster first: FORCE-dropping the meta/data databases
+	// evicts a prior test's lingering daemon sessions -- including a still-held leader
+	// advisory lock -- so this daemon elects promptly instead of timing out behind a
+	// stale leader (see deadletter_plane/journal_capture_wipe).
+	freshDatabases(t)
 	bin := Build(t)
 	ws := shortWorkspace(t)
 	copyGoldenWorkspace(t, ws)

@@ -126,6 +126,11 @@ func readPostmasterPort(t *testing.T, pidPath string) string {
 // spec: S04/meta-readable-while-running
 func TestMetaReadableWhileRunning(t *testing.T) {
 	t.Run("S04/meta-readable-while-running", func(t *testing.T) {
+		// Freshen the shared external cluster first: FORCE-dropping the meta/data
+		// databases evicts a prior test's lingering daemon sessions -- including a
+		// still-held leader advisory lock -- so this daemon elects promptly instead of
+		// timing out behind a stale leader (see deadletter_plane/journal_capture_wipe).
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")

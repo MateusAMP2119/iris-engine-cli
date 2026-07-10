@@ -20,6 +20,10 @@ import (
 // spec: S13/four-applies-register-graph
 func TestFourAppliesRegisterGraph(t *testing.T) {
 	t.Run("S13/four-applies-register-graph", func(t *testing.T) {
+		// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a
+		// prior test's lingering daemon sessions (including a still-held leader advisory
+		// lock), so this daemon elects promptly instead of timing out behind a stale leader.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		copyGoldenWorkspace(t, ws)
