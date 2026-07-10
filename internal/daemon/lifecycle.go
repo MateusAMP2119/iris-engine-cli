@@ -129,6 +129,48 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// socket lives under <workspace>/.iris), so its working directory is that tree.
 	// (No re-resolve or re-check: the early check already refused lacking trees.)
 
+	// The declared read surface (specification section 7): the shared read pool on
+	// the data database, the live endpoint registry, and the declared-table shape
+	// source. The read pool connects as the engine's own least-privilege read-pool
+	// login, which holds no table grants of its own -- every data-surface read runs
+	// as the calling PAT's role, assumed via SET ROLE, so the pool login is a
+	// connection identity only. Its credential is minted fresh each start and the
+	// login re-asserted (idempotent), so a restart re-establishes the pool.
+	//
+	// Multi-node caveat (single-node correct today): each node mints its own
+	// read-pool secret and resets the shared login's password on start, so with two
+	// daemons on one data cluster the last starter's secret wins and an earlier
+	// node's read pool would then fail to authenticate. E13.7's contracts are
+	// single-node; a shared, meta-persisted read-pool credential (leader-minted, read
+	// by every node) is the follow-up for the failover epic. No conformance test
+	// exercises a standby's data reads today, so this is latent, not active.
+	readSecret, err := store.GenerateSecret()
+	if err != nil {
+		return fmt.Errorf("daemon: mint read-pool credential: %w", err)
+	}
+	if err := pg.ProvisionReadPoolLogin(ctx, data, pg.ReadPoolLoginProvision{
+		Role:          pg.EngineReadPoolRole,
+		CredentialDDL: store.RenderSetRolePassword(pg.EngineReadPoolRole, readSecret),
+		MetaDatabase:  store.MetaDatabase,
+		DataDatabase:  pg.DataDatabase,
+	}); err != nil {
+		return fmt.Errorf("daemon: provision read-pool login: %w", err)
+	}
+	readPool, readPoolConns, err := store.NewDataReadPool(ctx, adminDSN.Source(), pg.DataDatabase, pg.EngineReadPoolRole, readSecret)
+	if err != nil {
+		return fmt.Errorf("daemon: open data read pool: %w", err)
+	}
+	defer readPoolConns.Close()
+
+	// The live endpoint registry (shared by the serving mux and the leader's endpoint
+	// applier: an apply that commits serves the next /q request with no restart), the
+	// declared-table shape source for /data, and the TCP bearer-token verifier.
+	endpointRegistry := dispatch.NewEndpointRegistry()
+	dataSource := newWorkspaceDataSource(workspace)
+	verifier := newStoreVerifier(client.PATReader())
+	endpointCtl := newEndpointPlane()
+	patMint := newPATPlane()
+
 	// The role state the mux consults and the control plane the mux routes apply/destroy
 	// to: standby/unwired until election confirms leadership and installs the
 	// orchestrator.
@@ -169,7 +211,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	lanes := newLanePlane(logger, inflight)
 	passCounter := dispatch.NewPassCounter()
 
-	srv := NewServer(s, api.NewMux(api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines), api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov), api.WithPromote(promos), api.WithWipe(wipes), api.WithRunCancel(lanes)), WithServerLogger(logger))
+	srv := NewServer(s, api.NewMux(
+		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
+		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
+		api.WithPromote(promos), api.WithWipe(wipes), api.WithRunCancel(lanes),
+		api.WithEndpoints(endpointRegistry), api.WithEndpointReader(api.NewPoolReader(readPool)),
+		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
+		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
+	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err
 	}
@@ -216,7 +265,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithLanePlane(lanes),
 		WithPassCounter(passCounter),
 		WithInflightKiller(inflight),
-		WithFreshSessions(freshLeaderSession(ctx, client, logger)))
+		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
+		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),
+		WithPATPlane(patMint, endpointRegistry, workspace))
 	electDone := make(chan error, 1)
 	go func() { electDone <- cand.Serve(ctx) }()
 

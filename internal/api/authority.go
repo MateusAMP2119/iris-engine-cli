@@ -99,12 +99,15 @@ func requiredScope(path string) pat.Scope {
 		}
 		return pat.ScopeControl
 	}
-	// Known destructive mutation paths (exact) require control scope even though
+	// Known control-plane mutation paths (exact) require control scope even though
 	// their first segment may otherwise be a read surface (e.g. workload reads).
 	// This implements the remote tiering for declare destroy, workload wipe,
-	// deadletter drain over TCP (specification section 12).
-	if path == "/deadletter/drain" || path == "/workload/wipe" ||
-		path == "/deadletter/replay" || path == "/run/cancel" {
+	// deadletter drain/replay, run cancel, endpoint apply, and PAT mint over TCP
+	// (specification sections 7 and 12). Publishing a read surface and minting a PAT
+	// are control-plane mutations; the endpoint reads themselves are /q, gated as data.
+	switch path {
+	case "/deadletter/drain", "/deadletter/replay", "/workload/wipe", "/run/cancel",
+		"/endpoint/apply", "/pat/create":
 		return pat.ScopeControl
 	}
 	return pat.ScopeRead

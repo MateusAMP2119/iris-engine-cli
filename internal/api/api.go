@@ -102,6 +102,8 @@ func NewMux(opts ...MuxOption) http.Handler {
 		runTrace:     noRunTrace{},
 		pipelineGate: noPipelineGate{},
 		deadImpact:   noDeadImpact{},
+		endpointCtl:  noEndpointControl{},
+		patMint:      noPATMint{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -137,6 +139,11 @@ type mux struct {
 	runTrace     RunTraceHandler
 	pipelineGate PipelineGateHandler
 	deadImpact   DeadImpactHandler
+	// endpointCtl runs the leader-side POST /endpoint/apply (endpointapply.go);
+	// patMint runs the leader-side POST /pat/create (patcreate.go). Both default to
+	// an internal-fault handler until the daemon installs the real one on leadership.
+	endpointCtl EndpointControlHandler
+	patMint     PATMintHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the noStats doctrine.
@@ -184,6 +191,10 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveWorkloadWipe(w, r)
 	case "/run/cancel":
 		m.serveRunCancel(w, r)
+	case "/endpoint/apply":
+		m.serveEndpointApply(w, r)
+	case "/pat/create":
+		m.servePATCreate(w, r)
 	case "/pipeline/list":
 		m.servePipelineList(w, r)
 	case "/pipeline/show":

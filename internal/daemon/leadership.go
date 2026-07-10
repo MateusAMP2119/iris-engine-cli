@@ -131,6 +131,22 @@ type Candidate struct {
 	// leader change (a restart resets it by construction -- it is process memory).
 	// Nil leaves pass counting unwired.
 	passCounter *dispatch.PassCounter
+
+	// Endpoint-apply wiring, installed on winning leadership and cleared on demotion
+	// so POST /endpoint/apply reaches the single meta writer and the shared serving
+	// registry only while leading (specification section 7). The registry is
+	// process-long (shared with the serving mux); the applier is rebuilt each term
+	// over that term's dispatcher and the data-database prepare-verifier. Nil skips it.
+	endpointsPlane   *endpointPlane
+	endpointRegistry *dispatch.EndpointRegistry
+	prepareVerifier  dispatch.PrepareVerifier
+
+	// PAT-mint wiring, installed on winning leadership and cleared on demotion so
+	// POST /pat/create reaches the single meta writer and the data-database role
+	// provisioner only while leading (specification sections 4 and 7). It reuses the
+	// candidate's workspace, data client, and the shared endpoint registry
+	// (--endpoint grant expansion). Nil skips it.
+	patsPlane *patPlane
 }
 
 // InflightKiller kills every in-flight run's process group, the self-demotion kill
@@ -304,6 +320,37 @@ func WithLanePlane(lanes *lanePlane) CandidateOption {
 // option owns only the term reset. A nil counter is ignored.
 func WithPassCounter(pc *dispatch.PassCounter) CandidateOption {
 	return func(c *Candidate) { c.passCounter = pc }
+}
+
+// WithEndpointPlane wires the leader-side endpoint-apply plane: on winning
+// leadership the candidate builds the endpoint applier over the single dispatcher
+// (the sole meta writer), the process-long serving registry, and the data-database
+// prepare-verifier, installs it into ep before reporting the leader role, and clears
+// it on demotion. workspace is the leader's workspace tree (endpoints/ and schemas/
+// resolve against it); registry is the shared live registry the serving mux reads;
+// verifier prepare-verifies the derived SQL against the data database. A nil ep
+// leaves the candidate without an endpoint plane.
+func WithEndpointPlane(ep *endpointPlane, registry *dispatch.EndpointRegistry, verifier dispatch.PrepareVerifier, workspace string) CandidateOption {
+	return func(c *Candidate) {
+		c.endpointsPlane = ep
+		c.endpointRegistry = registry
+		c.prepareVerifier = verifier
+		c.workspace = workspace
+	}
+}
+
+// WithPATPlane wires the leader-side PAT-mint plane: on winning leadership the
+// candidate builds the mint orchestrator over the single dispatcher (the sole meta
+// writer), the data-database DDL client (data-PAT role provisioning), and the shared
+// endpoint registry (--endpoint grant expansion), installs it into pp before
+// reporting the leader role, and clears it on demotion. It reuses the candidate's
+// workspace and data client. A nil pp leaves the candidate without a mint plane.
+func WithPATPlane(pp *patPlane, registry *dispatch.EndpointRegistry, workspace string) CandidateOption {
+	return func(c *Candidate) {
+		c.patsPlane = pp
+		c.endpointRegistry = registry
+		c.workspace = workspace
+	}
 }
 
 // NewCandidate builds a leadership candidate over the leader lock, the role state
@@ -482,6 +529,25 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	if c.lanes != nil {
 		c.lanes.install(d)
 		defer c.lanes.clear()
+	}
+
+	// Install the leader-side endpoint-apply orchestrator over this term's
+	// dispatcher, the shared serving registry, and the data-database prepare-verifier
+	// before reporting the leader role, so a POST /endpoint/apply that passes the
+	// mux's leader gate always finds an installed orchestrator; clear it on demotion.
+	if c.endpointsPlane != nil {
+		applier := dispatch.NewEndpointApplier(c.prepareVerifier, d, c.endpointRegistry)
+		c.endpointsPlane.install(newEndpointOrchestrator(c.workspace, applier, c.logger))
+		defer c.endpointsPlane.clear()
+	}
+
+	// Install the leader-side PAT-mint orchestrator over this term's dispatcher, the
+	// data-database DDL client, and the shared endpoint registry before reporting the
+	// leader role, so a POST /pat/create that passes the mux's leader gate always
+	// finds an installed orchestrator; clear it on demotion.
+	if c.patsPlane != nil {
+		c.patsPlane.install(newPATMintOrchestrator(c.workspace, d, c.data, c.endpointRegistry, c.logger))
+		defer c.patsPlane.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
