@@ -1,45 +1,144 @@
-promtp used:
+<p align="center">
+  <img src="docs/assets/iris-goddess.png" alt="Iris, goddess of the rainbow, pouring water from a jug" width="380">
+</p>
 
-/goal Read Iris Epics.md, Iris Specification Inventory.md (source of truth; on conflict the spec wins), and every task in Tasks/.
+<h1 align="center">Iris</h1>
 
-## Role split (strict)
+<p align="center">
+  <strong>Provenance-first data engine and pipeline orchestrator — git blame for every database row.</strong>
+</p>
 
-You are the orchestrator only. You never write or edit source code or tests yourself. All implementation, bug fixes, and review-feedback changes are done by the coder subagent (Opus) in its worktree. You handle: planning, task ordering, spawning agents, reviewing their diffs, git/PR operations, and BUILD_STATE.md.
+<p align="center">
+  <a href="https://github.com/MateusAMP2119/iris-engine-cli/actions/workflows/ci.yml"><img src="https://github.com/MateusAMP2119/iris-engine-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go" alt="Go 1.25+">
+  <img src="https://img.shields.io/badge/postgres-16%2B-4169E1?logo=postgresql&logoColor=white" alt="Postgres 16+">
+  <img src="https://img.shields.io/badge/cgo-free-brightgreen" alt="cgo-free">
+</p>
 
-## One-time setup
+---
 
-1. Create ~/Development/iris-engine+cli. git init with master as default branch, create development off it.
+Iris is a single Go binary (`iris`) that runs your data pipelines and remembers where every row came from. Every write is attributed **in-transaction** to its exact run, binary, and declaration — so `iris data provenance` can answer any row's origin, forever. Think *Docker Compose for routines*: a pipeline is a folder with one script (any language) and one `iris-declare.yaml`.
 
-2. Initial commit containing:
+## Why Iris
 
-   - CLAUDE.md encoding the TDD doctrine (failing tests from contracts first, implement to green, commits name satisfied contract ids, traceability gate must pass) and the branching rules below.
+- **Provenance is core, not a plugin.** Statement-level triggers journal every write into `data_journal` in the same transaction as the write itself. No opt-out, no sidecar, no eventual consistency. One journal feeds two consumers: row-level provenance and undo.
+- **Tamper-evident history.** Journal partitions are sealed, compacted, and archived into a content-addressed object store, chained together with ed25519-signed checkpoints.
+- **Authors never touch credentials.** The engine owns least-privilege Postgres roles and injects connections into pipeline processes. `reads`/`writes` in the declaration are access control, enforced at the database.
+- **No clock, anywhere.** Orchestration is purely reactive: `depends_on` gates eligibility, lane `order` is the sole sequence, perpetual lanes loop. No cron, no schedules, no timeouts, no retries-with-backoff. A run ends by exiting or by `iris run cancel`; failures park in a dead-letter worklist and replay on demand.
+- **Reproducible by construction.** Two artifact modes (dev source / built binary) × two data modes (disposable / permanent). Permanent data requires a built, content-addressed binary, and every run is snapshot-pinned.
+- **HA built in.** Any number of daemon candidates, exactly one leader via Postgres advisory lock. Standbys serve reads and redirect mutations to the leader.
 
-   - .claude/agents/coder.md with frontmatter model: opus and tools: all, body describing the TDD workflow above. All implementation work is delegated to this agent.
+## A pipeline is a folder
 
-   - docs/ containing copies of the spec inventory, epics doc, and the full Tasks/ folder, so the repo is self-contained.
+```
+my-pipeline/
+├── iris-declare.yaml
+└── ingest.py          # any language, direct-exec — no shell
+```
 
-3. Create a private GitHub repo with gh repo create and push both branches. If gh is not authenticated, stop and tell me.
+```yaml
+# iris-declare.yaml — exactly these fields exist, nothing else
+name: ingest-orders
+run: ./ingest.py
+lane: nightly
+reads: [staging.raw_orders]
+writes: [core.orders]
+depends_on: [fetch-orders]
+env:
+  MODE: full
+env_file: .env
+```
 
-4. Create BUILD_STATE.md at repo root listing all tasks grouped by epic with status (todo / in-progress / done + PR link). Keep it updated after every step; it is how you resume across sessions. If BUILD_STATE.md already exists, resume from it instead of redoing setup.
+No `schedule`, no `retries`, no `timeout`, no `params` — those fields don't exist by design. Tables are declared in `schemas/` and evolved by declarative, additive-only diff.
 
-## Per-issue workflow (respect each task's "Depends on"; process epics E00 -> E14)
+## Quickstart
 
-1. Create branch issue/EXX.Y-short-name off development, checked out in its own git worktree.
+```sh
+go build -o iris .            # cgo-free static binary
 
-2. Spawn the coder agent (Opus) in that worktree with the full task file as its brief: failing tests for every contract first, then implement to green, satisfying every "Done when" item.
+iris engine install           # provision managed Postgres + meta schema
+iris engine start -d          # start the daemon (leader election, lanes)
 
-3. When the agent finishes, run the full test suite and the traceability gate yourself. Nothing merges red.
+iris declare apply ./my-pipeline
+iris pipeline run ingest-orders
 
-4. Read the agent's diff and verify the Done-when checklist yourself before approving. If something is wrong, send it back to the coder agent with specific feedback; do not fix it yourself.
+iris run list --graph         # live DAG of runs
+iris run show <run> --trace   # what a run read, wrote, depended on
 
-5. Open a PR from the issue branch into development titled "EXX.Y <task name>", body listing the contract ids and the Done-when checklist. Merge when green.
+# the headline act: where did this row come from?
+iris data provenance core.orders 42
+```
 
-6. Update BUILD_STATE.md, remove the worktree, continue to the next task.
+## CLI at a glance
 
-## Parallelism
+Global flags everywhere: `--json`, `--socket`, `--host`, `--token`.
 
-Up to 3 dependency-independent tasks may run in parallel worktrees with their own coder agents. Never parallelize tasks within the same dependency chain.
+| Noun | Verbs | Purpose |
+|---|---|---|
+| `iris declare` | `apply`, `destroy` | Apply or remove pipeline/schema declarations |
+| `iris pipeline` | `build`, `promote`, `run`, `list`, `show` | Artifact lifecycle and manual runs |
+| `iris run` | `list`, `show`, `logs`, `cancel` | Inspect and control runs (`--graph`, `--trace`) |
+| `iris data` | `provenance` | Row-level origin lookup |
+| `iris workload` | `show`, `wipe` | Disposable-data workload management |
+| `iris deadletter` (`dl`) | `list`, `show`, `replay`, `drain` | Failure triage worklist |
+| `iris endpoint` | `apply`, `remove`, `list`, `show` | Declared read endpoints at `GET /q/{endpoint}` |
+| `iris pat` | `create`, `list`, `revoke` | Personal access tokens (scopes: `control`, `read`, `data`) |
+| `iris engine` | `start`, `stop`, `install`, `uninstall`, `info`, `logs`, `inspect`, `stats`, `service …` | Daemon and host lifecycle |
 
-## Epic checkpoints
+Exit codes are a contract: `0` success · `2` usage · `3` no daemon · `4` operation failed · `5` dead-lettered · `6` not leader.
 
-After each epic completes, open a PR from development into master titled "Epic EXX" summarizing the tasks and contracts covered, then pause and wait for my review before starting the next epic.
+## Read API
+
+One HTTP/1.1 JSON server (unix socket, optional TCP+TLS), GET-only, guarded by PATs:
+
+- **Engine state** (scope `read`) — runs, pipelines, lanes, dead letters.
+- **Data** (scope `data`) — raw tables at `/data/{schema}/{table}` and declared data products at `/q/{endpoint}`. Bulk reads stream NDJSON; pagination is keyset-only (`after`/`before`). Data PATs map to engine-managed read-only Postgres roles assumed via `SET ROLE`.
+
+## Architecture
+
+Everything lives in one Postgres cluster, two databases: `meta` (control state, leader-written, 20 tables) and the data database (your tables + `public.data_journal`).
+
+```
+cli ──► daemon/api ──► dispatch ──► store (meta db) / pg (data db) / exec
+                          │
+                       archive (object store, sealed partitions)
+        declare · build · pat  (leaf packages)
+```
+
+The import graph flows one direction only, and it's enforced by tests (`internal/arch`). Dependencies are deliberately few: `pgx`, `cobra`, `goccy/go-yaml`, `argon2id`, `embedded-postgres`. No ORM, no migration framework, no scheduler library, no cgo.
+
+## Spec-first, test-driven
+
+This repo is built spec-first: `docs/Iris Specification Inventory.md` is the source of truth, and the test suite is its executable form. Every behavior is a numbered contract in [`spec/contracts.yaml`](spec/contracts.yaml) — **517 contracts** across three tiers — and a traceability gate fails the build if any non-exempt contract lacks a claiming test.
+
+| Tier | Contracts | What it means |
+|---|---|---|
+| unit | 191 | pure logic, no I/O |
+| integration | 229 | fakes and local process I/O, no live Postgres |
+| conformance | 76 | the real shipped binary, a running daemon, real Postgres |
+| exempt | 21 | naming/rationale/doctrine — no test required |
+
+```sh
+# unit + integration (database-free)
+go test -race ./...
+
+# traceability gate
+go test ./internal/trace/...
+
+# conformance (real binary, real Postgres 16+, ~11 min)
+go test -race -tags conformance -timeout 20m ./internal/conformance/...
+```
+
+CI runs all of the above on Go 1.25 and 1.26, plus golangci-lint and a cgo-free cross-compile matrix (linux/darwin × amd64/arm64), with conformance against Postgres 17.
+
+## Documentation
+
+- [`docs/Iris Specification Inventory.md`](docs/Iris%20Specification%20Inventory.md) — the specification (source of truth)
+- [`docs/Iris Epics.md`](docs/Iris%20Epics.md) — the 15 epics and build order
+- [`docs/Tasks/`](docs/Tasks) — per-task briefs with contract lists
+- [`BUILD_STATE.md`](BUILD_STATE.md) — live build status
+- [`CLAUDE.md`](CLAUDE.md) — TDD doctrine and branching rules
+
+## Status
+
+All 15 epics (E00–E14) are complete on `development`: full CI green, zero unclaimed contracts, full conformance suite passing under `-race`. Epic checkpoint merges to `master` are in progress.
