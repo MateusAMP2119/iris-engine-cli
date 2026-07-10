@@ -14,18 +14,14 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 - **Epic checkpoint PRs to master**: none opened yet for E04–E14/E13; await human review
   per branching rules.
-- **Live `iris engine info` key reader unwired**: `NewEngineKeyReader` still returns
-  `ErrEngineNotInstalled`; its tests use a fake reader (pre-existing, noted in PR #112).
-- **Flake hardening (low, CI green)**: under sustained back-to-back local `-race` load,
-  `TestMetaReadableWhileRunning`, `TestRetentionPruneUpstreamSurvivorNoViolation`
-  (no `freshDatabases`, 30s leader-lock wait) and `TestGoldenLaneRunsAndFailures`
-  (45s lane wait) can flake. CI runs the suite once on a fresh runner and is green.
-- **E13.7 latent follow-ups** (documented in `lifecycle.go`): read-pool credential is
-  single-node (minted per daemon start, last starter wins); endpoint registry is
-  populated by live apply only, not reloaded from meta on restart.
-- **No cross-host leader advertisement** (flagged by E11.2): a real standby's leader
-  hint is `unknown`; the exit-6 envelope carries the guidance shape, the concrete
-  address awaits a future advertisement task.
+- **External conformance clusters must be PostgreSQL 16+** (`INHERIT FALSE` grant
+  syntax); PG14 fails with 42601. CI's postgres:17 satisfies this.
+- **`GET /runs` cursor params**: route accepts only `include`; `before`/`after` paging
+  on this route is unimplemented (S07/before-reverse-cursor is claimed at its unit tier
+  on the params planner; `iris run list` does not send cursors). Noted in PR #118.
+- **Standby endpoint propagation**: a standby reloads applied endpoints from meta on
+  its own start; live cross-node propagation of a leader's later applies to a running
+  standby is out of scope of PR #114.
 
 ## E00 Conformance Harness and Traceability Gate — epic PR [#6](https://github.com/MateusAMP2119/iris-engine-cli/pull/6) (merged to master)
 
@@ -174,3 +170,9 @@ conformance suite (real binary, real Postgres, -race) — green.
 - [PR #109](https://github.com/MateusAMP2119/iris-engine-cli/pull/109) — orphaned S03/S04/S06.1/S08 contracts claimed; rail renderer (affects E14.3, E00.1)
 - [PR #110](https://github.com/MateusAMP2119/iris-engine-cli/pull/110) — real seal: threshold gating, ed25519-signed checkpoint chain (affects E07.3, E07.4, E13.5)
 - [PR #112](https://github.com/MateusAMP2119/iris-engine-cli/pull/112) — engine key in engine-owned meta table, spec delta; supersedes #110's workspace file (affects E07.4, E02.1)
+- [PR #113](https://github.com/MateusAMP2119/iris-engine-cli/pull/113) — live engine-key reader: public half in `iris engine info`, private bytes never rendered (affects E12.2, E07.4)
+- [PR #114](https://github.com/MateusAMP2119/iris-engine-cli/pull/114) — read-pool credential persisted in meta (converge-on-start); endpoint registry reloads from meta on restart; spec delta, roster 20 (affects E09.7, E09.6)
+- [PR #115](https://github.com/MateusAMP2119/iris-engine-cli/pull/115) — leader advertisement: leadership meta table, standby guidance names the live leader, failover re-advertisement; spec delta, roster 21 (affects E11.2, E11.4)
+- [PR #116](https://github.com/MateusAMP2119/iris-engine-cli/pull/116) — info/inspect/pipeline-show planes wired into the live daemon (affects E12.2)
+- [PR #117](https://github.com/MateusAMP2119/iris-engine-cli/pull/117) — conformance flake hardening: freshDatabases isolation on leader-waiting tests, lane-wait headroom; PG16+ floor documented (harness)
+- [PR #118](https://github.com/MateusAMP2119/iris-engine-cli/pull/118) — production sources for /runs, /runs/{id}/trace, /pipelines/{name}/gate; `iris run list` serves live (affects E14.3, E14.4)
