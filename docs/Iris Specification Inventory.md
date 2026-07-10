@@ -143,7 +143,7 @@ schemas/
 
 **Q - Where do engine tables live?** A: Both Postgres, one cluster: control state in `meta`; capture state at `public.data_journal` in the data database (triggers write in the data's transaction). Journal `run_id` → `runs`: logical, never FK-enforced.
 
-**Q - Which tables exist?** A: Eighteen: seventeen in `meta`, one (`data_journal`) in the data `public` schema. Ordering: monotonic bigint identity, never a clock; `recorded_at`: opaque audit string, log correlation only.
+**Q - Which tables exist?** A: Nineteen: eighteen in `meta` (including `engine_key`, the engine's ed25519 signing key), one (`data_journal`) in the data `public` schema. Ordering: monotonic bigint identity, never a clock; `recorded_at`: opaque audit string, log correlation only.
 
 **Roster (meta):**
 - `pipelines`
@@ -190,6 +190,8 @@ log_ref=.iris/logs/run-42.log  snapshot_lsn=0/16A3D2F0  journal_floor=81  journa
 
 **Q - `journal_checkpoints`?** A: Tamper-evidence chain over the sealed journal, insert-only, never pruned. One row per sealed partition: `seq` bigint identity PK, `id_from`/`id_to`, `digest` (hash over compacted rows in id order), `parent_digest` (chains to prior checkpoint: tampering or loss breaks visibly), `signature` (engine-key signed digest, ed25519), `location` in (resident, archived), `recorded_at`. In `meta`; partitions referenced logically.
 
+**Q - `engine_key`?** A: The engine's ed25519 signing key, whose signature seals the checkpoint chain (§14). Single row, `id` pinned to 1: `private_key` (the raw ed25519 private half), `created_at`. Minted once at install (INSERT ... ON CONFLICT DO NOTHING, so two candidates converge on one key) and read back by the leader's seal to sign each checkpoint; the public half is surfaced by `iris engine info`. In `meta`, engine-admin-only: no role grant touches it and every pipeline/data-PAT/read-pool role is denied CONNECT on `meta`, so the private half is unreachable. A `meta` table, deliberately not a per-database GUC (`ALTER DATABASE meta SET` needs SUPERUSER the external admin role lacks) and not a workspace key file (which would force a shared filesystem for HA): the shared `meta` database standbys already read gives HA superuser-free, so a restart or failover leader signs the same chain.
+
 **Q - `pats` / `pat_scopes`?** A: Unified PAT store gating remote control and the read API. `pats`: `id` PK (token prefix), `hash` (argon2id), `label`, `revoked`. `pat_scopes` (scope set, 1NF): `pat_id` FK, `scope` in (control, read, data), PK (both); effective authority = union of rows. A `data` PAT also owns an engine-managed read-only Postgres role (access ledger).
 
 **Q - `endpoints` / `endpoint_filters`?** A: Persisted read endpoints. `endpoints`: `name` PK, `source` (dotted `schema.table`), `fields` (JSON projection), `sort` (keyset key, a unique column). `endpoint_filters`: `endpoint` FK, `param`, `op` in (eq, range), PK (`endpoint`, `param`). Endpoints own no roles or credentials; execution authority: always the calling PAT's role.
@@ -207,7 +209,7 @@ id=91  pg_role=iris_load_orders  run_id=57  schema=analytics  table=orders  row_
 op=update  undo=promoted  pre_image=NULL                           # the common case: a slim stamp
 ```
 
-**Q - Relations?** A: Two roots: `pipelines` (registry), `runs` (history). `migrations`, `run_summaries`, `journal_checkpoints` stand alone. `data_journal` hangs off `runs` logically only (cross-database, no FK). `lanes` references `pipelines` by name, not FK (hence absent). `run_inputs.upstream_run_id` references `runs` logically only, no FK (hence absent from the diagram): retention prunes an upstream run while a cross-pipeline downstream's ledger row survives, so it resolves to a run or its archival summary, exactly like `data_journal.run_id`; `run_inputs.run_id` (the downstream's own run) stays a FK, cascaded before the run in the prune. FKs:
+**Q - Relations?** A: Two roots: `pipelines` (registry), `runs` (history). `migrations`, `run_summaries`, `journal_checkpoints`, `engine_key` stand alone. `data_journal` hangs off `runs` logically only (cross-database, no FK). `lanes` references `pipelines` by name, not FK (hence absent). `run_inputs.upstream_run_id` references `runs` logically only, no FK (hence absent from the diagram): retention prunes an upstream run while a cross-pipeline downstream's ledger row survives, so it resolves to a run or its archival summary, exactly like `data_journal.run_id`; `run_inputs.run_id` (the downstream's own run) stays a FK, cascaded before the run in the prune. FKs:
 
 ```mermaid
 erDiagram
@@ -230,7 +232,7 @@ erDiagram
 
 **Q - Managed and viewed?** A: Engine-internal: not user-declared, no folder. DDL embedded in the binary: create-if-missing at bootstrap, re-checked each leader election; no self-migration ledger, no version gate (`meta` = engine memory, not migration-managed). Only the leader writes. Viewing never blocked (MVCC): any Postgres client reads `meta` read-only while the daemon runs; journal readable in place. Curated views: `iris engine inspect`, `pipeline list`, `run list`, ==`workload show`,== `engine stats`, the read API.
 
-**Q - Bootstrap?** A: `iris engine install` (admin DSN): create `meta` if missing (plain CREATE DATABASE, hence CREATEDB), ensure its tables, create the partitioned journal `public.data_journal`, mint the engine key (ed25519; public half via `iris engine info`, private half in `meta`), set up the socket. `iris engine uninstall`: full teardown; drops `meta` and journal (all captured provenance), deletes object store under `objects_path`, removes socket and service unit. Distinct from `iris declare destroy`: one declared unit at a time, engine and `schemas/` intact.
+**Q - Bootstrap?** A: `iris engine install` (admin DSN): create `meta` if missing (plain CREATE DATABASE, hence CREATEDB), ensure its tables, create the partitioned journal `public.data_journal`, mint the engine key (ed25519; public half via `iris engine info`, private half in the `meta` `engine_key` table, a create-once INSERT superuser-free), set up the socket. `iris engine uninstall`: full teardown; drops `meta` and journal (all captured provenance), deletes object store under `objects_path`, removes socket and service unit. Distinct from `iris declare destroy`: one declared unit at a time, engine and `schemas/` intact.
 
 ## 5. Postgres Schema, DDL, Drift, Migration
 

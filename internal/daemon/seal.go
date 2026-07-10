@@ -76,24 +76,25 @@ type sealDataStore interface {
 }
 
 // journalSealer is the leader-side seal step. It composes the data store, the meta
-// read seam (chain head, in-flight count), the single-writer submitter (checkpoint
-// insert and archive flip), the object store (partition export), and the engine key
-// file the checkpoint is signed with. A nil sealer, a non-positive threshold, a nil
-// data/meta seam, or an empty key path makes the step a no-op, so the shape tests
-// that wire no sealer never seal.
+// read seam (chain head, in-flight count, engine key), the single-writer submitter
+// (checkpoint insert, archive flip, and the create-once engine-key mint), and the
+// object store (partition export). The checkpoint is signed with the engine key the
+// seal loads from the engine_key meta table (minted on first need). A nil sealer, a
+// non-positive threshold, or a nil data/meta seam makes the step a no-op, so the
+// shape tests that wire no sealer never seal.
 type journalSealer struct {
 	threshold int64
 	data      sealDataStore
 	meta      store.JournalSealReader
 	submitter dispatch.Submitter
 	objects   *store.ObjectStore
-	keyPath   string
 	logger    *slog.Logger
 }
 
-// newJournalSealer builds the seal step. keyPath is the engine key file the seal
-// signs the checkpoint with (loaded-or-minted on first use). A nil logger discards.
-func newJournalSealer(threshold int64, data sealDataStore, meta store.JournalSealReader, submitter dispatch.Submitter, objects *store.ObjectStore, keyPath string, logger *slog.Logger) *journalSealer {
+// newJournalSealer builds the seal step. The engine key the seal signs the
+// checkpoint with is loaded from the engine_key meta table through meta, minted
+// create-once on first need through the submitter. A nil logger discards.
+func newJournalSealer(threshold int64, data sealDataStore, meta store.JournalSealReader, submitter dispatch.Submitter, objects *store.ObjectStore, logger *slog.Logger) *journalSealer {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -103,9 +104,42 @@ func newJournalSealer(threshold int64, data sealDataStore, meta store.JournalSea
 		meta:      meta,
 		submitter: submitter,
 		objects:   objects,
-		keyPath:   keyPath,
 		logger:    logger,
 	}
+}
+
+// loadOrMintEngineKey reads the engine key from the engine_key meta table and, when
+// the table holds no key yet, mints one create-once: it generates a fresh ed25519
+// key, inserts it through the single writer (INSERT ... ON CONFLICT (id) DO NOTHING,
+// so a concurrent minter never forks the key), then reads back whichever key won.
+// Install normally mints the key, so on a healthy engine the first read finds it;
+// the mint-on-first-need path covers an engine installed before the key existed. A
+// read-back that still finds no key after minting is a hard error, so the seal
+// defers rather than signing with an unstored key.
+func (s *journalSealer) loadOrMintEngineKey(ctx context.Context) (EngineKey, error) {
+	raw, err := s.meta.ReadEngineKey(ctx)
+	if err != nil {
+		return EngineKey{}, err
+	}
+	if raw == nil {
+		key, err := MintEngineKey()
+		if err != nil {
+			return EngineKey{}, err
+		}
+		if err := s.submitter.Submit(ctx, func(w *store.Writer) error {
+			return w.InsertEngineKey(ctx, key.privateBytes(), time.Now().UTC().Format(time.RFC3339Nano))
+		}); err != nil {
+			return EngineKey{}, err
+		}
+		raw, err = s.meta.ReadEngineKey(ctx)
+		if err != nil {
+			return EngineKey{}, err
+		}
+		if raw == nil {
+			return EngineKey{}, fmt.Errorf("daemon: engine key absent after mint")
+		}
+	}
+	return DecodeEngineKeyBytes(raw)
 }
 
 // sealAfterPass is the opportunistic dispatcher step (specification section 14,
@@ -116,7 +150,7 @@ func newJournalSealer(threshold int64, data sealDataStore, meta store.JournalSea
 // and the next terminal run retries. Errors are logged, never propagated to the run:
 // a run's success or failure never hinges on whether its post-pass seal fired.
 func (s *journalSealer) sealAfterPass(ctx context.Context) {
-	if s == nil || s.data == nil || s.meta == nil || s.submitter == nil || s.objects == nil || s.keyPath == "" {
+	if s == nil || s.data == nil || s.meta == nil || s.submitter == nil || s.objects == nil {
 		return
 	}
 	if s.threshold <= 0 {
@@ -152,9 +186,10 @@ func (s *journalSealer) sealAfterPass(ctx context.Context) {
 
 	// The engine key signs the checkpoint digest; without it a seal cannot produce a
 	// verifiable checkpoint, so it defers (rows stay resident) rather than writing an
-	// unsigned or placeholder one. The key is loaded from the engine-owned workspace
-	// file (minted once on first use), non-superuser-safe in external mode.
-	key, err := LoadOrMintEngineKey(s.keyPath)
+	// unsigned or placeholder one. The key is loaded from the engine_key meta table
+	// (minted create-once on first need), superuser-free in external mode and shared
+	// across daemon processes via the meta database standbys already read.
+	key, err := s.loadOrMintEngineKey(ctx)
 	if err != nil {
 		s.logger.Warn("seal: load engine key", "err", err)
 		return

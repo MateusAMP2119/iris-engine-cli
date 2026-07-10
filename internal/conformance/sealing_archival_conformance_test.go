@@ -55,15 +55,25 @@ func readCheckpoints(ctx context.Context, t *testing.T, metaConn *pgx.Conn) []ch
 	return out
 }
 
-// engineKeyFromWorkspace loads the engine key from the workspace key file install
+// engineKeyFromMeta reads the engine key from the engine_key meta table install
 // minted, so the test can verify checkpoint signatures against the same key the
-// daemon signs with (an offline auditor uses only the public half).
-func engineKeyFromWorkspace(t *testing.T, ws string) daemon.EngineKey {
+// daemon signs with (an offline auditor uses only the public half). The key lives
+// in meta -- not a workspace file -- so any process that can reach the shared meta
+// database reads the same key.
+func engineKeyFromMeta(ctx context.Context, t *testing.T, ws string) daemon.EngineKey {
 	t.Helper()
-	path := filepath.Join(ws, ".iris", daemon.EngineKeyFileName)
-	key, err := daemon.LoadOrMintEngineKey(path)
+	conn, err := pgx.Connect(ctx, metaDSN(t, ws))
 	if err != nil {
-		t.Fatalf("load engine key from workspace %s: %v", path, err)
+		t.Fatalf("connect meta to read engine key: %v", err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	var priv []byte
+	if err := conn.QueryRow(ctx, "SELECT private_key FROM engine_key WHERE id = 1").Scan(&priv); err != nil {
+		t.Fatalf("read engine key from meta: %v", err)
+	}
+	key, err := daemon.DecodeEngineKeyBytes(priv)
+	if err != nil {
+		t.Fatalf("decode engine key from meta: %v", err)
 	}
 	return key
 }
@@ -231,7 +241,7 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 
 		// The checkpoint the seal cut carries a real signature over its digest, which
 		// verifies against the engine key.
-		key := engineKeyFromWorkspace(t, ws)
+		key := engineKeyFromMeta(ctx, t, ws)
 		for _, c := range cps {
 			if len(c.signature) == 0 {
 				t.Errorf("checkpoint seq %d has no signature (S13/seal-waits-for-inflight-run)", c.seq)
@@ -445,7 +455,7 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		if string(store.ComputeDigest(archRows)) != string(cp.digest) {
 			t.Errorf("digest over exported rows does not match the checkpoint digest (S13/sealed-partition-exports-drops)")
 		}
-		key := engineKeyFromWorkspace(t, ws)
+		key := engineKeyFromMeta(ctx, t, ws)
 		if !key.VerifyDigest(hdr.Digest, hdr.Signature) {
 			t.Errorf("exported partition signature does not verify against the engine key (S13/sealed-partition-exports-drops)")
 		}
@@ -544,7 +554,7 @@ func TestCheckpointChainValidates(t *testing.T) {
 			t.Fatalf("want at least 2 checkpoints for a chain, got %d (S13/checkpoint-chain-validates)", len(cps))
 		}
 
-		key := engineKeyFromWorkspace(t, ws)
+		key := engineKeyFromMeta(ctx, t, ws)
 		objects := filepath.Join(ws, ".iris", "objects")
 
 		// Each checkpoint: signature verifies against the engine key, and the digest
@@ -580,6 +590,164 @@ func TestCheckpointChainValidates(t *testing.T) {
 			t.Errorf("checkpoint chain does not validate against the engine public key: %v (S13/checkpoint-chain-validates)", err)
 		}
 	})
+}
+
+// TestEngineKeyStableAcrossRestart proves the HA property the meta-table key store
+// buys: the engine signing key lives in the shared meta database, not a workspace
+// file, so a SECOND daemon process (here, a restart of the same engine) loads the
+// SAME key with no shared filesystem, and the checkpoint chain spans a seal cut
+// before the restart and one cut after it. Tamper-evidence therefore survives a
+// failover/restart: both checkpoints verify against one stable key and the second
+// chains to the first.
+//
+// spec: S14/engine-key-stable-across-restart
+func TestEngineKeyStableAcrossRestart(t *testing.T) {
+	t.Run("S14/engine-key-stable-across-restart", func(t *testing.T) {
+		freshDatabases(t)
+		bin := Build(t)
+		ws := shortWorkspace(t)
+		socket := filepath.Join(ws, ".iris", "iris.sock")
+
+		t.Setenv("IRIS_JOURNAL_PARTITION_ROWS", "2")
+
+		bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: ws, Timeout: 5 * time.Minute}).RequireExit(t, 0)
+
+		startDaemon := func() {
+			bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+			readyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := WaitForSocket(readyCtx, socket); err != nil {
+				t.Fatalf("daemon socket never became ready: %v", err)
+			}
+			if !waitForLeader(t, socket) {
+				t.Fatal("daemon never became leader")
+			}
+		}
+		startDaemon()
+		t.Cleanup(func() {
+			bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+		defer cancel()
+
+		// One-time capture wiring (idempotent, so it is safe to re-run after a restart
+		// bounces a managed Postgres). Recomputes the admin DSN each call so a restarted
+		// managed instance on a fresh port is picked up.
+		setupCapture := func() {
+			client, err := pg.Connect(ctx, testConnSource{dsn: adminDataDSN(t, ws)})
+			if err != nil {
+				t.Fatalf("connect data admin: %v", err)
+			}
+			defer client.Close()
+			_ = pg.EnsureJournal(ctx, client)
+			_ = client.EnsureCaptureFunction(ctx)
+			_ = client.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS analytics`)
+			_ = client.Exec(ctx, `CREATE TABLE IF NOT EXISTS analytics.orders (id integer PRIMARY KEY, amount numeric)`)
+			for _, trig := range pg.RenderCaptureTriggers("analytics", "orders") {
+				_ = client.Exec(ctx, trig)
+			}
+		}
+		setupCapture()
+		writePipelineDecl(t, ws, "ckpt", "name: ckpt\nrun: [\"sh\", \"-c\", \"exit 0\"]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", "ckpt")}, Dir: ws}).RequireExit(t, 0)
+
+		// The key minted at install already lives in meta (no workspace key file).
+		key1 := engineKeyFromMeta(ctx, t, ws)
+
+		// seal writes 3 resident rows (> threshold 2) then a terminal run whose
+		// post-pass seals the resident partition, cutting one checkpoint.
+		seal := func(startID int) {
+			dataConn, err := pgx.Connect(ctx, pg.InjectRunID(dataSourceForWorkspace(t, ws), 0))
+			if err != nil {
+				t.Fatalf("data conn for seal: %v", err)
+			}
+			for i := 0; i < 3; i++ {
+				if _, err := dataConn.Exec(ctx, fmt.Sprintf("INSERT INTO analytics.orders (id, amount) VALUES (%d, %d)", startID+i, i)); err != nil {
+					_ = dataConn.Close(ctx)
+					t.Fatalf("seal write %d: %v", startID+i, err)
+				}
+			}
+			_ = dataConn.Close(ctx)
+			bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "ckpt"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+		}
+
+		// Pass 1: one checkpoint, cut by the first daemon process.
+		metaConn, err := pgx.Connect(ctx, metaDSN(t, ws))
+		if err != nil {
+			t.Fatalf("connect meta: %v", err)
+		}
+		seal(300)
+		if cps := waitForCheckpoints(ctx, t, metaConn, 1, 15*time.Second); len(cps) < 1 {
+			_ = metaConn.Close(ctx)
+			t.Fatalf("no checkpoint before restart (S14/engine-key-stable-across-restart)")
+		}
+		_ = metaConn.Close(ctx)
+
+		// Stop the daemon: a full process shutdown (managed mode also stops the local
+		// Postgres). The key is not on this process's filesystem -- it is in meta.
+		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second}).RequireExit(t, 0)
+		waitForSocketGone(t, socket, 30*time.Second)
+
+		// Restart: a genuinely new daemon process. It re-elects, re-checks the schema,
+		// and -- crucially -- reads the SAME engine key back from meta.
+		startDaemon()
+		setupCapture()
+
+		key2 := engineKeyFromMeta(ctx, t, ws)
+		if key2.PublicBase64() != key1.PublicBase64() {
+			t.Fatalf("engine key changed across daemon restart: %q -> %q; HA requires a stable key read from the shared meta database (S14/engine-key-stable-across-restart)",
+				key1.PublicBase64(), key2.PublicBase64())
+		}
+
+		// Pass 2: the restarted daemon cuts a second checkpoint chained to the first.
+		seal(400)
+		metaConn2, err := pgx.Connect(ctx, metaDSN(t, ws))
+		if err != nil {
+			t.Fatalf("reconnect meta after restart: %v", err)
+		}
+		defer func() { _ = metaConn2.Close(ctx) }()
+		cps := waitForCheckpoints(ctx, t, metaConn2, 2, 15*time.Second)
+		if len(cps) < 2 {
+			t.Fatalf("want 2 checkpoints spanning the restart, got %d (S14/engine-key-stable-across-restart)", len(cps))
+		}
+
+		// Both checkpoints -- one before, one after the restart -- verify against the
+		// one stable key, and the second chains to the first: tamper-evidence spans the
+		// process restart with a key that never touched a shared filesystem.
+		for _, c := range cps {
+			if !key1.VerifyDigest(c.digest, c.signature) {
+				t.Errorf("checkpoint seq %d signature does not verify against the stable engine key (S14/engine-key-stable-across-restart)", c.seq)
+			}
+		}
+		if string(cps[1].parent) != string(cps[0].digest) {
+			t.Errorf("post-restart checkpoint parent %x does not chain to the pre-restart digest %x (S14/engine-key-stable-across-restart)", cps[1].parent, cps[0].digest)
+		}
+		chain := make([]store.CheckpointRow, 0, len(cps))
+		for _, c := range cps {
+			chain = append(chain, store.CheckpointRow{
+				Seq: c.seq, IDFrom: c.idFrom, IDTo: c.idTo,
+				Digest: c.digest, ParentDigest: c.parent, Signature: c.signature, Location: c.location,
+			})
+		}
+		if err := store.ValidateChain(chain, key1.Public()); err != nil {
+			t.Errorf("checkpoint chain spanning the restart does not validate against the stable key: %v (S14/engine-key-stable-across-restart)", err)
+		}
+	})
+}
+
+// waitForSocketGone polls until the daemon control socket is removed (a stopped
+// daemon disowns it), or the deadline passes.
+func waitForSocketGone(t *testing.T, socket string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(socket); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("control socket %s still present after stop; daemon did not release it", socket)
 }
 
 // dataSourceForWorkspace returns a DSN targeting the data database for the

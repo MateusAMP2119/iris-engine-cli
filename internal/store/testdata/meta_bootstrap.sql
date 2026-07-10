@@ -111,6 +111,14 @@ CREATE TABLE IF NOT EXISTS journal_checkpoints (
     CHECK (location IN ('resident', 'archived'))
 );
 
+CREATE TABLE IF NOT EXISTS engine_key (
+    id bigint,
+    private_key bytea NOT NULL,
+    created_at text NOT NULL,
+    PRIMARY KEY (id),
+    CHECK (id = 1)
+);
+
 CREATE TABLE IF NOT EXISTS pats (
     id text,
     hash text NOT NULL,

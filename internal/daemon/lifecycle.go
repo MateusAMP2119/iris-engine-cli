@@ -273,7 +273,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
 		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, laneDataDSN),
-		WithSealer(s.JournalPartitionRows, data, client.SealReader(), EngineKeyFilePath(s)),
+		WithSealer(s.JournalPartitionRows, data, client.SealReader()),
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
 		WithWipePlane(wipes, client.Reader(), data),

@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,9 +13,9 @@ import (
 )
 
 // quotedPayload extracts the single-quoted SQL string literal from a one-line
-// ALTER DATABASE ... SET ... = '<payload>'; statement. It is how the tests read
-// back the base64 the engine-key DDL carries without the daemon package exposing
-// the private half.
+// statement (the engine-key INSERT's bytea hex literal). It is how the tests read
+// back the private half the engine-key DDL carries without the daemon package
+// exposing a raw accessor.
 func quotedPayload(t *testing.T, stmt string) string {
 	t.Helper()
 	i := strings.Index(stmt, "'")
@@ -25,13 +26,28 @@ func quotedPayload(t *testing.T, stmt string) string {
 	return stmt[i+1 : j]
 }
 
+// privBytesFromInsertDDL decodes the raw ed25519 private key bytes from the bytea
+// hex literal (\x<hex>) the engine-key INSERT statement carries.
+func privBytesFromInsertDDL(t *testing.T, ddl string) []byte {
+	t.Helper()
+	lit := quotedPayload(t, ddl)
+	if !strings.HasPrefix(lit, `\x`) {
+		t.Fatalf("engine-key insert literal %q is not a bytea hex literal", lit)
+	}
+	raw, err := hex.DecodeString(lit[2:])
+	if err != nil {
+		t.Fatalf("decode engine-key bytea hex literal: %v", err)
+	}
+	return raw
+}
+
 // TestEngineKeyPublicHalfDerivedFromStoredPrivate proves the engine key's public
-// half is derived from the private half persisted in meta: reading back the
-// base64 the ALTER DATABASE ... SET iris.engine_key statement stores yields the
-// same public half the minting side exposes, while the private material never
-// renders through any formatting path. This is the mechanism `iris engine info`
-// stands on -- it shows the public half of the key whose private half lives in
-// meta (specification section 4, bootstrap Q/A).
+// half is derived from the private half persisted in meta: reading back the bytes
+// the engine_key INSERT statement stores yields the same public half the minting
+// side exposes, while the private material never renders through any formatting
+// path. This is the mechanism `iris engine info` stands on -- it shows the public
+// half of the key whose private half lives in the engine_key meta table
+// (specification section 4, bootstrap Q/A).
 //
 // spec: S04/engine-key-public-via-info
 func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
@@ -40,13 +56,13 @@ func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
 		t.Fatalf("MintEngineKey: %v", err)
 	}
 
-	// The DDL that stores the key in meta carries the base64 private half; reading
-	// it back (as current_setting would) and deriving the public half reproduces
+	// The DDL that stores the key in meta carries the raw private half; reading it
+	// back (as the meta store returns it) and deriving the public half reproduces
 	// exactly the public half the minting side exposes.
-	privB64 := quotedPayload(t, daemon.SetEngineKeyDDL(k))
-	back, err := daemon.DecodeEngineKey(privB64)
+	privBytes := privBytesFromInsertDDL(t, daemon.InsertEngineKeyDDL(k))
+	back, err := daemon.DecodeEngineKeyBytes(privBytes)
 	if err != nil {
-		t.Fatalf("DecodeEngineKey(stored private): %v", err)
+		t.Fatalf("DecodeEngineKeyBytes(stored private): %v", err)
 	}
 	if back.PublicBase64() != k.PublicBase64() {
 		t.Errorf("public half after storing/reading private differs: minted %q, read-back %q",
@@ -62,17 +78,16 @@ func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
 	if len(pub) != ed25519.PublicKeySize {
 		t.Errorf("public half is %d bytes, want %d", len(pub), ed25519.PublicKeySize)
 	}
-	if k.PublicBase64() == privB64 {
-		t.Error("public half equals the stored private half; the private half must not be exposed as the public one")
-	}
 
 	// The private half never renders: no formatting verb, String, or GoString leaks
-	// the base64 private material.
+	// the private material (in hex or base64 form).
+	privHex := fmt.Sprintf("%x", privBytes)
+	privB64 := base64.StdEncoding.EncodeToString(privBytes)
 	for _, rendered := range []string{
 		fmt.Sprintf("%v", k), fmt.Sprintf("%s", k), fmt.Sprintf("%#v", k), fmt.Sprintf("%d", k),
 		k.String(), k.GoString(),
 	} {
-		if strings.Contains(rendered, privB64) {
+		if strings.Contains(rendered, privHex) || strings.Contains(rendered, privB64) {
 			t.Errorf("engine key leaked its private half under formatting: %q", rendered)
 		}
 	}
@@ -80,8 +95,9 @@ func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
 
 // TestEngineKeyMintedFreshAndValidated proves the engine key minted at install is
 // a fresh ed25519 keypair (distinct per mint, crypto/rand), that its storage DDL
-// is a single ALTER DATABASE meta SET iris.engine_key statement, and that decoding
-// rejects malformed material rather than silently accepting it.
+// is a single create-once INSERT into the engine_key meta table (ON CONFLICT DO
+// NOTHING), and that decoding rejects malformed material rather than silently
+// accepting it.
 //
 // spec: S04/install-bootstraps-engine
 func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
@@ -97,22 +113,25 @@ func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
 		t.Error("two mints produced the same key; the engine key must be a fresh crypto/rand keypair per install")
 	}
 
-	// The storage DDL is a single ALTER DATABASE on the meta database that sets the
-	// documented setting name; it never creates a table or touches the roster.
-	ddl := daemon.SetEngineKeyDDL(k1)
-	for _, want := range []string{"ALTER DATABASE meta", "SET iris.engine_key", "= '"} {
+	// The storage DDL is a single create-once INSERT into the engine_key meta table;
+	// it is superuser-free (no ALTER DATABASE / GUC) and pins the single row (id, 1).
+	ddl := daemon.InsertEngineKeyDDL(k1)
+	for _, want := range []string{"INSERT INTO engine_key", "private_key", "ON CONFLICT (id) DO NOTHING", `\x`} {
 		if !strings.Contains(ddl, want) {
 			t.Errorf("engine-key DDL missing %q: %s", want, ddl)
 		}
+	}
+	if strings.Contains(ddl, "ALTER DATABASE") {
+		t.Errorf("engine-key DDL still uses the superuser-only GUC form: %s", ddl)
 	}
 	if strings.Count(ddl, ";") != 1 {
 		t.Errorf("engine-key DDL is not a single statement: %s", ddl)
 	}
 
-	// Round-trip: the base64 the DDL carries decodes to the same key.
-	back, err := daemon.DecodeEngineKey(quotedPayload(t, ddl))
+	// Round-trip: the bytes the DDL carries decode to the same key.
+	back, err := daemon.DecodeEngineKeyBytes(privBytesFromInsertDDL(t, ddl))
 	if err != nil {
-		t.Fatalf("DecodeEngineKey(round-trip): %v", err)
+		t.Fatalf("DecodeEngineKeyBytes(round-trip): %v", err)
 	}
 	if back.PublicBase64() != k1.PublicBase64() {
 		t.Errorf("round-tripped key public half differs: %q vs %q", back.PublicBase64(), k1.PublicBase64())

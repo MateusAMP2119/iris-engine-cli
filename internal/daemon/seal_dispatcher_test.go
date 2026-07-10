@@ -4,10 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -80,10 +77,37 @@ func (f *fakeSealData) DropPartitionForRange(context.Context, int64) error {
 	return nil
 }
 
-// fakeSealMeta is a canned JournalSealReader.
+// metaKeyState models the single-row engine_key meta table across the read seam
+// (fakeSealMeta.ReadEngineKey) and the write seam (the INSERT the seal submits
+// through the single writer, captured by recSealConn): a create-once store whose
+// first writer wins, so the seal's mint-on-first-need path is provable end to end
+// with no live database.
+type metaKeyState struct {
+	mu   sync.Mutex
+	priv []byte
+}
+
+func (s *metaKeyState) get() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.priv...)
+}
+
+// setIfEmpty models INSERT ... ON CONFLICT (id) DO NOTHING: it stores priv only when
+// no key is present, so a second minter is a no-op.
+func (s *metaKeyState) setIfEmpty(priv []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.priv == nil {
+		s.priv = append([]byte(nil), priv...)
+	}
+}
+
+// fakeSealMeta is a canned JournalSealReader over a shared engine-key state.
 type fakeSealMeta struct {
 	prev    *store.CheckpointRow
 	running int64
+	keys    *metaKeyState
 }
 
 func (m fakeSealMeta) LatestCheckpoint(context.Context) (*store.CheckpointRow, error) {
@@ -95,12 +119,22 @@ func (m fakeSealMeta) RunningAmong(_ context.Context, ids []int64) (int64, error
 	}
 	return m.running, nil
 }
+func (m fakeSealMeta) ReadEngineKey(context.Context) ([]byte, error) {
+	if m.keys == nil {
+		return nil, nil
+	}
+	if raw := m.keys.get(); len(raw) > 0 {
+		return raw, nil
+	}
+	return nil, nil
+}
 
 // recSealConn is a recording store.MetaWriteConn: it captures every write the seal
 // submits through the single dispatcher (the checkpoint insert and the archive
 // flip), so the contract's checkpoint and archive steps are observable.
 type recSealConn struct {
 	log   *orderLog
+	keys  *metaKeyState // when set, the engine_key INSERT lands here (create-once)
 	mu    sync.Mutex
 	execs []recSealExec
 }
@@ -119,6 +153,13 @@ func (c *recSealConn) Exec(_ context.Context, sql string, args ...any) error {
 		c.log.add("checkpoint")
 	case strings.Contains(sql, "SET location = 'archived'"):
 		c.log.add("archive-flip")
+	case strings.Contains(sql, "INSERT INTO engine_key"):
+		c.log.add("mint-key")
+		if c.keys != nil && len(args) > 0 {
+			if priv, ok := args[0].([]byte); ok {
+				c.keys.setIfEmpty(priv)
+			}
+		}
 	}
 	return nil
 }
@@ -134,20 +175,16 @@ func (c *recSealConn) find(substr string) (recSealExec, bool) {
 	return recSealExec{}, false
 }
 
-// newTestEngineKeyFile mints an ed25519 key, writes its base64 private half to a
-// temp engine key file, and returns the file path plus the public half (for
-// signature verification). The sealer loads the key from this file.
-func newTestEngineKeyFile(t *testing.T) (string, ed25519.PublicKey) {
+// newTestEngineKey mints an ed25519 key and returns its raw private half (as the
+// engine_key meta table stores it) plus the public half (for signature
+// verification). The sealer loads the private half from the meta read seam.
+func newTestEngineKey(t *testing.T) (priv []byte, pub ed25519.PublicKey) {
 	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate engine key: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), EngineKeyFileName)
-	if err := os.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(priv)), 0o600); err != nil {
-		t.Fatalf("write engine key file: %v", err)
-	}
-	return path, pub
+	return privKey, pubKey
 }
 
 // startSealDispatcher builds a real single-writer dispatcher over the recording
@@ -175,15 +212,16 @@ func TestSealDispatcherStep(t *testing.T) {
 		rows := [][]byte{[]byte("1|role|7|analytics|orders|a|insert||promoted|t"), []byte("2|role|7|analytics|orders|b|insert||promoted|t")}
 		data := &fakeSealData{log: log, count: 6, minID: 1, maxID: 6, runIDs: []int64{7}, rows: rows}
 
-		keyPath, pub := newTestEngineKeyFile(t)
+		priv, pub := newTestEngineKey(t)
+		keys := &metaKeyState{priv: priv} // key already minted at install
 		prev := &store.CheckpointRow{Seq: 3, IDFrom: 1, IDTo: 4, Digest: []byte("prevdigest")}
-		meta := fakeSealMeta{prev: prev, running: 0}
+		meta := fakeSealMeta{prev: prev, running: 0, keys: keys}
 
-		conn := &recSealConn{log: log}
+		conn := &recSealConn{log: log, keys: keys}
 		d := startSealDispatcher(t, conn)
 		objects := store.NewObjectStore(t.TempDir())
 
-		s := newJournalSealer(5, data, meta, d, objects, keyPath, nil)
+		s := newJournalSealer(5, data, meta, d, objects, nil)
 		s.sealAfterPass(context.Background())
 
 		// Order: compact, then checkpoint, then archive (drop then flip).
@@ -254,6 +292,64 @@ func TestSealDispatcherStep(t *testing.T) {
 	})
 }
 
+// TestSealMintsEngineKeyOnFirstNeed proves the seal loads the engine key from the
+// engine_key meta table and, when meta holds none yet (an engine installed before
+// the key existed), mints one create-once (INSERT ... ON CONFLICT DO NOTHING)
+// through the single writer before signing -- the meta-table persistence that
+// superseded the per-database GUC and the workspace key file. The checkpoint is
+// then signed with exactly the key stored in meta.
+//
+// spec: S04/engine-key-in-meta-table
+func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
+	t.Run("S04/engine-key-in-meta-table", func(t *testing.T) {
+		log := &orderLog{}
+		rows := [][]byte{[]byte("1|role|7|analytics|orders|a|insert||promoted|t")}
+		data := &fakeSealData{log: log, count: 6, minID: 1, maxID: 6, runIDs: []int64{7}, rows: rows}
+
+		keys := &metaKeyState{} // empty: no key minted at install yet
+		meta := fakeSealMeta{prev: nil, running: 0, keys: keys}
+		conn := &recSealConn{log: log, keys: keys}
+		d := startSealDispatcher(t, conn)
+		objects := store.NewObjectStore(t.TempDir())
+
+		s := newJournalSealer(5, data, meta, d, objects, nil)
+		s.sealAfterPass(context.Background())
+
+		// The seal minted the engine key into meta before signing, create-once.
+		ins, ok := conn.find("INSERT INTO engine_key")
+		if !ok {
+			t.Fatal("seal did not mint the engine key when meta held none (S04/engine-key-in-meta-table)")
+		}
+		if !strings.Contains(ins.sql, "ON CONFLICT") {
+			t.Errorf("engine-key mint is not create-once (missing ON CONFLICT DO NOTHING): %s", ins.sql)
+		}
+		if len(ins.args) == 0 {
+			t.Fatal("engine-key insert carried no private-key argument")
+		}
+
+		// The minted key is now stored in meta; the checkpoint signature verifies
+		// against exactly that key's public half (the seal signed with the stored key,
+		// not a discarded second mint).
+		stored := keys.get()
+		if len(stored) == 0 {
+			t.Fatal("engine key not stored in meta after mint (S04/engine-key-in-meta-table)")
+		}
+		key, err := DecodeEngineKeyBytes(stored)
+		if err != nil {
+			t.Fatalf("decode stored engine key: %v", err)
+		}
+		cp, ok := conn.find("INSERT INTO journal_checkpoints")
+		if !ok {
+			t.Fatal("no checkpoint after mint-on-first-need")
+		}
+		digest, _ := cp.args[2].([]byte)
+		sig, _ := cp.args[4].([]byte)
+		if !key.VerifyDigest(digest, sig) {
+			t.Error("checkpoint signed with a key that differs from the one minted into meta (S04/engine-key-in-meta-table)")
+		}
+	})
+}
+
 // TestSealDispatcherStepDefers proves the step is a no-op when the partition is not
 // due: below threshold, and while a run is still in flight, no compaction,
 // checkpoint, or export occurs.
@@ -261,7 +357,7 @@ func TestSealDispatcherStep(t *testing.T) {
 // spec: S14/seal-dispatcher-step
 func TestSealDispatcherStepDefers(t *testing.T) {
 	t.Run("S14/seal-dispatcher-step", func(t *testing.T) {
-		keyPath, _ := newTestEngineKeyFile(t)
+		priv, _ := newTestEngineKey(t)
 		rows := [][]byte{[]byte("row")}
 
 		cases := []struct {
@@ -276,12 +372,13 @@ func TestSealDispatcherStepDefers(t *testing.T) {
 			t.Run(c.name, func(t *testing.T) {
 				log := &orderLog{}
 				data := &fakeSealData{log: log, count: c.count, minID: 1, maxID: c.count, runIDs: []int64{42}, rows: rows}
-				meta := fakeSealMeta{running: c.running}
-				conn := &recSealConn{log: log}
+				keys := &metaKeyState{priv: priv}
+				meta := fakeSealMeta{running: c.running, keys: keys}
+				conn := &recSealConn{log: log, keys: keys}
 				d := startSealDispatcher(t, conn)
 				objects := store.NewObjectStore(t.TempDir())
 
-				s := newJournalSealer(5, data, meta, d, objects, keyPath, nil)
+				s := newJournalSealer(5, data, meta, d, objects, nil)
 				s.sealAfterPass(context.Background())
 
 				if data.compacted != 0 || data.queried != 0 || data.drops != 0 {
