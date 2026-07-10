@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Iris installer: fetches the latest release binary for this platform.
-#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | bash
-set -euo pipefail
+# POSIX sh, works with bash, dash, ash/busybox:
+#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
+set -eu
 
 REPO="MateusAMP2119/iris-engine-cli"
 BASE="https://github.com/${REPO}/releases/latest/download"

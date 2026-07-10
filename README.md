@@ -29,7 +29,7 @@ On top of that, every row's lineage is recorded and treated as a first-class fea
 One command, no dependencies. Installs the latest prebuilt static binary:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
 ```
 
 Have Go 1.25+? `go install` works too:
