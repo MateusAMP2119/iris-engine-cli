@@ -27,6 +27,12 @@ import (
 // spec: S13/seal-waits-for-inflight-run
 func TestSealWaitsForInflightRun(t *testing.T) {
 	t.Run("S13/seal-waits-for-inflight-run", func(t *testing.T) {
+		// Shared-cluster isolation: on the CI lane every conformance test shares one
+		// external Postgres with fixed-name meta/data databases, so leftover journal
+		// rows, checkpoints, and a stale analytics.orders shape from a prior test (or a
+		// prior back-to-back run) would poison this test's global journal/checkpoint
+		// counts. Start from a clean slate; the daemon recreates the databases on start.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")
@@ -243,6 +249,9 @@ func TestSealCompactionDropsConsumed(t *testing.T) {
 // spec: S13/sealed-partition-exports-drops
 func TestSealedPartitionExportsDrops(t *testing.T) {
 	t.Run("S13/sealed-partition-exports-drops", func(t *testing.T) {
+		// Shared-cluster isolation: leftover journal rows/partitions from a prior test
+		// would leave the tail already past the tiny threshold, so start clean.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")
@@ -323,6 +332,9 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 // spec: S13/checkpoint-chain-validates
 func TestCheckpointChainValidates(t *testing.T) {
 	t.Run("S13/checkpoint-chain-validates", func(t *testing.T) {
+		// Shared-cluster isolation: leftover journal_checkpoints from a prior test would
+		// make the count-based assertions pass or fail on foreign rows, so start clean.
+		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")

@@ -37,6 +37,14 @@ func writePipelineDecl(t *testing.T, ws, name, decl string) {
 // spec: S08/manual-run-ineligible-exit4
 // spec: S08/manual-run-deadletter-exit5-cause-manual
 func TestManualPipelineRun(t *testing.T) {
+	// Shared-cluster isolation: on the CI lane every conformance test shares one external
+	// Postgres with fixed-name meta/data databases. A prior test (or a prior back-to-back
+	// run of this one) leaves runs, dead_letters, and lane state behind, so this test's
+	// `SELECT ... ORDER BY id DESC` reads and its depends_on-gate expectations would race
+	// foreign rows -- gate_up's leftover success would make gate_down eligible, and boom's
+	// leftover run would shadow the manual one. Start from a clean slate; the daemon
+	// recreates the databases on start.
+	freshDatabases(t)
 	bin := Build(t)
 	ws := shortWorkspace(t)
 	socket := filepath.Join(ws, ".iris", "iris.sock")
