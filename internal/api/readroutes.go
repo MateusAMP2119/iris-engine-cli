@@ -280,8 +280,8 @@ func writeRunsNDJSON(w http.ResponseWriter, res any) {
 		if err != nil {
 			return
 		}
-		w.Write(b)
-		w.Write([]byte("\n"))
+		_, _ = w.Write(b)
+		_, _ = w.Write([]byte("\n"))
 		if fl, ok := w.(http.Flusher); ok {
 			fl.Flush()
 		}

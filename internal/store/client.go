@@ -45,17 +45,19 @@ type Client struct {
 	mu      sync.Mutex
 	session *pgx.Conn
 
-	pool     *pgxpool.Pool
-	lock     *PgxLeaderLock
-	writer   MetaWriteConn
-	reader   Reader
-	registry RegistryReader
-	ledger   AppliedHeadReader
-	pipes    PipelineLister
-	manual   ManualReader
-	show     ShowReader
-	promote  PromoteStateReader
-	pats     PATReader
+	pool       *pgxpool.Pool
+	lock       *PgxLeaderLock
+	writer     MetaWriteConn
+	reader     Reader
+	registry   RegistryReader
+	ledger     AppliedHeadReader
+	pipes      PipelineLister
+	manual     ManualReader
+	show       ShowReader
+	promote    PromoteStateReader
+	pats       PATReader
+	stats      StatsSource
+	deadletter DeadLetterReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -88,19 +90,21 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 
 	readPoolSeam := &pgxReadPool{pool: pool}
 	return &Client{
-		adminDSN: adminDSN,
-		session:  session,
-		pool:     pool,
-		lock:     lock,
-		writer:   writer,
-		reader:   newPgxReader(readPoolSeam),
-		registry: &pgxRegistryReader{pool: readPoolSeam},
-		ledger:   &pgxAppliedHeadReader{pool: readPoolSeam},
-		pipes:    newPgxPipelineLister(readPoolSeam),
-		manual:   newPgxManualReader(readPoolSeam),
-		show:     newPgxShowReader(readPoolSeam),
-		promote:  &pgxPromoteReader{pool: readPoolSeam},
-		pats:     &pgxPATReader{pool: readPoolSeam},
+		adminDSN:   adminDSN,
+		session:    session,
+		pool:       pool,
+		lock:       lock,
+		writer:     writer,
+		reader:     newPgxReader(readPoolSeam),
+		registry:   &pgxRegistryReader{pool: readPoolSeam},
+		ledger:     &pgxAppliedHeadReader{pool: readPoolSeam},
+		pipes:      newPgxPipelineLister(readPoolSeam),
+		manual:     newPgxManualReader(readPoolSeam),
+		show:       newPgxShowReader(readPoolSeam),
+		promote:    &pgxPromoteReader{pool: readPoolSeam},
+		pats:       &pgxPATReader{pool: readPoolSeam},
+		stats:      newPgxStatsSource(readPoolSeam),
+		deadletter: newPgxDeadLetterReader(readPoolSeam),
 	}, nil
 }
 
@@ -201,6 +205,17 @@ func (c *Client) PromoteStateReader() PromoteStateReader { return c.promote }
 // prefix -> record lookup the TCP bearer-token verifier resolves each request
 // against, on any node.
 func (c *Client) PATReader() PATReader { return c.pats }
+
+// StatsSource returns the plain-MVCC stats read seam (the pool): the runs,
+// dead-letter worklist, persisted composer, registry, and checkpoint reads the
+// engine-stats rollup (`iris engine stats`, GET /stats) is composed from.
+func (c *Client) StatsSource() StatsSource { return c.stats }
+
+// DeadLetterReader returns the plain-MVCC dead-letter read seam (the pool): the
+// worklist, consumption edges, and lane membership the blast-radius readout
+// (`iris deadletter show`, GET /dead_letters/{run}/impact) and the leader's replay
+// resolution are composed from.
+func (c *Client) DeadLetterReader() DeadLetterReader { return c.deadletter }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

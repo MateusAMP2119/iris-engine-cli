@@ -87,7 +87,7 @@ func SelectPrunable(runs []RetentionRun, retain int, outstandingDeadLetters []in
 // not the pipeline's current newest artifact and is not referenced by any
 // surviving run's artifact_hash. It is pure (no I/O); the caller performs the
 // deletes.
-func SelectRetirableArtifacts(pruned []int64, surviving []RetentionRun, artifactForRun map[int64]*string, newestForPipeline map[string]string) []string {
+func SelectRetirableArtifacts(_ []int64, surviving []RetentionRun, artifactForRun map[int64]*string, newestForPipeline map[string]string) []string {
 	referenced := map[string]bool{}
 	for _, r := range surviving {
 		if h := artifactForRun[r.RunID]; h != nil {

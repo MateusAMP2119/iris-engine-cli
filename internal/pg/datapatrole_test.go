@@ -103,7 +103,7 @@ func TestProvisionDataPATRoleRejectsWriteGrant(t *testing.T) {
 // spec: S07/read-pool-set-role-cycle
 func TestProvisionReadPoolLogin(t *testing.T) {
 	rec := pgtest.New()
-	spec := pg.ReadPoolLoginProvision{
+	spec := pg.ReadPoolLoginProvision{ //nolint:gosec // G101: test-only fake DSN, not a real credential
 		Role:          pg.EngineReadPoolRole,
 		CredentialDDL: `ALTER ROLE "iris_engine_read" WITH PASSWORD 'sekret';`,
 		MetaDatabase:  "meta",

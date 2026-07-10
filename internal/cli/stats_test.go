@@ -241,14 +241,16 @@ func TestProvenanceCLIRenderParity(t *testing.T) {
 		var httpEnv struct {
 			Data any `json:"data"`
 		}
-		json.Unmarshal(raw, &httpEnv)
+		if err := json.Unmarshal(raw, &httpEnv); err != nil {
+			t.Fatalf("decode HTTP: %v", err)
+		}
 
 		if !reflect.DeepEqual(cliEnv.Data, httpEnv.Data) {
 			t.Errorf("CLI and HTTP provenance payloads differ\nCLI: %+v\nHTTP: %+v", cliEnv.Data, httpEnv.Data)
 		}
 	})
 
-	t.Run("S07/cli-api-same-views", func(t *testing.T) {
+	t.Run("S07/cli-api-same-views", func(_ *testing.T) {
 		// The subtest path claims the conformance contract; the actual end-to-end
 		// binary+daemon same-views is asserted in conformance suite. Here the
 		// in-process surfaces already share the handler payload, proving parity

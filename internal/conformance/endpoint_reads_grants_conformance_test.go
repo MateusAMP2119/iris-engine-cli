@@ -222,7 +222,7 @@ func (e ordersEndpointEnv) tcpGet(t *testing.T, path, token string) (int, readEn
 // store (the role the mint provisioned). SET ROLE requires the admin be a superuser
 // or a member; where the admin lacks that right the direct probe is skipped (the TCP
 // 403 above already carries the enforcement, mapped from this same 42501).
-func assertPostgresRefusesUngranted(t *testing.T, env ordersEndpointEnv, endpoint string) {
+func assertPostgresRefusesUngranted(t *testing.T, env ordersEndpointEnv, _ string) {
 	t.Helper()
 	role := dataPATRoleForEndpoint(t, env)
 	if role == "" {

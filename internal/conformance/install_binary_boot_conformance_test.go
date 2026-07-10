@@ -102,7 +102,7 @@ func TestInstallStartOneCodepath(t *testing.T) {
 		set  func(*testing.T)
 	}{
 		{name: "managed", set: func(t *testing.T) { t.Setenv("IRIS_PG_DSN", "") }},
-		{name: "external", set: func(t *testing.T) { /* leave IRIS_PG_DSN as provided */ }},
+		{name: "external", set: func(_ *testing.T) { /* leave IRIS_PG_DSN as provided */ }},
 	}
 	for _, c := range cases {
 		c := c

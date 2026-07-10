@@ -173,6 +173,19 @@ func TestRunAttribution(t *testing.T) {
 			"SELECT count(*) FROM public.data_journal WHERE schema='analytics' AND \"table\"='orders' AND row_pk='200'")
 		// And the row itself never landed: the whole write (data + stamp) was rejected.
 		assertCount(ctx, t, adminConn, 0, "SELECT count(*) FROM analytics.orders WHERE id=200")
+
+		// A MANUAL run attributes identically: the manual-run plane injects the run-scoped
+		// connection with the very same formula the lane path uses -- IRIS_DB_URL =
+		// pg.InjectRunID(base, run id) (daemon.manualExec.injectedDBURL). Attribution is by
+		// run id, never by cause, so a manually-run pipeline's captured write journals to
+		// its own run just like a lane run's. Here the manual run's run id rides the
+		// injected connection exactly as the daemon builds it at spawn.
+		const manualRun int64 = 71011
+		manualConn := connWithRun(t, manualRun) // == the manual plane's IRIS_DB_URL for this run
+		execWrite(ctx, t, manualConn, "INSERT INTO analytics.orders (id, amount) VALUES (110, 11)")
+		assertCount(ctx, t, adminConn, 1,
+			"SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND schema='analytics' AND \"table\"='orders' AND row_pk='110' AND op='insert' AND pg_role=$2",
+			manualRun, writer)
 	})
 
 	// spec: S04/capture-in-data-transaction

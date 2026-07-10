@@ -323,9 +323,6 @@ func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 					t.Errorf("non insert: %s", s.SQL)
 				}
 				// location constrained (checked by schema too)
-				if strings.Contains(s.SQL, "location") && !(strings.Contains(s.SQL, "resident") || strings.Contains(s.SQL, "archived")) {
-					// not in this insert SQL literal, but exercised
-				}
 			}
 		}
 	})

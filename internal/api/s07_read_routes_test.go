@@ -13,7 +13,7 @@ type fakeWorkload struct {
 	pipeline string
 }
 
-func (f *fakeWorkload) ShowWorkload(ctx context.Context, pipeline string) (WorkloadShowResult, error) {
+func (f *fakeWorkload) ShowWorkload(_ context.Context, pipeline string) (WorkloadShowResult, error) {
 	f.pipeline = pipeline
 	// Return a minimal wiring payload matching the contract description:
 	// lanes, composer order, pipelines with modes and run tips (latest run), depends_on edges with gate state.
@@ -35,7 +35,7 @@ type fakeRuns struct {
 	include bool
 }
 
-func (f *fakeRuns) ListRuns(ctx context.Context, includeInputs bool) (any, error) {
+func (f *fakeRuns) ListRuns(_ context.Context, includeInputs bool) (any, error) {
 	f.include = includeInputs
 	if includeInputs {
 		rf := "10"
@@ -44,28 +44,28 @@ func (f *fakeRuns) ListRuns(ctx context.Context, includeInputs bool) (any, error
 	return []map[string]any{{"id": "42", "pipeline": "load", "state": "succeeded"}}, nil
 }
 
-func (f *fakeRuns) GetRun(ctx context.Context, id string, includeInputs bool) (any, error) {
+func (f *fakeRuns) GetRun(_ context.Context, id string, _ bool) (any, error) {
 	return map[string]any{"id": id}, nil
 }
 
 // fakeTrace implements RunTraceHandler.
 type fakeTrace struct{}
 
-func (fakeTrace) Trace(ctx context.Context, id, direction string) (any, error) {
+func (fakeTrace) Trace(_ context.Context, id, direction string) (any, error) {
 	return map[string]any{"run": id, "direction": direction, "ancestry": []any{}}, nil
 }
 
 // fakeGate implements PipelineGateHandler.
 type fakeGate struct{}
 
-func (fakeGate) Gate(ctx context.Context, name string) (any, error) {
+func (fakeGate) Gate(_ context.Context, name string) (any, error) {
 	return map[string]any{"pipeline": name, "gate": []any{}}, nil
 }
 
 // fakeImpact implements DeadImpactHandler.
 type fakeImpact struct{}
 
-func (fakeImpact) Impact(ctx context.Context, runID string) (any, error) {
+func (fakeImpact) Impact(_ context.Context, runID string) (any, error) {
 	return map[string]any{"run": runID, "impact": []any{}}, nil
 }
 

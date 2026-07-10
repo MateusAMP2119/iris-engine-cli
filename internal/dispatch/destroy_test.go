@@ -445,11 +445,6 @@ func TestDestroyPreservesEngineJournal(t *testing.T) {
 				t.Errorf("destroy touched journal: %s", s.SQL)
 			}
 			// Engine and schemas/ stay: no DROP SCHEMA, no engine table drops.
-			for _, bad := range []string{"DROP SCHEMA", "DROP TABLE PUBLIC.", "DELETE FROM PIPELINES WHERE", "DELETE FROM JOURNAL_CHECKPOINTS"} {
-				if strings.Contains(up, bad) && !strings.Contains(s.SQL, "load_orders") && strings.Contains(bad, "PIPELINES") {
-					// pipelines delete for target is allowed; broad engine drops are not.
-				}
-			}
 		}
 		// At least the pipelines row for the target was deleted; everything else engine-wide intact.
 		if !stmtsAny(stmts, "DELETE FROM pipelines") {

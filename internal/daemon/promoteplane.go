@@ -21,10 +21,7 @@ type promotePlane struct {
 
 var _ api.PromoteHandler = (*promotePlane)(nil)
 
-func newPromotePlane(logger *slog.Logger) *promotePlane {
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	}
+func newPromotePlane(_ *slog.Logger) *promotePlane {
 	return &promotePlane{}
 }
 

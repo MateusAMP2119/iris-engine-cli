@@ -88,13 +88,11 @@ func (p *workloadPlane) ShowWorkload(ctx context.Context, pipeline string) (api.
 			}
 
 			// Collect this pipeline's depends_on edges in declaration order.
-			var ups []string
 			var dEdges []dispatch.Edge
 			for _, dep := range allEdges {
 				if dep.From != pname {
 					continue
 				}
-				ups = append(ups, dep.To)
 				info, has, err := p.reader.LatestRun(ctx, dep.To)
 				if err != nil {
 					return api.WorkloadShowResult{}, fmt.Errorf("daemon: workload show %q: latest %q: %w", pname, dep.To, err)

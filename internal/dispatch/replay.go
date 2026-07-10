@@ -236,41 +236,127 @@ type BlastImpact struct {
 	Class    BlastClass
 }
 
-// ClassifyBlastRadius walks failed_upstream from the seed entry to its root cause,
-// then over depends_on edges finds all transitive downstreams, and classifies
-// them using worklist (current dead letters) and run_inputs state (consumed later?).
-// Composer-only neighbors (no depends_on path) are untouched. Returns impacts in
-// deterministic order and ends with the two dispositions (replay, drain). Pure.
-func ClassifyBlastRadius(seed DeadLetterEntry, worklist []DeadLetterEntry, depEdges []Edge, inputs map[int64][]int64) ([]BlastImpact, error) {
-	// walk to root using the shared helper (reuse)
+// BlastEdge is one depends_on edge as blast classification reads it: the dependent
+// pipeline (the one that declares depends_on) and the upstream it depends on. It is
+// the reverse of the gate's Edge -- the gate resolves a dependent against its own
+// upstreams, while the blast radius walks FORWARD from a root cause to its transitive
+// dependents, so it needs both endpoints named. Composer `order` is not a dependency
+// and mints no BlastEdge: a lane neighbor reachable only by composer order is
+// untouched (specification section 6.2).
+type BlastEdge struct {
+	// Dependent is the pipeline that declares depends_on (dependencies.from_pipeline).
+	Dependent string
+	// Upstream is the pipeline it depends on (dependencies.to_pipeline).
+	Upstream string
+}
+
+// ClassifyBlastRadius classifies the blast radius of a dead-lettered run for `iris
+// deadletter show` (specification section 6.2: "one entry: reason, error,
+// failed_upstream, blast radius (root cause; poisoned_now / pending / shielded)").
+//
+// It walks the seed entry along failed_upstream to its ROOT cause, then walks FORWARD
+// over the depends_on edges to every transitive dependent of the root, and classifies
+// each:
+//
+//   - poisoned_now: the dependent currently carries a propagated worklist entry that
+//     itself walks failed_upstream back to this root (the rejection has landed).
+//   - shielded: the dependent has since consumed a later upstream success, so its
+//     propagated entry is superseded (shielded[pipeline] is true).
+//   - pending: the dependent is owed the failure but has not yet run to receive it --
+//     no worklist entry yet and not shielded.
+//
+// The root cause itself is reported poisoned_now (its own run is dead-lettered). Lane
+// members reachable only by composer order -- no depends_on path from the root -- are
+// untouched: order is not dependency. Impacts are returned deterministically: the root
+// first, then dependents in name order, then untouched neighbors in name order; each
+// pipeline appears once. It is pure over its inputs (no I/O): the caller supplies the
+// worklist, the edges, the root's lane members, and the shielded set.
+func ClassifyBlastRadius(seed DeadLetterEntry, worklist []DeadLetterEntry, edges []BlastEdge, laneMembers []string, shielded map[string]bool) ([]BlastImpact, error) {
 	by := make(map[int64]DeadLetterEntry, len(worklist))
 	for _, e := range worklist {
 		by[e.RunID] = e
 	}
-	root, err := walkToRoot(by, seed.RunID)
+	rootRunID, err := walkToRoot(by, seed.RunID)
 	if err != nil {
-		root = seed.RunID // fallback for test data
+		return nil, fmt.Errorf("dispatch: blast radius: %w", err)
+	}
+	rootPipeline := by[rootRunID].Pipeline
+
+	// Forward adjacency: upstream -> its immediate dependents.
+	dependentsOf := make(map[string][]string, len(edges))
+	for _, e := range edges {
+		dependentsOf[e.Upstream] = append(dependentsOf[e.Upstream], e.Dependent)
 	}
 
-	// synthesize impacts exercising the closed set and untouched for composer neighbors
-	// (the test provides minimal edges; real caller will feed full wiring + state)
-	seen := map[string]bool{}
-	var out []BlastImpact
-	// always include the root's pipeline as poisoned_now
-	if seed.Pipeline != "" {
-		out = append(out, BlastImpact{Pipeline: seed.Pipeline, Class: BlastPoisonedNow})
-		seen[seed.Pipeline] = true
-	}
-	// for test graph load depends, mark pending; untouched for non-dep
-	out = append(out, BlastImpact{Pipeline: "load", Class: BlastPending})
-	out = append(out, BlastImpact{Pipeline: "reset_counters", Class: BlastUntouched})
-	for _, im := range out {
-		if !seen[im.Pipeline] {
-			seen[im.Pipeline] = true
+	// BFS forward from the root over depends_on to the transitive dependents.
+	downstream := make(map[string]bool)
+	queue := []string{rootPipeline}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, dep := range dependentsOf[cur] {
+			if dep == rootPipeline || downstream[dep] {
+				continue
+			}
+			downstream[dep] = true
+			queue = append(queue, dep)
 		}
 	}
-	_ = root
-	_ = depEdges
-	_ = inputs
+
+	// A pipeline is poisoned_now when it carries a propagated worklist entry that walks
+	// failed_upstream back to this exact root.
+	poisonedNow := make(map[string]bool)
+	for _, e := range worklist {
+		if !e.IsPropagated() {
+			continue
+		}
+		if r, werr := walkToRoot(by, e.RunID); werr == nil && r == rootRunID {
+			poisonedNow[e.Pipeline] = true
+		}
+	}
+
+	seen := make(map[string]bool)
+	out := make([]BlastImpact, 0, len(downstream)+len(laneMembers)+1)
+
+	// The root cause first: its own run is dead-lettered, so poisoned_now.
+	out = append(out, BlastImpact{Pipeline: rootPipeline, Class: BlastPoisonedNow})
+	seen[rootPipeline] = true
+
+	// Transitive dependents, in name order.
+	deps := make([]string, 0, len(downstream))
+	for d := range downstream {
+		deps = append(deps, d)
+	}
+	sort.Strings(deps)
+	for _, d := range deps {
+		var class BlastClass
+		switch {
+		case poisonedNow[d]:
+			class = BlastPoisonedNow
+		case shielded[d]:
+			class = BlastShielded
+		default:
+			class = BlastPending
+		}
+		out = append(out, BlastImpact{Pipeline: d, Class: class})
+		seen[d] = true
+	}
+
+	// Lane neighbors reachable only by composer order (not dependents): untouched.
+	untouched := make([]string, 0, len(laneMembers))
+	for _, m := range laneMembers {
+		if !seen[m] {
+			untouched = append(untouched, m)
+		}
+	}
+	sort.Strings(untouched)
+	for _, m := range untouched {
+		if seen[m] {
+			continue
+		}
+		out = append(out, BlastImpact{Pipeline: m, Class: BlastUntouched})
+		seen[m] = true
+	}
+
 	return out, nil
 }

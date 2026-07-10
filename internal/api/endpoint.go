@@ -142,8 +142,8 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 				// Once streaming, a late marshal fault ends the stream.
 				return
 			}
-			w.Write(b)
-			w.Write([]byte("\n"))
+			_, _ = w.Write(b)
+			_, _ = w.Write([]byte("\n"))
 			if fl, ok := w.(http.Flusher); ok {
 				fl.Flush()
 			}
@@ -163,8 +163,8 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 				if err != nil {
 					return
 				}
-				w.Write(b)
-				w.Write([]byte("\n"))
+				_, _ = w.Write(b)
+				_, _ = w.Write([]byte("\n"))
 				if fl, ok := w.(http.Flusher); ok {
 					fl.Flush()
 				}

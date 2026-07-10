@@ -79,6 +79,10 @@ type Candidate struct {
 	pipelines    *pipelinePlane
 	manualReader store.ManualReader
 	runner       exec.Runner
+	// manualDataDSN is the base scoped data-database connection a manual run's
+	// IRIS_DB_URL is derived from (the run id rides it), the same DSN the lane loop
+	// injects; empty leaves a manual run without a data connection.
+	manualDataDSN string
 
 	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
 	// and seal decisions after runs reach terminal.
@@ -100,6 +104,13 @@ type Candidate struct {
 	promotes        *promotePlane
 	promoteState    store.PromoteStateReader
 	journalPromoter dispatch.JournalPromoter
+
+	// Dead-letter wiring, installed on winning leadership and cleared on demotion so
+	// the api mux's POST /deadletter/replay and /deadletter/drain reach the single meta
+	// writer only while leading (specification section 6.2). The blast readout (GET
+	// /dead_letters/{run}/impact) is a read served from the plane's reader on any node,
+	// so it needs no leader install. Nil skips it.
+	deadletters *deadletterPlane
 
 	// Lane-loop wiring: builds the perpetual lane loop over the single dispatcher on
 	// winning leadership. The leader drives it after reconciliation (so no lane
@@ -201,6 +212,16 @@ func WithControlPlane(cp *controlPlane, workspace string, reg store.RegistryRead
 	}
 }
 
+// WithDeadletterPlane wires the leader-side dead-letter plane: on winning leadership
+// the candidate installs the replay/drain executor over the single dispatcher (the sole
+// meta writer) into dp before reporting the leader role, and clears it on demotion so a
+// replay or drain racing a lost lock faults rather than writing off-path. The plane's
+// blast readout is reader-backed and served on any node, so it needs no install. A nil
+// dp leaves the candidate without a dead-letter mutation plane (the shape tests use).
+func WithDeadletterPlane(dp *deadletterPlane) CandidateOption {
+	return func(c *Candidate) { c.deadletters = dp }
+}
+
 // WithPipelinePlane wires the leader-side manual-run plane: on winning leadership the
 // candidate builds the manual-run orchestrator over the single dispatcher (the sole meta
 // writer), the meta read seams, the object store (for built-run resolution from the
@@ -209,9 +230,10 @@ func WithControlPlane(cp *controlPlane, workspace string, reg store.RegistryRead
 // tree (pipeline folders resolve against it); manual is the plain-MVCC manual-run reader;
 // objects is this candidate's own object store (built-run argv resolves from the leader's
 // own objects_path); runner starts subprocesses. journal provides the data journal high id
-// for terminal window stamping. A nil pp leaves the candidate without a manual-run plane
-// (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark) CandidateOption {
+// for terminal window stamping. dbURL is the base scoped data-database connection a manual
+// run's IRIS_DB_URL is derived from (the same DSN the lane loop injects). A nil pp leaves
+// the candidate without a manual-run plane (the shape tests use).
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
@@ -220,6 +242,7 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.objects = objects
 		c.runner = runner
 		c.journalHM = journal
+		c.manualDataDSN = dbURL
 	}
 }
 
@@ -489,7 +512,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// tracked and a self-demotion kills it; a test's fake killer is not a registry,
 		// leaving manual tracking off (those tests do not exercise it).
 		reg, _ := c.inflight.(*inflightRuns)
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, reg, c.logger)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.manualDataDSN, reg, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}
@@ -548,6 +571,30 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	if c.patsPlane != nil {
 		c.patsPlane.install(newPATMintOrchestrator(c.workspace, d, c.data, c.endpointRegistry, c.logger))
 		defer c.patsPlane.clear()
+	}
+
+	// Install the leader-side dead-letter replay/drain executor over the single
+	// dispatcher before reporting the leader role, so a POST /deadletter/replay or
+	// /deadletter/drain that passes the mux's leader gate always finds an installed
+	// executor; clear it on demotion so a request racing a lost lock faults. The LSN
+	// reader (fresh replacement snapshot pin) rides the journal high-watermark seam when
+	// it is the live data client (*pg.Client satisfies both); a fake leaves it nil and
+	// the replacement's snapshot pin empty.
+	if c.deadletters != nil {
+		var lsn dispatch.LSNReader
+		if lr, ok := c.journalHM.(dispatch.LSNReader); ok {
+			lsn = lr
+		}
+		ex := &deadletterExec{
+			submit:    d,
+			manual:    c.manualReader,
+			workspace: c.workspace,
+			lsn:       lsn,
+			journal:   c.journalHM,
+			logger:    c.logger,
+		}
+		c.deadletters.install(ex)
+		defer c.deadletters.clear()
 	}
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane

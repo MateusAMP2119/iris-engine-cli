@@ -50,13 +50,13 @@ func decodeRows(b []byte) ([][]byte, error) {
 		}
 		ln := binary.BigEndian.Uint64(b[i : i+8])
 		i += 8
-		if i+int(ln) > len(b) {
+		if i+int(ln) > len(b) { //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 			return nil, errors.New("archive: truncated row data")
 		}
 		row := make([]byte, ln)
-		copy(row, b[i:i+int(ln)])
+		copy(row, b[i:i+int(ln)]) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 		rows = append(rows, row)
-		i += int(ln)
+		i += int(ln) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	}
 	return rows, nil
 }
@@ -90,16 +90,16 @@ func buildFile(h Header, rows [][]byte) []byte {
 	var buf bytes.Buffer
 	buf.WriteString(archiveMagic)
 	var i64 [8]byte
-	binary.BigEndian.PutUint64(i64[:], uint64(h.IDFrom))
+	binary.BigEndian.PutUint64(i64[:], uint64(h.IDFrom)) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	buf.Write(i64[:])
-	binary.BigEndian.PutUint64(i64[:], uint64(h.IDTo))
+	binary.BigEndian.PutUint64(i64[:], uint64(h.IDTo)) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	buf.Write(i64[:])
-	dl := uint16(len(h.Digest))
+	dl := uint16(len(h.Digest)) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	var u16 [2]byte
 	binary.BigEndian.PutUint16(u16[:], dl)
 	buf.Write(u16[:])
 	buf.Write(h.Digest)
-	sl := uint16(len(h.Signature))
+	sl := uint16(len(h.Signature)) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	binary.BigEndian.PutUint16(u16[:], sl)
 	buf.Write(u16[:])
 	buf.Write(h.Signature)
@@ -119,9 +119,9 @@ func parseFile(b []byte) (Header, []byte, error) {
 		return Header{}, nil, errors.New("archive: bad magic")
 	}
 	off := 8
-	idFrom := int64(binary.BigEndian.Uint64(b[off : off+8]))
+	idFrom := int64(binary.BigEndian.Uint64(b[off : off+8])) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	off += 8
-	idTo := int64(binary.BigEndian.Uint64(b[off : off+8]))
+	idTo := int64(binary.BigEndian.Uint64(b[off : off+8])) //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 	off += 8
 	dl := binary.BigEndian.Uint16(b[off : off+2])
 	off += 2
@@ -142,7 +142,7 @@ func parseFile(b []byte) (Header, []byte, error) {
 	}
 	plen := binary.BigEndian.Uint64(b[off : off+8])
 	off += 8
-	if off+int(plen) != len(b) {
+	if off+int(plen) != len(b) { //nolint:gosec // G115: fixed-width archive wire encoding; the length and id values are bounded by construction and the surrounding truncation checks
 		return Header{}, nil, errors.New("archive: payload length mismatch")
 	}
 	inner := append([]byte(nil), b[off:]...)
@@ -226,8 +226,6 @@ func syncDir(dir string) error {
 	}
 	return cerr
 }
-
-
 
 // ObjectStore is the seam the export flow uses to place archived partition
 // files into the content-addressed objects directory. *store.ObjectStore

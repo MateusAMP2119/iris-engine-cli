@@ -576,7 +576,7 @@ func connectData(t *testing.T, dsn string) *pgx.Conn {
 // trivial main.go. The actual row writes for assertions are driven by
 // landAttributed after the run record exists (so wipe/journal can be asserted
 // with real run ids). Different lanes for concurrent tests.
-func setupWriterPipeline(t *testing.T, ws, name, lane string, id1, id2 int) {
+func setupWriterPipeline(t *testing.T, ws, name, lane string, _, _ int) {
 	t.Helper()
 	schemaDir := filepath.Join(ws, "schemas", "testdata", "items")
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {

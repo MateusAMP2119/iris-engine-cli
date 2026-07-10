@@ -33,10 +33,7 @@ type wipePlane struct {
 // compile-time interface check.
 var _ api.WipeHandler = (*wipePlane)(nil)
 
-func newWipePlane(logger *slog.Logger) *wipePlane {
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	}
+func newWipePlane(_ *slog.Logger) *wipePlane {
 	return &wipePlane{}
 }
 

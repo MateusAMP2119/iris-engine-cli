@@ -211,6 +211,19 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	lanes := newLanePlane(logger, inflight)
 	passCounter := dispatch.NewPassCounter()
 
+	// The stats plane serves GET /stats (and `iris engine stats`) on any node: the
+	// meta-backed rollup over the reader pool composed with the leader-held per-lane
+	// pass counts -- the same counter the lane loop increments and the candidate resets
+	// each term, so the readout reports live loop passes. A standby answers with zero
+	// passes (it has dispatched none).
+	stats := NewStatsPlane(client.StatsSource(), passCounter, logger)
+
+	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
+	// `iris deadletter show` renders) on any node from the reader pool, and POST
+	// /deadletter/replay and /deadletter/drain once this daemon leads (its executor is
+	// installed on winning leadership, cleared on demotion).
+	deadletters := newDeadletterPlane(client.DeadLetterReader(), client.RegistryReader(), logger)
+
 	srv := NewServer(s, api.NewMux(
 		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
 		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
@@ -218,6 +231,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithEndpoints(endpointRegistry), api.WithEndpointReader(api.NewPoolReader(readPool)),
 		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
 		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
+		api.WithStats(stats),
+		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
 	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err
@@ -257,13 +272,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, laneDataDSN),
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
 		WithWipePlane(wipes, client.Reader(), data),
 		WithLaneLoop(laneBuild),
 		WithLanePlane(lanes),
 		WithPassCounter(passCounter),
+		WithDeadletterPlane(deadletters),
 		WithInflightKiller(inflight),
 		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
 		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),

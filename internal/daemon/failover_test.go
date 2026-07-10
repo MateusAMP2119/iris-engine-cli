@@ -464,7 +464,7 @@ func TestFailoverNoResumeDestructive(t *testing.T) {
 		// prior destructive; the original caller must re-issue and re-confirm.
 		reader := &emptyRunReader{}
 		var submitted int
-		submit := submitFunc(func(ctx context.Context, fn func(*store.Writer) error) error {
+		submit := submitFunc(func(_ context.Context, _ func(*store.Writer) error) error {
 			submitted++
 			return nil // no-op; we only care it was the run path, not destructive
 		})
