@@ -507,6 +507,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
     status: unclaimed
+  - id: S04/engine-key-in-meta-table
+    anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
+    tier: integration
+    status: unclaimed
   - id: S04/engine-key-public-via-info
     anchor: "docs/Iris Specification Inventory.md#4-engine-state-schema-meta-and-the-data-journal"
     tier: integration
@@ -1794,6 +1798,10 @@ contracts:
   - id: S14/engine-key-minted-at-install
     anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
     tier: integration
+    status: unclaimed
+  - id: S14/engine-key-stable-across-restart
+    anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
+    tier: conformance
     status: unclaimed
   - id: S14/meta-holds-no-payload-bytes
     anchor: "docs/Iris Specification Inventory.md#14-row-level-provenance"
