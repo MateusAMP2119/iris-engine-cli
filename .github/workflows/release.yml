@@ -28,7 +28,7 @@ jobs:
             GOOS=${target%/*} GOARCH=${target#*/}
             export GOOS GOARCH
             out="dist/iris_${GOOS}_${GOARCH}"
-            go build -trimpath -ldflags="-s -w" -o "${out}/iris" ./cmd/iris
+            go build -trimpath -ldflags="-s -w -X github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo.Version=${GITHUB_REF_NAME}" -o "${out}/iris" ./cmd/iris
             tar -czf "${out}.tar.gz" -C "${out}" iris
             rm -r "${out}"
           done

@@ -10,7 +10,7 @@ import (
 // TestImportGraphOneDirection proves the specification section 10 layering as
 // static analysis: the internal import graph is acyclic and flows one direction
 // (cli -> daemon/api -> dispatch -> store/pg/exec; archive beside dispatch;
-// declare/build/pat/version as leaves), and shipped code never reaches into the
+// declare/build/pat/buildinfo as leaves), and shipped code never reaches into the
 // test-support harness. It plants upward edges, same-rank crossings, cycles, and
 // harness dependencies in synthetic graphs, then runs the same three checks over
 // the real repo, which must be clean.
@@ -47,7 +47,7 @@ func TestImportGraphOneDirection(t *testing.T) {
 			pkg("declare"),
 			pkg("build"),
 			pkg("pat"),
-			pkg("version"),
+			pkg("buildinfo"),
 		)
 		if vs := g.CheckDirection(); len(vs) != 0 {
 			t.Errorf("CheckDirection on a spec-conformant graph = %v, want none", vs)

@@ -480,6 +480,8 @@ iris pat create | list | revoke   # manage PATs with scopes {control, read, data
 
 **Q - JSON output contract?** A: `--json`: every command emits one structured JSON document on stdout (read-API envelope). Default: human-readable. Daemon/per-run logs separate from command output.
 
+**Q - Version surface?** A: `iris --version` prints exactly `iris version <build>` followed by a trailing newline, one line, so the operator and the installer can read which build they hold. `<build>` defaults to `dev` for an unstamped build and is injected at link time (`-ldflags -X`); the release stamps the tag. The stamp is a build-time constant, never mutated at runtime, so it is not an exception to the no-mutable-globals rule.
+
 ## 9. Tooling, Build & Dependencies
 
 **Q - What language and Go version?** A: A single Go program. Target Go 1.26, floor 1.25; CI builds both. Go for the same reason pipelines ship as binaries: one statically-linked, cross-compiled executable per platform.
@@ -521,7 +523,7 @@ iris/
     declare/              # parse + validate iris-declare.yaml and the schemas/ tree
     build/                # per-language build recipes (go / python / node); records content hashes
     pat/                  # PAT mint + verify (argon2id), scope checks over {control, read, data}
-    version/              # build-stamped version string
+    buildinfo/            # build-stamped version string (leaf, read by cli)
 ```
 
 **Q - What are the package boundaries?** A: One direction, no cycles: `cli` → `daemon`/`api` → `dispatch` → `store`, `pg`, `exec`; `archive` sits beside `dispatch` and reuses `store`/`pg` (never opening a third path to either database); `declare`, `build`, `pat` are leaf packages. `store` is the only code that opens `meta` (single-writer path + leader lock); `pg` is the only code that talks to the data database. Two clients, two databases, never crossed. `api` renders exactly what the CLI's read commands render.
