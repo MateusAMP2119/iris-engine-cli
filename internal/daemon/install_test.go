@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -79,12 +80,11 @@ func (s *seqSocket) PrepareSocket(context.Context) error {
 	return nil
 }
 
-// maskEngineKey replaces the base64 payload of an ALTER DATABASE ... SET
-// iris.engine_key statement with a fixed placeholder, so the install-sequence
-// golden is stable across the random per-install key and no key-shaped bytes are
-// checked in.
+// maskEngineKey replaces the bytea hex payload of the engine_key INSERT statement
+// with a fixed placeholder, so the install-sequence golden is stable across the
+// random per-install key and no key-shaped bytes are checked in.
 func maskEngineKey(line string) string {
-	const marker = "SET iris.engine_key = '"
+	const marker = `VALUES (1, '\x`
 	i := strings.Index(line, marker)
 	if i < 0 {
 		return line
@@ -146,8 +146,8 @@ func TestBootstrapEngineInstallSequence(t *testing.T) {
 		// last.
 		assertBefore(t, lines, "probe: meta exists? -> false", "cluster: "+store.CreateMetaDatabaseDDL())
 		assertBefore(t, lines, "cluster: "+store.CreateMetaDatabaseDDL(), "data: "+pg.JournalTable().DDL()[0])
-		assertBefore(t, lines, "data: "+pg.JournalTable().DDL()[0], "meta: "+daemon.SetEngineKeyDDL(key))
-		assertBefore(t, lines, "meta: "+daemon.SetEngineKeyDDL(key), "socket: prepare")
+		assertBefore(t, lines, "data: "+pg.JournalTable().DDL()[0], "meta: "+daemon.InsertEngineKeyDDL(key))
+		assertBefore(t, lines, "meta: "+daemon.InsertEngineKeyDDL(key), "socket: prepare")
 
 		if !rep.MetaCreated {
 			t.Error("report says meta was not created, but the probe reported it missing")
@@ -156,18 +156,22 @@ func TestBootstrapEngineInstallSequence(t *testing.T) {
 			t.Errorf("report public key = %q, want %q", rep.EngineKeyPublic, key.PublicBase64())
 		}
 
-		// The engine key is stored on the meta connection, and the base64 it stores
-		// decodes to the same key that was minted (its public half matches).
+		// The engine key is stored on the meta connection as an engine_key row, and the
+		// bytes it stores decode to the same key that was minted (its public half
+		// matches). The statement is create-once (ON CONFLICT DO NOTHING).
 		var stored string
 		for _, l := range lines {
-			if strings.HasPrefix(l, "meta: ALTER DATABASE meta SET iris.engine_key") {
+			if strings.HasPrefix(l, "meta: INSERT INTO engine_key") {
 				stored = strings.TrimPrefix(l, "meta: ")
 			}
 		}
 		if stored == "" {
-			t.Fatal("no ALTER DATABASE ... SET iris.engine_key statement on the meta connection")
+			t.Fatal("no INSERT INTO engine_key statement on the meta connection")
 		}
-		back, err := daemon.DecodeEngineKey(quotedPayload(t, stored))
+		if !strings.Contains(stored, "ON CONFLICT (id) DO NOTHING") {
+			t.Errorf("engine-key insert is not create-once: %s", stored)
+		}
+		back, err := daemon.DecodeEngineKeyBytes(privBytesFromInsertDDL(t, stored))
 		if err != nil {
 			t.Fatalf("stored engine key does not decode: %v", err)
 		}
@@ -177,11 +181,12 @@ func TestBootstrapEngineInstallSequence(t *testing.T) {
 
 		// The private half is never logged nor placed in the report: only the SQL that
 		// stores it (on the meta connection) may carry it.
-		privB64 := quotedPayload(t, daemon.SetEngineKeyDDL(key))
-		if strings.Contains(logbuf.String(), privB64) {
+		privBytes := privBytesFromInsertDDL(t, daemon.InsertEngineKeyDDL(key))
+		privHex := fmt.Sprintf("%x", privBytes)
+		if strings.Contains(logbuf.String(), privHex) {
 			t.Errorf("engine bootstrap logged the private engine key:\n%s", logbuf.String())
 		}
-		if strings.Contains(rep.EngineKeyPublic, privB64) {
+		if strings.Contains(rep.EngineKeyPublic, privHex) {
 			t.Error("install report carries the private engine key")
 		}
 	})
@@ -294,12 +299,12 @@ func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 		}
 		found := false
 		for _, l := range log.snapshot() {
-			if strings.Contains(l, "SET iris.engine_key") {
+			if strings.Contains(l, "INSERT INTO engine_key") {
 				found = true
 			}
 		}
 		if !found {
-			t.Error("no key SET during install")
+			t.Error("no engine_key row inserted during install")
 		}
 	})
 

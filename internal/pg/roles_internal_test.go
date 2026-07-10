@@ -67,6 +67,48 @@ func TestRenderProvisionPipelineRoleGrantsCapture(t *testing.T) {
 	}
 }
 
+// TestProvisionNeverGrantsEngineKey proves the engine signing key's meta table is
+// unreachable to every non-admin role: pipeline-role provisioning revokes CONNECT on
+// the meta database (default-deny plus a role-scoped revoke) and never emits any
+// grant that names engine_key, so the private half a data-PAT, pipeline, or read-pool
+// role could reach is exactly none. The key living in meta -- which those roles cannot
+// even open a session on -- is what makes the meta-table store admin-only without any
+// engine_key-specific grant logic (devdebt 2026-07-10 spec delta).
+//
+// spec: S04/engine-key-in-meta-table
+func TestProvisionNeverGrantsEngineKey(t *testing.T) {
+	role := PipelineRoleName("ingest")
+	stmts, err := renderProvisionPipelineRole(RoleProvision{
+		Role:          role,
+		CredentialDDL: "ALTER ROLE " + quoteIdentifier(role) + " PASSWORD 'x';",
+		MetaDatabase:  "meta",
+		DataDatabase:  "data",
+		Grants: []declare.FieldGrant{
+			{Schema: "analytics", Table: "orders", Field: "amount", Access: declare.AccessRead},
+		},
+	})
+	if err != nil {
+		t.Fatalf("renderProvisionPipelineRole: %v", err)
+	}
+
+	// No provisioning statement names the engine-key table: the key is never granted.
+	for _, s := range stmts {
+		if strings.Contains(strings.ToLower(s), "engine_key") {
+			t.Errorf("provisioning references the engine_key table; the signing key must never be grantable to a pipeline role:\n%s", s)
+		}
+	}
+
+	// The role is denied CONNECT on meta entirely, so it can never open a session on
+	// the database engine_key lives in (default-deny plus the role-scoped revoke).
+	meta := quoteIdentifier("meta")
+	if !containsExactly(stmts, "REVOKE CONNECT ON DATABASE "+meta+" FROM PUBLIC;", 1) {
+		t.Errorf("provisioning must revoke meta CONNECT from PUBLIC:\n%s", strings.Join(stmts, "\n"))
+	}
+	if indexOfContaining(stmts, "REVOKE ALL ON DATABASE "+meta+" FROM "+quoteIdentifier(role)) < 0 {
+		t.Errorf("provisioning must revoke all meta access from the role:\n%s", strings.Join(stmts, "\n"))
+	}
+}
+
 // TestRenderProvisionPipelineRoleEnsuresCaptureSurface proves the pipeline-role
 // provisioning stream is self-healing and order-independent: it ensures the engine
 // capture surface (the iris schema and the iris.capture() function) BEFORE it grants

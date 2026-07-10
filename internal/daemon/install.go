@@ -38,13 +38,12 @@ import (
 // same legs (meta schema at election, journal at apply) touches nothing already
 // present.
 //
-// It deliberately does not perform BootstrapEngine's engine-key leg. Storing the key
-// via ALTER DATABASE meta SET (a placeholder custom GUC) requires SUPERUSER, which
-// the external admin role does not hold -- specification section 2 requires only
-// CREATEDB of it -- so that leg cannot run in external mode. The engine key remains a
-// deferred concern (S14); install matches `iris engine start`, which does not store
-// it either. The two-database creation this task owns runs privilege-safe in both
-// modes.
+// It mints the ed25519 engine key into the engine_key meta table (a single-row
+// create-once INSERT on the meta connection, superuser-free), superseding the
+// earlier per-database GUC (which needed SUPERUSER the external admin role lacks)
+// and the workspace key file (which forced a shared filesystem for HA). The two-
+// database creation and the key insert both run privilege-safe in managed and
+// external modes.
 func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) (InstallReport, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -119,15 +118,28 @@ func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) 
 	}
 	logger.Info("engine install: control socket ready")
 
-	// Mint the engine key at install (specification section 14) and persist it to the
-	// engine-owned workspace key file. The per-database GUC storage the original design
-	// chose (enginekey.go) requires SUPERUSER the external admin role lacks, so the key
-	// lands in the workspace .iris tree at 0600 instead -- non-superuser-safe, and, like
-	// the object store, a per-host prerequisite pointable at shared storage for HA. It
-	// is create-once, so re-running install never overwrites an existing key.
-	key, err := LoadOrMintEngineKey(EngineKeyFilePath(s))
+	// Mint the engine key at install (specification section 14) and persist it into the
+	// engine_key meta table: a create-once INSERT (ON CONFLICT DO NOTHING) on the meta
+	// connection, superuser-free -- superseding the per-database GUC (needs SUPERUSER)
+	// and the workspace key file (needs a shared filesystem for HA). Re-running install
+	// never overwrites an existing key (the conflict is a no-op); the report's public
+	// half is read back from meta so a re-install reports the stored key's public half,
+	// not the discarded fresh mint. The INSERT carries the private half, so it is issued
+	// directly and never logged.
+	minted, err := MintEngineKey()
 	if err != nil {
 		return InstallReport{}, fmt.Errorf("daemon: mint engine key for install: %w", err)
+	}
+	if err := conns.Meta().Exec(ctx, InsertEngineKeyDDL(minted)); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: store engine key for install: %w", err)
+	}
+	stored, err := conns.ReadEngineKey(ctx)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: read engine key after install: %w", err)
+	}
+	key, err := DecodeEngineKeyBytes(stored)
+	if err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: decode stored engine key: %w", err)
 	}
 	report.EngineKeyPublic = key.PublicBase64()
 	logger.Info("engine install: engine key ready")
@@ -244,9 +256,10 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 	}
 	log.Info("engine install: ensured data journal")
 
-	// Store the engine key on the meta connection. The DDL carries the private half,
-	// so it is issued directly and never logged.
-	if err := deps.Meta.Exec(ctx, SetEngineKeyDDL(key)); err != nil {
+	// Store the engine key on the meta connection: a create-once INSERT into the
+	// single-row engine_key table (ON CONFLICT DO NOTHING). The statement carries the
+	// private half, so it is issued directly and never logged.
+	if err := deps.Meta.Exec(ctx, InsertEngineKeyDDL(key)); err != nil {
 		return report, fmt.Errorf("daemon: store engine key: %w", err)
 	}
 	log.Info("engine install: stored engine key")

@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
 // This file holds the engine key: the ed25519 keypair minted once at
@@ -17,32 +16,24 @@ import (
 // chain (specification section 4). The spec states the private half lives "in
 // meta" and the public half is surfaced by `iris engine info`.
 //
-// # Where the private half lives (a design choice flagged for spec review)
+// # Where the private half lives
 //
-// The eighteen-table meta roster is closed (S04/eighteen-table-roster), so the
-// private key is not a table row. It is persisted instead as a per-database GUC on
-// the meta database: `ALTER DATABASE meta SET iris.engine_key = '<base64>'`, which
-// Postgres records in pg_db_role_setting -- persistent, inside Postgres, tied to
-// the meta database, and read back with current_setting('iris.engine_key') on a
-// meta connection. This keeps "private half in meta" literally true without adding
-// a table, at the cost of storing the key as a database setting rather than a row.
-// It is deliberately documented here and in the E02.4 report as a point for spec
-// review. The signing that consumes the key is E-later work; this file owns only
-// minting, persistence DDL, public-half derivation, and redaction.
+// The private key is persisted as a row in the engine-owned single-row engine_key
+// meta table (id pinned to 1), added by the devdebt 2026-07-10 spec delta. This
+// supersedes two earlier realizations, both flawed: a per-database GUC
+// (`ALTER DATABASE meta SET iris.engine_key`) which needs SUPERUSER the external
+// admin role lacks (specification section 2 grants it only CREATEDB), so it never
+// worked in external mode; and a workspace key file, which forces a shared
+// filesystem for HA. The meta table is superuser-free and gives HA via the shared
+// meta database standbys already read, so a restarted or failover leader signs the
+// same chain. store owns the bytes (internal/store/enginekey.go); this file owns
+// the crypto: minting, the create-once insert DDL, byte decoding, public-half
+// derivation, and redaction.
 //
 // The engine key never renders through any formatting path (like the admin DSN):
-// only PublicBase64 exposes material, and only ever the public half.
-
-// EngineKeySetting is the Postgres per-database setting name the meta database
-// carries the base64-encoded ed25519 private key under. It is read back with
-// current_setting on a meta connection.
-const EngineKeySetting = "iris.engine_key"
-
-// ReadEngineKeyQuery is the query a live meta connection runs to read the stored
-// engine key back (its base64 private half). The pgx-backed reader that runs it
-// lands with the daemon's live-connection wiring; NewEngineKeyReader stands in
-// until then.
-const ReadEngineKeyQuery = "SELECT current_setting('" + EngineKeySetting + "')"
+// only PublicBase64 exposes material, and only ever the public half; the one
+// statement that carries the private half is InsertEngineKeyDDL, which callers must
+// never log.
 
 // engineKeyRedacted is what every formatting path renders in place of the engine
 // key, so a stray %v/%s/%#v can never leak the private half.
@@ -74,19 +65,28 @@ func MintEngineKey() (EngineKey, error) {
 	return EngineKey{private: priv}, nil
 }
 
-// DecodeEngineKey reconstructs an EngineKey from the base64-encoded private half
-// stored in meta (what current_setting('iris.engine_key') returns). It fails fast
-// on material that is not base64 or not a valid-length ed25519 private key rather
-// than accepting a malformed key.
+// DecodeEngineKey reconstructs an EngineKey from a base64-encoded ed25519 private
+// half. It fails fast on material that is not base64 or not a valid-length ed25519
+// private key rather than accepting a malformed key. It is the string form used by
+// tests and callers that hold a base64 rendering; DecodeEngineKeyBytes is the raw
+// form the meta store returns.
 func DecodeEngineKey(privateBase64 string) (EngineKey, error) {
 	raw, err := base64.StdEncoding.DecodeString(privateBase64)
 	if err != nil {
 		return EngineKey{}, fmt.Errorf("daemon: decode engine key: %w", err)
 	}
-	if len(raw) != ed25519.PrivateKeySize {
-		return EngineKey{}, fmt.Errorf("daemon: decode engine key: got %d bytes, want an ed25519 private key of %d", len(raw), ed25519.PrivateKeySize)
+	return DecodeEngineKeyBytes(raw)
+}
+
+// DecodeEngineKeyBytes reconstructs an EngineKey from the raw ed25519 private-key
+// bytes the engine_key meta table stores (what store.JournalSealReader.ReadEngineKey
+// returns). It copies the bytes so the key does not alias the caller's buffer, and
+// fails fast on a wrong length rather than accepting a malformed key.
+func DecodeEngineKeyBytes(priv []byte) (EngineKey, error) {
+	if len(priv) != ed25519.PrivateKeySize {
+		return EngineKey{}, fmt.Errorf("daemon: decode engine key: got %d bytes, want an ed25519 private key of %d", len(priv), ed25519.PrivateKeySize)
 	}
-	return EngineKey{private: ed25519.PrivateKey(raw)}, nil
+	return EngineKey{private: ed25519.PrivateKey(append([]byte(nil), priv...))}, nil
 }
 
 // PublicBase64 returns the base64-encoded public half of the engine key: the value
@@ -97,20 +97,23 @@ func (k EngineKey) PublicBase64() string {
 	return base64.StdEncoding.EncodeToString(pub)
 }
 
-// privateBase64 returns the base64-encoded private half. It is unexported: only
-// SetEngineKeyDDL reads it, to build the storage statement. The private half never
-// leaves the package any other way.
-func (k EngineKey) privateBase64() string {
-	return base64.StdEncoding.EncodeToString(k.private)
+// privateBytes returns a copy of the raw ed25519 private half. It is unexported:
+// only InsertEngineKeyDDL and the leader-side seal's mint path read it, to persist
+// the key. The private half never leaves the package as raw material any other way.
+func (k EngineKey) privateBytes() []byte {
+	return append([]byte(nil), k.private...)
 }
 
-// SetEngineKeyDDL is the statement that persists the engine key in meta: an ALTER
-// DATABASE meta SET iris.engine_key that records the base64 private half as a
-// per-database setting (see the package/file doc for why a setting rather than a
-// table row). It is issued on the meta connection at install. It is the one place
-// the private half appears in a statement; callers must never log the statement.
-func SetEngineKeyDDL(k EngineKey) string {
-	return fmt.Sprintf("ALTER DATABASE %s SET %s = '%s';", store.MetaDatabase, EngineKeySetting, k.privateBase64())
+// InsertEngineKeyDDL is the statement that persists the engine key in meta: a
+// create-once INSERT into the single-row engine_key table (id pinned to 1) that
+// records the raw private half as a bytea hex literal and does nothing on conflict,
+// so two candidates that both mint converge on one key. It is issued on the meta
+// connection at install (the connection is already on the meta database, so the
+// table is unqualified). It is the one place the private half appears in a
+// statement; callers must never log the statement. The leader-side seal mints
+// through store.Writer.InsertEngineKey instead (a bind parameter, no literal).
+func InsertEngineKeyDDL(k EngineKey) string {
+	return fmt.Sprintf("INSERT INTO engine_key (id, private_key, created_at) VALUES (1, '\\x%x', now()::text) ON CONFLICT (id) DO NOTHING;", k.privateBytes())
 }
 
 // Format implements fmt.Formatter, redacting the engine key under every verb (fmt
@@ -166,11 +169,12 @@ type EngineKeyReader interface {
 }
 
 // NewEngineKeyReader returns the production engine-key reader for the given
-// settings. The reader that opens a live meta connection and runs ReadEngineKeyQuery
-// lands with the daemon's pgx-backed connection wiring (a later task); until then
-// this reader reports ErrEngineNotInstalled, so `iris engine info` fails clearly
-// rather than pretending to read a key it cannot yet reach. The settings are
-// accepted now so the signature is stable when the live reader replaces this body.
+// settings. The reader that opens a live meta connection and reads the engine_key
+// table's private half lands with the daemon's pgx-backed connection wiring (a
+// later task); until then this reader reports ErrEngineNotInstalled, so `iris engine
+// info` fails clearly rather than pretending to read a key it cannot yet reach. The
+// settings are accepted now so the signature is stable when the live reader replaces
+// this body.
 func NewEngineKeyReader(_ config.Settings) EngineKeyReader {
 	return unwiredEngineKeyReader{}
 }
