@@ -406,29 +406,52 @@ func TestTraceabilityGate(t *testing.T) {
 		}
 	}
 
-	// A far-future contract that no test can legitimately claim yet must still be
-	// in the backlog -- the live guard against a claim-extraction regression that
-	// silently empties the gap list. S13 is the end-to-end acceptance scenario
-	// (Iris Epics, E13), the last epic; S13/scenario-passes-unattended is claimed
-	// only when E13's own task lands its conformance suite, which updates this
-	// anchor then. Until E13 it is a stable, non-decaying proof that the gate
-	// actually reports unclaimed contracts.
-	const futureAnchor = "S13/scenario-passes-unattended"
-	if _, ok := m.Find(futureAnchor); !ok {
-		t.Fatalf("anchor %s is gone from the manifest; pick another far-future unclaimed contract", futureAnchor)
+	// The live guard against a claim-extraction regression that silently empties the
+	// gap list: given a genuinely-unclaimed non-exempt contract, the gate must still
+	// surface it. This used to borrow a known-unclaimed far-future manifest row
+	// (S13/scenario-passes-unattended, the last epic's acceptance scenario) and assert
+	// it stayed in the gaps. E13 (the final task) claims that row -- and the last three
+	// S13 acceptance-scenario rows with it -- so the real backlog is now empty and no
+	// live row can serve as the probe. Doctrine (specification section 16, the
+	// traceability-gate hazard) resolves this by synthesizing the probe rather than
+	// leaning on a decaying live row: a fabricated unclaimed non-exempt contract,
+	// appended to a copy of the real manifest and run against the REAL test files, must
+	// surface in the gap list. No real test can claim a fabricated id, so if the gate
+	// still reports it the claim extraction over the real file set is intact; a
+	// regression that silently emptied the gaps fails here. This proof never decays: it
+	// depends on no contract staying unclaimed.
+	const probeID = "S99/gate-reports-unclaimed-probe"
+	if _, ok := m.Find(probeID); ok {
+		t.Fatalf("probe id %s unexpectedly exists in the real manifest; pick an id no real contract uses", probeID)
 	}
-	if claimed[futureAnchor] {
-		t.Fatalf("anchor %s is now claimed; move TestTraceabilityGate to a still-unclaimed far-future contract", futureAnchor)
+	probed := &spec.Manifest{Contracts: append(append([]spec.Contract(nil), m.Contracts...),
+		spec.Contract{
+			ID:     probeID,
+			Anchor: "docs/Iris Specification Inventory.md#16-testing-strategy-spec-driven-conformance",
+			Tier:   spec.TierConformance,
+			Status: spec.StatusUnclaimed,
+		})}
+	probeRep := trace.Gate(probed, files, lock, content, trace.Backlog)
+	if probeRep.Failed() {
+		t.Fatalf("backlog-aware gate over the probed manifest failed: %v", probeRep.Err())
 	}
-	if !contains(rep.Gaps, futureAnchor) {
-		t.Errorf("unclaimed contract %s is missing from the gap list; the gate is under-reporting the backlog", futureAnchor)
+	if claimed[probeID] {
+		t.Fatalf("fabricated probe id %s is claimed by a real test; it must be unclaimable", probeID)
+	}
+	if !contains(probeRep.Gaps, probeID) {
+		t.Errorf("fabricated unclaimed contract %s is missing from the gap list; the gate is under-reporting the backlog (claim extraction may be silently emptying the gaps)", probeID)
 	}
 }
 
-// TestTraceabilityGateStrict is the definition-of-done invocation: strict mode
-// over the real repo fails while the backlog is non-empty. It is skipped in the
-// ordinary suite (so `go test ./...` stays green while 480+ contracts are still
-// backlog) and run explicitly by setting IRIS_TRACE_STRICT=1.
+// TestTraceabilityGateStrict is the definition-of-done invocation. E13 (the final
+// task) is landed, so the real backlog is empty and strict mode over the real repo
+// now PASSES: the spec's definition of done -- "the sample passes that scenario
+// unattended" (section 13) -- is met, and the suite is its executable proof (section
+// 16, "implementation correct exactly when suite green"). The regression protection
+// that strict mode still FAILS on a genuine gap is preserved with a synthesized
+// probe, so a claim-extraction regression that silently emptied the gaps cannot make
+// strict spuriously pass. Skipped in the ordinary suite (so `go test ./...` never
+// runs the strict definition-of-done gate); run explicitly with IRIS_TRACE_STRICT=1.
 //
 // spec: S16/gate-fails-unclaimed-contract
 func TestTraceabilityGateStrict(t *testing.T) {
@@ -436,11 +459,29 @@ func TestTraceabilityGateStrict(t *testing.T) {
 		t.Skip("set IRIS_TRACE_STRICT=1 to run the strict definition-of-done gate")
 	}
 	m, files, lock, content := loadRepo(t)
+
+	// Definition of done: the real backlog is empty, so strict mode passes over the
+	// real repo.
 	rep := trace.Gate(m, files, lock, content, trace.Strict)
-	if !rep.Failed() {
-		t.Fatal("strict gate over the real repo passed, want failure while the backlog is non-empty")
+	if rep.Failed() {
+		t.Fatalf("strict gate over the real repo failed, but the backlog should be empty (definition of done met): %d gaps: %v", len(rep.Gaps), rep.Gaps)
 	}
-	t.Logf("strict gate reports %d gaps", len(rep.Gaps))
+
+	// Regression protection: strict mode still fails on a genuine gap. A fabricated
+	// unclaimed non-exempt contract -- unclaimable by any real test -- must make strict
+	// fail, so an extraction regression that empties the gaps cannot mask a real gap.
+	const probeID = "S99/gate-strict-probe"
+	probed := &spec.Manifest{Contracts: append(append([]spec.Contract(nil), m.Contracts...),
+		spec.Contract{
+			ID:     probeID,
+			Anchor: "docs/Iris Specification Inventory.md#16-testing-strategy-spec-driven-conformance",
+			Tier:   spec.TierConformance,
+			Status: spec.StatusUnclaimed,
+		})}
+	probeRep := trace.Gate(probed, files, lock, content, trace.Strict)
+	if !probeRep.Failed() {
+		t.Fatal("strict gate did not fail on a fabricated unclaimed contract; strict mode is not enforcing the backlog")
+	}
 }
 
 // TestSpecLockUpdate is the explicit spec-lock update path: run with
