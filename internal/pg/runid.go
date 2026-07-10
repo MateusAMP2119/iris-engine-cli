@@ -42,14 +42,18 @@ func RunIDConnOptions(runID int64) string {
 // writes are attributed to runID by the capture trigger without the run's own code
 // setting anything.
 //
-// The single character in the option value needing URI encoding is the space that
-// separates -c from the setting; it is encoded as %20, which every conforming
-// connection-URI client (libpq and pgx alike) decodes back to a space. ('+' is decoded
-// to a space only under form-encoding, which a connection URI does not use, so %20 is
-// the portable choice.) The engine's scoped connection carries no pre-existing
-// `options` parameter, so a single fresh `options` is always appended.
+// Two characters in the option value need URI encoding: the space that separates -c
+// from the setting, and the '=' inside iris.run_id=<id>. The space is encoded as %20
+// and the '=' as %3D. Both encodings are decoded back by every conforming connection-URI
+// client -- pgx AND libpq (psql) -- to a space and an '=' respectively. The '=' encoding
+// is not optional: libpq's stricter URI query parser rejects a raw '=' inside a query
+// value ("extra key/value separator"), so a run whose own code opens the injected
+// IRIS_DB_URL with psql/libpq (a dev pipeline shelling out to psql) needs the encoded
+// form. ('+' is decoded to a space only under form-encoding, which a connection URI does
+// not use, so %20 is the portable choice.) The engine's scoped connection carries no
+// pre-existing `options` parameter, so a single fresh `options` is always appended.
 func InjectRunID(dsn string, runID int64) string {
-	value := strings.ReplaceAll(RunIDConnOptions(runID), " ", "%20")
+	value := strings.NewReplacer(" ", "%20", "=", "%3D").Replace(RunIDConnOptions(runID))
 	sep := "?"
 	if strings.ContainsRune(dsn, '?') {
 		sep = "&"
