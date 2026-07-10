@@ -239,6 +239,18 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// installed on winning leadership, cleared on demotion).
 	deadletters := newDeadletterPlane(client.DeadLetterReader(), client.RegistryReader(), logger)
 
+	// The engine-info plane serves GET /info (and `iris engine info`) on any node:
+	// the daemon-held runtime facts -- the live leadership role, the resolved
+	// listeners, the data/meta targets, the leader-held per-lane pass counts, and
+	// the display-only uptime. The inspect plane serves GET /inspect: the embedded
+	// engine-table DDL dump, a pure render that touches no database. The pipeline-show
+	// plane serves GET /pipeline/show from the reader pool: the resolved declaration,
+	// role grants, recent runs, and the depends_on gate ledger. All three are reads,
+	// served on any role, mutating nothing.
+	info := NewInfoPlane(role, passCounter, InfoConfig{Socket: s.Socket, TCP: s.TCP})
+	inspect := NewInspectPlane()
+	pipelineShow := NewShowPlane(client.ShowReader(), logger)
+
 	srv := NewServer(s, api.NewMux(
 		api.WithRole(role), api.WithControl(control), api.WithPipelines(pipelines),
 		api.WithBuild(builds), api.WithWorkloadShow(workload), api.WithProvenance(prov),
@@ -247,6 +259,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
 		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
 		api.WithStats(stats),
+		api.WithInfo(info), api.WithInspect(inspect), api.WithPipelineShow(pipelineShow),
 		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
 	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
