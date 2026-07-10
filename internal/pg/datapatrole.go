@@ -52,13 +52,15 @@ type ReadPoolLoginProvision struct {
 
 // ProvisionReadPoolLogin ensures the engine's read-pool login role exists on the
 // data cluster with exactly its connection identity, issuing the DDL through db in
-// order (specification section 7). It is idempotent: the role is created if
-// missing then always re-asserted, and every GRANT/REVOKE is idempotent, so a
-// re-provision (including a credential rotation on daemon restart) is a safe
-// no-op-or-update. The ordered steps mirror ProvisionPipelineRole minus the field
-// grants: create LOGIN if missing, assert least-privilege attributes, set the
-// engine-minted credential, deny the meta database, grant CONNECT on the data
-// database.
+// order (specification section 7). It is idempotent: the role is created (with its
+// least-privilege attributes baked in) if missing, and every credential/GRANT/REVOKE
+// is idempotent, so a re-provision (including a credential rotation on daemon
+// restart) is a safe no-op-or-update. Crucially it never re-asserts the role's
+// attributes with an ALTER ROLE -- changing an existing role's SUPERUSER attribute
+// requires the SUPERUSER attribute (PG16+), which the engine's non-superuser
+// CREATEROLE admin lacks -- so a repeat daemon start never hard-fails on the already
+// provisioned login. The ordered steps: create LOGIN (with attributes) if missing,
+// set the engine-minted credential, deny the meta database, grant CONNECT on data.
 func ProvisionReadPoolLogin(ctx context.Context, db DB, spec ReadPoolLoginProvision) error {
 	stmts, err := renderProvisionReadPoolLogin(spec)
 	if err != nil {
@@ -96,14 +98,25 @@ func renderProvisionReadPoolLogin(spec ReadPoolLoginProvision) ([]string, error)
 	data := quoteIdentifier(spec.DataDatabase)
 
 	return []string{
+		// Create the login with its least-privilege attributes baked in at creation --
+		// LOGIN plus the NOSUPERUSER/NOCREATEDB/NOCREATEROLE defaults spelled out. The
+		// attributes are set AT CREATE, never re-asserted by a later ALTER ROLE:
+		// changing an existing role's SUPERUSER attribute requires the SUPERUSER
+		// attribute itself (PG16+), so a re-asserting `ALTER ROLE ... NOSUPERUSER`
+		// would fail for the engine's non-superuser CREATEROLE admin on every
+		// subsequent daemon start. Creating with these attributes is allowed for a
+		// CREATEROLE admin (it never grants an attribute it lacks). On a repeat start
+		// the role already exists and the DO block skips creation; the credential and
+		// database-scoping statements below are idempotent and require only ownership
+		// the engine's admin already holds, so a daemon start never hard-fails because
+		// a previous run already provisioned the login.
 		fmt.Sprintf(`DO $iris_read_pool_login$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN
-        CREATE ROLE %s LOGIN;
+        CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
     END IF;
 END
 $iris_read_pool_login$;`, quoteStringLiteral(spec.Role), role),
-		fmt.Sprintf("ALTER ROLE %s WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;", role),
 		spec.CredentialDDL,
 		fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC;", meta),
 		fmt.Sprintf("REVOKE ALL ON DATABASE %s FROM %s;", meta, role),
@@ -136,18 +149,20 @@ type DataPATRoleProvision struct {
 // ProvisionDataPATRole ensures a data PAT's read-only role exists on the data
 // cluster with exactly its declared read access and membership in the engine
 // read-pool login, issuing the DDL through db in order (specification sections 4
-// and 7). It is idempotent: the role is created NOLOGIN if missing then always
-// re-asserted, and every GRANT/REVOKE is idempotent, so a retry after a partial
-// failure re-issues cleanly. The ordered steps are:
+// and 7). It is idempotent: the role is created NOLOGIN (with its least-privilege
+// attributes baked in) if missing, and every GRANT/REVOKE is idempotent, so a retry
+// after a partial failure re-issues cleanly. It never re-asserts the attributes with
+// an ALTER ROLE, which would require the SUPERUSER attribute the engine's non-
+// superuser CREATEROLE admin lacks (PG16+). The ordered steps are:
 //
-//  1. create the role NOLOGIN if it does not yet exist;
-//  2. assert its attributes (NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE) --
-//     never LOGIN, so the role holds no credential and can only be assumed;
-//  3. deny the meta database -- revoke CONNECT from PUBLIC (default-deny) and from
+//  1. create the role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE if it does not yet
+//     exist -- never LOGIN, so the role holds no credential and can only be assumed;
+//  2. deny the meta database -- revoke CONNECT from PUBLIC (default-deny) and from
 //     the role -- so the control plane is unreachable to the data PAT (section 2);
-//  4. grant CONNECT on the data database and USAGE on each granted schema;
-//  5. apply each field-level SELECT grant (RenderGrant);
-//  6. grant the role TO the engine read-pool login, so the pool may SET ROLE to it.
+//  3. grant CONNECT on the data database and USAGE on each granted schema;
+//  4. apply each field-level SELECT grant (RenderGrant);
+//  5. grant the role TO the engine read-pool login WITH SET (so the pool may SET ROLE
+//     to it) but INHERIT FALSE (so the pool never silently holds its grants).
 //
 // It stops and returns on the first failing statement, naming it.
 func ProvisionDataPATRole(ctx context.Context, db DB, spec DataPATRoleProvision) error {
@@ -165,8 +180,9 @@ func ProvisionDataPATRole(ctx context.Context, db DB, spec DataPATRoleProvision)
 
 // renderProvisionDataPATRole renders the ordered provisioning DDL for a data-PAT
 // read role. It validates the request first (a NOLOGIN role names a pool login, a
-// meta and data database), then emits create/assert/deny/grant/membership in
-// order. It is pure, so the exact statement stream is derivable without a live
+// meta and data database), then emits create/deny/grant/membership in order (the
+// attributes ride the CREATE, never a re-asserting ALTER). It is pure, so the exact
+// statement stream is derivable without a live
 // cluster; ProvisionDataPATRole issues it. A read grant carrying a write access
 // kind is refused (a data-PAT role is read-only).
 func renderProvisionDataPATRole(spec DataPATRoleProvision) ([]string, error) {
@@ -195,29 +211,34 @@ func renderProvisionDataPATRole(spec DataPATRoleProvision) ([]string, error) {
 	data := quoteIdentifier(spec.DataDatabase)
 
 	stmts := []string{
-		// 1. Create the role NOLOGIN if missing.
+		// 1. Create the role NOLOGIN with its least-privilege attributes baked in at
+		// creation -- NOLOGIN plus the NOSUPERUSER/NOCREATEDB/NOCREATEROLE defaults
+		// spelled out. The attributes are set AT CREATE, never re-asserted by a later
+		// ALTER ROLE: changing an existing role's SUPERUSER attribute requires the
+		// SUPERUSER attribute itself (PG16+), so a re-asserting ALTER would fail for
+		// the engine's non-superuser CREATEROLE admin. A data-PAT role is created once
+		// per mint (unique per token id), so creation is the only path; the DO block's
+		// existence guard keeps a re-provision idempotent.
 		fmt.Sprintf(`DO $iris_data_pat_role$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN
-        CREATE ROLE %s NOLOGIN;
+        CREATE ROLE %s NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
     END IF;
 END
 $iris_data_pat_role$;`, quoteStringLiteral(spec.Role), role),
-		// 2. Assert attributes (idempotent) -- NOLOGIN, never LOGIN.
-		fmt.Sprintf("ALTER ROLE %s WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;", role),
-		// 3. Deny the meta control database.
+		// 2. Deny the meta control database.
 		fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC;", meta),
 		fmt.Sprintf("REVOKE ALL ON DATABASE %s FROM %s;", meta, role),
-		// 4. Grant CONNECT on the data database.
+		// 3. Grant CONNECT on the data database.
 		fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s;", data, role),
 	}
 
-	// 4 (cont.). USAGE on each distinct granted schema, in deterministic order.
+	// 3 (cont.). USAGE on each distinct granted schema, in deterministic order.
 	for _, schema := range distinctSchemas(spec.Grants) {
 		stmts = append(stmts, fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", quoteIdentifier(schema), role))
 	}
 
-	// 5. Each field-level SELECT grant.
+	// 4. Each field-level SELECT grant.
 	for _, g := range spec.Grants {
 		ddl, err := RenderGrant(spec.Role, g.Schema, g.Table, g.Field, g.Access)
 		if err != nil {
@@ -226,8 +247,13 @@ $iris_data_pat_role$;`, quoteStringLiteral(spec.Role), role),
 		stmts = append(stmts, ddl)
 	}
 
-	// 6. Membership: the read-pool login may SET ROLE to this role.
-	stmts = append(stmts, fmt.Sprintf("GRANT %s TO %s;", role, pool))
+	// 5. Membership: the read-pool login may SET ROLE to this role but never inherits
+	// its privileges. SET TRUE lets the pool assume the role on the read path (PG16+
+	// no longer implies SET from CREATEROLE); INHERIT FALSE keeps the pool login from
+	// automatically holding this data-PAT's read grants when it has NOT set the role
+	// (an ambient self-read must not silently gain every data PAT's grants). The grant
+	// is idempotent -- a re-grant is a benign notice.
+	stmts = append(stmts, fmt.Sprintf("GRANT %s TO %s WITH INHERIT FALSE, SET TRUE;", role, pool))
 
 	return stmts, nil
 }

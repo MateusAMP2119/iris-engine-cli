@@ -47,6 +47,12 @@ func TestProvisionDataPATRoleNologinSetRole(t *testing.T) {
 	if strings.Contains(joined, "WITH LOGIN") || strings.Contains(joined, "PASSWORD") {
 		t.Errorf("data-PAT role must never be a login role or carry a credential:\n%s", joined)
 	}
+	// Attributes are baked in at CREATE, never re-asserted by an ALTER ROLE: a
+	// re-asserting `ALTER ROLE ... NOSUPERUSER` requires the SUPERUSER attribute and
+	// so fails for the engine's non-superuser CREATEROLE admin (the CI regression).
+	if strings.Contains(joined, "ALTER ROLE") {
+		t.Errorf("no ALTER ROLE may be emitted; attributes are set at CREATE:\n%s", joined)
+	}
 	// Meta is denied.
 	if !strings.Contains(joined, "REVOKE CONNECT ON DATABASE \"meta\" FROM PUBLIC;") ||
 		!strings.Contains(joined, "REVOKE ALL ON DATABASE \"meta\" FROM \"iris_pat_abc123\";") {
@@ -60,10 +66,12 @@ func TestProvisionDataPATRoleNologinSetRole(t *testing.T) {
 		!strings.Contains(joined, `GRANT SELECT ("amount") ON "analytics"."orders" TO "iris_pat_abc123";`) {
 		t.Errorf("field SELECT grants not rendered:\n%s", joined)
 	}
-	// Membership in the pool login is the SET ROLE precondition, and it is last.
+	// Membership in the pool login is the SET ROLE precondition, and it is last. It
+	// grants SET (so the pool may assume the role) but not INHERIT (so the pool never
+	// silently holds the data-PAT's grants without setting the role).
 	last := stmts[len(stmts)-1]
-	if last != `GRANT "iris_pat_abc123" TO "iris_engine_read";` {
-		t.Errorf("last statement is not the pool-login membership grant: %q", last)
+	if last != `GRANT "iris_pat_abc123" TO "iris_engine_read" WITH INHERIT FALSE, SET TRUE;` {
+		t.Errorf("last statement is not the pool-login SET-only membership grant: %q", last)
 	}
 }
 
@@ -116,5 +124,19 @@ func TestProvisionReadPoolLogin(t *testing.T) {
 	}
 	if strings.Contains(joined, "GRANT SELECT") {
 		t.Errorf("the read-pool login must hold no table grants of its own:\n%s", joined)
+	}
+	// The attributes are set on the CREATE (inside the DO block), never re-asserted by
+	// an attribute-changing ALTER ROLE: a `ALTER ROLE ... NOSUPERUSER` requires the
+	// SUPERUSER attribute and fails for the engine's non-superuser CREATEROLE admin on
+	// every repeat daemon start -- the CI regression this guards against. (The
+	// credential is itself an `ALTER ROLE ... PASSWORD`, which is fine; only an
+	// attribute re-assertion is forbidden.)
+	for _, stmt := range rec.Statements() {
+		if strings.Contains(stmt, "ALTER ROLE") && strings.Contains(stmt, "NOSUPERUSER") {
+			t.Errorf("attribute-changing ALTER ROLE emitted (fails for a non-superuser admin): %q", stmt)
+		}
+	}
+	if !strings.Contains(joined, "CREATE ROLE \"iris_engine_read\" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE") {
+		t.Errorf("login attributes are not baked into CREATE:\n%s", joined)
 	}
 }
