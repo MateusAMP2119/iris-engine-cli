@@ -18,7 +18,7 @@
 
 ----
 
-**Iris Lakehouse** is a data engine bundled with a CLI tool, developed in Go. The engine is built in the image of a glorified cron, reimagined as a daemon that orchestrates routine tasks.<br/>Here those tasks are called pipelines, written in any language, and their state and produced data are stored in an extendable Postgres cluster.
+**Iris Lakehouse** is a data engine bundled with a CLI tool, developed in Go. The engine is built in the image of a glorified cron, reimagined as a go-based daemon that orchestrates routine tasks.<br/>Here those tasks are called pipelines, written in any language, and their state and produced data are stored in an extendable Postgres cluster.
 
 On top of that, every row's lineage is recorded and treated as a first-class feature. Each write is attributed in-transaction to the run, binary, and declaration that produced it, then sealed into an ed25519-signed, tamper-evident journal. `iris data provenance <table> <pk>` answers where any row came from, at any point in its history.<br/>There are no managed services to wire up and no external dependencies. Made to run on machines of any size, scaling from a single server to a multi-instance, high-availability deployment.
 
@@ -26,7 +26,7 @@ On top of that, every row's lineage is recorded and treated as a first-class fea
 
 ## Quick install
 
-One command, no dependencies: installs the latest prebuilt static binary (linux/macOS, amd64/arm64) with checksum verification:
+One command, no dependencies. Installs the latest prebuilt static binary:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | bash
