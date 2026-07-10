@@ -26,17 +26,16 @@ On top of that, every row's lineage is recorded and treated as a first-class fea
 
 ## Quick install
 
-One command, needs only Go 1.25+:
+One command, no dependencies — installs the latest prebuilt static binary (linux/macOS, amd64/arm64) with checksum verification:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | bash
+```
+
+Have Go 1.25+? `go install` works too:
 
 ```sh
 go install github.com/MateusAMP2119/iris-engine-cli/cmd/iris@latest
-```
-
-No Go toolchain? Grab a prebuilt static binary (linux/macOS, amd64/arm64) from the [releases page](https://github.com/MateusAMP2119/iris-engine-cli/releases/latest):
-
-```sh
-curl -L "https://github.com/MateusAMP2119/iris-engine-cli/releases/latest/download/iris_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar -xz
-sudo mv iris /usr/local/bin/
 ```
 
 Or build from source:
