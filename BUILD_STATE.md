@@ -14,9 +14,8 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 - **Epic checkpoint PRs to master**: none opened yet for E04–E14/E13; await human review
   per branching rules.
-- **Engine-key redesign (in progress)**: user decision 2026-07-10 — replace the
-  workspace-file key storage from [PR #110](https://github.com/MateusAMP2119/iris-engine-cli/pull/110)
-  with an engine-owned meta table + spec delta (superuser-free, HA via shared meta).
+- **Live `iris engine info` key reader unwired**: `NewEngineKeyReader` still returns
+  `ErrEngineNotInstalled`; its tests use a fake reader (pre-existing, noted in PR #112).
 - **Flake hardening (low, CI green)**: under sustained back-to-back local `-race` load,
   `TestMetaReadableWhileRunning`, `TestRetentionPruneUpstreamSurvivorNoViolation`
   (no `freshDatabases`, 30s leader-lock wait) and `TestGoldenLaneRunsAndFailures`
@@ -174,3 +173,4 @@ conformance suite (real binary, real Postgres, -race) — green.
 - [PR #108](https://github.com/MateusAMP2119/iris-engine-cli/pull/108) — conformance lane stability: provisioning self-heals capture schema, suite isolation, CI timeout (affects E04.3, harness)
 - [PR #109](https://github.com/MateusAMP2119/iris-engine-cli/pull/109) — orphaned S03/S04/S06.1/S08 contracts claimed; rail renderer (affects E14.3, E00.1)
 - [PR #110](https://github.com/MateusAMP2119/iris-engine-cli/pull/110) — real seal: threshold gating, ed25519-signed checkpoint chain (affects E07.3, E07.4, E13.5)
+- [PR #112](https://github.com/MateusAMP2119/iris-engine-cli/pull/112) — engine key in engine-owned meta table, spec delta; supersedes #110's workspace file (affects E07.4, E02.1)
