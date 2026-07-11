@@ -321,6 +321,10 @@ func (a *app) engineCmd() *cobra.Command {
 		Use: "stats", Short: "Show rollups: run, lane, and dead-letter counts",
 		Args: cobra.NoArgs, RunE: a.engineStats(),
 	}
+	update := &cobra.Command{
+		Use: "update", Short: "Self-replace the installed binary with the latest GitHub release",
+		Args: cobra.NoArgs, RunE: a.engineUpdate(),
+	}
 
 	svcInstall := &cobra.Command{
 		Use: "install", Short: "Generate and install the platform service unit (systemd/launchd)",
@@ -337,7 +341,8 @@ func (a *app) engineCmd() *cobra.Command {
 
 	return a.group("engine", "Manage the daemon, its state, and its service unit",
 		daemonless(start), daemonTouching(stop), daemonless(install), daemonless(uninstall),
-		daemonTouching(info), daemonTouching(logs), daemonTouching(inspect), daemonTouching(stats), service)
+		daemonTouching(info), daemonTouching(logs), daemonTouching(inspect), daemonTouching(stats),
+		daemonless(update), service)
 }
 
 // deadletterCmd builds `iris deadletter` (sole alias: dl). replay and drain

@@ -55,7 +55,7 @@ Core tenets:
 
 **Q - Daemon run mode?** A: Foreground default (attached, streaming); `-d` detaches. No boot autostart. Candidates unlimited; exactly one leader, sole dispatcher. On demand, never auto-shipped: `iris engine service install` installs a systemd/launchd unit wrapping the detached daemon, itself service-ready (clean SIGTERM/SIGINT, no TTY, sane exit codes).
 
-**Q - CLI-daemon communication?** A: Default: unix socket, always-on, local-only, filesystem permissions, zero-config, HTTP/JSON. Opt-in TCP: remote control, PAT-gated (authenticates, not encrypts); untrusted networks: TLS recommended, not mandated (`--tcp`, `--tls-cert`/`--tls-key`, or `iris.toml`; no certs: plain TCP). CLI never opens `meta`; every state change via leader (single-writer). Daemon-touching commands fail fast with start guidance, never auto-start; standbys reject mutations with leader guidance. Daemonless exceptions: `iris engine install`, `start`, `service install`/`uninstall`, `uninstall` on a stopped daemon.
+**Q - CLI-daemon communication?** A: Default: unix socket, always-on, local-only, filesystem permissions, zero-config, HTTP/JSON. Opt-in TCP: remote control, PAT-gated (authenticates, not encrypts); untrusted networks: TLS recommended, not mandated (`--tcp`, `--tls-cert`/`--tls-key`, or `iris.toml`; no certs: plain TCP). CLI never opens `meta`; every state change via leader (single-writer). Daemon-touching commands fail fast with start guidance, never auto-start; standbys reject mutations with leader guidance. Daemonless exceptions: `iris engine install`, `start`, `service install`/`uninstall`, `uninstall` on a stopped daemon, and `update` (self-replace of the installed binary, no daemon).
 
 **Q - Meta-state concurrency?** A: Single writer: only leader writes `meta` (advisory lock guarantees one leader), serialized via one dispatcher-owned path. Readers: plain Postgres connections, MVCC. No busy-retry anywhere.
 
@@ -453,6 +453,7 @@ iris engine info               # engine + version info, role (leader / standby),
 iris engine logs               # tail the daemon log
 iris engine inspect            # dump the engine-table DDL read-only
 iris engine stats              # rollups: run, lane + dead-letter counts
+iris engine update             # self-replace the installed binary with the latest GitHub release (daemonless)
 iris engine service install    # generate + install the platform service unit (systemd / launchd)
 iris engine service uninstall  # remove the installed service unit
 
@@ -481,6 +482,8 @@ iris pat create | list | revoke   # manage PATs with scopes {control, read, data
 **Q - JSON output contract?** A: `--json`: every command emits one structured JSON document on stdout (read-API envelope). Default: human-readable. Daemon/per-run logs separate from command output.
 
 **Q - Version surface?** A: `iris --version` prints exactly `iris version <build>` followed by a trailing newline, one line, so the operator and the installer can read which build they hold. `<build>` defaults to `dev` for an unstamped build and is injected at link time (`-ldflags -X`); the release stamps the tag. The stamp is a build-time constant, never mutated at runtime, so it is not an exception to the no-mutable-globals rule.
+
+**Q - Update surface?** A: `iris engine update` self-replaces the installed binary with the latest GitHub release, mirroring the curl installer (`install.sh`) without a package manager, and is daemonless (it touches no daemon). It resolves the latest tag by following the redirect of `.../releases/latest` to `.../releases/tag/<tag>` and reading the tag from the final URL path (no GitHub API JSON, so no rate-limit exposure), then compares it to the running `<build>`. A `dev` build refuses (it was not installed from a release): the command fails with guidance to use the curl installer or `go install`, exit `4`. When the latest tag equals the running version it reports already-up-to-date and exits `0`, downloading nothing. Otherwise it downloads `iris_<GOOS>_<GOARCH>.tar.gz` and `checksums.txt` from `.../releases/download/<tag>/`, verifies the archive's SHA-256 against the matching `checksums.txt` line (a mismatch aborts, touching no binary, exit `4`), extracts the `iris` member, and replaces the running executable atomically (write a sibling temp file in the executable's own directory, `chmod 0755`, rename over it; the executable is resolved through its symlinks first). A permission failure on replace prints guidance to re-run with `sudo` or reinstall with the curl installer and exits `4`. Success exits `0`. Under `--json` the outcome (status, running version, latest tag, replaced path) rides the one data envelope.
 
 ## 9. Tooling, Build & Dependencies
 
@@ -524,6 +527,7 @@ iris/
     build/                # per-language build recipes (go / python / node); records content hashes
     pat/                  # PAT mint + verify (argon2id), scope checks over {control, read, data}
     buildinfo/            # build-stamped version string (leaf, read by cli)
+    update/               # self-update: resolve latest release, verify checksum, atomic binary replace (stdlib-only leaf, driven by cli)
 ```
 
 **Q - What are the package boundaries?** A: One direction, no cycles: `cli` → `daemon`/`api` → `dispatch` → `store`, `pg`, `exec`; `archive` sits beside `dispatch` and reuses `store`/`pg` (never opening a third path to either database); `declare`, `build`, `pat` are leaf packages. `store` is the only code that opens `meta` (single-writer path + leader lock); `pg` is the only code that talks to the data database. Two clients, two databases, never crossed. `api` renders exactly what the CLI's read commands render.

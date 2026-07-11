@@ -1371,6 +1371,22 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
+  - id: S08/update-checksum-mismatch-aborts
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/update-dev-build-refuses
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/update-tag-equals-up-to-date
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/update-verified-atomic-replace
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
   - id: S08/version-flag-defaults-dev
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit

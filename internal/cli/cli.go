@@ -14,6 +14,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
 )
 
 // The exit codes are the categories of specification section 8. Detail rides the
@@ -80,6 +82,11 @@ type app struct {
 	// terminal --json envelope carries them as a warnings array, and human output
 	// prints them to stderr. Set per invocation, so the app holds no global state.
 	warnings []declare.Warning
+	// runUpdate performs the `iris engine update` self-replace, returning the
+	// outcome for the running version. It is nil in production (the handler falls
+	// back to update.New().Run); tests inject a fake to drive the exit-code and
+	// output surface without network or filesystem I/O.
+	runUpdate func(ctx context.Context, current string) (update.Result, error)
 	// confirm is the E10.2 confirmation seam for interactive prompts (typed-name
 	// for teardowns, y/N for dev-loop ops). When non-nil it is consulted when
 	// neither --yes nor --force was supplied. The name is the target of the

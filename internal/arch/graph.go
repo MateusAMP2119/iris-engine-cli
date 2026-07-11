@@ -50,14 +50,17 @@ const rankMain = 100
 // the daemon; api renders read views and never reaches back up. config is a leaf
 // carrying no dependencies of its own -- pure configuration resolution the CLI
 // (and later the daemon) reads. buildinfo is a leaf carrying only the linker-
-// stamped build version any layer may read. Later epics add a package by giving it
-// a rank here; the checks do not change.
+// stamped build version any layer may read. update is a stdlib-only leaf (the
+// self-update fetch/verify/atomic-replace helper the CLI drives; it takes the
+// running version as a parameter rather than importing buildinfo). Later epics add
+// a package by giving it a rank here; the checks do not change.
 var productRanks = map[string]int{
 	"buildinfo": 1,
 	"config":    1,
 	"declare":   1,
 	"build":     1,
 	"pat":       1,
+	"update":    1,
 	"store":     2,
 	"pg":        2,
 	"exec":      2,

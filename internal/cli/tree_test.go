@@ -80,7 +80,7 @@ var wantTree = map[string][]string{
 	"run":        {"list", "show", "logs", "cancel"},
 	"data":       {"provenance"},
 	"workload":   {"show", "wipe"},
-	"engine":     {"start", "stop", "install", "uninstall", "info", "logs", "inspect", "stats", "service"},
+	"engine":     {"start", "stop", "install", "uninstall", "info", "logs", "inspect", "stats", "update", "service"},
 	"deadletter": {"list", "show", "replay", "drain"},
 	"endpoint":   {"apply", "remove", "list", "show"},
 	"pat":        {"create", "list", "revoke"},
