@@ -98,6 +98,7 @@ func (a *app) newRootCommand() *cobra.Command {
 		a.deadletterCmd(),
 		a.endpointCmd(),
 		a.patCmd(),
+		a.uninstallCmd(),
 	)
 	return root
 }

@@ -1371,6 +1371,22 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
+  - id: S08/uninstall-consent-gate
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/uninstall-daemon-running-refused
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/uninstall-removes-executable
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/uninstall-root-verb
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
   - id: S08/update-checksum-mismatch-aborts
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration

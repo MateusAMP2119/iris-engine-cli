@@ -94,6 +94,12 @@ type app struct {
 	// the prompt style. Tests inject it to simulate TTY answers without a real
 	// terminal.
 	confirm func(name string, isTeardown bool) (bool, error)
+	// executablePath resolves the running iris binary's real on-disk path (through
+	// its symlinks), the file `iris uninstall` removes. It is nil in production
+	// (the handler falls back to resolveSelfPath: os.Executable then
+	// filepath.EvalSymlinks); tests inject it to point at a throwaway file so the
+	// removal never touches the test binary.
+	executablePath func() (string, error)
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping

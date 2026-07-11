@@ -92,9 +92,11 @@ func TestCommandTree(t *testing.T) {
 	t.Run("S08/resource-first-command-tree", func(t *testing.T) {
 		root := testRoot()
 
-		// Top-level commands are exactly the nine resource nouns: no flat verbs,
-		// no extras.
-		assertSetEqual(t, "top-level nouns", childNames(root), mapKeys(wantTree))
+		// Top-level commands are exactly the nine resource nouns plus the single
+		// admitted root lifecycle verb `uninstall` (self-removal of the binary,
+		// belonging to no resource noun): no other flat verbs, no extras.
+		wantTop := append(mapKeys(wantTree), "uninstall")
+		assertSetEqual(t, "top-level nouns", childNames(root), wantTop)
 
 		// Each noun exposes exactly its documented verbs.
 		for noun, verbs := range wantTree {
