@@ -64,9 +64,10 @@ func quickstartSteps() []quickstartStep {
 // lifecycle pair (specification section 8), the installer's handoff -- the
 // guided tour of the first session. It is daemonless: the tour runs before any
 // engine exists (it bootstraps one). Interactivity requires stdin AND stdout to
-// both be interactive terminals with --json off; any other invocation renders
-// the plain numbered copy-paste guide -- or, under --json, the step-list data
-// envelope -- executing nothing and exiting 0.
+// both be interactive terminals with --json off; --yes runs the whole tour
+// unattended (piped or not); any other invocation renders the plain numbered
+// copy-paste guide -- or, under --json, the step-list data envelope --
+// executing nothing and exiting 0.
 func (a *app) quickstartCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "quickstart",
@@ -74,34 +75,33 @@ func (a *app) quickstartCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  a.runQuickstart(),
 	}
+	// A plain bool, not addConfirmFlags: the tour has no --force tier; --yes only
+	// answers its own prompts.
+	c.Flags().Bool("yes", false, "run every tour step unattended, without prompting")
 	return daemonless(c)
 }
 
-// runQuickstart is the handler for `iris quickstart`: it resolves the
-// interactivity gate and dispatches to one of the three renderings. Color on
-// the interactive path follows the ceremony rule via the shared painter gate
-// (interactive stdout, NO_COLOR unset, --json off): NO_COLOR strips paint but
-// never interactivity.
+// runQuickstart is the handler for `iris quickstart`: it refuses --host (the
+// tour provisions a local engine; --socket stays accepted), then resolves the
+// gate and dispatches. --json always renders the step-list envelope, executing
+// nothing, even with --yes; --yes or an interactive terminal pair runs the real
+// tour; anything else gets the plain guide. Color on the tour follows the
+// ceremony rule via the shared painter gate (interactive stdout, NO_COLOR
+// unset, --json off): NO_COLOR strips paint but never interactivity.
 func (a *app) runQuickstart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
+		if v, ok := changedString(cmd, "host"); ok && v != "" {
+			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted)")
+		}
 		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
 			return a.renderQuickstartJSON()
 		}
-		if a.stdoutTTY() && a.stdinTTY() {
-			return a.quickstartInteractive(a.newPainter(false))
+		yes, _ := cmd.Flags().GetBool("yes")
+		if yes || (a.stdoutTTY() && a.stdinTTY()) {
+			return a.runQuickstartTour(cmd, yes)
 		}
 		return a.renderQuickstartGuide()
 	}
-}
-
-// quickstartInteractive is the interactive tour surface. In this task it
-// renders the welcome and returns; the step sequencer (explain, confirm, run
-// through the tour's own binary, adaptive skip, --yes) lands with the tour
-// orchestration task and slots in after the welcome. The gates around it -- the
-// TTY pair and the ceremony color rule -- are final.
-func (a *app) quickstartInteractive(p painter) error {
-	a.quickstartWelcome(p)
-	return nil
 }
 
 // quickstartWelcome paints the tour's opening: what the tour does and how it
