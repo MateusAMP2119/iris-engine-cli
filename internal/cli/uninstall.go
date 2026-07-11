@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -155,11 +156,22 @@ func (a *app) uninstallSelf() runE {
 
 // uninstallBox draws the cyan confirmation box shown before the y/N prompt on a
 // terminal, mirroring uninstall.sh: the version in magenta, the removal path
-// plain. It writes to stdout; the prompt itself follows on stderr.
+// plain. The rules and the right border are sized to the content line's display
+// width -- measured on the UNSTYLED interior so ANSI escapes never count -- so the
+// box stays aligned for any path length. It writes to stdout; the prompt itself
+// follows on stderr.
 func (a *app) uninstallBox(p painter, version, path string) {
-	const rule = "──────────────────────────────────────────────"
+	const leftPad, rightPad = "   ", "  "
+	// Build the plain interior first and measure it; the styled interior below
+	// renders the same visible glyphs (magenta wraps version without widening it),
+	// so both share this width and the right border aligns.
+	plainInner := leftPad + "Uninstall " + version + " from " + path + "?" + rightPad
+	rule := strings.Repeat("─", utf8.RuneCountInString(plainInner))
+	styledInner := leftPad + "Uninstall " + p.magenta(version) + " from " + path + "?" + rightPad
+	bar := p.cyan("│")
+
 	fmt.Fprintln(a.out, p.cyan("  ┌"+rule+"┐"))
-	fmt.Fprintf(a.out, "  %s   Uninstall %s from %s?\n", p.cyan("│"), p.magenta(version), path)
+	fmt.Fprintf(a.out, "  %s%s%s\n", bar, styledInner, bar)
 	fmt.Fprintln(a.out, p.cyan("  └"+rule+"┘"))
 }
 

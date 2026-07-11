@@ -1341,7 +1341,7 @@ contracts:
     status: unclaimed
   - id: S08/lifecycle-ceremony-plain-when-piped
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
-    tier: unit
+    tier: integration
     status: unclaimed
   - id: S08/lifecycle-ceremony-tty-gating
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"

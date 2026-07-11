@@ -5,8 +5,10 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
 )
@@ -225,6 +227,52 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 			t.Errorf("tty progress stage emitted no escape: %q", out.String())
 		}
 	})
+}
+
+// ansiSeq matches an SGR escape sequence, for measuring a styled line's visible
+// width (escapes must not count toward alignment).
+var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
+
+// TestUninstallBoxAligns proves the confirmation box stays aligned for any path
+// length: the top rule, the content line, and the bottom rule share one visible
+// width, and the content line carries both a left and a right border. Width is
+// measured on the unstyled text, so the magenta version never inflates it.
+//
+// spec: S08/lifecycle-ceremony-tty-gating
+func TestUninstallBoxAligns(t *testing.T) {
+	paths := []string{"/a", "/usr/local/bin/iris", "/very/long/nested/path/to/somewhere/deep/iris"}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			var out bytes.Buffer
+			a := newApp(&out, io.Discard)
+			p := makePainter(false, func() bool { return true })
+			a.uninstallBox(p, "v0.3.2", path)
+
+			lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+			if len(lines) != 3 {
+				t.Fatalf("box = %d lines, want 3:\n%s", len(lines), out.String())
+			}
+			top, mid, bot := stripANSI(lines[0]), stripANSI(lines[1]), stripANSI(lines[2])
+			wt, wm, wb := utf8.RuneCountInString(top), utf8.RuneCountInString(mid), utf8.RuneCountInString(bot)
+			if wt != wm || wm != wb {
+				t.Errorf("misaligned widths top=%d mid=%d bot=%d for %q:\n%s", wt, wm, wb, path, out.String())
+			}
+			if !strings.HasPrefix(top, "  ┌") || !strings.HasSuffix(top, "┐") {
+				t.Errorf("top rule malformed: %q", top)
+			}
+			if !strings.HasPrefix(bot, "  └") || !strings.HasSuffix(bot, "┘") {
+				t.Errorf("bottom rule malformed: %q", bot)
+			}
+			if !strings.HasPrefix(mid, "  │") || !strings.HasSuffix(mid, "│") {
+				t.Errorf("content line missing a border: %q", mid)
+			}
+			if !strings.Contains(mid, "Uninstall v0.3.2 from "+path+"?") {
+				t.Errorf("content line lost its text: %q", mid)
+			}
+		})
+	}
 }
 
 // assertNoEsc fails the test if s carries any ANSI escape byte.
