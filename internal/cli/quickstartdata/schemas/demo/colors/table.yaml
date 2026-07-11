@@ -1,0 +1,14 @@
+schema: demo
+table: colors
+columns:
+  - name: name
+    type: text
+    primary_key: true
+  - name: hex
+    type: text
+    nullable: false
+  - name: wavelength_nm
+    type: int
+  - name: noted_at
+    type: timestamptz
+    default: now()

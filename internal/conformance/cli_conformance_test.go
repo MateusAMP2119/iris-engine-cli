@@ -45,6 +45,11 @@ func leafCommands() [][]string {
 		{"deadletter", "list"}, {"deadletter", "show"}, {"deadletter", "replay"}, {"deadletter", "drain"},
 		{"endpoint", "apply"}, {"endpoint", "remove"}, {"endpoint", "list"}, {"endpoint", "show"},
 		{"pat", "create"}, {"pat", "list"}, {"pat", "revoke"},
+		// The root verbs `update` and `uninstall` are intentionally absent: both act
+		// on the binary under test (network self-replace / self-removal). The third
+		// root verb `quickstart` is safe to sweep: piped or under --json it renders
+		// the guide, executing nothing, exit 0.
+		{"quickstart"},
 	}
 }
 

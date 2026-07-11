@@ -107,6 +107,13 @@ type app struct {
 	// real stdout); tests inject it to force styled or plain rendering without a real
 	// terminal.
 	isTTY func() bool
+	// stdinIsTTY reports whether the command's stdin is an interactive terminal,
+	// the second half of the quickstart interactivity gate (stdin AND stdout both
+	// TTY, --json off; specification section 8). It is nil in production (the gate
+	// falls back to stdinIsTerminal, an os.Stdin char-device stat, the same check
+	// terminalConfirm uses); tests inject it to drive either rendering without a
+	// real terminal.
+	stdinIsTTY func() bool
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
