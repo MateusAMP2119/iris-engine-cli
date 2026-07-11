@@ -131,6 +131,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes bool) error {
 			ans, perr := askTour(ctx, prompt, tourCommandQuestion, promptCommand)
 			switch {
 			case perr != nil || ans == answerQuit || ctx.Err() != nil:
+				a.reportPromptFault(perr)
 				return a.tourAbort()
 			case ans == answerSkip:
 				fmt.Fprintln(a.out, "Skipped.")
@@ -173,13 +174,18 @@ func (a *app) tourWorkspace(ctx context.Context, prompt tourPromptFunc, yes bool
 			return true, nil
 		}
 		ans, perr := askTour(ctx, prompt, tourWorkspaceQuestion, promptWorkspace)
-		return perr == nil && ans == answerProceed, nil
+		if perr != nil || ans != answerProceed {
+			a.reportPromptFault(perr)
+			return false, nil
+		}
+		return true, nil
 	}
 
 	fmt.Fprintln(a.out, "This directory is not an iris workspace yet.")
 	if !yes {
 		ans, perr := askTour(ctx, prompt, tourCreateQuestion, promptWorkspace)
 		if perr != nil || ans != answerProceed {
+			a.reportPromptFault(perr)
 			return false, nil
 		}
 	}
@@ -310,6 +316,16 @@ func (a *app) tourMaterializeSample() error {
 		fmt.Fprintf(a.out, "  wrote %s\n", rel)
 	}
 	return nil
+}
+
+// reportPromptFault surfaces a real prompt read fault on errOut before the
+// tour aborts: the abort stays clean (exit 0), but the fault is never
+// swallowed. EOF stays silent -- a closed stdin is the ordinary decline, not a
+// fault (the production prompt already maps it to a nil-error quit).
+func (a *app) reportPromptFault(perr error) {
+	if perr != nil && !errors.Is(perr, io.EOF) {
+		fmt.Fprintf(a.errOut, "iris: %v\n", perr)
+	}
 }
 
 // tourAbort ends the tour cleanly -- a decline, EOF, or interrupt is a choice,
