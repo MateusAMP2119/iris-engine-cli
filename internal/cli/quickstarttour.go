@@ -101,15 +101,23 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes bool) error {
 		return a.tourAbort()
 	}
 
-	// Adaptive skip: every step is idempotent, so a daemon already answering on
-	// the workspace socket means install and start are done -- announce and skip,
-	// never prompt for them. The probe is local by construction (the tour refuses
-	// --host and ignores any ambient host): the tour only ever adopts the local
-	// workspace engine it would otherwise create. Resolved after the workspace
-	// step so the socket default is the tour workspace's.
+	// The tour only ever targets the local workspace engine it provisions: an
+	// ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
+	// outright) is announced once and ignored, both for this probe and inside
+	// every child step (the child apps resolve with forceLocalTarget set).
+	// Resolved after the workspace step so the socket default is the tour
+	// workspace's.
 	steps := quickstartSteps()
 	settings := a.resolveTarget(cmd)
-	settings.Host = ""
+	if settings.Host != "" {
+		fmt.Fprintln(a.out, p.dim(fmt.Sprintf(
+			"Ignoring the configured remote host %s — the tour only targets the local workspace engine.", settings.Host)))
+		settings.Host = ""
+	}
+
+	// Adaptive skip: every step is idempotent, so a daemon already answering on
+	// the workspace socket means install and start are done -- announce and
+	// skip, never prompt for them.
 	first := 0
 	if a.probeDaemon(ctx, settings) == nil {
 		fmt.Fprintf(a.out, "An engine is already running on this workspace's socket — steps 1 and 2 (%s; %s) are already done; skipping ahead.\n",
@@ -282,9 +290,12 @@ func tourStepArgv(cmd *cobra.Command, step quickstartStep) []string {
 // tour's own streams runs the real command implementation -- same code path,
 // same exit categories, never a PATH lookup -- and renders its own error, so
 // the tour receives only the categorical exit code. Every injectable seam is
-// carried across, so a harnessed parent stays harnessed through its steps.
+// carried across, so a harnessed parent stays harnessed through its steps. The
+// child resolves with forceLocalTarget set: an ambient IRIS_HOST or iris.toml
+// host never reaches a step -- the tour tours the local workspace engine only.
 func (a *app) runTourChild(ctx context.Context, args []string) int {
 	child := newAppWithLogger(a.out, a.errOut, a.logger)
+	child.forceLocalTarget = true
 	child.newKeyReader = a.newKeyReader
 	child.daemonTLSConfig = a.daemonTLSConfig
 	child.applyWarnings = a.applyWarnings

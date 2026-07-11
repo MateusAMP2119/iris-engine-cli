@@ -36,7 +36,14 @@ func (a *app) resolveTarget(cmd *cobra.Command) config.Settings {
 	for _, key := range file.Ignored {
 		a.logger.Warn("ignoring non-engine key in iris.toml (never a project manifest)", "key", key)
 	}
-	return config.Resolve(config.Defaults(workspace), file.Layer, env, flagLayer(cmd))
+	settings := config.Resolve(config.Defaults(workspace), file.Layer, env, flagLayer(cmd))
+	if a.forceLocalTarget {
+		// The quickstart tour's child apps only ever target the local workspace
+		// engine: any ambient host (IRIS_HOST or iris.toml) is dropped here, after
+		// the tour has announced it once. The socket keeps its full precedence.
+		settings.Host = ""
+	}
+	return settings
 }
 
 // flagLayer builds the highest-precedence configuration layer from the global

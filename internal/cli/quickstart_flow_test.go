@@ -10,10 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 )
 
 // The pinned tour strings the flow tests assert. They are the operator-facing
@@ -492,4 +495,110 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+// TestQuickstartIgnoresAmbientHost proves the tour's local-only targeting past
+// the flag refusal: with an ambient IRIS_HOST configured (a resolution input
+// the --host flag refusal cannot see), every daemon-touching step still dials
+// the LOCAL workspace daemon over its socket -- the steps run through the real
+// in-process child runner, real HTTP -- while a stand-in "remote" listener at
+// the ambient host receives zero requests, and the tour announces once that
+// the configured host is ignored.
+func TestQuickstartIgnoresAmbientHost(t *testing.T) {
+	clearTargetEnv(t)
+	unsetNoColor(t)
+	// spec: S08/quickstart-refuses-remote-host
+	t.Run("S08/quickstart-refuses-remote-host", func(t *testing.T) {
+		t.Run("ambient IRIS_HOST never reaches a tour step", func(t *testing.T) {
+			chdirWorkspace(t)
+
+			// The local workspace daemon: the real mux over a unix socket, recording
+			// every request path it serves.
+			sock := shortSocket(t)
+			var mu sync.Mutex
+			var localPaths []string
+			mux := api.NewMux()
+			ln, err := net.Listen("unix", sock)
+			if err != nil {
+				t.Fatalf("listen unix %s: %v", sock, err)
+			}
+			srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				localPaths = append(localPaths, r.URL.Path)
+				mu.Unlock()
+				mux.ServeHTTP(w, r)
+			}), ReadHeaderTimeout: 5 * time.Second}
+			go func() { _ = srv.Serve(ln) }()
+			t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+			// The stand-in remote at the ambient IRIS_HOST: it must see zero requests.
+			var remoteHits atomic.Int64
+			rln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen tcp: %v", err)
+			}
+			rsrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				remoteHits.Add(1)
+				w.WriteHeader(http.StatusOK)
+			}), ReadHeaderTimeout: 5 * time.Second}
+			go func() { _ = rsrv.Serve(rln) }()
+			t.Cleanup(func() { _ = rsrv.Shutdown(context.Background()) })
+			remoteAddr := rln.Addr().String()
+			t.Setenv("IRIS_HOST", remoteAddr)
+
+			var out, errb bytes.Buffer
+			a := tourApp(&out, &errb, true)
+			key, kerr := daemon.MintEngineKey()
+			if kerr != nil {
+				t.Fatalf("MintEngineKey: %v", kerr)
+			}
+			a.newKeyReader = func(config.Settings) daemon.EngineKeyReader { return fakeKeyReader{key: key} }
+			// Scripted prompt only: the steps run through the REAL in-process child
+			// runner. The bare mux answers apply/run/provenance with error envelopes,
+			// so the wrapper swallows exit codes to walk every step -- this test
+			// asserts dial targets, not step outcomes. install/start must never
+			// execute for real (the reachable workspace daemon skips them); reaching
+			// them is itself a failure.
+			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerProceed, nil }
+			a.runStep = func(ctx context.Context, args []string) int {
+				joined := strings.Join(args, " ")
+				if strings.HasPrefix(joined, "engine install") || strings.HasPrefix(joined, "engine start") {
+					t.Errorf("install/start executed despite the reachable workspace daemon: %q", joined)
+					return 0
+				}
+				_ = a.runTourChild(ctx, args)
+				return 0
+			}
+
+			code := a.run([]string{"quickstart", "--socket", sock})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
+			}
+
+			if got := remoteHits.Load(); got != 0 {
+				t.Errorf("the ambient IRIS_HOST %s received %d requests, want 0 (the tour must never target a remote engine)", remoteAddr, got)
+			}
+			mu.Lock()
+			paths := append([]string(nil), localPaths...)
+			mu.Unlock()
+			for _, wantPrefix := range []string{"/info", "/apply", "/pipeline/run", "/provenance/"} {
+				if !hasPathWithPrefix(paths, wantPrefix) {
+					t.Errorf("the local workspace daemon never received %s* (served paths: %q); that step dialed elsewhere", wantPrefix, paths)
+				}
+			}
+			if !strings.Contains(out.String(), remoteAddr) || !strings.Contains(out.String(), "local") {
+				t.Errorf("tour does not announce the ignored ambient host %s\nstdout: %s", remoteAddr, out.String())
+			}
+		})
+	})
+}
+
+// hasPathWithPrefix reports whether any served path starts with prefix.
+func hasPathWithPrefix(paths []string, prefix string) bool {
+	for _, p := range paths {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }

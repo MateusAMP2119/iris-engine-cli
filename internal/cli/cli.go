@@ -127,6 +127,13 @@ type app struct {
 	// the real command implementation, never a PATH lookup); tests inject it to
 	// record the executed steps and script their exit codes.
 	runStep func(ctx context.Context, args []string) int
+	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
+	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
+	// the unix socket (the flag surface cannot contribute one on this path:
+	// quickstart refuses --host outright). It is set only on the quickstart
+	// tour's child apps -- the tour only ever targets the local workspace engine
+	// it provisions, never a remote -- and has no command-line spelling.
+	forceLocalTarget bool
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
