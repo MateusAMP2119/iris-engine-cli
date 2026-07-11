@@ -29,10 +29,11 @@ type uninstallCmdResult struct {
 	Path    string `json:"path,omitempty"`
 }
 
-// uninstallCmd builds `iris uninstall`: the sole root lifecycle verb (self-removal
-// of the installed iris binary, specification section 8). It is daemonless and
-// carries the destructive --yes/--force gate; it is distinct from `iris engine
-// uninstall`, which tears down engine state.
+// uninstallCmd builds `iris uninstall`: one of the two root lifecycle verbs
+// (beside `iris update`), the self-removal of the installed iris binary
+// (specification section 8). It is daemonless and carries the destructive
+// --yes/--force gate; it is distinct from `iris engine uninstall`, which tears
+// down engine state.
 func (a *app) uninstallCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "uninstall",
