@@ -12,6 +12,9 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 ## Open items
 
+- **E15 Onboarding and Guided Tour** (opened 2026-07-11): `iris quickstart` guided
+  tour + install.sh handoff; briefs `docs/Tasks/E15.1`/`E15.2`; 14 S08/quickstart-*
+  contracts. E15.1 carries the spec §8 three-root-verbs delta + lock re-record.
 - **Epic checkpoint PRs to master**: none opened yet for E04–E14/E13; await human review
   per branching rules.
 - **External conformance clusters must be PostgreSQL 16+** (`INHERIT FALSE` grant
@@ -158,6 +161,11 @@ conformance suite (real binary, real Postgres, -race) — green.
 - [x] E13.6 Data provenance lineage — done ([PR #96](https://github.com/MateusAMP2119/iris-engine-cli/pull/96))
 - [x] E13.7 Endpoint reads and grants — done ([PR #104](https://github.com/MateusAMP2119/iris-engine-cli/pull/104))
 - [x] E13.8 Failover and unattended closure — done ([PR #111](https://github.com/MateusAMP2119/iris-engine-cli/pull/111))
+
+## E15 Onboarding and Guided Tour — epic PR: pending (opened 2026-07-11)
+
+- [ ] E15.1 Quickstart surface and gating — todo
+- [ ] E15.2 Tour orchestration and installer handoff — todo (depends on E15.1)
 
 ## Cross-cutting devfix/debt PRs (2026-07-09/10 recovery session)
 

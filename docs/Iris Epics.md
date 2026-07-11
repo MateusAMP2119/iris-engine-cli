@@ -10,7 +10,7 @@ tags:
 
 # Iris Epics
 
-Derived from the [[Iris Specification Inventory]] (source of truth; on any conflict the spec wins). ==Fifteen== capability epics in build-dependency order. Every behavioral Q/A in the spec was decomposed into testable contracts per the spec's own testing doctrine: ==506 contracts from 118 Q/As (190 unit, 223 integration, 72 conformance, 21 exempt). Updated for the 2026-07-04 git-graph surface pass: `iris data why` renamed to `iris data provenance`, `iris data wipe` moved to `iris workload wipe [<pipeline>]`, the new `workload` noun, triage folded into the shows (the gate ledger in `pipeline show`, the blast radius in `deadletter show`, `run show --trace [--down]`), the `--graph` rendering contract, the `undo` enum's `skipped` split, the `run_inputs` reverse index, and the new read routes (E14 collects the new surface).==
+Derived from the [[Iris Specification Inventory]] (source of truth; on any conflict the spec wins). ==Sixteen== capability epics in build-dependency order. Every behavioral Q/A in the spec was decomposed into testable contracts per the spec's own testing doctrine: ==520 contracts from 122 Q/As (195 unit, 230 integration, 73 conformance, 22 exempt). Updated for the 2026-07-04 git-graph surface pass: `iris data why` renamed to `iris data provenance`, `iris data wipe` moved to `iris workload wipe [<pipeline>]`, the new `workload` noun, triage folded into the shows (the gate ledger in `pipeline show`, the blast radius in `deadletter show`, `run show --trace [--down]`), the `--graph` rendering contract, the `undo` enum's `skipped` split, the `run_inputs` reverse index, and the new read routes (E14 collects the new surface).==
 
 ## How to derive tasks
 
@@ -40,6 +40,7 @@ Derived from the [[Iris Specification Inventory]] (source of truth; on any confl
 | E12  | Stats, Info and Inspect                        | 14        | E02, E05                                                    |
 | E13  | Golden Sample and Acceptance                   | 31        | all others (the spine that proves them)                     |
 | E14  | Graph Views and Triage Surface                 | 17        | E05, E07, E09                                               |
+| E15  | Onboarding and Guided Tour                     | 14        | E02, E03, E05, E07 (the surfaces it tours)                  |
 
 Build order is the table order ==with one exception: E14 builds before E13, the acceptance spine that proves everything above it, E14 included==. E00 is deliberately first: the harness and the red contract backlog exist before any product code, because the suite, not the implementation, is the durable asset.
 
@@ -743,3 +744,30 @@ Build order is the table order ==with one exception: E14 builds before E13, the 
 | `S13/wipe-reverts-dev-run` | ==iris workload wipe== after the dev/disposable run reverts the landed rows, proving the journal drives the wipe. | conformance |
 ==| `S13/scoped-wipe-single-pipeline` | A named iris workload wipe extract_orders reverts only that pipeline's writes, and the following bare iris workload wipe reverts the rest. | conformance |==
 | `S16/cross-compile-smoke` | Cross-compiled binaries for linux and macos on amd64 and arm64 each boot, install, start, apply, and tear down successfully in the smoke run. | conformance |
+
+## E15 Onboarding and Guided Tour
+
+**Goal.** The installer's handoff: `iris quickstart`, a third root verb that tutors the first session — explains, confirms, then really runs `engine install`, `engine start -d`, `engine info`, materializes the embedded `hello_iris` sample (seven rainbow colors into `demo.colors`), applies and runs it, and ends on `iris data provenance demo.colors green` with the engine left running and a printed cheat-sheet. Interactive only on a real terminal (stdin and stdout TTY, `--json` off); otherwise a plain numbered copy-paste guide — or a `--json` step-list envelope — that executes nothing. Every step executes the real command implementation through the tour's own binary, so the tour can never do what the commands cannot; every step is the command's own idempotence, so abort and resume are free. `install.sh` ends by offering the tour over `/dev/tty`.
+
+**Depends on.** E02 (engine lifecycle), E03 (declare), E05 (runs), E07 (provenance) — the surfaces it tours.
+
+**Cutting tasks.** Two seams: first the surface (verb, gates, three renderings, embedded sample, the `startDetached` argv refactor), then the orchestration (sequencer, prompts, adaptive skip, `--yes`, installer handoff, conformance leg).
+
+**Contracts (13 testable, 1 exempt).**
+
+| Contract | Behavior | Tier |
+| --- | --- | --- |
+| `S08/quickstart-root-verb` | `iris quickstart` is the third root verb beside update/uninstall; the tree stays nine nouns + three root verbs; bare invocation is valid (not a group stub) and daemonless. | unit |
+| `S08/quickstart-tty-gating` | The interactive tour runs only when stdin and stdout are both interactive terminals and `--json` is off; any other invocation gets the plain guide. | unit |
+| `S08/quickstart-ceremony-color-gating` | NO_COLOR strips ANSI from the tour but never disables interactivity; piped or `--json` output never carries an escape. | unit |
+| `S08/quickstart-sample-valid-declaration` | The embedded sample declaration and table file parse through the real declare loaders (name matches folder, explicit fields, no lane). | unit |
+| `S08/quickstart-refuses-remote-host` | `--host` on quickstart is a usage error (exit 2) with local-tour guidance; `--socket` stays accepted. | unit |
+| `S08/quickstart-plain-guide-when-piped` | A non-TTY invocation prints the complete numbered copy-paste guide, byte-stable plain text, executes nothing, exits 0. | integration |
+| `S08/quickstart-json-guide-envelope` | `--json` emits one data envelope carrying the ordered step list (id, explanation, argv) and executes nothing. | integration |
+| `S08/quickstart-step-order-confirmed` | Steps execute in tour order (install, start -d, info, apply, run, provenance), each only after an affirmative prompt, via the tour's own binary, never a PATH lookup. | integration |
+| `S08/quickstart-decline-clean-abort` | Declining any step (or EOF/interrupt) exits 0 with a resume hint; nothing past the decline executes. | integration |
+| `S08/quickstart-adaptive-skip-running-engine` | A reachable daemon on the workspace socket announces install/start as already done and skips them; the tour proceeds from the info step. | integration |
+| `S08/quickstart-sample-materialize-never-clobber` | Sample files are written only when absent, byte-identical to the embedded golden; a present-but-different file is kept and warned about. | integration |
+| `S08/quickstart-yes-runs-unattended` | `--yes` runs every step without prompting, works piped without ANSI, and exits with the first failing step's category. | integration |
+| `S08/quickstart-full-tour` | Real binary + real Postgres: `quickstart --yes` in a fresh workspace bootstraps the engine, applies and runs the sample, and `iris data provenance demo.colors green` names the run; the engine is left running; a second run exits 0. | conformance |
+| `S08/quickstart-install-handoff` | install.sh handoff prose: /dev/tty Y/n prompt (default yes), exec of the absolute-path binary with stdin re-tied, IRIS_FORCE/no-terminal fallback next-steps lines. | exempt |
