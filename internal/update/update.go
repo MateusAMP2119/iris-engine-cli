@@ -35,6 +35,26 @@ const gitHubBase = "https://github.com/MateusAMP2119/iris-engine-cli"
 // response cannot exhaust memory. A published iris archive is a few tens of MB.
 const maxDownloadBytes = 512 << 20
 
+// The progress stages a self-update passes through, in order. They are the stable
+// keys the optional Updater.Progress hook is called with, so the CLI can render a
+// live journey; the detail string that accompanies each carries the variable
+// payload (the tag, the asset and size, "OK", "done"). They exist only for
+// rendering: the update's correctness never depends on them.
+const (
+	// StageResolve fires once the latest release tag is resolved and a replace is
+	// due; detail is the tag.
+	StageResolve = "resolve"
+	// StageDownload fires once the platform archive is fetched; detail is the asset
+	// name and human size, tab-separated ("iris_<goos>_<goarch>.tar.gz\t5.8 MB").
+	StageDownload = "download"
+	// StageVerify fires once the archive's SHA-256 matches its checksum; detail is
+	// "OK".
+	StageVerify = "verify"
+	// StageReplace fires once the running executable is atomically replaced; detail
+	// is "done".
+	StageReplace = "replace"
+)
+
 // Status is the terminal state of a self-update.
 type Status int
 
@@ -77,6 +97,12 @@ type Updater struct {
 	goos     string
 	goarch   string
 	execPath func() (string, error)
+	// Progress, when non-nil, is invoked as each self-update stage completes, with a
+	// stable stage key (StageResolve, StageDownload, StageVerify, StageReplace) and a
+	// human detail string. It lets the CLI render a live journey; this package stays
+	// a stdlib-only, silent leaf, so a nil Progress (the default from New) emits
+	// nothing. It is called synchronously on Run's goroutine, in stage order.
+	Progress func(stage, detail string)
 }
 
 // New returns a production Updater targeting the iris GitHub releases for the
@@ -109,6 +135,7 @@ func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	if tag == current {
 		return Result{Status: StatusUpToDate, From: current, To: tag}, nil
 	}
+	u.report(StageResolve, tag)
 
 	asset := fmt.Sprintf("iris_%s_%s.tar.gz", u.goos, u.goarch)
 	downloadBase := u.baseURL + "/releases/download/" + tag + "/"
@@ -121,9 +148,11 @@ func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("download checksums: %w", err)
 	}
+	u.report(StageDownload, asset+"\t"+humanBytes(len(archive)))
 	if err := verifyChecksum(archive, checksums, asset); err != nil {
 		return Result{}, err
 	}
+	u.report(StageVerify, "OK")
 	binary, err := extractIris(archive)
 	if err != nil {
 		return Result{}, err
@@ -136,7 +165,31 @@ func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	if err := replaceExecutable(path, binary); err != nil {
 		return Result{}, err
 	}
+	u.report(StageReplace, "done")
 	return Result{Status: StatusUpdated, From: current, To: tag, Path: path}, nil
+}
+
+// report invokes the Progress hook when one is set. A nil hook is silent, keeping
+// this package a stdlib-only leaf with no output surface of its own.
+func (u *Updater) report(stage, detail string) {
+	if u.Progress != nil {
+		u.Progress(stage, detail)
+	}
+}
+
+// humanBytes formats a byte count as a short decimal-scaled string ("5.8 MB"),
+// for the download progress detail. It is presentational only.
+func humanBytes(n int) string {
+	const unit = 1000
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := int64(n) / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "kMGTPE"[exp])
 }
 
 // latestTag resolves the latest release tag by following the releases/latest
