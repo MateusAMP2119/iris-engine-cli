@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -49,8 +50,10 @@ func sha256Hex(b []byte) string {
 // releaseServer serves the GitHub release surface the updater walks: the
 // latest->tag redirect, the archive asset, and checksums.txt. checksumFor is the
 // hex written into checksums.txt for the archive (so a caller can plant a
-// mismatch); when empty the archive's real digest is used.
-func releaseServer(t *testing.T, tag string, archive []byte, checksumFor string) *httptest.Server {
+// mismatch); when empty the archive's real digest is used. Each request to a
+// download endpoint (the archive or checksums.txt) increments downloadHits when
+// it is non-nil, so a test can assert the up-to-date path downloads nothing.
+func releaseServer(t *testing.T, tag string, archive []byte, checksumFor string, downloadHits *int32) *httptest.Server {
 	t.Helper()
 	goos, goarch := "linux", "amd64"
 	asset := fmt.Sprintf("iris_%s_%s.tar.gz", goos, goarch)
@@ -59,6 +62,11 @@ func releaseServer(t *testing.T, tag string, archive []byte, checksumFor string)
 		sum = sha256Hex(archive)
 	}
 	checksums := fmt.Sprintf("%s  %s\nfeed0000  iris_other_arch.tar.gz\n", sum, asset)
+	countHit := func() {
+		if downloadHits != nil {
+			atomic.AddInt32(downloadHits, 1)
+		}
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
@@ -68,9 +76,11 @@ func releaseServer(t *testing.T, tag string, archive []byte, checksumFor string)
 		_, _ = w.Write([]byte("<html>release page</html>"))
 	})
 	mux.HandleFunc("/releases/download/"+tag+"/"+asset, func(w http.ResponseWriter, r *http.Request) {
+		countHit()
 		_, _ = w.Write(archive)
 	})
 	mux.HandleFunc("/releases/download/"+tag+"/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		countHit()
 		_, _ = w.Write([]byte(checksums))
 	})
 	srv := httptest.NewServer(mux)
@@ -104,7 +114,7 @@ func TestUpdateVerifiedAtomicReplace(t *testing.T) {
 		t.Fatalf("seed exe: %v", err)
 	}
 	newBytes := []byte("NEW-BINARY-BYTES-v2")
-	srv := releaseServer(t, "v2.0.0", tarGzWithIris(t, newBytes), "")
+	srv := releaseServer(t, "v2.0.0", tarGzWithIris(t, newBytes), "", nil)
 
 	u := testUpdater(srv, exe)
 	res, err := u.Run(context.Background(), "v1.0.0")
@@ -131,15 +141,46 @@ func TestUpdateVerifiedAtomicReplace(t *testing.T) {
 	if info.Mode().Perm() != 0o755 {
 		t.Errorf("replaced exe mode = %v, want 0755", info.Mode().Perm())
 	}
+}
 
-	// Up-to-date: the same server, running the tag it serves, downloads nothing and
-	// leaves the binary untouched.
-	res2, err := u.Run(context.Background(), "v2.0.0")
-	if err != nil {
-		t.Fatalf("Run(up-to-date): %v", err)
+// TestUpdateUpToDateNoDownload proves the up-to-date decision on its own terms:
+// when the resolved latest tag equals the running version, Run reports
+// StatusUpToDate and downloads nothing -- neither the archive nor checksums.txt
+// endpoint is hit -- so the running binary is never touched. This exercises the
+// contract's substance (the real tag==current decision), not just the CLI
+// rendering of an injected outcome.
+//
+// spec: S08/update-tag-equals-up-to-date
+func TestUpdateUpToDateNoDownload(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "iris")
+	orig := []byte("SAME-BINARY-v3")
+	if err := os.WriteFile(exe, orig, 0o755); err != nil {
+		t.Fatalf("seed exe: %v", err)
 	}
-	if res2.Status != StatusUpToDate {
-		t.Errorf("status = %v, want StatusUpToDate", res2.Status)
+	var downloadHits int32
+	srv := releaseServer(t, "v3.1.0", tarGzWithIris(t, []byte("never-served")), "", &downloadHits)
+
+	u := testUpdater(srv, exe)
+	res, err := u.Run(context.Background(), "v3.1.0")
+	if err != nil {
+		t.Fatalf("Run: unexpected error: %v", err)
+	}
+	if res.Status != StatusUpToDate {
+		t.Errorf("status = %v, want StatusUpToDate", res.Status)
+	}
+	if res.From != "v3.1.0" || res.To != "v3.1.0" {
+		t.Errorf("From/To = %q/%q, want v3.1.0/v3.1.0", res.From, res.To)
+	}
+	if n := atomic.LoadInt32(&downloadHits); n != 0 {
+		t.Errorf("download endpoints hit %d times on an up-to-date check, want 0 (nothing downloaded)", n)
+	}
+	got, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("read exe: %v", err)
+	}
+	if !bytes.Equal(got, orig) {
+		t.Errorf("executable changed on an up-to-date check: %q, want %q", got, orig)
 	}
 }
 
@@ -156,7 +197,7 @@ func TestUpdateChecksumMismatchAborts(t *testing.T) {
 		t.Fatalf("seed exe: %v", err)
 	}
 	// Serve a checksums.txt line that does not match the archive's real digest.
-	srv := releaseServer(t, "v2.0.0", tarGzWithIris(t, []byte("TAMPERED")), "deadbeefdeadbeef")
+	srv := releaseServer(t, "v2.0.0", tarGzWithIris(t, []byte("TAMPERED")), "deadbeefdeadbeef", nil)
 
 	u := testUpdater(srv, exe)
 	_, err := u.Run(context.Background(), "v1.0.0")
