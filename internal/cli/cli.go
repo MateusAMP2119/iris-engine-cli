@@ -114,6 +114,19 @@ type app struct {
 	// terminalConfirm uses); tests inject it to drive either rendering without a
 	// real terminal.
 	stdinIsTTY func() bool
+	// tourPrompt asks one quickstart-tour question and returns the operator's
+	// answer. It is nil in production (the tour falls back to a terminal prompt
+	// that writes the question to errOut and reads one line from the process
+	// stdin); tests inject it to script the tour without a real terminal. It is
+	// distinct from the confirm seam, whose teardown-shaped signature does not fit
+	// the tour's proceed/skip/quit answers.
+	tourPrompt func(question string, kind promptKind) (promptAnswer, error)
+	// runStep executes one quickstart-tour step -- an iris command given as the
+	// argv after the program name -- and returns its exit-code category. It is nil
+	// in production (the tour falls back to a fresh in-process child app running
+	// the real command implementation, never a PATH lookup); tests inject it to
+	// record the executed steps and script their exit codes.
+	runStep func(ctx context.Context, args []string) int
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -130,14 +143,22 @@ func newAppWithLogger(stdout, stderr io.Writer, logger *slog.Logger) *app {
 }
 
 // run builds and executes the command tree and maps the outcome to an exit-code
-// category. On error it resolves the output mode -- honoring exactly how pflag
-// consumed --json -- and renders the error accordingly.
+// category, with a background context.
 func (a *app) run(args []string) int {
+	return a.runContext(context.Background(), args)
+}
+
+// runContext builds and executes the command tree under ctx and maps the outcome
+// to an exit-code category. On error it resolves the output mode -- honoring
+// exactly how pflag consumed --json -- and renders the error accordingly. The
+// quickstart tour re-enters here for each step it executes, with the tour's
+// signal-bound context threaded through.
+func (a *app) runContext(ctx context.Context, args []string) int {
 	root := a.newRootCommand()
 	root.SetArgs(args)
 	root.SetOut(a.out)
 	root.SetErr(a.errOut)
-	cmd, err := root.ExecuteC()
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return exitOK
 	}
