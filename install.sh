@@ -7,6 +7,20 @@ set -eu
 REPO="MateusAMP2119/iris-engine-cli"
 BASE="https://github.com/${REPO}/releases/latest/download"
 
+# Rainbow banner: Iris is the goddess of the rainbow. Colors only on a terminal
+# and never when NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  printf '\033[1;31m  ██╗██████╗ ██╗███████╗\033[0m\n'
+  printf '\033[1;33m  ██║██╔══██╗██║██╔════╝\033[0m\n'
+  printf '\033[1;32m  ██║██████╔╝██║███████╗\033[0m\n'
+  printf '\033[1;36m  ██║██╔══██╗██║╚════██║\033[0m\n'
+  printf '\033[1;34m  ██║██║  ██║██║███████║\033[0m\n'
+  printf '\033[1;35m  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝\033[0m\n'
+  printf '\033[2m  lakehouse engine · provenance first\033[0m\n\n'
+else
+  printf '  Iris: lakehouse engine, provenance first\n\n'
+fi
+
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
 case "$arch" in

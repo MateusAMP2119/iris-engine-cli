@@ -54,6 +54,12 @@ iris engine start -d      # start the daemon: leader election, lanes, read API
 iris engine info          # confirm it's alive
 ```
 
+Leaving? Tear down engine state with `iris engine stop && iris engine uninstall`, then remove the binary:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/uninstall.sh | sh
+```
+
 ---
 
 ## Getting started

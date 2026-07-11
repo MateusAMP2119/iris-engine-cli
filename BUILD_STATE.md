@@ -176,3 +176,6 @@ conformance suite (real binary, real Postgres, -race) — green.
 - [PR #116](https://github.com/MateusAMP2119/iris-engine-cli/pull/116) — info/inspect/pipeline-show planes wired into the live daemon (affects E12.2)
 - [PR #117](https://github.com/MateusAMP2119/iris-engine-cli/pull/117) — conformance flake hardening: freshDatabases isolation on leader-waiting tests, lane-wait headroom; PG16+ floor documented (harness)
 - [PR #118](https://github.com/MateusAMP2119/iris-engine-cli/pull/118) — production sources for /runs, /runs/{id}/trace, /pipelines/{name}/gate; `iris run list` serves live (affects E14.3, E14.4)
+- [PR #120](https://github.com/MateusAMP2119/iris-engine-cli/pull/120) — README (banner, quick install), install.sh, tag-driven release workflow; master checkpoint, tagged v0.1.0 (first public release: 4 platform tarballs + checksums)
+- [PR #121](https://github.com/MateusAMP2119/iris-engine-cli/pull/121) — `iris --version` surface: internal/buildinfo leaf, ldflags stamp in release.yml, contracts S08/version-flag-defaults-dev + S08/version-template-format; spec §8 Q/A + §10 roster delta
+- [PR #122](https://github.com/MateusAMP2119/iris-engine-cli/pull/122) — v0.1.1 checkpoint: version surface + POSIX-sh installer (bash-free); quick install verified end to end (`curl | sh` → `iris version v0.1.1`)
