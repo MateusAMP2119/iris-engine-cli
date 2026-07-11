@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,13 +12,21 @@ import (
 )
 
 // runQuickstart drives `iris quickstart <args...>` with the two TTY seams
-// forced, returning stdout, stderr, and the exit code.
+// forced, returning stdout, stderr, and the exit code. The tour seams are
+// pinned shut -- the first prompt quits and any executed step fails the test --
+// so the gating tests stay about gating: they never read the process stdin and
+// never run a step, whichever rendering the gate picks.
 func runQuickstart(t *testing.T, stdoutTTY, stdinTTY bool, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)
 	a.isTTY = func() bool { return stdoutTTY }
 	a.stdinIsTTY = func() bool { return stdinTTY }
+	a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, nil }
+	a.runStep = func(_ context.Context, argv []string) int {
+		t.Errorf("quickstart gating test executed a step: %v", argv)
+		return 0
+	}
 	code = a.run(append([]string{"quickstart"}, args...))
 	return out.String(), errb.String(), code
 }
