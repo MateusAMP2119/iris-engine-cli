@@ -9,7 +9,8 @@ import (
 
 // TestDependencyAllowlist proves the specification section 9 dependency
 // discipline as static analysis over go.mod and go.sum: the direct-dependency
-// allowlist (an upper bound: pgx, cobra, goccy/go-yaml, an argon2id provider,
+// allowlist (an upper bound: pgx, cobra plus its flag-set library pflag,
+// goccy/go-yaml, an argon2id provider,
 // embedded-postgres) and the forbidden-anywhere ban on ORMs, migration
 // frameworks, schedulers, parquet libraries, cloud object-store clients, and
 // SQLite drivers, anywhere in the module graph. It runs on synthetic go.mod
@@ -23,6 +24,7 @@ func TestDependencyAllowlist(t *testing.T) {
 			"github.com/jackc/pgx/v5",
 			"github.com/jackc/pgx/v5/pgxpool",
 			"github.com/spf13/cobra",
+			"github.com/spf13/pflag",
 			"github.com/goccy/go-yaml",
 			"github.com/alexedwards/argon2id",
 			"golang.org/x/crypto",
@@ -128,6 +130,7 @@ require (
 		for _, p := range []string{
 			"github.com/jackc/pgx/v5",
 			"github.com/spf13/cobra",
+			"github.com/spf13/pflag",
 			"github.com/goccy/go-yaml",
 			"github.com/alexedwards/argon2id",
 			"golang.org/x/crypto",

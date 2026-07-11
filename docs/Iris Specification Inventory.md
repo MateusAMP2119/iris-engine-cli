@@ -516,7 +516,7 @@ iris quickstart                # explain, confirm, and really run the first-sess
 - `log/slog` for structured logs.
 - `goccy/go-yaml` for YAML.
 - argon2id for PAT hashing.
-- `cobra` for the nested command tree.
+- `cobra` for the nested command tree, plus `spf13/pflag`, cobra's own flag-set library (already pinned in the graph through cobra), admitted for flag-set introspection — the detach argv rebuild — never as an independent CLI framework.
 - `fergusstrange/embedded-postgres` (or vendored equivalent) to fetch and supervise the managed Postgres build, a subprocess, never linked, so the engine stays cgo-free.
 
 No ORM, no migration framework, no scheduler library. Provenance, HA, and the checkpoint chain add zero dependencies: content addressing and checkpoint digests are stdlib hashing, signatures are stdlib `crypto/ed25519`, leader election is a pgx advisory lock, capture triggers are engine-emitted PL/pgSQL, and the archive format is the engine's own (no parquet, no cloud object-store client; the local object store is plain files).

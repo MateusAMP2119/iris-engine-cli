@@ -3,4 +3,4 @@
 # value: a spec delta without a test delta. Re-record it (IRIS_TRACE_UPDATE_LOCK=1
 # go test ./internal/trace -run TestSpecLockUpdate) only alongside the test delta.
 spec_path: docs/Iris Specification Inventory.md
-sha256: 1767c802bffb41a495ba6f0b7cc90cd4fce6d28d8bdc6da617e86ece2dd3a566
+sha256: 872d382eebfd17c94e8767ebdf34e85db34c0a446ed86cd04a712e92af3e2879
