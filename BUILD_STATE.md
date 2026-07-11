@@ -12,9 +12,9 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 ## Open items
 
-- **E15 Onboarding and Guided Tour** (opened 2026-07-11): `iris quickstart` guided
-  tour + install.sh handoff; briefs `docs/Tasks/E15.1`/`E15.2`; 14 S08/quickstart-*
-  contracts. E15.1 carries the spec §8 three-root-verbs delta + lock re-record.
+- **E15 Onboarding and Guided Tour: complete on development 2026-07-11** (PRs #133,
+  #134; 14 S08/quickstart-* contracts, strict gate zero unclaimed). Epic checkpoint
+  PR to master not opened — joins the E04–E14 checkpoint queue awaiting human review.
 - **Epic checkpoint PRs to master**: none opened yet for E04–E14/E13; await human review
   per branching rules.
 - **External conformance clusters must be PostgreSQL 16+** (`INHERIT FALSE` grant
@@ -162,10 +162,10 @@ conformance suite (real binary, real Postgres, -race) — green.
 - [x] E13.7 Endpoint reads and grants — done ([PR #104](https://github.com/MateusAMP2119/iris-engine-cli/pull/104))
 - [x] E13.8 Failover and unattended closure — done ([PR #111](https://github.com/MateusAMP2119/iris-engine-cli/pull/111))
 
-## E15 Onboarding and Guided Tour — epic PR: pending (opened 2026-07-11)
+## E15 Onboarding and Guided Tour — epic PR: pending (epic complete on development 2026-07-11)
 
 - [x] E15.1 Quickstart surface and gating — done ([PR #133](https://github.com/MateusAMP2119/iris-engine-cli/pull/133)); also: startDetached argv rebuilt from cobra command (F2), spec §9 delta admitting spf13/pflag to the allowlist
-- [ ] E15.2 Tour orchestration and installer handoff — todo (depends on E15.1)
+- [x] E15.2 Tour orchestration and installer handoff — done ([PR #134](https://github.com/MateusAMP2119/iris-engine-cli/pull/134)); review fix: tour steps force-local, ambient IRIS_HOST/toml host ignored with notice (spec §8 clause)
 
 ## Cross-cutting devfix/debt PRs (2026-07-09/10 recovery session)
 
