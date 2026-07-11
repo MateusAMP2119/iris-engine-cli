@@ -60,7 +60,13 @@ Updating later is one command; it fetches the latest release, verifies its check
 iris engine update
 ```
 
-Leaving? Tear down engine state with `iris engine stop && iris engine uninstall`, then remove the binary:
+Leaving? Iris removes itself (prompts first; refuses while a daemon runs until you `iris engine stop && iris engine uninstall`):
+
+```sh
+iris uninstall
+```
+
+Binary broken or missing? The script fallback does the same from outside:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/uninstall.sh | sh
