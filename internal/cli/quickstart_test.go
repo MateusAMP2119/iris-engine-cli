@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,10 @@ import (
 
 // runQuickstart drives `iris quickstart <args...>` with the two TTY seams
 // forced, returning stdout, stderr, and the exit code. The tour seams are
-// pinned shut -- the first prompt quits and any executed step fails the test --
-// so the gating tests stay about gating: they never read the process stdin and
-// never run a step, whichever rendering the gate picks.
+// pinned shut -- the workspace question reads EOF, the first gate quits, and
+// any executed step fails the test -- so the gating tests stay about gating:
+// they never read the process stdin, never touch the filesystem, and never run
+// a step, whichever rendering the gate picks.
 func runQuickstart(t *testing.T, stdoutTTY, stdinTTY bool, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errb bytes.Buffer
@@ -23,6 +25,7 @@ func runQuickstart(t *testing.T, stdoutTTY, stdinTTY bool, args ...string) (stdo
 	a.isTTY = func() bool { return stdoutTTY }
 	a.stdinIsTTY = func() bool { return stdinTTY }
 	a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, nil }
+	a.tourInput = func(string, string) (string, error) { return "", io.EOF }
 	a.runStep = func(_ context.Context, argv []string) int {
 		t.Errorf("quickstart gating test executed a step: %v", argv)
 		return 0
@@ -217,20 +220,21 @@ func TestQuickstartPlainGuideWhenPiped(t *testing.T) {
 }
 
 // quickstartEnvelope mirrors the --json data envelope of `iris quickstart`: the
-// ordered step list of the tour.
+// ordered step list of the tour, each step carrying its act.
 type quickstartEnvelope struct {
 	Data struct {
 		Steps []struct {
 			ID          string   `json:"id"`
 			Explanation string   `json:"explanation"`
 			Argv        []string `json:"argv"`
+			Act         string   `json:"act"`
 		} `json:"steps"`
 	} `json:"data"`
 }
 
 // TestQuickstartJSONGuideEnvelope proves --json emits exactly one data envelope
-// carrying the ordered step list (id, explanation, argv) and executes nothing,
-// even when both streams are interactive terminals.
+// carrying the ordered step list (id, explanation, argv, act) and executes
+// nothing, even when both streams are interactive terminals.
 func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
@@ -249,12 +253,16 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 		decodeSingleJSON(t, []byte(out), &env)
 
 		wantOrder := []string{"install", "start", "info", "apply", "run", "provenance"}
+		wantActs := []string{"engine", "engine", "engine", "pipeline", "pipeline", "pipeline"}
 		if len(env.Data.Steps) != len(wantOrder) {
 			t.Fatalf("envelope carries %d steps, want %d: %q", len(env.Data.Steps), len(wantOrder), out)
 		}
 		for i, step := range env.Data.Steps {
 			if step.ID != wantOrder[i] {
 				t.Errorf("step[%d].id = %q, want %q (tour order)", i, step.ID, wantOrder[i])
+			}
+			if step.Act != wantActs[i] {
+				t.Errorf("step[%d].act = %q, want %q (the additive act field)", i, step.Act, wantActs[i])
 			}
 			if step.Explanation == "" {
 				t.Errorf("step %q carries no explanation", step.ID)

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -19,29 +20,22 @@ import (
 )
 
 // promptKind names the flavor of a quickstart-tour question, so an injected
-// tourPrompt (and the production terminal prompt) can tell a command
-// confirmation from the workspace question.
+// tourPrompt (and the production terminal prompt) can tell what is being
+// asked.
 type promptKind int
 
 const (
-	// promptCommand is the per-step `Run it? (Y/n)` confirmation preceding each
-	// tour command; the empty answer defaults to proceed.
-	promptCommand promptKind = iota
-	// promptWorkspace is the tour's workspace question: use the current workspace,
-	// or create ./iris-quickstart-demo and work there.
-	promptWorkspace
+	// promptAct is an act-gate consent: one affirmative opens the act and its
+	// steps run straight through (specification section 8, quickstart surface).
+	promptAct promptKind = iota
 )
 
 // promptAnswer is the operator's answer to one tour question.
 type promptAnswer int
 
 const (
-	// answerProceed runs the step (or accepts the workspace proposal).
+	// answerProceed opens the act.
 	answerProceed promptAnswer = iota
-	// answerSkip skips this one step without running it and continues the tour.
-	// The workspace question treats it as a decline. The production terminal
-	// prompt returns it for "s"/"skip"; it is mainly a seam answer for tests.
-	answerSkip
 	// answerQuit stops the tour: a clean abort, exit 0 with a resume hint.
 	answerQuit
 )
@@ -49,114 +43,258 @@ const (
 // tourPromptFunc is the signature of the tourPrompt seam.
 type tourPromptFunc = func(question string, kind promptKind) (promptAnswer, error)
 
-// quickstartDemoDir is the workspace directory the tour offers to create when
-// the current directory is not a workspace (specification section 8).
-const quickstartDemoDir = "iris-quickstart-demo"
+// tourInputFunc is the signature of the tourInput seam: one line read whose
+// prompt carries a visible default. The caller applies def to an empty answer;
+// the seam only reads.
+type tourInputFunc = func(prompt, def string) (string, error)
 
-// The tour's prompt questions. Command steps default to proceed on an empty
+// errTourAborted is the internal signal for a clean tour abort: a decline,
+// EOF, or interrupt at an act's opening question. The sequencer maps it to
+// tourAbort (exit 0, resume hint); it never escapes runQuickstartTour.
+var errTourAborted = errors.New("quickstart: tour aborted")
+
+// The tour's pinned prompt copy. The act gate defaults to proceed on an empty
 // answer (Y/n); anything unrecognized reads as quit, so a typo never runs a
 // real command.
 const (
-	tourCommandQuestion   = "Run it? (Y/n)"
-	tourWorkspaceQuestion = "Run the tour in this workspace? (Y/n)"
-	tourCreateQuestion    = "Create ./" + quickstartDemoDir + " and work there? (Y/n)"
+	// tourActGateQuestion opens an act that has no opening question of its own
+	// (THE PIPELINE, until the catalog shop replaces its interior): one
+	// affirmative and the act's steps run straight through.
+	tourActGateQuestion = "Open this act? (Y/n)"
+	// tourPipelineIntro is THE PIPELINE act's one-line intro above its gate.
+	tourPipelineIntro = "Register the hello_iris sample, run it, and ask a row who wrote it."
+	// tourDefaultWorkspace is the workspace question's visible default anywhere
+	// the invoking directory is not already a workspace: never the invoking
+	// directory itself, which under `curl | sh` is arbitrary.
+	tourDefaultWorkspace = "~/iris"
 )
 
-// runQuickstartTour is the guided tour of the first session (specification
-// section 8): after the welcome it resolves the workspace, adaptively skips
-// install/start when the workspace daemon already answers, and then walks the
-// canonical steps -- explain, show the literal command, confirm, execute for
-// real through the in-process runner. Declines, EOF, and interrupts abort clean
-// (exit 0, resume hint); a failing step surfaces its own error and exit
-// category; yes runs everything unattended.
-func (a *app) runQuickstartTour(cmd *cobra.Command, yes bool) error {
+// chapterRuleWidth is the chapter rule's total column count, matching the
+// 48-column uninstall.sh confirmation box.
+const chapterRuleWidth = 48
+
+// tourSession carries one tour invocation's resolved seams and context into
+// the act openers.
+type tourSession struct {
+	ctx    context.Context
+	p      painter
+	yes    bool
+	prompt tourPromptFunc
+	input  tourInputFunc
+}
+
+// tourIO owns the tour's terminal dialogue: ONE shared reader over the process
+// stdin serves both the Y/n act gates and the line reads, so a line buffered
+// ahead is never dropped between questions. Questions go to errOut (a prompt
+// is dialogue, never command output).
+type tourIO struct {
+	errOut io.Writer
+	reader *bufio.Reader
+}
+
+// newTourIO builds the production tour dialogue over the process stdin.
+func newTourIO(errOut io.Writer) *tourIO {
+	return &tourIO{errOut: errOut, reader: bufio.NewReader(os.Stdin)}
+}
+
+// ask asks one Y/n act-gate question. EOF -- a closed stdin -- answers quit,
+// the clean-abort path; only a real read fault surfaces as an error.
+func (t *tourIO) ask(question string, _ promptKind) (promptAnswer, error) {
+	fmt.Fprintf(t.errOut, "%s ", question)
+	line, err := t.reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return answerQuit, fmt.Errorf("quickstart: read prompt answer: %w", err)
+	}
+	if line == "" && err != nil {
+		return answerQuit, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "", "y", "yes":
+		return answerProceed, nil
+	default:
+		// n, no, q, or anything unrecognized: never run a real command on a typo.
+		return answerQuit, nil
+	}
+}
+
+// readLine asks one line question (the prompt carries its visible default) and
+// returns the raw answer. A closed stdin with nothing read returns io.EOF, the
+// clean-abort path; only a real read fault surfaces as a wrapped error.
+func (t *tourIO) readLine(prompt, _ string) (string, error) {
+	fmt.Fprintf(t.errOut, "%s ", prompt)
+	line, err := t.reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("quickstart: read prompt answer: %w", err)
+	}
+	if line == "" && err != nil {
+		return "", io.EOF
+	}
+	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// tourActs returns the runnable act table: the canonical quickstartActs with
+// THE ENGINE's opener wired to the workspace prompt (the act's opening
+// question, doubling as its consent).
+func (a *app) tourActs() []tourAct {
+	acts := quickstartActs()
+	for i := range acts {
+		if acts[i].id == tourActEngine {
+			acts[i].opener = a.openEngineWorkspace
+		}
+	}
+	return acts
+}
+
+// chapterMark renders one chapter's mark. On the ceremony surface it is the
+// light rule-and-title device -- `  ── THE ENGINE ─────…`, the uninstall.sh
+// box family at lighter weight, one 48-column rule in the act's palette color.
+// On a plain surface the act is still named (a bare title line) but the rule
+// artwork never reaches a non-terminal consumer.
+func chapterMark(p painter, color func(string) string, title string) string {
+	if !p.enabled {
+		return title
+	}
+	lead := "── " + title + " "
+	pad := chapterRuleWidth - utf8.RuneCountInString(lead)
+	if pad < 0 {
+		pad = 0
+	}
+	return "  " + color(lead+strings.Repeat("─", pad))
+}
+
+// actColor picks an act's bright palette color along the shared rainbow: cyan
+// for THE ENGINE, magenta for THE PIPELINE -- and yellow, THE CLI's color
+// (install.sh's act), for anything else.
+func actColor(p painter, id string) func(string) string {
+	switch id {
+	case tourActEngine:
+		return p.cyan
+	case tourActPipeline:
+		return p.magenta
+	default:
+		return p.yellow
+	}
+}
+
+// runQuickstartTour is the chaptered guided tour of the first session
+// (specification section 8): after the welcome (skipped for the installer's
+// continuation, whose banner was the welcome) it walks the acts -- chapter
+// mark, one consent (THE ENGINE's workspace question, or the act gate), then
+// the act's steps straight through the in-process runner. A reachable daemon
+// on the workspace socket announces install/start as already done and skips
+// them. Declines, EOF, and interrupts abort clean (exit 0, resume hint); the
+// first failing step surfaces its own error and exit category; yes runs
+// everything unattended in the invoking directory.
+func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) error {
 	base := cmd.Context()
 	if base == nil {
 		base = context.Background()
 	}
-	// The Ctrl-C path: cancellation makes the open prompt (or the gap between
+	// The Ctrl-C path: cancellation makes the open question (or the gap between
 	// steps) read as a clean abort. A signal during a step also cancels that
 	// step's in-process command through the shared context.
 	ctx, stop := signal.NotifyContext(base, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	p := a.newPainter(false)
+	tio := newTourIO(a.errOut)
 	prompt := a.tourPrompt
 	if prompt == nil {
-		prompt = newTerminalTourPrompt(a.errOut)
+		prompt = tio.ask
+	}
+	input := a.tourInput
+	if input == nil {
+		input = tio.readLine
 	}
 	run := a.runStep
 	if run == nil {
 		run = a.runTourChild
 	}
+	s := &tourSession{ctx: ctx, p: p, yes: yes, prompt: prompt, input: input}
 
-	a.quickstartWelcome(p)
-	fmt.Fprintln(a.out)
-
-	ok, err := a.tourWorkspace(ctx, prompt, yes)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return a.tourAbort()
+	if !fromInstaller {
+		a.quickstartWelcome(p)
 	}
 
-	// The tour only ever targets the local workspace engine it provisions: an
-	// ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
-	// outright) is announced once and ignored, both for this probe and inside
-	// every child step (the child apps resolve with forceLocalTarget set).
-	// Resolved after the workspace step so the socket default is the tour
-	// workspace's.
-	steps := quickstartSteps()
-	settings := a.resolveTarget(cmd)
-	if settings.Host != "" {
-		fmt.Fprintln(a.out, p.dim(fmt.Sprintf(
-			"Ignoring the configured remote host %s — the tour only targets the local workspace engine.", settings.Host)))
-		settings.Host = ""
+	acts := a.tourActs()
+	total := 0
+	for _, act := range acts {
+		total += len(act.steps)
 	}
 
-	// Adaptive skip: every step is idempotent, so a daemon already answering on
-	// the workspace socket means install and start are done -- announce and
-	// skip, never prompt for them.
-	first := 0
-	if a.probeDaemon(ctx, settings) == nil {
-		fmt.Fprintf(a.out, "An engine is already running on this workspace's socket — steps 1 and 2 (%s; %s) are already done; skipping ahead.\n",
-			strings.Join(steps[0].Argv, " "), strings.Join(steps[1].Argv, " "))
-		first = 2
-	} else if settings.Managed() && daemon.IsManagedInstalled(settings) {
-		fmt.Fprintln(a.out, "The managed Postgres is already installed; step 1 only verifies it (every step is idempotent).")
-	}
-
-	for i := first; i < len(steps); i++ {
-		step := steps[i]
+	k := 0 // the global step count, for the failure message's step m/n
+	for _, act := range acts {
 		if ctx.Err() != nil {
 			return a.tourAbort()
 		}
 		fmt.Fprintln(a.out)
-		fmt.Fprintf(a.out, "Step %d/%d — %s\n", i+1, len(steps), step.Explanation)
-		fmt.Fprintf(a.out, "  %s\n", p.green("$ "+strings.Join(step.Argv, " ")))
-		if !yes {
-			ans, perr := askTour(ctx, prompt, tourCommandQuestion, promptCommand)
-			switch {
-			case perr != nil || ans == answerQuit || ctx.Err() != nil:
-				a.reportPromptFault(perr)
-				return a.tourAbort()
-			case ans == answerSkip:
-				fmt.Fprintln(a.out, "Skipped.")
-				continue
-			}
-		}
-		if step.ID == "apply" {
-			if err := a.tourMaterializeSample(); err != nil {
+		fmt.Fprintln(a.out, chapterMark(p, actColor(p, act.id), act.title))
+
+		// One consent opens the act: its own opening question when it has one
+		// (THE ENGINE's workspace prompt), the generic act gate otherwise. --yes
+		// answers everything.
+		switch {
+		case act.opener != nil:
+			if err := act.opener(s); err != nil {
+				if errors.Is(err, errTourAborted) {
+					return a.tourAbort()
+				}
 				return err
 			}
+		case !yes:
+			fmt.Fprintln(a.out, tourPipelineIntro)
+			ans, perr := askTour(ctx, prompt, tourActGateQuestion, promptAct)
+			if perr != nil || ans != answerProceed || ctx.Err() != nil {
+				a.reportPromptFault(perr)
+				return a.tourAbort()
+			}
 		}
-		code := run(ctx, tourStepArgv(cmd, step))
-		if ctx.Err() != nil {
-			return a.tourAbort()
+
+		steps := act.steps
+		if act.id == tourActEngine {
+			// The tour only ever targets the local workspace engine it provisions:
+			// an ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
+			// outright) is announced once and ignored, both for this probe and
+			// inside every child step (the child apps resolve with forceLocalTarget
+			// set). Resolved after the workspace question so the socket default is
+			// the tour workspace's.
+			settings := a.resolveTarget(cmd)
+			if settings.Host != "" {
+				fmt.Fprintln(a.out, p.dim(fmt.Sprintf(
+					"Ignoring the configured remote host %s — the tour only targets the local workspace engine.", settings.Host)))
+				settings.Host = ""
+			}
+			// Adaptive skip: every step is idempotent, so a daemon already answering
+			// on the workspace socket means install and start are done -- announce
+			// under the ENGINE chapter and skip, never ask anything extra.
+			if a.probeDaemon(ctx, settings) == nil {
+				fmt.Fprintf(a.out, "An engine is already running on this workspace's socket — %s and %s are already done; skipping ahead.\n",
+					strings.Join(steps[0].Argv, " "), strings.Join(steps[1].Argv, " "))
+				k += 2
+				steps = steps[2:]
+			} else if settings.Managed() && daemon.IsManagedInstalled(settings) {
+				fmt.Fprintln(a.out, "The managed Postgres is already installed; the install step only verifies it (every step is idempotent).")
+			}
 		}
-		if code != exitOK {
-			return a.tourStepFailed(step, i+1, len(steps), code)
+
+		for _, step := range steps {
+			if ctx.Err() != nil {
+				return a.tourAbort()
+			}
+			k++
+			a.renderTourStep(p, step)
+			if step.ID == "apply" {
+				if err := a.tourMaterializeSample(); err != nil {
+					return err
+				}
+			}
+			code := run(ctx, tourStepArgv(cmd, step))
+			if ctx.Err() != nil {
+				return a.tourAbort()
+			}
+			if code != exitOK {
+				return a.tourStepFailed(step, k, total, code)
+			}
 		}
 	}
 
@@ -164,52 +302,107 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes bool) error {
 	return nil
 }
 
-// tourWorkspace resolves the tour's workspace: a directory that already looks
-// like a workspace (.iris/ or pipelines/ present) is used with the operator's
-// consent; anywhere else the tour offers to create ./iris-quickstart-demo and
-// work there (mkdir + chdir, so every subsequent step operates on cwd exactly
-// like any command). It reports false for a clean abort (decline, EOF,
-// interrupt) and an error only for a real filesystem fault.
-func (a *app) tourWorkspace(ctx context.Context, prompt tourPromptFunc, yes bool) (bool, error) {
+// renderTourStep frames one step: its explanation, then the literal command in
+// the update staged grammar (`→ <command> …`) on the ceremony surface, or a
+// plain `$ <command>` line anywhere else -- the real command output follows.
+func (a *app) renderTourStep(p painter, step quickstartStep) {
+	cmd := strings.Join(step.Argv, " ")
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "  %s\n", step.Explanation)
+	if p.enabled {
+		fmt.Fprintf(a.out, "  %s %s %s\n", p.cyan("→"), p.green(cmd), p.dim("…"))
+	} else {
+		fmt.Fprintf(a.out, "  $ %s\n", cmd)
+	}
+}
+
+// openEngineWorkspace is THE ENGINE act's opener: the workspace question
+// (specification section 8, quickstart surface). Interactive, it reads one
+// line with a visible default -- `~/iris`, or the invoking directory when that
+// is already a workspace (.iris/ or pipelines/ present) -- expands `~` to the
+// operator's home, creates the directory (mkdir -p) and enters it, so every
+// subsequent step operates on cwd exactly like any command. The empty answer
+// accepts the default AND consents to the act; `q`, EOF, and an interrupt
+// abort clean (errTourAborted). Under --yes it never prompts: the invoking
+// directory is the workspace, unchanged. A real filesystem fault is a
+// quickstart_workspace fault, exit 4.
+func (a *app) openEngineWorkspace(s *tourSession) error {
 	wd, err := os.Getwd()
 	if err != nil {
-		return false, &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+		return &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
 			message: fmt.Sprintf("quickstart: resolve the current directory: %v", err)}
 	}
-	if isWorkspaceDir(wd) {
-		fmt.Fprintf(a.out, "This directory is already a workspace: %s\n", wd)
-		if yes {
-			return true, nil
-		}
-		ans, perr := askTour(ctx, prompt, tourWorkspaceQuestion, promptWorkspace)
-		if perr != nil || ans != answerProceed {
-			a.reportPromptFault(perr)
-			return false, nil
-		}
-		return true, nil
+	if s.yes {
+		a.announceWorkspace(s.p, wd)
+		return nil
 	}
 
-	fmt.Fprintln(a.out, "This directory is not an iris workspace yet.")
-	if !yes {
-		ans, perr := askTour(ctx, prompt, tourCreateQuestion, promptWorkspace)
-		if perr != nil || ans != answerProceed {
-			a.reportPromptFault(perr)
-			return false, nil
+	def := tourDefaultWorkspace
+	if isWorkspaceDir(wd) {
+		def = wd
+	}
+	line, perr := askTourLine(s.ctx, s.input, "Engine workspace ["+def+"]:", def)
+	if perr != nil || s.ctx.Err() != nil {
+		a.reportPromptFault(perr)
+		return errTourAborted
+	}
+	answer := strings.TrimSpace(line)
+	if answer == "" {
+		answer = def
+	}
+	if strings.EqualFold(answer, "q") {
+		return errTourAborted
+	}
+
+	dir, err := expandUserPath(answer)
+	if err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+			message: fmt.Sprintf("quickstart: resolve workspace path %s: %v", dir, err)}
+	}
+	// MkdirAll: re-running the tour adopts an existing workspace rather than
+	// failing; 0755 because a workspace is traversable project source, not a
+	// private artifact.
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+			message: fmt.Sprintf("quickstart: create workspace %s: %v", abs, err)}
+	}
+	if err := os.Chdir(abs); err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+			message: fmt.Sprintf("quickstart: enter workspace %s: %v", abs, err)}
+	}
+	a.announceWorkspace(s.p, abs)
+	return nil
+}
+
+// announceWorkspace confirms the resolved workspace in the staged grammar
+// (`✓ workspace <abs>`), green on the ceremony surface and plain otherwise --
+// the one line every subsequent step's cwd is anchored to.
+func (a *app) announceWorkspace(p painter, dir string) {
+	fmt.Fprintf(a.out, "  %s\n", p.green("✓ workspace "+dir))
+}
+
+// expandUserPath expands a leading ~ to the operator's home directory. Only
+// the bare `~` and `~/...` forms are supported: `~user` would need a passwd
+// lookup os.UserHomeDir cannot do, so it is refused with a clear fault rather
+// than silently treated as a relative directory name.
+func expandUserPath(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+				message: fmt.Sprintf("quickstart: resolve your home directory for %s: %v", path, err)}
 		}
+		return filepath.Join(home, strings.TrimPrefix(path, "~")), nil
 	}
-	// MkdirAll: re-running the tour from the same parent adopts the existing demo
-	// directory rather than failing; 0755 because a workspace is traversable
-	// project source, not a private artifact.
-	if err := os.MkdirAll(quickstartDemoDir, 0o755); err != nil {
-		return false, &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
-			message: fmt.Sprintf("quickstart: create ./%s: %v", quickstartDemoDir, err)}
+	if strings.HasPrefix(path, "~") {
+		return "", &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
+			message: fmt.Sprintf("quickstart: %s: ~user paths are not supported; use an absolute path or ~/<dir>", path)}
 	}
-	if err := os.Chdir(quickstartDemoDir); err != nil {
-		return false, &fault{code: exitOpFailed, codeStr: "quickstart_workspace",
-			message: fmt.Sprintf("quickstart: enter ./%s: %v", quickstartDemoDir, err)}
-	}
-	fmt.Fprintf(a.out, "Working in ./%s.\n", quickstartDemoDir)
-	return true, nil
+	return path, nil
 }
 
 // isWorkspaceDir reports whether dir already looks like an iris workspace: a
@@ -223,7 +416,7 @@ func isWorkspaceDir(dir string) bool {
 	return false
 }
 
-// askTour asks one tour question through prompt while honoring ctx: a
+// askTour asks one act-gate question through prompt while honoring ctx: a
 // cancellation (Ctrl-C) wins over a pending read and reads as quit. The prompt
 // runs in a goroutine because the production prompt blocks on the process
 // stdin, which has no cancellable read; after a cancellation the abandoned
@@ -246,31 +439,25 @@ func askTour(ctx context.Context, prompt tourPromptFunc, question string, kind p
 	}
 }
 
-// newTerminalTourPrompt builds the production tour prompt: the question goes to
-// errOut (a prompt is dialogue, never command output) and one line is read from
-// the process stdin. A single reader serves the whole tour, so a line buffered
-// ahead is never dropped between prompts. EOF -- a closed stdin -- answers
-// quit, the clean-abort path; only a real read fault surfaces as an error.
-func newTerminalTourPrompt(errOut io.Writer) tourPromptFunc {
-	reader := bufio.NewReader(os.Stdin)
-	return func(question string, _ promptKind) (promptAnswer, error) {
-		fmt.Fprintf(errOut, "%s ", question)
-		line, err := reader.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return answerQuit, fmt.Errorf("quickstart: read prompt answer: %w", err)
-		}
-		if line == "" && err != nil {
-			return answerQuit, nil
-		}
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "", "y", "yes":
-			return answerProceed, nil
-		case "s", "skip":
-			return answerSkip, nil
-		default:
-			// n, no, q, or anything unrecognized: never run a real command on a typo.
-			return answerQuit, nil
-		}
+// askTourLine reads one line answer through input while honoring ctx, the
+// line-read sibling of askTour: a cancellation (Ctrl-C) wins over a pending
+// read -- the caller sees it via ctx.Err() -- and the abandoned goroutine read
+// never outlives the tour by more than the process itself.
+func askTourLine(ctx context.Context, input tourInputFunc, prompt, def string) (string, error) {
+	type outcome struct {
+		line string
+		err  error
+	}
+	ch := make(chan outcome, 1)
+	go func() {
+		line, err := input(prompt, def)
+		ch <- outcome{line: line, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", nil
+	case o := <-ch:
+		return o.line, o.err
 	}
 }
 
@@ -332,7 +519,7 @@ func (a *app) tourMaterializeSample() error {
 // reportPromptFault surfaces a real prompt read fault on errOut before the
 // tour aborts: the abort stays clean (exit 0), but the fault is never
 // swallowed. EOF stays silent -- a closed stdin is the ordinary decline, not a
-// fault (the production prompt already maps it to a nil-error quit).
+// fault (the production dialogue already maps a no-input EOF to it).
 func (a *app) reportPromptFault(perr error) {
 	if perr != nil && !errors.Is(perr, io.EOF) {
 		fmt.Fprintf(a.errOut, "iris: %v\n", perr)

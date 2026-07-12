@@ -1327,6 +1327,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
     status: unclaimed
+  - id: S08/install-ceremony-version-gate
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: exempt
+    status: exempt
   - id: S08/iris-toml-engine-settings-only
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
@@ -1371,7 +1375,35 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
     status: unclaimed
+  - id: S08/quickstart-act-structure
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
   - id: S08/quickstart-adaptive-skip-running-engine
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-catalog-browse-render
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-catalog-entries-valid
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/quickstart-catalog-in-guides
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-catalog-pick-materialize-run
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-catalog-picked-full-tour
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: conformance
+    status: unclaimed
+  - id: S08/quickstart-catalog-pipeline-flag
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
     status: unclaimed
@@ -1380,6 +1412,10 @@ contracts:
     tier: unit
     status: unclaimed
   - id: S08/quickstart-decline-clean-abort
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-from-installer-continuation
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
     status: unclaimed
@@ -1422,6 +1458,10 @@ contracts:
   - id: S08/quickstart-tty-gating
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
+    status: unclaimed
+  - id: S08/quickstart-workspace-prompt
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
     status: unclaimed
   - id: S08/quickstart-yes-runs-unattended
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"

@@ -12,11 +12,12 @@ import (
 )
 
 // TestQuickstartFullTour drives `iris quickstart --yes` -- the real binary,
-// unattended, in a fresh workspace -- through the whole first session against a
-// real Postgres: it bootstraps the engine (creating ./iris-quickstart-demo and
-// working there), materializes and applies the hello_iris sample, runs it, and
-// `iris data provenance demo.colors green` names the authoring run. The engine
-// is left running afterwards, and a second unattended run adopts it and exits 0.
+// unattended, in a fresh directory that IS the workspace (--yes never prompts
+// and uses the invoking directory unchanged) -- through the whole first
+// session against a real Postgres: it bootstraps the engine, materializes and
+// applies the hello_iris sample, runs it, and `iris data provenance
+// demo.colors green` names the authoring run. The engine is left running
+// afterwards, and a second unattended run adopts it and exits 0.
 //
 // spec: S08/quickstart-full-tour
 func TestQuickstartFullTour(t *testing.T) {
@@ -24,30 +25,32 @@ func TestQuickstartFullTour(t *testing.T) {
 	bin := Build(t)
 	ws := shortWorkspace(t)
 
-	// Fresh non-workspace directory: --yes must create ./iris-quickstart-demo and
-	// bootstrap the whole session there without a single prompt (stdin is not a
-	// terminal here, which is exactly the piped --yes contract).
+	// Fresh directory: under --yes the invoking directory is the workspace, so
+	// the whole session bootstraps right here without a single prompt (stdin is
+	// not a terminal here, which is exactly the piped --yes contract).
 	res := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes"}, Dir: ws, Timeout: 10 * time.Minute})
 	res.RequireExit(t, 0)
 
-	demo := filepath.Join(ws, "iris-quickstart-demo")
-	socket := filepath.Join(demo, ".iris", "iris.sock")
+	socket := filepath.Join(ws, ".iris", "iris.sock")
 	t.Cleanup(func() {
-		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: demo, Timeout: 30 * time.Second})
+		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
 	})
 
-	// The sample was materialized into the demo workspace.
-	if _, err := os.Stat(filepath.Join(demo, "pipelines", "hello_iris", "iris-declare.yaml")); err != nil {
+	// The sample was materialized into the workspace itself, no demo subdir.
+	if _, err := os.Stat(filepath.Join(ws, "pipelines", "hello_iris", "iris-declare.yaml")); err != nil {
 		t.Fatalf("quickstart did not materialize the sample declaration: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
 	}
+	if _, err := os.Stat(filepath.Join(ws, "iris-quickstart-demo")); err == nil {
+		t.Fatal("quickstart created ./iris-quickstart-demo; the invoking directory is the workspace")
+	}
 
-	// The engine is left running: /healthz answers on the demo workspace socket.
+	// The engine is left running: /healthz answers on the workspace socket.
 	assertEngineAnswering(t, socket)
 
 	// The sample run landed the seven rainbow colors in demo.colors.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	conn := connectPG(t, dataDSN(t, demo))
+	conn := connectPG(t, dataDSN(t, ws))
 	defer func() { _ = conn.Close(context.Background()) }()
 	var colors int
 	if err := conn.QueryRow(ctx, "SELECT count(*) FROM demo.colors").Scan(&colors); err != nil {
@@ -61,7 +64,7 @@ func TestQuickstartFullTour(t *testing.T) {
 	// the authoring run and the sample pipeline.
 	prov := bin.Run(t, RunOptions{
 		Args:    []string{"--json", "data", "provenance", "demo.colors", "green"},
-		Dir:     demo,
+		Dir:     ws,
 		Timeout: time.Minute,
 	})
 	prov.RequireExit(t, 0)

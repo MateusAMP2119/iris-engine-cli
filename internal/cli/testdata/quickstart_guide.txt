@@ -2,9 +2,11 @@ iris quickstart — the guided first session
 
 This is the plain guide: the tour's steps as numbered copy-paste commands,
 executing nothing. Run `iris quickstart` in an interactive terminal for the
-guided version, which explains each step, asks before running it, and
-writes the embedded hello_iris sample (pipelines/hello_iris/ and
-schemas/demo/colors/) into the workspace for you.
+guided version: two acts, one question opening each, the steps then running
+for real — writing the embedded hello_iris sample (pipelines/hello_iris/
+and schemas/demo/colors/) into the workspace for you.
+
+The engine — provision it and start it:
 
   1. Bootstrap the engine: place the managed Postgres, create the meta and data databases, set up the control socket.
      iris engine install
@@ -14,6 +16,8 @@ schemas/demo/colors/) into the workspace for you.
 
   3. Read the engine readout: versions, socket, Postgres mode, role, uptime.
      iris engine info
+
+The pipeline — register, run, ask:
 
   4. Register the hello_iris sample: its pipeline, role, grants, and the demo.colors table.
      iris declare apply pipelines/hello_iris

@@ -20,15 +20,19 @@ import (
 )
 
 // The pinned tour strings the flow tests assert. They are the operator-facing
-// contract surface of the sequencer: the two prompt questions, the resume hint
-// every abort and failure prints, and the exit-5 dead-letter lesson.
+// contract surface of the sequencer: the act-gate question opening THE
+// PIPELINE, its one-line intro, the resume hint every abort and failure
+// prints, and the exit-5 dead-letter lesson.
 const (
-	wantCommandPrompt   = "Run it? (Y/n)"
-	wantWorkspacePrompt = "Run the tour in this workspace? (Y/n)"
-	wantCreatePrompt    = "Create ./iris-quickstart-demo and work there? (Y/n)"
-	wantResumeHint      = "Resume any time: iris quickstart"
-	wantDeadletterShow  = "iris deadletter show hello_iris"
+	wantActGate        = "Open this act? (Y/n)"
+	wantPipelineIntro  = "Register the hello_iris sample, run it, and ask a row who wrote it."
+	wantResumeHint     = "Resume any time: iris quickstart"
+	wantDeadletterShow = "iris deadletter show hello_iris"
 )
+
+// workspacePromptFor is the pinned workspace question for a visible default:
+// the ENGINE act's opening line read.
+func workspacePromptFor(def string) string { return "Engine workspace [" + def + "]:" }
 
 // tourApp builds an app for driving `iris quickstart` with both TTY seams
 // forced to tty.
@@ -39,11 +43,13 @@ func tourApp(out, errb *bytes.Buffer, tty bool) *app {
 	return a
 }
 
-// scriptTour installs a scripted tourPrompt and a recording runStep on a. The
-// prompt consumes answers in order (quitting when they run out) and the runStep
-// fake returns the code of the first matching argv prefix in codes (0 with no
-// match). Both append to the returned event log -- "prompt <question>" and
-// "step <argv...>" -- so a test can assert the explain-confirm-execute order.
+// scriptTour installs a scripted tourPrompt, a scripted tourInput, and a
+// recording runStep on a. The prompt consumes answers in order (quitting when
+// they run out); the input answers every line read with the empty string,
+// accepting the visible default; the runStep fake returns the code of the
+// first matching argv prefix in codes (0 with no match). All three append to
+// the returned event log -- "prompt <question>", "input <prompt>", and
+// "step <argv...>" -- so a test can assert the ask-then-execute order.
 func scriptTour(a *app, answers []promptAnswer, codes map[string]int) *[]string {
 	events := &[]string{}
 	next := 0
@@ -55,6 +61,10 @@ func scriptTour(a *app, answers []promptAnswer, codes map[string]int) *[]string 
 		ans := answers[next]
 		next++
 		return ans, nil
+	}
+	a.tourInput = func(prompt, _ string) (string, error) {
+		*events = append(*events, "input "+prompt)
+		return "", nil // the empty answer: accept the visible default
 	}
 	a.runStep = func(_ context.Context, args []string) int {
 		joined := strings.Join(args, " ")
@@ -102,6 +112,18 @@ func promptEvents(events []string) []string {
 	return out
 }
 
+// inputEvents filters the line-read entries out of a tour event log, stripping
+// the "input " tag.
+func inputEvents(events []string) []string {
+	var out []string
+	for _, e := range events {
+		if rest, ok := strings.CutPrefix(e, "input "); ok {
+			out = append(out, rest)
+		}
+	}
+	return out
+}
+
 // canonicalStepArgvs returns the six tour commands as the argv each one hands
 // the in-process runner: the canonical table rows with the literal "iris"
 // argv[0] stripped (in-process re-entry, never a binary path or PATH lookup).
@@ -114,8 +136,8 @@ func canonicalStepArgvs() []string {
 }
 
 // chdirWorkspace moves the test into a fresh temp directory that already is a
-// workspace (a pipelines/ folder exists), so the tour's workspace step proposes
-// using it rather than creating ./iris-quickstart-demo.
+// workspace (a pipelines/ folder exists), so the tour's workspace question
+// proposes it back as the default and the empty answer stays put.
 func chdirWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -190,107 +212,112 @@ func TestQuickstartRefusesRemoteHost(t *testing.T) {
 }
 
 // TestQuickstartStepOrderConfirmed proves the interactive sequencer: the six
-// canonical steps execute in tour order, each one only after its own
-// affirmative prompt, handed to the in-process runner as the canonical argv
-// with the literal "iris" argv[0] stripped -- never a binary path or PATH
-// lookup.
+// canonical steps execute in tour order grouped in their acts, each act opened
+// by its own single consent (the workspace question for THE ENGINE, the act
+// gate for THE PIPELINE), every step handed to the in-process runner as the
+// canonical argv with the literal "iris" argv[0] stripped -- never a binary
+// path or PATH lookup.
 func TestQuickstartStepOrderConfirmed(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
 	// spec: S08/quickstart-step-order-confirmed
 	t.Run("S08/quickstart-step-order-confirmed", func(t *testing.T) {
-		t.Run("each step runs in order, only after its prompt", func(t *testing.T) {
+		t.Run("acts run in order, one consent each, steps straight through", func(t *testing.T) {
 			chdirWorkspace(t)
+			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
-			events := scriptTour(a, proceeds(7), nil) // workspace + six steps
+			events := scriptTour(a, proceeds(1), nil) // the PIPELINE act gate
 
 			code := a.run([]string{"quickstart"})
 			if code != exitOK {
 				t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 			}
 
-			want := []string{"prompt " + wantWorkspacePrompt}
-			for _, argv := range canonicalStepArgvs() {
-				want = append(want, "prompt "+wantCommandPrompt, "step "+argv)
+			all := canonicalStepArgvs()
+			want := []string{"input " + workspacePromptFor(wd)}
+			for _, argv := range all[:3] {
+				want = append(want, "step "+argv)
+			}
+			want = append(want, "prompt "+wantActGate)
+			for _, argv := range all[3:] {
+				want = append(want, "step "+argv)
 			}
 			if got := *events; !equalStrings(got, want) {
 				t.Errorf("tour event order:\n got %q\nwant %q", got, want)
 			}
 
-			// The tour shows each literal command before asking.
+			// The tour shows each literal command as it runs it.
 			for _, s := range quickstartSteps() {
-				if cmdLine := "$ " + strings.Join(s.Argv, " "); !strings.Contains(out.String(), cmdLine) {
+				if cmdLine := strings.Join(s.Argv, " "); !strings.Contains(out.String(), cmdLine) {
 					t.Errorf("tour never showed the literal command %q\nstdout: %s", cmdLine, out.String())
 				}
+			}
+			// The pipeline act explains itself before its gate.
+			if !strings.Contains(out.String(), wantPipelineIntro) {
+				t.Errorf("no pipeline act intro %q\nstdout: %s", wantPipelineIntro, out.String())
 			}
 			// The wrap-up leaves the engine running and says so.
 			if !strings.Contains(out.String(), "still running") {
 				t.Errorf("wrap-up does not note the engine is left running\nstdout: %s", out.String())
 			}
 		})
-
-		t.Run("skipping one step keeps the rest in order", func(t *testing.T) {
-			chdirWorkspace(t)
-			var out, errb bytes.Buffer
-			a := tourApp(&out, &errb, true)
-			// Skip step 3 (info); everything else proceeds.
-			answers := []promptAnswer{answerProceed, answerProceed, answerProceed, answerSkip, answerProceed, answerProceed, answerProceed}
-			events := scriptTour(a, answers, nil)
-
-			code := a.run([]string{"quickstart"})
-			if code != exitOK {
-				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
-			}
-			all := canonicalStepArgvs()
-			want := append(append([]string{}, all[:2]...), all[3:]...)
-			if got := stepEvents(*events); !equalStrings(got, want) {
-				t.Errorf("steps with info skipped:\n got %q\nwant %q", got, want)
-			}
-		})
 	})
 }
 
-// TestQuickstartDeclineCleanAbort proves declining any prompt -- or EOF, or an
-// interrupt -- stops the tour cleanly: exit 0, a resume hint, and nothing past
-// the decline executed.
+// TestQuickstartDeclineCleanAbort proves declining either act's consent -- or
+// EOF, or an interrupt -- stops the tour cleanly: exit 0, a resume hint, and
+// nothing past the decline executed.
 func TestQuickstartDeclineCleanAbort(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
 	// spec: S08/quickstart-decline-clean-abort
 	t.Run("S08/quickstart-decline-clean-abort", func(t *testing.T) {
-		t.Run("declining prompt k executes nothing past it", func(t *testing.T) {
-			// Prompt 0 is the workspace question; prompt k>=1 precedes step k, so a
-			// decline at prompt k leaves exactly steps 1..k-1 executed.
-			for declineAt := 0; declineAt <= 6; declineAt++ {
-				chdirWorkspace(t)
-				var out, errb bytes.Buffer
-				a := tourApp(&out, &errb, true)
-				events := scriptTour(a, proceeds(declineAt), nil) // quit once answers run out
+		t.Run("declining the workspace question executes nothing", func(t *testing.T) {
+			scratch := t.TempDir()
+			t.Chdir(scratch)
+			var out, errb bytes.Buffer
+			a := tourApp(&out, &errb, true)
+			events := scriptTour(a, proceeds(1), nil)
+			a.tourInput = func(string, string) (string, error) { return "q", nil }
 
-				code := a.run([]string{"quickstart"})
-				if code != exitOK {
-					t.Fatalf("decline at prompt %d: exit = %d, want %d (a decline is never a failure)\nstderr: %s",
-						declineAt, code, exitOK, errb.String())
-				}
-				if !strings.Contains(out.String(), wantResumeHint) {
-					t.Errorf("decline at prompt %d: no resume hint %q\nstdout: %s", declineAt, wantResumeHint, out.String())
-				}
-				var want []string
-				if declineAt >= 1 {
-					want = canonicalStepArgvs()[:declineAt-1]
-				}
-				if got := stepEvents(*events); !equalStrings(got, want) {
-					t.Errorf("decline at prompt %d executed:\n got %q\nwant %q", declineAt, got, want)
-				}
+			code := a.run([]string{"quickstart"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d (a decline is never a failure)\nstderr: %s", code, exitOK, errb.String())
 			}
+			if !strings.Contains(out.String(), wantResumeHint) {
+				t.Errorf("decline carries no resume hint %q\nstdout: %s", wantResumeHint, out.String())
+			}
+			if steps := stepEvents(*events); len(steps) != 0 {
+				t.Errorf("steps executed after the decline: %q", steps)
+			}
+			requireEmptyDir(t, scratch)
 		})
 
-		t.Run("EOF on a prompt aborts clean", func(t *testing.T) {
+		t.Run("declining the pipeline act gate executes only the engine act", func(t *testing.T) {
 			chdirWorkspace(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
-			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, io.EOF }
+			events := scriptTour(a, nil, nil) // no answers: the act gate reads as quit
+
+			code := a.run([]string{"quickstart"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d (a decline is never a failure)\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), wantResumeHint) {
+				t.Errorf("decline carries no resume hint %q\nstdout: %s", wantResumeHint, out.String())
+			}
+			if got, want := stepEvents(*events), canonicalStepArgvs()[:3]; !equalStrings(got, want) {
+				t.Errorf("declining THE PIPELINE gate executed:\n got %q\nwant %q (the ENGINE act only)", got, want)
+			}
+		})
+
+		t.Run("EOF on the workspace question aborts clean", func(t *testing.T) {
+			chdirWorkspace(t)
+			var out, errb bytes.Buffer
+			a := tourApp(&out, &errb, true)
+			_ = scriptTour(a, nil, nil)
+			a.tourInput = func(string, string) (string, error) { return "", io.EOF }
 			a.runStep = func(context.Context, []string) int {
 				t.Error("a step executed after EOF")
 				return 0
@@ -304,17 +331,37 @@ func TestQuickstartDeclineCleanAbort(t *testing.T) {
 			}
 		})
 
-		t.Run("interrupt while a prompt is open aborts clean", func(t *testing.T) {
+		t.Run("EOF on the act gate aborts clean", func(t *testing.T) {
 			chdirWorkspace(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
+			events := scriptTour(a, nil, nil)
+			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, io.EOF }
+
+			code := a.run([]string{"quickstart"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d (EOF is a clean abort)\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), wantResumeHint) {
+				t.Errorf("EOF abort carries no resume hint\nstdout: %s", out.String())
+			}
+			if got, want := stepEvents(*events), canonicalStepArgvs()[:3]; !equalStrings(got, want) {
+				t.Errorf("EOF at the gate executed:\n got %q\nwant %q", got, want)
+			}
+		})
+
+		t.Run("interrupt while the workspace question is open aborts clean", func(t *testing.T) {
+			chdirWorkspace(t)
+			var out, errb bytes.Buffer
+			a := tourApp(&out, &errb, true)
+			_ = scriptTour(a, nil, nil)
 			release := make(chan struct{})
 			var reachedOnce sync.Once
 			reached := make(chan struct{})
-			a.tourPrompt = func(string, promptKind) (promptAnswer, error) {
+			a.tourInput = func(string, string) (string, error) {
 				reachedOnce.Do(func() { close(reached) })
 				<-release // held open until the test ends: the interrupt must win
-				return answerQuit, nil
+				return "", nil
 			}
 			a.runStep = func(context.Context, []string) int {
 				t.Error("a step executed after the interrupt")
@@ -342,8 +389,9 @@ func TestQuickstartDeclineCleanAbort(t *testing.T) {
 
 // TestQuickstartAdaptiveSkipRunningEngine proves the adaptive probe: with a
 // daemon answering /healthz on the workspace socket, the tour announces
-// install and start as already done, skips them without prompting, and
-// proceeds from the info step -- every remaining step targeting that socket.
+// install and start as already done under the ENGINE chapter, skips them
+// without asking anything extra, and proceeds from the info step -- every
+// remaining step targeting that socket.
 func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
@@ -355,7 +403,7 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 
 		var out, errb bytes.Buffer
 		a := tourApp(&out, &errb, true)
-		events := scriptTour(a, proceeds(5), nil) // workspace + the four remaining steps
+		events := scriptTour(a, proceeds(1), nil) // the PIPELINE act gate
 
 		code := a.run([]string{"quickstart", "--socket", sock})
 		if code != exitOK {
@@ -380,8 +428,11 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 				t.Errorf("already-done step still executed: %q", s)
 			}
 		}
-		if prompts := promptEvents(*events); len(prompts) != 5 {
-			t.Errorf("tour asked %d prompts %q, want 5 (skipped steps are announced, never prompted)", len(prompts), prompts)
+		if inputs := inputEvents(*events); len(inputs) != 1 {
+			t.Errorf("tour asked %d line reads %q, want 1 (the workspace question)", len(inputs), inputs)
+		}
+		if prompts := promptEvents(*events); len(prompts) != 1 {
+			t.Errorf("tour asked %d gates %q, want 1 (skipped steps are announced, never gated)", len(prompts), prompts)
 		}
 		if !strings.Contains(out.String(), "already") {
 			t.Errorf("tour does not announce install/start as already done\nstdout: %s", out.String())
@@ -390,16 +441,18 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 }
 
 // TestQuickstartYesRunsUnattended proves --yes: every step runs without a
-// single prompt, piped output carries no ANSI escape, the workspace is created
-// unattended, and a failing step's exit category becomes the tour's exit code.
+// single prompt or line read, the invoking directory is the workspace
+// unchanged (no demo dir), piped output carries no ANSI escape, and a failing
+// step's exit category becomes the tour's exit code.
 func TestQuickstartYesRunsUnattended(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
 	// spec: S08/quickstart-yes-runs-unattended
 	t.Run("S08/quickstart-yes-runs-unattended", func(t *testing.T) {
-		t.Run("piped --yes runs every step with zero prompts and zero ANSI", func(t *testing.T) {
-			dir := t.TempDir() // empty: not a workspace, so --yes must create the demo dir
+		t.Run("piped --yes runs every step in cwd with zero prompts and zero ANSI", func(t *testing.T) {
+			dir := t.TempDir() // empty and not a workspace: --yes still works right here
 			t.Chdir(dir)
+			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, false) // piped: no TTY anywhere
 			events := scriptTour(a, nil, nil)
@@ -411,22 +464,29 @@ func TestQuickstartYesRunsUnattended(t *testing.T) {
 			if prompts := promptEvents(*events); len(prompts) != 0 {
 				t.Errorf("--yes still prompted: %q", prompts)
 			}
+			if inputs := inputEvents(*events); len(inputs) != 0 {
+				t.Errorf("--yes still read a line: %q", inputs)
+			}
 			if got := stepEvents(*events); !equalStrings(got, canonicalStepArgvs()) {
 				t.Errorf("--yes steps:\n got %q\nwant %q", got, canonicalStepArgvs())
 			}
 			assertNoEsc(t, out.String())
 			assertNoEsc(t, errb.String())
 
-			// The workspace step ran unattended: the demo dir exists and the sample
-			// was materialized into it before the apply step.
-			decl := filepath.Join(dir, "iris-quickstart-demo", "pipelines", "hello_iris", "iris-declare.yaml")
+			// The invoking directory IS the workspace: no demo dir, cwd unchanged,
+			// the sample materialized right here before the apply step.
+			requireSameDir(t, mustGetwd(t), wd)
+			if _, err := os.Stat(filepath.Join(dir, "iris-quickstart-demo")); err == nil {
+				t.Error("--yes created a demo directory; the invoking directory is the workspace")
+			}
+			decl := filepath.Join(dir, "pipelines", "hello_iris", "iris-declare.yaml")
 			if _, err := os.Stat(decl); err != nil {
-				t.Errorf("--yes did not create the demo workspace with the sample: %v", err)
+				t.Errorf("--yes did not materialize the sample into cwd: %v", err)
 			}
 		})
 
 		t.Run("first failing step's category is the exit code", func(t *testing.T) {
-			chdirWorkspace(t)
+			t.Chdir(t.TempDir())
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, false)
 			events := scriptTour(a, nil, map[string]int{"pipeline run": 5})
@@ -448,7 +508,7 @@ func TestQuickstartYesRunsUnattended(t *testing.T) {
 		})
 
 		t.Run("an early failure stops before later steps", func(t *testing.T) {
-			chdirWorkspace(t)
+			t.Chdir(t.TempDir())
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, false)
 			events := scriptTour(a, nil, map[string]int{"engine install": 4})
@@ -553,13 +613,14 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 				t.Fatalf("MintEngineKey: %v", kerr)
 			}
 			a.newKeyReader = func(config.Settings) daemon.EngineKeyReader { return fakeKeyReader{key: key} }
-			// Scripted prompt only: the steps run through the REAL in-process child
+			// Scripted consents only: the steps run through the REAL in-process child
 			// runner. The bare mux answers apply/run/provenance with error envelopes,
 			// so the wrapper swallows exit codes to walk every step -- this test
 			// asserts dial targets, not step outcomes. install/start must never
 			// execute for real (the reachable workspace daemon skips them); reaching
 			// them is itself a failure.
 			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerProceed, nil }
+			a.tourInput = func(string, string) (string, error) { return "", nil }
 			a.runStep = func(ctx context.Context, args []string) int {
 				joined := strings.Join(args, " ")
 				if strings.HasPrefix(joined, "engine install") || strings.HasPrefix(joined, "engine start") {

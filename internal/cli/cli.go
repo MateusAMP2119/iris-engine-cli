@@ -121,6 +121,12 @@ type app struct {
 	// distinct from the confirm seam, whose teardown-shaped signature does not fit
 	// the tour's proceed/skip/quit answers.
 	tourPrompt func(question string, kind promptKind) (promptAnswer, error)
+	// tourInput reads one line answer to a quickstart-tour question that carries a
+	// visible default (the ENGINE act's workspace question). It is nil in
+	// production (the tour falls back to the shared-reader terminal line read
+	// beside tourPrompt); tests inject it to script the answer. The caller applies
+	// def to an empty answer; the seam only reads.
+	tourInput func(prompt, def string) (string, error)
 	// runStep executes one quickstart-tour step -- an iris command given as the
 	// argv after the program name -- and returns its exit-code category. It is nil
 	// in production (the tour falls back to a fresh in-process child app running
