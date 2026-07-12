@@ -546,10 +546,13 @@ func (a *app) tourMaterializeEntry(e catalogEntry) error {
 }
 
 // waitEngineReady is the production waitForReady: a bounded, context-aware
-// poll of the daemon's /info readout until it reports a leadership role
-// (leader or standby -- `engine start -d` returns on socket-up while the
-// election can lag). A daemon that never reports one inside the budget is a
-// clear fault, exit 4: the tour never proceeds onto an unready engine.
+// poll of the daemon's /info readout until it reports leadership -- role
+// leader, nothing less. `engine start -d` returns on socket-up while the
+// fresh workspace engine is still winning its own election, and it passes
+// through unknown and a contending standby on the way; a mutation against
+// either exits 6, so the act holds until the readout says leader. A daemon
+// that never does inside the budget is a clear fault, exit 4: the tour never
+// proceeds onto an unready engine.
 func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) error {
 	budget := a.readyBudget
 	if budget == 0 {
@@ -564,7 +567,7 @@ func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) err
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
-		if info, ok := a.fetchDaemonInfo(ctx, settings); ok && info.Role != "" && info.Role != "unknown" {
+		if info, ok := a.fetchDaemonInfo(ctx, settings); ok && info.Role == "leader" {
 			return nil
 		}
 		select {
@@ -572,7 +575,7 @@ func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) err
 			return ctx.Err()
 		case <-deadline.C:
 			return &fault{code: exitOpFailed, codeStr: "quickstart_engine_unready",
-				message: "quickstart: the engine is up but has not reported a leadership role yet; check `iris engine info` and resume any time: iris quickstart"}
+				message: "quickstart: the engine is up but has not won leadership yet (its role is not leader); check `iris engine info` and resume any time: iris quickstart"}
 		case <-tick.C:
 		}
 	}

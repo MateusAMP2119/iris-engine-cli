@@ -448,6 +448,16 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 		if !strings.Contains(out.String(), "already") {
 			t.Errorf("tour does not announce install/start as already done\nstdout: %s", out.String())
 		}
+		// The skip is announced under the ENGINE chapter mark, after the
+		// workspace question opened it and before THE PIPELINE's mark.
+		plain := stripANSI(out.String())
+		engineAt := strings.Index(plain, "── THE ENGINE ")
+		skipAt := strings.Index(plain, "already")
+		pipelineAt := strings.Index(plain, "── THE PIPELINE ")
+		if engineAt < 0 || pipelineAt < 0 || skipAt < engineAt || skipAt > pipelineAt {
+			t.Errorf("skip announcement not under the ENGINE chapter (engine mark %d, skip %d, pipeline mark %d):\n%s",
+				engineAt, skipAt, pipelineAt, plain)
+		}
 	})
 }
 

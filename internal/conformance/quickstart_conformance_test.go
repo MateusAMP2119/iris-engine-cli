@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,6 +31,12 @@ func TestQuickstartFullTour(t *testing.T) {
 	// not a terminal here, which is exactly the piped --yes contract).
 	res := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes"}, Dir: ws, Timeout: 10 * time.Minute})
 	res.RequireExit(t, 0)
+
+	// The ceremony's end state: the engine is announced as left running and the
+	// cheat-sheet of what the session used closes the tour.
+	if out := string(res.Stdout); !strings.Contains(out, "still running") || !strings.Contains(out, "cheat-sheet") {
+		t.Errorf("tour did not close on the ceremony end state (engine left running + cheat-sheet)\nstdout:\n%s", out)
+	}
 
 	socket := filepath.Join(ws, ".iris", "iris.sock")
 	t.Cleanup(func() {

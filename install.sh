@@ -78,34 +78,57 @@ fi
 
 echo "Installed $("${dest}/iris" --version 2>/dev/null || echo iris) to ${dest}/iris"
 
-# The handoff: end by offering the guided tour. Prompt only with a controlling
-# terminal (probed by opening /dev/tty, the uninstaller's rule) and IRIS_FORCE
-# unset; decline, no terminal, or IRIS_FORCE prints the plain next-steps lines.
+# Version gate: probe the installed binary itself before any offer. A binary
+# that answers `quickstart --from-installer --json` gets the full ceremony
+# handoff with the flag; one that only answers plain `quickstart --json` gets
+# the flagless handoff (an E15-era tour); anything older gets no handoff and
+# no quickstart next-step line -- an old binary is never offered a verb it
+# lacks.
+handoff="none"
+if "${dest}/iris" quickstart --from-installer --json >/dev/null 2>&1; then
+  handoff="continuation"
+elif "${dest}/iris" quickstart --json >/dev/null 2>&1; then
+  handoff="plain"
+fi
+
+# The handoff: one question, the single consent for the binary's acts. Prompt
+# only with a controlling terminal (probed by opening /dev/tty, the
+# uninstaller's rule) and IRIS_FORCE unset; decline, no terminal, or
+# IRIS_FORCE prints the plain next-steps lines.
 can_prompt() {
   [ -z "${IRIS_FORCE:-}" ] && (: </dev/tty >/dev/tty) 2>/dev/null
 }
 
-if can_prompt; then
-  echo "The guided tour sets up a demo engine and pipeline in ./iris-quickstart-demo." >/dev/tty
-  printf 'Take the 3-minute guided tour? (Y/n) ' >/dev/tty
+if [ "$handoff" != "none" ] && can_prompt; then
+  printf 'Set up the engine now? (Y/n) ' >/dev/tty
   IFS= read -r ans </dev/tty || ans="n"
   case "$ans" in
     [nN]*) ;;
     *)
       # Accept is the default. The absolute path runs the tour even when dest is
-      # not on PATH yet, and the re-tied stdin satisfies its terminal gate. exec
-      # replaces this shell, so the EXIT trap will not fire: clean up first.
+      # not on PATH yet, and the re-tied stdin satisfies its terminal gate --
+      # stdout is never re-tied. exec replaces this shell, so the EXIT trap will
+      # not fire: clean up first.
       rm -rf "$tmp"
       trap - EXIT
+      if [ "$handoff" = "continuation" ]; then
+        exec "${dest}/iris" quickstart --from-installer </dev/tty
+      fi
       exec "${dest}/iris" quickstart </dev/tty
       ;;
   esac
 fi
 
-# Plain next steps: bare `iris` once dest is on PATH, the absolute path until then.
+# Plain next steps: bare `iris` once dest is on PATH, the absolute path until
+# then. The quickstart line rides the version gate: it is offered only when a
+# probe passed.
 iris_cmd="${dest}/iris"
 case ":${PATH}:" in
   *":${dest}:"*) iris_cmd="iris" ;;
 esac
-echo "Next: ${iris_cmd} quickstart   # 3-minute guided tour"
-echo "  or: ${iris_cmd} engine install && ${iris_cmd} engine start -d"
+if [ "$handoff" != "none" ]; then
+  echo "Next: ${iris_cmd} quickstart   # 3-minute guided tour"
+  echo "  or: ${iris_cmd} engine install && ${iris_cmd} engine start -d"
+else
+  echo "Next: ${iris_cmd} engine install && ${iris_cmd} engine start -d"
+fi

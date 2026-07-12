@@ -32,7 +32,7 @@ One command, no dependencies. Installs the latest prebuilt static binary:
 curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
 ```
 
-The installer ends by offering the 3-minute guided tour — it bootstraps a demo engine, runs a sample pipeline, and asks a row who wrote it, each step explained and confirmed before it really runs. Take it any time with `iris quickstart`.
+The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where the engine workspace should live (`~/iris` by default), bootstraps the engine there, then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
 
 Have Go 1.25+? `go install` works too:
 

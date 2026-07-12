@@ -28,15 +28,21 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 	unsetNoColor(t)
 	// spec: S08/quickstart-act-structure
 	t.Run("S08/quickstart-act-structure", func(t *testing.T) {
-		t.Run("the act holds while /info reports no role and proceeds when it flips", func(t *testing.T) {
+		t.Run("the act holds through unknown AND standby, proceeding only on leader", func(t *testing.T) {
 			chdirWorkspace(t)
 			sock := shortSocket(t)
 			var infoCalls atomic.Int64
 			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
+				// The real election shape: unknown, then a contending standby
+				// (`engine start -d` returns on socket-up while the fresh workspace
+				// engine is still winning its own election), then leader.
 				n := infoCalls.Add(1)
 				role := "unknown"
-				if n >= 3 {
+				switch {
+				case n >= 4:
 					role = "leader"
+				case n >= 2:
+					role = "standby"
 				}
 				return api.InfoPayload{Role: role, Socket: sock, Uptime: "1s"}, nil
 			}))
@@ -52,8 +58,8 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 			if code != exitOK {
 				t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 			}
-			if n := infoCalls.Load(); n < 3 {
-				t.Errorf("/info polled %d times; the act closed before the role flipped", n)
+			if n := infoCalls.Load(); n < 4 {
+				t.Errorf("/info polled %d times; the act closed before leadership (a standby readout must hold it)", n)
 			}
 			// The tour proceeded: THE PIPELINE's gate was asked and its steps ran.
 			if prompts := promptEvents(*events); len(prompts) != 1 {
@@ -64,11 +70,13 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 			}
 		})
 
-		t.Run("a daemon that never reports a role is a clear fault, exit 4, PIPELINE shut", func(t *testing.T) {
+		t.Run("a daemon that never reports leadership is a clear fault, exit 4, PIPELINE shut", func(t *testing.T) {
 			chdirWorkspace(t)
 			sock := shortSocket(t)
 			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
-				return api.InfoPayload{Role: "unknown", Socket: sock, Uptime: "1s"}, nil
+				// A standby forever: reachable, healthy, never the leader -- a
+				// mutation would exit 6, so the act must not close on it.
+				return api.InfoPayload{Role: "standby", Socket: sock, Uptime: "1s"}, nil
 			}))
 
 			var out, errb bytes.Buffer
