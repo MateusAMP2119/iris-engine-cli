@@ -24,7 +24,7 @@ func runQuickstart(t *testing.T, stdoutTTY, stdinTTY bool, args ...string) (stdo
 	a := newApp(&out, &errb)
 	a.isTTY = func() bool { return stdoutTTY }
 	a.stdinIsTTY = func() bool { return stdinTTY }
-	a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, nil }
+	a.tourPick = func(string, int) (int, promptAnswer, error) { return 0, answerQuit, nil }
 	a.tourInput = func(string, string) (string, error) { return "", io.EOF }
 	a.runStep = func(_ context.Context, argv []string) int {
 		t.Errorf("quickstart gating test executed a step: %v", argv)
@@ -220,7 +220,8 @@ func TestQuickstartPlainGuideWhenPiped(t *testing.T) {
 }
 
 // quickstartEnvelope mirrors the --json data envelope of `iris quickstart`: the
-// ordered step list of the tour, each step carrying its act.
+// ordered step list of the tour, each step carrying its act, plus the additive
+// catalog object (default, selected, entries).
 type quickstartEnvelope struct {
 	Data struct {
 		Steps []struct {
@@ -229,6 +230,13 @@ type quickstartEnvelope struct {
 			Argv        []string `json:"argv"`
 			Act         string   `json:"act"`
 		} `json:"steps"`
+		Catalog struct {
+			Default  string `json:"default"`
+			Selected string `json:"selected"`
+			Entries  []struct {
+				ID string `json:"id"`
+			} `json:"entries"`
+		} `json:"catalog"`
 	} `json:"data"`
 }
 
@@ -270,6 +278,15 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 			if len(step.Argv) == 0 || step.Argv[0] != "iris" {
 				t.Errorf("step %q argv = %v, want an iris command vector", step.ID, step.Argv)
 			}
+		}
+
+		// The additive catalog object rides the same envelope.
+		if env.Data.Catalog.Default != "hello_iris" || env.Data.Catalog.Selected != "hello_iris" {
+			t.Errorf("catalog default/selected = %q/%q, want hello_iris/hello_iris (no --pipeline)",
+				env.Data.Catalog.Default, env.Data.Catalog.Selected)
+		}
+		if len(env.Data.Catalog.Entries) == 0 || env.Data.Catalog.Entries[0].ID != "hello_iris" {
+			t.Errorf("catalog entries missing or misordered: %+v", env.Data.Catalog.Entries)
 		}
 
 		// Executes nothing: the scratch cwd stays untouched.

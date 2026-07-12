@@ -90,6 +90,78 @@ func TestQuickstartFullTour(t *testing.T) {
 	assertEngineAnswering(t, socket)
 }
 
+// TestQuickstartPickedFullTour drives `iris quickstart --yes --pipeline
+// word_frequency` -- the real binary, unattended, a non-default catalog pick,
+// in a fresh directory that IS the workspace -- through the whole first
+// session against a real Postgres: it bootstraps the engine, materializes and
+// applies only the picked entry, runs it (the word counts computed wholly in
+// Postgres), and `iris data provenance demo.word_counts hope` names the
+// authoring run. A second unattended run exits 0.
+//
+// spec: S08/quickstart-catalog-picked-full-tour
+func TestQuickstartPickedFullTour(t *testing.T) {
+	freshDatabases(t)
+	bin := Build(t)
+	ws := shortWorkspace(t)
+
+	res := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes", "--pipeline", "word_frequency"}, Dir: ws, Timeout: 10 * time.Minute})
+	res.RequireExit(t, 0)
+
+	socket := filepath.Join(ws, ".iris", "iris.sock")
+	t.Cleanup(func() {
+		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
+	})
+
+	// Only the picked entry materialized.
+	if _, err := os.Stat(filepath.Join(ws, "pipelines", "word_frequency", "iris-declare.yaml")); err != nil {
+		t.Fatalf("picked entry not materialized: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "pipelines", "hello_iris")); err == nil {
+		t.Error("unpicked hello_iris materialized; only the pick lands")
+	}
+	assertEngineAnswering(t, socket)
+
+	// The deterministic counts landed: 'hope' was counted.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	conn := connectPG(t, dataDSN(t, ws))
+	defer func() { _ = conn.Close(context.Background()) }()
+	var hopeN int
+	if err := conn.QueryRow(ctx, "SELECT n FROM demo.word_counts WHERE word = 'hope'").Scan(&hopeN); err != nil {
+		t.Fatalf("read demo.word_counts row 'hope': %v", err)
+	}
+	if hopeN < 1 {
+		t.Errorf("word 'hope' counted %d times, want at least 1", hopeN)
+	}
+
+	// The finale names the authoring run and the picked pipeline.
+	prov := bin.Run(t, RunOptions{
+		Args:    []string{"--json", "data", "provenance", "demo.word_counts", "hope"},
+		Dir:     ws,
+		Timeout: time.Minute,
+	})
+	prov.RequireExit(t, 0)
+	var env struct {
+		Data struct {
+			Authored bool           `json:"authored"`
+			Author   map[string]any `json:"author"`
+			Pipeline string         `json:"pipeline"`
+		} `json:"data"`
+	}
+	prov.DecodeJSON(t, &env)
+	if !env.Data.Authored || env.Data.Author == nil || env.Data.Author["run_id"] == nil {
+		t.Errorf("provenance does not name the authoring run; authored=%v author=%v", env.Data.Authored, env.Data.Author)
+	}
+	if env.Data.Pipeline != "word_frequency" {
+		t.Errorf("provenance pipeline = %q, want word_frequency", env.Data.Pipeline)
+	}
+
+	// Re-running the picked tour is clean: idempotent steps, exit 0.
+	again := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes", "--pipeline", "word_frequency"}, Dir: ws, Timeout: 5 * time.Minute})
+	again.RequireExit(t, 0)
+	assertEngineAnswering(t, socket)
+}
+
 // assertEngineAnswering fails the test unless a daemon answers GET /healthz
 // with 200 on the given workspace socket.
 func assertEngineAnswering(t *testing.T, socket string) {

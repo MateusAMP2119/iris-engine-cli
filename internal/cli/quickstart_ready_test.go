@@ -55,9 +55,9 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 			if n := infoCalls.Load(); n < 3 {
 				t.Errorf("/info polled %d times; the act closed before the role flipped", n)
 			}
-			// The tour proceeded: THE PIPELINE's gate was asked and its steps ran.
-			if prompts := promptEvents(*events); len(prompts) != 1 {
-				t.Errorf("act gates = %q, want exactly the PIPELINE gate", prompts)
+			// The tour proceeded: THE PIPELINE's pick was asked and its steps ran.
+			if picks := pickEvents(*events); len(picks) != 1 {
+				t.Errorf("act picks = %q, want exactly the PIPELINE pick", picks)
 			}
 			if steps := stepEvents(*events); len(steps) == 0 || !strings.HasPrefix(steps[len(steps)-1], "data provenance") {
 				t.Errorf("PIPELINE steps did not run to the finale: %q", steps)
@@ -82,8 +82,8 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 			if code != exitOpFailed {
 				t.Fatalf("exit = %d, want %d (a clear fault)\nstdout: %s\nstderr: %s", code, exitOpFailed, out.String(), errb.String())
 			}
-			if prompts := promptEvents(*events); len(prompts) != 0 {
-				t.Errorf("an unready ENGINE act still offered the next act's gate: %q", prompts)
+			if picks := pickEvents(*events); len(picks) != 0 {
+				t.Errorf("an unready ENGINE act still offered the next act's pick: %q", picks)
 			}
 			for _, step := range stepEvents(*events) {
 				if strings.HasPrefix(step, "declare apply") {
