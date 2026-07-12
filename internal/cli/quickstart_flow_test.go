@@ -76,6 +76,9 @@ func scriptTour(a *app, answers []promptAnswer, codes map[string]int) *[]string 
 		}
 		return 0
 	}
+	// The fake steps start no real daemon, so the ENGINE act's readiness wait
+	// answers ready immediately; the leader-wait tests re-install the real poll.
+	a.waitForReady = func(context.Context, config.Settings) error { return nil }
 	return events
 }
 
