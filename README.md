@@ -32,6 +32,8 @@ One command, no dependencies. Installs the latest prebuilt static binary:
 curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
 ```
 
+The installer ends by offering the 3-minute guided tour — it bootstraps a demo engine, runs a sample pipeline, and asks a row who wrote it, each step explained and confirmed before it really runs. Take it any time with `iris quickstart`.
+
 Have Go 1.25+? `go install` works too:
 
 ```sh
@@ -75,6 +77,8 @@ curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/maste
 ---
 
 ## Getting started
+
+New here? `iris quickstart` walks this whole section for you: it explains each step, asks before running it, and really runs it — ending with a live engine and a row you can trace. The rest of this section is the manual version.
 
 A pipeline is a folder: one script, one declaration:
 
@@ -129,6 +133,7 @@ Global flags everywhere: `--json` (machine output), `--socket`, `--host`, `--tok
 | `iris endpoint` | `apply`, `remove`, `list`, `show` | Declared read endpoints at `GET /q/{endpoint}` |
 | `iris pat` | `create`, `list`, `revoke` | Personal access tokens (scopes: `control`, `read`, `data`) |
 | `iris engine` | `start`, `stop`, `install`, `uninstall`, `info`, `logs`, `inspect`, `stats`, `service …` | Daemon and host lifecycle |
+| `iris quickstart` | *(root verb)* | Guided tour of the first session (`--yes` runs it unattended) |
 
 Exit codes are a contract, not an accident:
 

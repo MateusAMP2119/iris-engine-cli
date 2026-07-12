@@ -107,6 +107,33 @@ type app struct {
 	// real stdout); tests inject it to force styled or plain rendering without a real
 	// terminal.
 	isTTY func() bool
+	// stdinIsTTY reports whether the command's stdin is an interactive terminal,
+	// the second half of the quickstart interactivity gate (stdin AND stdout both
+	// TTY, --json off; specification section 8). It is nil in production (the gate
+	// falls back to stdinIsTerminal, an os.Stdin char-device stat, the same check
+	// terminalConfirm uses); tests inject it to drive either rendering without a
+	// real terminal.
+	stdinIsTTY func() bool
+	// tourPrompt asks one quickstart-tour question and returns the operator's
+	// answer. It is nil in production (the tour falls back to a terminal prompt
+	// that writes the question to errOut and reads one line from the process
+	// stdin); tests inject it to script the tour without a real terminal. It is
+	// distinct from the confirm seam, whose teardown-shaped signature does not fit
+	// the tour's proceed/skip/quit answers.
+	tourPrompt func(question string, kind promptKind) (promptAnswer, error)
+	// runStep executes one quickstart-tour step -- an iris command given as the
+	// argv after the program name -- and returns its exit-code category. It is nil
+	// in production (the tour falls back to a fresh in-process child app running
+	// the real command implementation, never a PATH lookup); tests inject it to
+	// record the executed steps and script their exit codes.
+	runStep func(ctx context.Context, args []string) int
+	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
+	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
+	// the unix socket (the flag surface cannot contribute one on this path:
+	// quickstart refuses --host outright). It is set only on the quickstart
+	// tour's child apps -- the tour only ever targets the local workspace engine
+	// it provisions, never a remote -- and has no command-line spelling.
+	forceLocalTarget bool
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -123,14 +150,22 @@ func newAppWithLogger(stdout, stderr io.Writer, logger *slog.Logger) *app {
 }
 
 // run builds and executes the command tree and maps the outcome to an exit-code
-// category. On error it resolves the output mode -- honoring exactly how pflag
-// consumed --json -- and renders the error accordingly.
+// category, with a background context.
 func (a *app) run(args []string) int {
+	return a.runContext(context.Background(), args)
+}
+
+// runContext builds and executes the command tree under ctx and maps the outcome
+// to an exit-code category. On error it resolves the output mode -- honoring
+// exactly how pflag consumed --json -- and renders the error accordingly. The
+// quickstart tour re-enters here for each step it executes, with the tour's
+// signal-bound context threaded through.
+func (a *app) runContext(ctx context.Context, args []string) int {
 	root := a.newRootCommand()
 	root.SetArgs(args)
 	root.SetOut(a.out)
 	root.SetErr(a.errOut)
-	cmd, err := root.ExecuteC()
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
 		return exitOK
 	}

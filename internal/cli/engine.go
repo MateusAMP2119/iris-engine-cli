@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
@@ -405,7 +406,7 @@ func (a *app) startDetached(cmd *cobra.Command, settings config.Settings) error 
 	ctx, cancel := context.WithTimeout(base, detachReadyTimeout)
 	defer cancel()
 
-	if err := daemon.Detach(ctx, settings, exe, argsWithoutDetach(os.Args[1:])); err != nil {
+	if err := daemon.Detach(ctx, settings, exe, detachChildArgs(cmd)); err != nil {
 		a.logger.Error("engine start (detach) failed", "err", err)
 		return &fault{
 			code:    exitOpFailed,
@@ -422,17 +423,23 @@ func (a *app) startDetached(cmd *cobra.Command, settings config.Settings) error 
 	return nil
 }
 
-// argsWithoutDetach returns args with the detach flag (-d / --detach) removed, so
-// the re-exec'd child runs in the foreground of its new session.
-func argsWithoutDetach(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, arg := range args {
-		if arg == "-d" || arg == "--detach" || arg == "--detach=true" || arg == "--detach=false" {
-			continue
+// detachChildArgs rebuilds the detached child's argv from the executed cobra
+// command rather than from os.Args: the fixed `engine start` path plus every
+// flag the invocation explicitly set (global and daemon-scoped alike -- cobra
+// has merged the inherited persistent flags into the command's flag set by
+// execution time), except detach itself, so the re-exec'd child runs in the
+// foreground of its new session. Deriving the argv from the command rather than
+// the process means an in-process re-entrant invocation of `engine start -d`
+// can never re-exec its calling verb as the daemon child.
+func detachChildArgs(cmd *cobra.Command) []string {
+	args := []string{"engine", "start"}
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if f.Name == "detach" {
+			return
 		}
-		out = append(out, arg)
-	}
-	return out
+		args = append(args, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
+	})
+	return args
 }
 
 // stopResult is the machine-readable outcome of `iris engine stop`.

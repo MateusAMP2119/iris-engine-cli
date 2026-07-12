@@ -52,15 +52,18 @@ func LoadGoSum(path string) ([]string, error) {
 }
 
 // AllowedDirectDependency reports whether a direct-dependency module path is on
-// the specification section 9 allowlist: the pgx driver, cobra, goccy/go-yaml,
-// an argon2id provider (github.com/alexedwards/argon2id or golang.org/x/crypto),
-// and the embedded-postgres supervisor. Everything else is off the allowlist;
-// digests and signatures use only stdlib hashing and crypto/ed25519, which are
-// never go.mod requires.
+// the specification section 9 allowlist: the pgx driver, cobra plus its own
+// flag-set library spf13/pflag (admitted for flag-set introspection, never as
+// an independent CLI framework), goccy/go-yaml, an argon2id provider
+// (github.com/alexedwards/argon2id or golang.org/x/crypto), and the
+// embedded-postgres supervisor. Everything else is off the allowlist; digests
+// and signatures use only stdlib hashing and crypto/ed25519, which are never
+// go.mod requires.
 func AllowedDirectDependency(path string) bool {
 	switch path {
 	case "github.com/jackc/pgx",
 		"github.com/spf13/cobra",
+		"github.com/spf13/pflag",
 		"github.com/goccy/go-yaml",
 		"github.com/alexedwards/argon2id",
 		"golang.org/x/crypto",
