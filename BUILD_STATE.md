@@ -174,7 +174,11 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 ## E16 Install Ceremony and Pipeline Catalog — epic PR: pending (opened 2026-07-12)
 
-- [ ] E16.1 Act structure and workspace prompt — todo (carries the whole §8 delta + lock)
+- [x] E16.1 Act structure and workspace prompt — done ([PR #136](https://github.com/MateusAMP2119/iris-engine-cli/pull/136), merged red on user's call)
+  - **OPEN BUG**: `TestQuickstartFullTour` conformance red — leader-election race:
+    `engine start -d` returns on socket-up, leadership lags, `--yes` tour hits
+    `declare apply` with exit 6. Fix designed (ENGINE act closes only when /info
+    reports a role, bounded poll); fold into E16.2 or E16.4.
 - [ ] E16.2 Pipeline catalog registry and starter entries — todo (depends on E16.1)
 - [ ] E16.3 Catalog shop and picked tour — todo (depends on E16.2)
 - [ ] E16.4 Installer ceremony and version gate — todo (depends on E16.1; parallel-safe with E16.2/3)
