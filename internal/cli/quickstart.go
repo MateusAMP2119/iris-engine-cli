@@ -41,15 +41,41 @@ type tourAct struct {
 	opener func(*tourSession) error
 }
 
-// quickstartActs returns the canonical chaptered step table of the guided
-// first session (specification section 8, quickstart surface): THE ENGINE
-// (install, start -d, info) then THE PIPELINE (apply, run, provenance --
-// hardwired to the embedded hello_iris sample until the pipeline catalog
-// replaces this act's interior). Every rendering -- the interactive tour, the
-// plain act-headed guide, and the --json envelope -- shares this one table. It
-// is built fresh per call (no mutable package state); openers are wired by the
-// tour (tourActs), so the guide renderings stay pure data.
-func quickstartActs() []tourAct {
+// quickstartPipelineSteps returns THE PIPELINE act's steps for one catalog
+// entry: apply its pipeline folder, run it (the explanation carrying the
+// entry's own run note), then the provenance finale on the entry's showcase
+// table and pk.
+func quickstartPipelineSteps(e catalogEntry) []quickstartStep {
+	return []quickstartStep{
+		{
+			ID:          "apply",
+			Explanation: fmt.Sprintf("Register the %s sample: its pipeline, role, grants, and the %s table.", e.ID, e.Showcase.Table),
+			Argv:        []string{"iris", "declare", "apply", "pipelines/" + e.ID},
+			Act:         tourActPipeline,
+		},
+		{
+			ID:          "run",
+			Explanation: fmt.Sprintf("Run it: %s.", e.RunNote),
+			Argv:        []string{"iris", "pipeline", "run", e.ID},
+			Act:         tourActPipeline,
+		},
+		{
+			ID:          "provenance",
+			Explanation: "Ask a row who wrote it: the authoring run, the layer stack, the hashes.",
+			Argv:        []string{"iris", "data", "provenance", e.Showcase.Table, e.Showcase.PK},
+			Act:         tourActPipeline,
+		},
+	}
+}
+
+// quickstartActsFor returns the canonical chaptered step table of the guided
+// first session (specification section 8, quickstart surface) for one catalog
+// entry: THE ENGINE (install, start -d, info) then THE PIPELINE (apply, run,
+// provenance on the entry's showcase). Every rendering -- the interactive
+// tour, the plain act-headed guide, and the --json envelope -- shares this one
+// table. It is built fresh per call (no mutable package state); openers are
+// wired by the tour (tourActs), so the guide renderings stay pure data.
+func quickstartActsFor(e catalogEntry) []tourAct {
 	return []tourAct{
 		{
 			id:    tourActEngine,
@@ -78,38 +104,34 @@ func quickstartActs() []tourAct {
 		{
 			id:    tourActPipeline,
 			title: "THE PIPELINE",
-			steps: []quickstartStep{
-				{
-					ID:          "apply",
-					Explanation: "Register the hello_iris sample: its pipeline, role, grants, and the demo.colors table.",
-					Argv:        []string{"iris", "declare", "apply", "pipelines/hello_iris"},
-					Act:         tourActPipeline,
-				},
-				{
-					ID:          "run",
-					Explanation: "Run it: the script upserts the seven rainbow colors into demo.colors; re-running layers a second provenance stamp on the same rows.",
-					Argv:        []string{"iris", "pipeline", "run", "hello_iris"},
-					Act:         tourActPipeline,
-				},
-				{
-					ID:          "provenance",
-					Explanation: "Ask a row who wrote it: the authoring run, the layer stack, the hashes.",
-					Argv:        []string{"iris", "data", "provenance", "demo.colors", "green"},
-					Act:         tourActPipeline,
-				},
-			},
+			steps: quickstartPipelineSteps(e),
 		},
 	}
 }
 
-// quickstartSteps flattens the act table into the ordered step list every
-// rendering shares.
-func quickstartSteps() []quickstartStep {
+// quickstartActs returns the act table for the catalog's default entry -- the
+// tour still selects it unconditionally until the shop lands (E16.3). A
+// malformed embedded catalog surfaces as the error.
+func quickstartActs() ([]tourAct, error) {
+	cat, err := loadCatalog()
+	if err != nil {
+		return nil, err
+	}
+	return quickstartActsFor(cat.defaultEntry()), nil
+}
+
+// quickstartSteps flattens the default-entry act table into the ordered step
+// list every rendering shares.
+func quickstartSteps() ([]quickstartStep, error) {
+	acts, err := quickstartActs()
+	if err != nil {
+		return nil, err
+	}
 	var steps []quickstartStep
-	for _, act := range quickstartActs() {
+	for _, act := range acts {
 		steps = append(steps, act.steps...)
 	}
-	return steps
+	return steps, nil
 }
 
 // quickstartCmd builds `iris quickstart`: the third root verb beside the
@@ -200,8 +222,13 @@ func (a *app) renderQuickstartGuide() error {
 	b.WriteString("for real — writing the embedded hello_iris sample (pipelines/hello_iris/\n")
 	b.WriteString("and schemas/demo/colors/) into the workspace for you.\n")
 	b.WriteString("\n")
+	acts, err := quickstartActs()
+	if err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
+			message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+	}
 	n := 0
-	for _, act := range quickstartActs() {
+	for _, act := range acts {
 		b.WriteString(actGuideHeading(act.id) + "\n")
 		b.WriteString("\n")
 		for _, s := range act.steps {
@@ -213,7 +240,7 @@ func (a *app) renderQuickstartGuide() error {
 	}
 	b.WriteString("Every step is idempotent and safe to re-run; stop the engine later with\n")
 	b.WriteString("`iris engine stop`.\n")
-	_, err := fmt.Fprint(a.out, b.String())
+	_, err = fmt.Fprint(a.out, b.String())
 	return err
 }
 
@@ -225,7 +252,12 @@ type quickstartGuide struct {
 
 // renderQuickstartJSON emits the guide as the one data envelope on stdout.
 func (a *app) renderQuickstartJSON() error {
-	return json.NewEncoder(a.out).Encode(dataEnvelope{Data: quickstartGuide{Steps: quickstartSteps()}})
+	steps, err := quickstartSteps()
+	if err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
+			message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+	}
+	return json.NewEncoder(a.out).Encode(dataEnvelope{Data: quickstartGuide{Steps: steps}})
 }
 
 // stdoutTTY resolves the stdout half of the interactivity gate through the

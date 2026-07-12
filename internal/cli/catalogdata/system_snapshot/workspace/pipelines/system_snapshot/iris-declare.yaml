@@ -1,0 +1,8 @@
+name: system_snapshot
+run: [sh, main.sh]
+reads:
+  - table: demo.machine_facts
+    fields: [fact, value, collected_at]
+writes:
+  - table: demo.machine_facts
+    fields: [fact, value, collected_at]

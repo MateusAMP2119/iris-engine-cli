@@ -1,0 +1,14 @@
+id: word_frequency
+name: Word Frequency
+pitch: Count every word of an 1891 Dickinson poem, wholly in Postgres.
+description: |
+  A computation that never leaves the database: Emily Dickinson's "Hope is
+  the thing with feathers" (Poems, 1891) is embedded in the script, and
+  Postgres itself splits, lowercases, and counts every word into
+  demo.word_counts through the engine-injected IRIS_DB_URL. The poem is
+  fixed, so the counts are deterministic: every run upserts the same rows
+  under a new provenance stamp — ask the row 'hope' who wrote it.
+run_note: Postgres splits and counts the embedded 1891 poem into demo.word_counts; the counts are deterministic, so re-running layers a new provenance stamp on the same rows
+showcase:
+  table: demo.word_counts
+  pk: hope
