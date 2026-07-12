@@ -1,0 +1,13 @@
+id: hello_iris
+name: Hello Iris
+pitch: Upsert the seven rainbow colors and ask a row who wrote it.
+description: |
+  The canonical first pipeline: a tiny POSIX-sh script upserts the seven
+  rainbow colors into demo.colors through the engine-injected IRIS_DB_URL.
+  The primary keys are fixed, so re-running layers a second provenance stamp
+  on the same seven rows — that layering is the provenance lesson the tour
+  ends on.
+run_note: the script upserts the seven rainbow colors into demo.colors; re-running layers a second provenance stamp on the same rows
+showcase:
+  table: demo.colors
+  pk: green

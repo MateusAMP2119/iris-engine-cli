@@ -131,8 +131,12 @@ func inputEvents(events []string) []string {
 // the in-process runner: the canonical table rows with the literal "iris"
 // argv[0] stripped (in-process re-entry, never a binary path or PATH lookup).
 func canonicalStepArgvs() []string {
+	steps, err := quickstartSteps()
+	if err != nil {
+		panic(err) // the embedded catalog is golden-pinned; a load failure is a broken build
+	}
 	var out []string
-	for _, s := range quickstartSteps() {
+	for _, s := range steps {
 		out = append(out, strings.Join(s.Argv[1:], " "))
 	}
 	return out
@@ -251,7 +255,11 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 			}
 
 			// The tour shows each literal command as it runs it.
-			for _, s := range quickstartSteps() {
+			steps, err := quickstartSteps()
+			if err != nil {
+				t.Fatalf("quickstartSteps: %v", err)
+			}
+			for _, s := range steps {
 				if cmdLine := strings.Join(s.Argv, " "); !strings.Contains(out.String(), cmdLine) {
 					t.Errorf("tour never showed the literal command %q\nstdout: %s", cmdLine, out.String())
 				}
@@ -624,6 +632,8 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 			// them is itself a failure.
 			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerProceed, nil }
 			a.tourInput = func(string, string) (string, error) { return "", nil }
+			// The bare mux reports no leadership role; readiness has its own test.
+			a.waitForReady = func(context.Context, config.Settings) error { return nil }
 			a.runStep = func(ctx context.Context, args []string) int {
 				joined := strings.Join(args, " ")
 				if strings.HasPrefix(joined, "engine install") || strings.HasPrefix(joined, "engine start") {

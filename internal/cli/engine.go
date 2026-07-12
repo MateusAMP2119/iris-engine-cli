@@ -137,7 +137,7 @@ func (a *app) engineInfo() runE {
 			ObjectsPath:     settings.ObjectsPath,
 			EngineKeyPublic: key.PublicBase64(),
 		}
-		runtimeInfo, daemonUp := a.fetchDaemonInfo(cmd, settings)
+		runtimeInfo, daemonUp := a.fetchDaemonInfo(cmd.Context(), settings)
 		if daemonUp {
 			res.Role = runtimeInfo.Role
 			res.Leader = runtimeInfo.Leader
@@ -180,9 +180,9 @@ func (a *app) engineInfo() runE {
 // fetchDaemonInfo reads the daemon's runtime info readout (GET /info)
 // best-effort: false when no daemon is reachable or the read fails, so `iris
 // engine info` stays a real local readout on a daemonless engine.
-func (a *app) fetchDaemonInfo(cmd *cobra.Command, settings config.Settings) (api.InfoPayload, bool) {
+func (a *app) fetchDaemonInfo(ctx context.Context, settings config.Settings) (api.InfoPayload, bool) {
 	client, base, overTCP := a.daemonHTTPClient(settings)
-	hreq, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, base+"/info", nil)
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/info", nil)
 	if err != nil {
 		a.logger.Debug("engine info: build daemon request", "err", err)
 		return api.InfoPayload{}, false

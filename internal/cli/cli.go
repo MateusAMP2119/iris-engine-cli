@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -133,6 +134,18 @@ type app struct {
 	// the real command implementation, never a PATH lookup); tests inject it to
 	// record the executed steps and script their exit codes.
 	runStep func(ctx context.Context, args []string) int
+	// waitForReady blocks until the workspace daemon reports a leadership role,
+	// closing the quickstart tour's ENGINE act (specification section 8). It is
+	// nil in production (the tour falls back to waitEngineReady, the bounded
+	// context-aware poll of the /info readout); tests inject it to close the act
+	// instantly or exercise the real poll against a fake daemon.
+	waitForReady func(ctx context.Context, settings config.Settings) error
+	// readyBudget bounds waitEngineReady's whole poll (zero means the production
+	// ten seconds); tests shrink it to keep the timeout leg fast.
+	readyBudget time.Duration
+	// readyEvery is waitEngineReady's poll interval (zero means the production
+	// 250ms); tests shrink it beside readyBudget.
+	readyEvery time.Duration
 	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
 	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
 	// the unix socket (the flag surface cannot contribute one on this path:

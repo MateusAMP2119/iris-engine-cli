@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -132,11 +133,11 @@ func (t *tourIO) readLine(prompt, _ string) (string, error) {
 	return strings.TrimRight(line, "\r\n"), nil
 }
 
-// tourActs returns the runnable act table: the canonical quickstartActs with
-// THE ENGINE's opener wired to the workspace prompt (the act's opening
-// question, doubling as its consent).
-func (a *app) tourActs() []tourAct {
-	acts := quickstartActs()
+// tourActs returns the runnable act table for one catalog entry: the
+// canonical quickstartActsFor with THE ENGINE's opener wired to the workspace
+// prompt (the act's opening question, doubling as its consent).
+func (a *app) tourActs(e catalogEntry) []tourAct {
+	acts := quickstartActsFor(e)
 	for i := range acts {
 		if acts[i].id == tourActEngine {
 			acts[i].opener = a.openEngineWorkspace
@@ -210,13 +211,26 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) err
 	if run == nil {
 		run = a.runTourChild
 	}
+	wait := a.waitForReady
+	if wait == nil {
+		wait = a.waitEngineReady
+	}
 	s := &tourSession{ctx: ctx, p: p, yes: yes, prompt: prompt, input: input}
 
 	if !fromInstaller {
 		a.quickstartWelcome(p)
 	}
 
-	acts := a.tourActs()
+	cat, err := loadCatalog()
+	if err != nil {
+		return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
+			message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+	}
+	// The tour still selects the default entry unconditionally; the shop that
+	// lets the operator pick arrives with the catalog browse (E16.3).
+	entry := cat.defaultEntry()
+
+	acts := a.tourActs(entry)
 	total := 0
 	for _, act := range acts {
 		total += len(act.steps)
@@ -251,6 +265,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) err
 		}
 
 		steps := act.steps
+		var engineSettings config.Settings
 		if act.id == tourActEngine {
 			// The tour only ever targets the local workspace engine it provisions:
 			// an ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
@@ -275,6 +290,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) err
 			} else if settings.Managed() && daemon.IsManagedInstalled(settings) {
 				fmt.Fprintln(a.out, "The managed Postgres is already installed; the install step only verifies it (every step is idempotent).")
 			}
+			engineSettings = settings
 		}
 
 		for _, step := range steps {
@@ -284,7 +300,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) err
 			k++
 			a.renderTourStep(p, step)
 			if step.ID == "apply" {
-				if err := a.tourMaterializeSample(); err != nil {
+				if err := a.tourMaterializeEntry(entry); err != nil {
 					return err
 				}
 			}
@@ -294,6 +310,19 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool) err
 			}
 			if code != exitOK {
 				return a.tourStepFailed(step, k, total, code)
+			}
+		}
+
+		if act.id == tourActEngine {
+			// The act closes only on the readout: `engine start -d` returns on
+			// socket-up while leadership can lag, so the tour holds here until the
+			// daemon reports a role -- THE PIPELINE act never opens on an unready
+			// engine (specification section 8, quickstart surface).
+			if err := wait(ctx, engineSettings); err != nil {
+				if ctx.Err() != nil {
+					return a.tourAbort()
+				}
+				return err
 			}
 		}
 	}
@@ -494,26 +523,59 @@ func (a *app) runTourChild(ctx context.Context, args []string) int {
 	return child.runContext(ctx, args)
 }
 
-// tourMaterializeSample writes the embedded hello_iris sample into the tour
-// workspace right before the apply step, announcing what it wrote; present
-// files are kept (a differing one with the materializer's warning on stderr),
-// never clobbered. A filesystem fault is a real failure: the sample is what the
-// next step applies.
-func (a *app) tourMaterializeSample() error {
-	written, err := materializeQuickstartSample(".", a.errOut)
+// tourMaterializeEntry writes one embedded catalog entry's workspace subtree
+// into the tour workspace right before the apply step, announcing what it
+// wrote; present files are kept (a differing one with the materializer's
+// warning on stderr), never clobbered. A filesystem fault is a real failure:
+// the entry is what the next step applies.
+func (a *app) tourMaterializeEntry(e catalogEntry) error {
+	written, err := materializeCatalogEntry(e.ID, ".", a.errOut)
 	if err != nil {
 		return &fault{code: exitOpFailed, codeStr: "quickstart_sample",
-			message: fmt.Sprintf("quickstart: materialize the hello_iris sample: %v", err)}
+			message: fmt.Sprintf("quickstart: materialize the %s sample: %v", e.ID, err)}
 	}
 	if len(written) == 0 {
-		fmt.Fprintln(a.out, "The hello_iris sample is already in the workspace; keeping it.")
+		fmt.Fprintf(a.out, "The %s sample is already in the workspace; keeping it.\n", e.ID)
 		return nil
 	}
-	fmt.Fprintln(a.out, "Materialized the embedded hello_iris sample:")
+	fmt.Fprintf(a.out, "Materialized the embedded %s sample:\n", e.ID)
 	for _, rel := range written {
 		fmt.Fprintf(a.out, "  wrote %s\n", rel)
 	}
 	return nil
+}
+
+// waitEngineReady is the production waitForReady: a bounded, context-aware
+// poll of the daemon's /info readout until it reports a leadership role
+// (leader or standby -- `engine start -d` returns on socket-up while the
+// election can lag). A daemon that never reports one inside the budget is a
+// clear fault, exit 4: the tour never proceeds onto an unready engine.
+func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) error {
+	budget := a.readyBudget
+	if budget == 0 {
+		budget = 10 * time.Second
+	}
+	every := a.readyEvery
+	if every == 0 {
+		every = 250 * time.Millisecond
+	}
+	deadline := time.NewTimer(budget)
+	defer deadline.Stop()
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		if info, ok := a.fetchDaemonInfo(ctx, settings); ok && info.Role != "" && info.Role != "unknown" {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return &fault{code: exitOpFailed, codeStr: "quickstart_engine_unready",
+				message: "quickstart: the engine is up but has not reported a leadership role yet; check `iris engine info` and resume any time: iris quickstart"}
+		case <-tick.C:
+		}
+	}
 }
 
 // reportPromptFault surfaces a real prompt read fault on errOut before the

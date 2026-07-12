@@ -1,0 +1,12 @@
+schema: demo
+table: word_counts
+columns:
+  - name: word
+    type: text
+    primary_key: true
+  - name: n
+    type: int
+    nullable: false
+  - name: counted_at
+    type: timestamptz
+    default: now()

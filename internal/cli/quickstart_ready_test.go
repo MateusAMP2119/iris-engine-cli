@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -30,8 +29,8 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 	// spec: S08/quickstart-act-structure
 	t.Run("S08/quickstart-act-structure", func(t *testing.T) {
 		t.Run("the act holds while /info reports no role and proceeds when it flips", func(t *testing.T) {
-			dir := chdirWorkspace(t)
-			sock := filepath.Join(dir, "iris.sock")
+			chdirWorkspace(t)
+			sock := shortSocket(t)
 			var infoCalls atomic.Int64
 			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
 				n := infoCalls.Add(1)
@@ -66,8 +65,8 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 		})
 
 		t.Run("a daemon that never reports a role is a clear fault, exit 4, PIPELINE shut", func(t *testing.T) {
-			dir := chdirWorkspace(t)
-			sock := filepath.Join(dir, "iris.sock")
+			chdirWorkspace(t)
+			sock := shortSocket(t)
 			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
 				return api.InfoPayload{Role: "unknown", Socket: sock, Uptime: "1s"}, nil
 			}))
