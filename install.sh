@@ -7,6 +7,8 @@
 #   IRIS_VERSION=<tag>   install that release instead of latest
 #   IRIS_NO_SETUP=1      install only; never hand off to the setup tour
 #   IRIS_FORCE=1         legacy alias of IRIS_NO_SETUP
+#   IRIS_BASE_URL=<url>  fetch the asset + checksums from here (local testing)
+#   IRIS_DEST=<dir>      install into this directory (local testing)
 #   NO_COLOR             plain output
 set -eu
 
@@ -17,6 +19,10 @@ if [ -n "${IRIS_VERSION:-}" ]; then
 else
   BASE="https://github.com/${REPO}/releases/latest/download"
   requested="latest"
+fi
+if [ -n "${IRIS_BASE_URL:-}" ]; then
+  BASE="${IRIS_BASE_URL}"
+  requested="${IRIS_VERSION:-latest} (from ${BASE})"
 fi
 
 # Ceremony colors: only on a terminal and never when NO_COLOR is set.
@@ -77,7 +83,7 @@ kv "Version" "${requested}"
 if [ -n "$installed" ]; then
   kv "Installed" "${installed} → upgrading in place"
 fi
-kv "Dest" "/usr/local/bin (falls back to ~/.local/bin)"
+kv "Dest" "${IRIS_DEST:-/usr/local/bin (falls back to ~/.local/bin)}"
 
 asset="iris_${os}_${arch}.tar.gz"
 tmp=$(mktemp -d)
@@ -103,6 +109,10 @@ tar -xzf "${tmp}/${asset}" -C "$tmp"
 section "[2/3] Installing"
 # Prefer /usr/local/bin; fall back to ~/.local/bin when not writable and sudo is unavailable.
 dest="/usr/local/bin"
+if [ -n "${IRIS_DEST:-}" ]; then
+  dest="${IRIS_DEST}"
+  mkdir -p "$dest"
+fi
 if [ -w "$dest" ]; then
   mv "${tmp}/iris" "${dest}/iris"
 elif command -v sudo >/dev/null 2>&1; then
