@@ -31,8 +31,8 @@ var catalogData embed.FS
 // catalogShowcase names the table and primary key the tour's provenance
 // finale queries for one catalog entry.
 type catalogShowcase struct {
-	Table string `yaml:"table"`
-	PK    string `yaml:"pk"`
+	Table string `yaml:"table" json:"table"`
+	PK    string `yaml:"pk" json:"pk"`
 }
 
 // catalogEntry is one pipeline-catalog entry's metadata, parsed from its

@@ -51,7 +51,7 @@ func TestQuickstartActStructure(t *testing.T) {
 			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
-			events := scriptTour(a, proceeds(1), nil) // exactly one act gate: THE PIPELINE
+			events := scriptTour(a, proceeds(1), nil) // exactly one consent: THE PIPELINE's pick
 
 			code := a.run([]string{"quickstart"})
 			if code != exitOK {
@@ -59,14 +59,14 @@ func TestQuickstartActStructure(t *testing.T) {
 			}
 
 			// Event order: the workspace question opens THE ENGINE, its steps run
-			// straight through with no further prompt, one gate opens THE PIPELINE,
+			// straight through with no further prompt, one pick opens THE PIPELINE,
 			// then its steps run straight through.
 			all := canonicalStepArgvs()
 			want := []string{"input " + workspacePromptFor(wd)}
 			for _, argv := range all[:3] {
 				want = append(want, "step "+argv)
 			}
-			want = append(want, "prompt "+wantActGate)
+			want = append(want, "pick "+wantPickQuestion)
 			for _, argv := range all[3:] {
 				want = append(want, "step "+argv)
 			}
@@ -130,8 +130,8 @@ func TestQuickstartActStructure(t *testing.T) {
 			if got, want := stepEvents(*events), canonicalStepArgvs()[:2]; !equalStrings(got, want) {
 				t.Errorf("steps past the failure executed:\n got %q\nwant %q", got, want)
 			}
-			if prompts := promptEvents(*events); len(prompts) != 0 {
-				t.Errorf("a failed ENGINE act still offered the next act's gate: %q", prompts)
+			if picks := pickEvents(*events); len(picks) != 0 {
+				t.Errorf("a failed ENGINE act still offered the next act's pick: %q", picks)
 			}
 			if !strings.Contains(strings.ToLower(errb.String()), strings.ToLower(wantResumeHint)) {
 				t.Errorf("failure carries no resume hint on stderr: %q", errb.String())
@@ -307,9 +307,9 @@ func TestQuickstartFromInstallerContinuation(t *testing.T) {
 			if got := stepEvents(*events); !equalStrings(got, canonicalStepArgvs()) {
 				t.Errorf("continuation did not run the full tour:\n got %q\nwant %q", got, canonicalStepArgvs())
 			}
-			// Otherwise the same tour: THE PIPELINE still asks its own gate.
-			if prompts := promptEvents(*events); len(prompts) != 1 || prompts[0] != wantActGate {
-				t.Errorf("act gates = %q, want exactly [%q]", prompts, wantActGate)
+			// Otherwise the same tour: THE PIPELINE still asks its own pick.
+			if picks := pickEvents(*events); len(picks) != 1 || picks[0] != wantPickQuestion {
+				t.Errorf("act picks = %q, want exactly [%q]", picks, wantPickQuestion)
 			}
 		})
 

@@ -153,6 +153,7 @@ func (a *app) quickstartCmd() *cobra.Command {
 	// answers its own prompts.
 	c.Flags().Bool("yes", false, "run every tour step unattended, without prompting (cwd is the workspace)")
 	c.Flags().Bool("from-installer", false, "installer continuation: open directly on the engine act (install.sh's banner was the welcome, its prompt the consent)")
+	c.Flags().String("pipeline", "", "pick this catalog pipeline explicitly (skips the shop browse; the plain guide and --json list the catalog)")
 	return daemonless(c)
 }
 
@@ -170,27 +171,49 @@ func (a *app) runQuickstart() runE {
 		if v, ok := changedString(cmd, "host"); ok && v != "" {
 			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted)")
 		}
+		cat, err := loadCatalog()
+		if err != nil {
+			return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
+				message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+		}
+		// --pipeline picks explicitly in every rendering; an unknown id is a
+		// usage error naming the available ids. --yes without --pipeline takes
+		// the default, entry 1.
+		selected := cat.defaultEntry()
+		explicit := false
+		if id, ok := changedString(cmd, "pipeline"); ok && id != "" {
+			e, eerr := cat.entryByID(id)
+			if eerr != nil {
+				return a.usage(fmt.Sprintf("iris quickstart --pipeline: %v", eerr))
+			}
+			selected, explicit = e, true
+		}
 		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
-			return a.renderQuickstartJSON()
+			return a.renderQuickstartJSON(cat, selected)
 		}
 		yes, _ := cmd.Flags().GetBool("yes")
 		fromInstaller, _ := cmd.Flags().GetBool("from-installer")
 		if yes || (a.stdoutTTY() && a.stdinTTY()) {
-			return a.runQuickstartTour(cmd, yes, fromInstaller)
+			return a.runQuickstartTour(cmd, yes, fromInstaller, cat, selected, explicit)
 		}
-		return a.renderQuickstartGuide()
+		return a.renderQuickstartGuide(cat, selected)
 	}
 }
 
 // quickstartWelcome paints the standalone tour's opening: the two acts by
-// name, how consent works, and how the tour ends. The installer's continuation
+// name (THE PIPELINE's line parameterized by an explicit --pipeline pick),
+// how consent works, and how the tour ends. The installer's continuation
 // (--from-installer) skips it -- install.sh's banner was the welcome.
-func (a *app) quickstartWelcome(p painter) {
+func (a *app) quickstartWelcome(p painter, selected catalogEntry, explicit bool) {
 	fmt.Fprintln(a.out, p.cyan("Welcome to iris — the guided first session."))
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "The tour runs the real first session in two acts:")
 	fmt.Fprintf(a.out, "  %s — provision the engine and start it\n", p.cyan("THE ENGINE"))
-	fmt.Fprintf(a.out, "  %s — register the sample pipeline, run it, ask a row who wrote it\n", p.magenta("THE PIPELINE"))
+	pipelineLine := "pick a starter from the pipeline catalog, run it, ask a row who wrote it"
+	if explicit {
+		pipelineLine = fmt.Sprintf("register the %s pipeline, run it, ask a row who wrote it", selected.ID)
+	}
+	fmt.Fprintf(a.out, "  %s — %s\n", p.magenta("THE PIPELINE"), pipelineLine)
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "One question opens each act; its steps then run straight through, for real.")
 	fmt.Fprintln(a.out, "It ends with the engine left running and a cheat-sheet of what you used.")
@@ -209,26 +232,30 @@ func actGuideHeading(id string) string {
 	}
 }
 
-// renderQuickstartGuide writes the plain copy-paste guide: the same canonical
-// steps under plain-text act headings, numbered through, as byte-stable plain
-// text (pinned by a golden file), zero ANSI, executing nothing.
-func (a *app) renderQuickstartGuide() error {
+// renderQuickstartGuide writes the plain copy-paste guide: the catalog block
+// and the selected entry's canonical steps under plain-text act headings,
+// numbered through, as byte-stable plain text (pinned by a golden file), zero
+// ANSI, executing nothing.
+func (a *app) renderQuickstartGuide(cat *pipelineCatalog, selected catalogEntry) error {
 	var b strings.Builder
 	b.WriteString("iris quickstart — the guided first session\n")
 	b.WriteString("\n")
 	b.WriteString("This is the plain guide: the tour's steps as numbered copy-paste commands,\n")
 	b.WriteString("executing nothing. Run `iris quickstart` in an interactive terminal for the\n")
 	b.WriteString("guided version: two acts, one question opening each, the steps then running\n")
-	b.WriteString("for real — writing the embedded hello_iris sample (pipelines/hello_iris/\n")
-	b.WriteString("and schemas/demo/colors/) into the workspace for you.\n")
+	b.WriteString("for real — materializing your pick from the embedded pipeline catalog into\n")
+	b.WriteString("the workspace for you.\n")
 	b.WriteString("\n")
-	acts, err := quickstartActs()
-	if err != nil {
-		return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
-			message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+	b.WriteString("The pipeline catalog (pick with --pipeline <id>; entry 1 is the default):\n")
+	b.WriteString("\n")
+	for i, e := range cat.Entries {
+		fmt.Fprintf(&b, "  %d. %s — %s\n", i+1, e.ID, e.Pitch)
 	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "The steps below use %s.\n", selected.ID)
+	b.WriteString("\n")
 	n := 0
-	for _, act := range acts {
+	for _, act := range quickstartActsFor(selected) {
 		b.WriteString(actGuideHeading(act.id) + "\n")
 		b.WriteString("\n")
 		for _, s := range act.steps {
@@ -240,24 +267,47 @@ func (a *app) renderQuickstartGuide() error {
 	}
 	b.WriteString("Every step is idempotent and safe to re-run; stop the engine later with\n")
 	b.WriteString("`iris engine stop`.\n")
-	_, err = fmt.Fprint(a.out, b.String())
+	_, err := fmt.Fprint(a.out, b.String())
 	return err
 }
 
-// quickstartGuide is the --json payload of `iris quickstart`: the ordered step
-// list of the tour, each step carrying its act, executing nothing.
+// quickstartCatalogPayload is the --json envelope's additive catalog object:
+// the default and selected entry ids beside every entry's browsable metadata.
+type quickstartCatalogPayload struct {
+	Default  string                         `json:"default"`
+	Selected string                         `json:"selected"`
+	Entries  []quickstartCatalogEntryPayload `json:"entries"`
+}
+
+// quickstartCatalogEntryPayload is one catalog entry in the --json envelope.
+type quickstartCatalogEntryPayload struct {
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Pitch    string          `json:"pitch"`
+	Showcase catalogShowcase `json:"showcase"`
+}
+
+// quickstartGuide is the --json payload of `iris quickstart`: the selected
+// entry's ordered step list, each step carrying its act, plus the additive
+// catalog object.
 type quickstartGuide struct {
-	Steps []quickstartStep `json:"steps"`
+	Steps   []quickstartStep         `json:"steps"`
+	Catalog quickstartCatalogPayload `json:"catalog"`
 }
 
 // renderQuickstartJSON emits the guide as the one data envelope on stdout.
-func (a *app) renderQuickstartJSON() error {
-	steps, err := quickstartSteps()
-	if err != nil {
-		return &fault{code: exitOpFailed, codeStr: "quickstart_catalog",
-			message: fmt.Sprintf("quickstart: load the embedded pipeline catalog: %v", err)}
+func (a *app) renderQuickstartJSON(cat *pipelineCatalog, selected catalogEntry) error {
+	var steps []quickstartStep
+	for _, act := range quickstartActsFor(selected) {
+		steps = append(steps, act.steps...)
 	}
-	return json.NewEncoder(a.out).Encode(dataEnvelope{Data: quickstartGuide{Steps: steps}})
+	payload := quickstartCatalogPayload{Default: cat.defaultEntry().ID, Selected: selected.ID}
+	for _, e := range cat.Entries {
+		payload.Entries = append(payload.Entries, quickstartCatalogEntryPayload{
+			ID: e.ID, Name: e.Name, Pitch: e.Pitch, Showcase: e.Showcase,
+		})
+	}
+	return json.NewEncoder(a.out).Encode(dataEnvelope{Data: quickstartGuide{Steps: steps, Catalog: payload}})
 }
 
 // stdoutTTY resolves the stdout half of the interactivity gate through the

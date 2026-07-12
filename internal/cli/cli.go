@@ -115,17 +115,19 @@ type app struct {
 	// terminalConfirm uses); tests inject it to drive either rendering without a
 	// real terminal.
 	stdinIsTTY func() bool
-	// tourPrompt asks one quickstart-tour question and returns the operator's
-	// answer. It is nil in production (the tour falls back to a terminal prompt
-	// that writes the question to errOut and reads one line from the process
-	// stdin); tests inject it to script the tour without a real terminal. It is
-	// distinct from the confirm seam, whose teardown-shaped signature does not fit
-	// the tour's proceed/skip/quit answers.
-	tourPrompt func(question string, kind promptKind) (promptAnswer, error)
+	// tourPick asks the quickstart shop's pick question -- which of the n
+	// catalog entries this session runs -- and returns the choice with the
+	// operator's answer. It is nil in production (the tour falls back to a
+	// terminal pick that writes the question to errOut and reads one line from
+	// the shared stdin reader, so a type-ahead line is never dropped between the
+	// pick and the next question); tests inject it to script the shop without a
+	// real terminal. It is distinct from the confirm seam, whose teardown-shaped
+	// signature does not fit the shop's numbered choice.
+	tourPick func(question string, n int) (choice int, ans promptAnswer, err error)
 	// tourInput reads one line answer to a quickstart-tour question that carries a
 	// visible default (the ENGINE act's workspace question). It is nil in
 	// production (the tour falls back to the shared-reader terminal line read
-	// beside tourPrompt); tests inject it to script the answer. The caller applies
+	// beside tourPick); tests inject it to script the answer. The caller applies
 	// def to an empty answer; the seam only reads.
 	tourInput func(prompt, def string) (string, error)
 	// runStep executes one quickstart-tour step -- an iris command given as the

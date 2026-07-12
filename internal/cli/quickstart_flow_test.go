@@ -20,12 +20,10 @@ import (
 )
 
 // The pinned tour strings the flow tests assert. They are the operator-facing
-// contract surface of the sequencer: the act-gate question opening THE
-// PIPELINE, its one-line intro, the resume hint every abort and failure
-// prints, and the exit-5 dead-letter lesson.
+// contract surface of the sequencer: the resume hint every abort and failure
+// prints, and the exit-5 dead-letter lesson (parameterized by the picked
+// entry; hello_iris is the default pick).
 const (
-	wantActGate        = "Open this act? (Y/n)"
-	wantPipelineIntro  = "Register the hello_iris sample, run it, and ask a row who wrote it."
 	wantResumeHint     = "Resume any time: iris quickstart"
 	wantDeadletterShow = "iris deadletter show hello_iris"
 )
@@ -43,24 +41,25 @@ func tourApp(out, errb *bytes.Buffer, tty bool) *app {
 	return a
 }
 
-// scriptTour installs a scripted tourPrompt, a scripted tourInput, and a
-// recording runStep on a. The prompt consumes answers in order (quitting when
-// they run out); the input answers every line read with the empty string,
-// accepting the visible default; the runStep fake returns the code of the
-// first matching argv prefix in codes (0 with no match). All three append to
-// the returned event log -- "prompt <question>", "input <prompt>", and
-// "step <argv...>" -- so a test can assert the ask-then-execute order.
+// scriptTour installs a scripted tourPick, a scripted tourInput, and a
+// recording runStep on a. The pick consumes answers in order (quitting when
+// they run out; an affirmative answer picks entry 1, the default); the input
+// answers every line read with the empty string, accepting the visible
+// default; the runStep fake returns the code of the first matching argv
+// prefix in codes (0 with no match). All three append to the returned event
+// log -- "pick <question>", "input <prompt>", and "step <argv...>" -- so a
+// test can assert the ask-then-execute order.
 func scriptTour(a *app, answers []promptAnswer, codes map[string]int) *[]string {
 	events := &[]string{}
 	next := 0
-	a.tourPrompt = func(question string, _ promptKind) (promptAnswer, error) {
-		*events = append(*events, "prompt "+question)
+	a.tourPick = func(question string, _ int) (int, promptAnswer, error) {
+		*events = append(*events, "pick "+question)
 		if next >= len(answers) {
-			return answerQuit, nil
+			return 0, answerQuit, nil
 		}
 		ans := answers[next]
 		next++
-		return ans, nil
+		return 1, ans, nil
 	}
 	a.tourInput = func(prompt, _ string) (string, error) {
 		*events = append(*events, "input "+prompt)
@@ -103,17 +102,6 @@ func stepEvents(events []string) []string {
 	return out
 }
 
-// promptEvents filters the asked-question entries out of a tour event log,
-// stripping the "prompt " tag.
-func promptEvents(events []string) []string {
-	var out []string
-	for _, e := range events {
-		if rest, ok := strings.CutPrefix(e, "prompt "); ok {
-			out = append(out, rest)
-		}
-	}
-	return out
-}
 
 // inputEvents filters the line-read entries out of a tour event log, stripping
 // the "input " tag.
@@ -246,7 +234,7 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 			for _, argv := range all[:3] {
 				want = append(want, "step "+argv)
 			}
-			want = append(want, "prompt "+wantActGate)
+			want = append(want, "pick "+wantPickQuestion)
 			for _, argv := range all[3:] {
 				want = append(want, "step "+argv)
 			}
@@ -264,9 +252,9 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 					t.Errorf("tour never showed the literal command %q\nstdout: %s", cmdLine, out.String())
 				}
 			}
-			// The pipeline act explains itself before its gate.
-			if !strings.Contains(out.String(), wantPipelineIntro) {
-				t.Errorf("no pipeline act intro %q\nstdout: %s", wantPipelineIntro, out.String())
+			// The picked entry explains itself (detail + finale preview) before apply.
+			if !strings.Contains(stripANSI(out.String()), "Finale: iris data provenance demo.colors green") {
+				t.Errorf("no picked-entry finale preview before the steps\nstdout: %s", stripANSI(out.String()))
 			}
 			// The wrap-up leaves the engine running and says so.
 			if !strings.Contains(out.String(), "still running") {
@@ -347,7 +335,7 @@ func TestQuickstartDeclineCleanAbort(t *testing.T) {
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, nil, nil)
-			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerQuit, io.EOF }
+			a.tourPick = func(string, int) (int, promptAnswer, error) { return 0, answerQuit, io.EOF }
 
 			code := a.run([]string{"quickstart"})
 			if code != exitOK {
@@ -442,8 +430,8 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 		if inputs := inputEvents(*events); len(inputs) != 1 {
 			t.Errorf("tour asked %d line reads %q, want 1 (the workspace question)", len(inputs), inputs)
 		}
-		if prompts := promptEvents(*events); len(prompts) != 1 {
-			t.Errorf("tour asked %d gates %q, want 1 (skipped steps are announced, never gated)", len(prompts), prompts)
+		if picks := pickEvents(*events); len(picks) != 1 {
+			t.Errorf("tour asked %d picks %q, want 1 (skipped steps are announced, never gated)", len(picks), picks)
 		}
 		if !strings.Contains(out.String(), "already") {
 			t.Errorf("tour does not announce install/start as already done\nstdout: %s", out.String())
@@ -482,8 +470,8 @@ func TestQuickstartYesRunsUnattended(t *testing.T) {
 			if code != exitOK {
 				t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 			}
-			if prompts := promptEvents(*events); len(prompts) != 0 {
-				t.Errorf("--yes still prompted: %q", prompts)
+			if picks := pickEvents(*events); len(picks) != 0 {
+				t.Errorf("--yes still asked the shop pick: %q", picks)
 			}
 			if inputs := inputEvents(*events); len(inputs) != 0 {
 				t.Errorf("--yes still read a line: %q", inputs)
@@ -640,7 +628,7 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 			// asserts dial targets, not step outcomes. install/start must never
 			// execute for real (the reachable workspace daemon skips them); reaching
 			// them is itself a failure.
-			a.tourPrompt = func(string, promptKind) (promptAnswer, error) { return answerProceed, nil }
+			a.tourPick = func(string, int) (int, promptAnswer, error) { return 1, answerProceed, nil }
 			a.tourInput = func(string, string) (string, error) { return "", nil }
 			// The bare mux reports no leadership role; readiness has its own test.
 			a.waitForReady = func(context.Context, config.Settings) error { return nil }
