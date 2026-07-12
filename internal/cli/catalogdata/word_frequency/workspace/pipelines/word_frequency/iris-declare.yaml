@@ -1,0 +1,8 @@
+name: word_frequency
+run: [sh, main.sh]
+reads:
+  - table: demo.word_counts
+    fields: [word, n, counted_at]
+writes:
+  - table: demo.word_counts
+    fields: [word, n, counted_at]

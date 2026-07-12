@@ -29,13 +29,9 @@ Spec = source of truth. Test suite = spec's executable form. Implementation rege
 
 - `master`: release line. Only receives epic-checkpoint PRs from `development`.
 - `development`: integration line. All issue branches merge here.
-- Issue branches: `issue/EXX.Y-short-name`, one per task, cut from `development`, checked out in dedicated git worktree. PR title `EXX.Y <task name>`; PR body lists task's contract ids + Done-when checklist.
+- Issue branches: `issue/EXX.Y-short-name`, cut from `development`. PR title `EXX.Y <task name>`; PR body lists task's contract ids + Done-when checklist. Small tweaks may go on plain feature branches.
 - Epic completes → PR `Epic EXX` goes `development` → `master`, waits for human review.
-- Respect each task's `Depends on` section. Dependency-independent tasks may run in parallel worktrees; tasks in one dependency chain strictly serial.
-
-## Role split
-
-Orchestrator (main session) never writes source or tests; plans, spawns coder agents, runs gates, handles git/PR state. Issue PRs merge on gates + CI green — no per-PR review step. All implementation by `coder` agent (see `.claude/agents/coder.md`) inside task's worktree.
+- Issue PRs merge on gates + CI green — no per-PR review step.
 
 ## Conventions
 
