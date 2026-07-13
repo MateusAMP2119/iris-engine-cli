@@ -7,7 +7,7 @@ package cli
 // framework); raw terminal mode comes from golang.org/x/term. Every widget
 // is production-surface only: the tour's injectable seams (tourPick,
 // tourInput) bypass this file entirely, so harnessed tests never meet raw
-// mode. EXPERIMENT: not yet covered by spec contracts.
+// mode (specification section 8, quickstart ceremony widgets).
 
 import (
 	"fmt"
@@ -92,8 +92,9 @@ func clackBar(w io.Writer, p painter) {
 	fmt.Fprintln(w, p.dim(railBar))
 }
 
-// clackOutro closes the rail: `└  message`.
-func clackOutro(w io.Writer, p painter, msg string) {
+// clackOutro closes the rail: `└  message`. The painter parameter keeps the
+// widget family's uniform signature; the outro line itself carries no paint.
+func clackOutro(w io.Writer, _ painter, msg string) {
 	fmt.Fprintf(w, "%s  %s\n", railEnd, msg)
 }
 

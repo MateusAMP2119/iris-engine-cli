@@ -171,7 +171,7 @@ func (a *app) quickstartCmd() *cobra.Command {
 func (a *app) runQuickstart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		if v, ok := changedString(cmd, "host"); ok && v != "" {
-			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted)")
+			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted), or point this workspace at a remote engine with iris engine connect <host>")
 		}
 		cat, err := loadCatalog()
 		if err != nil {
@@ -289,8 +289,8 @@ func (a *app) renderQuickstartGuide(cat *pipelineCatalog, selected catalogEntry)
 // quickstartCatalogPayload is the --json envelope's additive catalog object:
 // the default and selected entry ids beside every entry's browsable metadata.
 type quickstartCatalogPayload struct {
-	Default  string                         `json:"default"`
-	Selected string                         `json:"selected"`
+	Default  string                          `json:"default"`
+	Selected string                          `json:"selected"`
 	Entries  []quickstartCatalogEntryPayload `json:"entries"`
 }
 

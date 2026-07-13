@@ -17,7 +17,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
+	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
@@ -87,11 +89,12 @@ const chapterRuleWidth = 48
 // tourSession carries one tour invocation's resolved seams and context into
 // the act openers.
 type tourSession struct {
-	ctx   context.Context
-	p     painter
-	yes   bool
-	pick  tourPickFunc
-	input tourInputFunc
+	ctx    context.Context
+	p      painter
+	yes    bool
+	pick   tourPickFunc
+	input  tourInputFunc
+	secret tourInputFunc
 }
 
 // tourIO owns the tour's terminal dialogue: ONE shared reader over the process
@@ -127,6 +130,28 @@ func (t *tourIO) pick(question string, n int) (int, promptAnswer, error) {
 	}
 	choice, ans := parsePickAnswer(line, n)
 	return choice, ans, nil
+}
+
+// readSecret asks one hidden line question: a no-echo terminal read
+// (term.ReadPassword) when the process stdin is a terminal, else the plain
+// shared-reader line read, where there is no echo to suppress. The hidden read
+// goes straight to the stdin fd -- a secret is typed at its prompt, never ahead.
+func (t *tourIO) readSecret(prompt, def string) (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return t.readLine(prompt, def)
+	}
+	if t.p.enabled {
+		fmt.Fprintf(t.errOut, "%s  %s ", railAsk, prompt)
+	} else {
+		fmt.Fprintf(t.errOut, "%s ", prompt)
+	}
+	b, err := term.ReadPassword(fd)
+	fmt.Fprintln(t.errOut)
+	if err != nil {
+		return "", fmt.Errorf("quickstart: read prompt answer: %w", err)
+	}
+	return string(b), nil
 }
 
 // readLine asks one line question (the prompt carries its visible default) and
@@ -226,6 +251,12 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 	if input == nil {
 		input = tio.readLine
 	}
+	// The secret read: a harnessed tourInput seam scripts secrets too (its
+	// answers never echo anywhere), while production hides the typed PAT.
+	secret := a.tourInput
+	if secret == nil {
+		secret = tio.readSecret
+	}
 	run := a.runStep
 	if run == nil {
 		run = a.runTourChild
@@ -234,7 +265,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 	if wait == nil {
 		wait = a.waitEngineReady
 	}
-	s := &tourSession{ctx: ctx, p: p, yes: yes, pick: pick, input: input}
+	s := &tourSession{ctx: ctx, p: p, yes: yes, pick: pick, input: input, secret: secret}
 
 	if !fromInstaller {
 		a.quickstartWelcome(p, selected, explicit)
@@ -242,10 +273,33 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 		clackIntro(a.out, p, "iris quickstart — the guided first session ("+buildinfo.Version+")")
 	}
 
-	// The heads-up disclaimer: what the tour really does on this machine, and
-	// the one consent that opens it. Production dialogue only (harnessed seams
-	// script the acts directly); --yes is the unattended acknowledgement.
+	// The engine-home fork, then the heads-up disclaimer: where the engine
+	// lives (provision locally, or connect to an existing remote), and -- on
+	// the local path -- what the tour really does on this machine plus the one
+	// consent that opens it. Production dialogue only (harnessed seams script
+	// the acts directly); --yes is the unattended acknowledgement and always
+	// takes the local path, like every harnessed run.
 	if widgets && !yes {
+		remote, err := a.tourEngineHome(s)
+		if err != nil {
+			if errors.Is(err, errTourAborted) {
+				return a.tourAbort()
+			}
+			return err
+		}
+		if remote {
+			// The remote branch is the whole tour: verify and record the
+			// connection, then hand over to the real commands against it. The
+			// acts below provision a local sandbox, which a remote session
+			// explicitly declined.
+			if err := a.tourConnectRemote(s); err != nil {
+				if errors.Is(err, errTourAborted) {
+					return a.tourAbort()
+				}
+				return err
+			}
+			return nil
+		}
 		if err := a.tourDisclaimer(s); err != nil {
 			if errors.Is(err, errTourAborted) {
 				return a.tourAbort()
@@ -598,6 +652,159 @@ func (a *app) tourDisclaimer(s *tourSession) error {
 	return errTourAborted
 }
 
+// tourEngineHome is the tour's opening fork: provision an engine on this
+// machine (today's whole tour), or connect this workspace to an engine that
+// already runs elsewhere. The ceremony surface gets the arrow-key select; a
+// terminal that refuses raw mode gets the numbered line dialogue, whose empty
+// answer takes local -- the fork never makes the plain first run longer than
+// one Enter. Decline, EOF, and interrupt read as the clean abort.
+func (a *app) tourEngineHome(s *tourSession) (remote bool, err error) {
+	const question = "Where does your engine live?"
+	if s.p.enabled {
+		opts := []clackOption{
+			{label: "Local", hint: "provision everything on this machine — managed Postgres, daemon, starter pipeline"},
+			{label: "Remote", hint: "connect to an existing iris engine over TCP; nothing is installed here"},
+		}
+		choice, ans, ok := askClackSelect(s.ctx, a.out, s.p, question, opts)
+		if ok {
+			if ans != answerProceed || s.ctx.Err() != nil || choice < 1 || choice > len(opts) {
+				return false, errTourAborted
+			}
+			return choice == 2, nil
+		}
+	}
+	fmt.Fprintln(a.out, question)
+	fmt.Fprintf(a.out, "  %s  %s\n", s.p.cyan("1. Local "), s.p.dim("provision everything on this machine"))
+	fmt.Fprintf(a.out, "  %s  %s\n", s.p.cyan("2. Remote"), s.p.dim("connect to an existing iris engine over TCP"))
+	choice, ans, perr := askTourPick(s.ctx, s.pick, "Pick (1-2, Enter=1):", 2)
+	if perr != nil || ans != answerProceed || s.ctx.Err() != nil || choice < 1 || choice > 2 {
+		a.reportPromptFault(perr)
+		return false, errTourAborted
+	}
+	return choice == 2, nil
+}
+
+// tourRemoteBody is the remote branch's heads-up copy: what the operator needs
+// in hand, what does and does not happen on this machine, and what gets
+// written where.
+func tourRemoteBody() string {
+	return strings.Join([]string{
+		"You need two things from the engine's operator:",
+		"- the engine address: host:port, or https://host:port when it serves TLS",
+		"- a PAT minted on that engine:  iris pat create --scope read",
+		"",
+		"Nothing is installed or started on this machine. The connection is",
+		"verified against the engine, then recorded in the workspace's",
+		".iris/iris.toml (0600); every iris command run there targets the",
+		"remote engine from then on.",
+	}, "\n")
+}
+
+// tourConnectRemote is the tour's remote branch: the heads-up note, then the
+// host and PAT questions, the verification probe, the workspace question, and
+// the recorded connection -- `iris engine connect` walked as dialogue. A failed
+// probe explains itself and re-asks (the operator fixes a typo in place, the
+// engine's operator mints a missing PAT); `q`, EOF, and an interrupt abort
+// clean at any question, like every tour prompt.
+func (a *app) tourConnectRemote(s *tourSession) error {
+	if s.p.enabled {
+		clackNote(a.out, s.p, "Connect to a remote engine", tourRemoteBody())
+	} else {
+		fmt.Fprintln(a.out)
+		fmt.Fprintln(a.out, "Connect to a remote engine:")
+		fmt.Fprintln(a.out, tourRemoteBody())
+		fmt.Fprintln(a.out)
+	}
+
+	var host string
+	var health api.Health
+	for {
+		line, perr := askTourLine(s.ctx, s.input, "Engine host (host:port, https://host:port for TLS):", "")
+		if perr != nil || s.ctx.Err() != nil {
+			a.reportPromptFault(perr)
+			return errTourAborted
+		}
+		host = strings.TrimSpace(line)
+		if host == "" || strings.EqualFold(host, "q") {
+			return errTourAborted
+		}
+
+		tok, perr := askTourLine(s.ctx, s.secret, "PAT (input hidden):", "")
+		if perr != nil || s.ctx.Err() != nil {
+			a.reportPromptFault(perr)
+			return errTourAborted
+		}
+		token := strings.TrimSpace(tok)
+		if token == "" || strings.EqualFold(token, "q") {
+			return errTourAborted
+		}
+
+		var stopSpin func(string)
+		if s.p.enabled {
+			stopSpin = startSpinner(a.out, s.p, "Dialing "+host+"…")
+		}
+		h, err := a.probeRemoteEngine(s.ctx, config.Settings{Host: host, Token: token})
+		if stopSpin != nil {
+			stopSpin("")
+		}
+		if s.ctx.Err() != nil {
+			return errTourAborted
+		}
+		if err != nil {
+			fmt.Fprintf(a.errOut, "iris: %v\n", err)
+			fmt.Fprintln(a.out, "Fix the address or the PAT and try again (q quits).")
+			continue
+		}
+		health = h
+
+		fmt.Fprintf(a.out, "  %s\n", s.p.green(fmt.Sprintf("✓ connected to %s — role: %s", host, health.Role)))
+
+		// The workspace question: the directory whose .iris/iris.toml records
+		// the connection -- the same question THE ENGINE act opens with, because
+		// it anchors the same thing: where subsequent commands resolve from.
+		if err := a.openEngineWorkspace(s); err != nil {
+			return err
+		}
+		wd, werr := os.Getwd()
+		if werr != nil {
+			return &fault{code: exitOpFailed, codeStr: "connect_workspace",
+				message: fmt.Sprintf("quickstart: resolve the workspace directory: %v", werr)}
+		}
+		tomlPath := filepath.Join(wd, config.DirName, config.FileName)
+		if err := config.UpsertTOMLFile(tomlPath, map[string]string{"host": host, "token": token}); err != nil {
+			return &fault{code: exitOpFailed, codeStr: "connect_record",
+				message: fmt.Sprintf("quickstart: record the connection: %v", err)}
+		}
+		fmt.Fprintf(a.out, "  %s\n", s.p.green("✓ recorded host and token in "+tomlPath+" (0600)"))
+		break
+	}
+
+	a.tourRemoteWrapUp(s.p, host)
+	return nil
+}
+
+// tourRemoteWrapUp closes the remote branch: what the workspace now targets,
+// the first commands worth running against it, and how to disconnect -- plus
+// the note that the local sandbox tour is still one command away.
+func (a *app) tourRemoteWrapUp(p painter, host string) {
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "That's the setup — every iris command in this workspace now targets %s.\n", host)
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "Worth running first:")
+	fmt.Fprintln(a.out, "  iris pipeline list                               what runs there")
+	fmt.Fprintln(a.out, "  iris run list                                    its run history")
+	fmt.Fprintln(a.out, "  iris data provenance <schema.table> <pk>         ask a row who wrote it (needs a data-scope PAT)")
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "Disconnect: remove the host and token lines from .iris/iris.toml.")
+	fmt.Fprintln(a.out, "Want the local sandbox too? Run iris quickstart again and pick Local.")
+	if dir, off := a.executableDirOffPATH(); off {
+		fmt.Fprintln(a.out)
+		fmt.Fprintf(a.out, "Note: %s is not on your PATH; add it to call iris from anywhere.\n", dir)
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, p.rainbow("Enjoy iris."))
+}
+
 // askClackSelect runs the arrow-key select while honoring ctx, the widget
 // sibling of askTourPick: a cancellation wins over a pending read and reads
 // as quit. ok=false means raw mode was unavailable and nothing rendered.
@@ -843,7 +1050,7 @@ func (a *app) tourWrapUp(p painter, e catalogEntry) {
 	}
 	fmt.Fprintln(a.out)
 	if p.enabled {
-		fmt.Fprintln(a.out, p.dim(tourSignoffs[rand.IntN(len(tourSignoffs))]))
+		fmt.Fprintln(a.out, p.dim(tourSignoffs[rand.IntN(len(tourSignoffs))])) //nolint:gosec // G404: picking a farewell line, not a secret.
 	}
 	fmt.Fprintln(a.out, p.rainbow("Enjoy iris."))
 }

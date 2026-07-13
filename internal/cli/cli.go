@@ -148,6 +148,16 @@ type app struct {
 	// readyEvery is waitEngineReady's poll interval (zero means the production
 	// 250ms); tests shrink it beside readyBudget.
 	readyEvery time.Duration
+	// connectInput reads one line answer to an `iris engine connect` question
+	// (the host, when neither the argument nor the configuration supplied one).
+	// It is nil in production (the handler falls back to a plain stdin read);
+	// tests inject it to script the answer without a real terminal.
+	connectInput func(prompt string) (string, error)
+	// connectSecret reads one hidden line answer to `iris engine connect`'s PAT
+	// question. It is nil in production (the handler falls back to a no-echo
+	// terminal read); tests inject it to script the answer without a real
+	// terminal.
+	connectSecret func(prompt string) (string, error)
 	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
 	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
 	// the unix socket (the flag surface cannot contribute one on this path:
