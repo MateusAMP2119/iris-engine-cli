@@ -233,6 +233,23 @@ CI runs all of the above on Go 1.25 and 1.26, plus golangci-lint and the cross-c
 
 ---
 
+## Releasing
+
+Merging a PR into `master` is now the **only** action required to produce a new release of the CLI.
+
+- The release workflow automatically builds cross-platform binaries and publishes a GitHub release.
+- Version bumps default to **patch** (e.g. `v0.5.0` → `v0.5.1`).
+- Override the bump by adding one of these labels to the PR **before merging**:
+  - `release:major` (or `major` / `breaking`)
+  - `release:minor` (or `minor` / `feature`)
+- The recommended one-liner always delivers the latest release:
+
+  ```sh
+  curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
+  ```
+
+---
+
 ## Status
 
 All 15 epics (E00–E14) are **complete on `development`**: full CI green, zero unclaimed contracts, full conformance suite passing under `-race`. Epic checkpoint merges to `master` are in progress.

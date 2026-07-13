@@ -29,15 +29,51 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF_NAME}"
           else
-            # Merge to master: auto-bump patch from latest tag
+            # Merge to master → auto version bump.
+            # Default = patch.
+            # Can be overridden by labels on the merged PR:
+            #   release:major / major / breaking   → major bump
+            #   release:minor / minor / feature    → minor bump
             LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
-            # strip leading v, split, bump patch
             BASE=${LAST#v}
             MAJOR=$(echo "$BASE" | cut -d. -f1)
             MINOR=$(echo "$BASE" | cut -d. -f2)
             PATCH=$(echo "$BASE" | cut -d. -f3)
-            NEXT_PATCH=$((PATCH + 1))
-            VERSION="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+
+            BUMP="patch"
+            # Try to find the PR that was merged (the SHA is the merge commit)
+            PR_NUMBER=$(gh pr list --state merged --search "$GITHUB_SHA" \
+                        --json number --jq '.[0].number' 2>/dev/null || true)
+
+            if [[ -n "$PR_NUMBER" ]]; then
+              LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null || true)
+              if echo "$LABELS" | grep -qiE '(release:)?major|breaking'; then
+                BUMP="major"
+              elif echo "$LABELS" | grep -qiE '(release:)?minor|feature|feat'; then
+                BUMP="minor"
+              fi
+            else
+              # Fallback: check the merge commit message itself
+              MSG=$(git log -1 --pretty=%B "$GITHUB_SHA" 2>/dev/null || true)
+              if echo "$MSG" | grep -qiE '(release:)?major|\[major\]|breaking'; then
+                BUMP="major"
+              elif echo "$MSG" | grep -qiE '(release:)?minor|\[minor\]|feature|feat'; then
+                BUMP="minor"
+              fi
+            fi
+
+            if [[ "$BUMP" == "major" ]]; then
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+            elif [[ "$BUMP" == "minor" ]]; then
+              MINOR=$((MINOR + 1))
+              PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+
+            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using release version: $VERSION"
