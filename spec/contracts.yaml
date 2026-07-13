@@ -1275,6 +1275,18 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
+  - id: S08/engine-connect-distinct-faults
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/engine-connect-interactive-prompts
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/engine-connect-verifies-then-records
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
   - id: S08/engine-start-owns-daemon-flags
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
@@ -1332,6 +1344,10 @@ contracts:
     tier: exempt
     status: exempt
   - id: S08/iris-toml-engine-settings-only
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/iris-toml-upsert-preserves
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
@@ -1411,6 +1427,10 @@ contracts:
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed
+  - id: S08/quickstart-clack-widgets
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
   - id: S08/quickstart-decline-clean-abort
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: integration
@@ -1436,6 +1456,14 @@ contracts:
     tier: integration
     status: unclaimed
   - id: S08/quickstart-refuses-remote-host
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: unit
+    status: unclaimed
+  - id: S08/quickstart-remote-connect-branch
+    anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
+    tier: integration
+    status: unclaimed
+  - id: S08/quickstart-remote-fork
     anchor: "docs/Iris Specification Inventory.md#8-cli-contract"
     tier: unit
     status: unclaimed

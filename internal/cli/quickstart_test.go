@@ -297,6 +297,7 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 // --- clack widget unit tests (pure rendering + fallback paths) ---
 
 func TestClackWrapLine(t *testing.T) {
+	// spec: S08/quickstart-clack-widgets
 	cases := []struct {
 		name  string
 		in    string
@@ -320,6 +321,7 @@ func TestClackWrapLine(t *testing.T) {
 }
 
 func TestClackNoteRendering(t *testing.T) {
+	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	p := painter{} // disabled -> no ANSI, stable text
 	clackNote(&buf, p, "Heads-up", "Iris is in active development.\nExpect sharp edges.\n\nStop with iris engine stop")
@@ -341,6 +343,7 @@ func TestClackNoteRendering(t *testing.T) {
 }
 
 func TestClackEngineBanner(t *testing.T) {
+	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	pDisabled := painter{}
 	engineBanner(&buf, pDisabled)
@@ -357,6 +360,7 @@ func TestClackEngineBanner(t *testing.T) {
 }
 
 func TestClackSpinnerStub(t *testing.T) {
+	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	p := painter{}
 	stop := startSpinner(&buf, p, "Waiting for leadership")
@@ -371,6 +375,7 @@ func TestClackSpinnerStub(t *testing.T) {
 }
 
 func TestClackRawFallback(t *testing.T) {
+	// spec: S08/quickstart-clack-widgets
 	// Force openRawTTY to report non-TTY so clack widgets take ok=false path.
 	orig := isTerminalForTest
 	isTerminalForTest = func(int) bool { return false }

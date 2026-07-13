@@ -102,7 +102,6 @@ func stepEvents(events []string) []string {
 	return out
 }
 
-
 // inputEvents filters the line-read entries out of a tour event log, stripping
 // the "input " tag.
 func inputEvents(events []string) []string {
