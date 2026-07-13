@@ -26,10 +26,20 @@ On top of that, every row's lineage is recorded and treated as a first-class fea
 
 ## Quick install
 
-One command, no dependencies. Installs the latest prebuilt static binary:
+One command, no dependencies. Installs the latest prebuilt static binary.
+
+**Recommended**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
+curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
+```
+
+See [docs/CLOUDFLARE_INSTALL_SETUP.md](docs/CLOUDFLARE_INSTALL_SETUP.md) for exact Cloudflare setup instructions.
+
+**Current** (works immediately):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/install.sh | bash
 ```
 
 The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where the engine workspace should live (`~/iris` by default), bootstraps the engine there, then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
@@ -71,8 +81,10 @@ iris uninstall
 Binary broken or missing? The script fallback does the same from outside:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/uninstall.sh | sh
+curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 ```
+
+(or the raw version: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/uninstall.sh | bash`)
 
 ---
 

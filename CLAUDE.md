@@ -17,9 +17,8 @@ Reference docs: `docs/Iris Specification Inventory.md` (spec), `docs/Iris Epics.
 
 - `master`: release line. Only receives epic-checkpoint PRs from `development`.
 - `development`: integration line. All issue branches merge here.
-- Issue branches: `issue/EXX.Y-short-name`, cut from `development`. PR title `EXX.Y <task name>`. Small tweaks may go on plain feature branches.
-- Epic completes → PR `Epic EXX` goes `development` → `master`, waits for human review.
-- Issue PRs merge on gates + CI green — no per-PR review step.
+- Issue branches: `issue/EXX.Y-short-name`, cut from `development`. PR title `EXX.Y <task name>`. 
+- Small tweaks and experiments may go on plain feature branches.
 
 ## Conventions
 

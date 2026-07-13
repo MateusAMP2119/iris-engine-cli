@@ -578,6 +578,7 @@ func (a *app) tourDisclaimer(s *tourSession) error {
 				return errTourAborted
 			}
 			clackBar(a.out, s.p)
+			clackOutro(a.out, s.p, "consent recorded — starting the tour")
 			return nil
 		}
 	} else {
@@ -613,6 +614,7 @@ func askClackSelect(ctx context.Context, w io.Writer, p painter, question string
 	}()
 	select {
 	case <-ctx.Done():
+		forceRestoreTerminal()
 		return 0, answerQuit, true
 	case o := <-ch:
 		return o.choice, o.ans, o.ok
@@ -634,6 +636,7 @@ func askClackConfirm(ctx context.Context, w io.Writer, p painter, question strin
 	}()
 	select {
 	case <-ctx.Done():
+		forceRestoreTerminal()
 		return false, answerQuit, true
 	case o := <-ch:
 		return o.yes, o.ans, o.ok
@@ -791,6 +794,7 @@ func (a *app) reportPromptFault(perr error) {
 // never a failure: exit 0, nothing half-broken (every completed step is a real,
 // idempotent command), and a resume hint.
 func (a *app) tourAbort() error {
+	forceRestoreTerminal()
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "Tour stopped — nothing to undo; every completed step is a real, idempotent command.")
 	fmt.Fprintln(a.out, "Resume any time: iris quickstart")
@@ -802,6 +806,7 @@ func (a *app) tourAbort() error {
 // dead-lettered run (exit 5), the dead-letter lesson -- and exits with the
 // step's own category.
 func (a *app) tourStepFailed(step quickstartStep, k, total, code int, e catalogEntry) error {
+	forceRestoreTerminal()
 	if code == exitDeadLettered {
 		fmt.Fprintf(a.errOut, "The run dead-lettered — the failure worklist in person: iris deadletter show %s explains it, and iris deadletter replay %s re-runs it once fixed.\n", e.ID, e.ID)
 	}

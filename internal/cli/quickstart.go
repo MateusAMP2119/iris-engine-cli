@@ -221,6 +221,7 @@ func (a *app) quickstartWelcome(p painter, selected catalogEntry, explicit bool)
 		fmt.Fprintf(a.out, "%s\n", p.dim(railBar))
 		fmt.Fprintf(a.out, "%s  Every step is the real command; it ends with the engine left running.\n", p.dim(railBar))
 		fmt.Fprintf(a.out, "%s\n", p.dim(railBar))
+		clackOutro(a.out, p, "tour continues below")
 		return
 	}
 	fmt.Fprintln(a.out, p.cyan("Welcome to iris — the guided first session."))

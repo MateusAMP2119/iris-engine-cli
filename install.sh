@@ -1,7 +1,12 @@
 #!/bin/sh
 # Iris installer: fetches the latest release binary for this platform.
-# POSIX sh, works with bash, dash, ash/busybox:
-#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
+# POSIX sh, works with bash, dash, ash/busybox.
+#
+# Recommended:
+#   curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
+#
+# Current (raw GitHub):
+#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/install.sh | bash
 #
 # Knobs:
 #   IRIS_VERSION=<tag>   install that release instead of latest

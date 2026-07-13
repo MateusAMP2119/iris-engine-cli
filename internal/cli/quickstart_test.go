@@ -293,3 +293,102 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 		requireEmptyDir(t, scratch)
 	})
 }
+
+// --- clack widget unit tests (pure rendering + fallback paths) ---
+
+func TestClackWrapLine(t *testing.T) {
+	cases := []struct {
+		name  string
+		in    string
+		width int
+		want  []string
+	}{
+		{"short", "hello world", 20, []string{"hello world"}},
+		{"exact", "1234567890", 10, []string{"1234567890"}},
+		{"wraps", "the quick brown fox jumps", 10, []string{"the quick", "brown fox", "jumps"}},
+		{"longword", "supercalifragilisticexpialidocious", 8, []string{"supercal", "ifragili", "sticexpi", "alidocio", "us"}},
+		{"zero width guard", "abc", 0, []string{"a", "b", "c"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := wrapLine(c.in, c.width)
+			if !equalStrings(got, c.want) {
+				t.Errorf("wrapLine(%q, %d) = %q, want %q", c.in, c.width, got, c.want)
+			}
+		})
+	}
+}
+
+func TestClackNoteRendering(t *testing.T) {
+	var buf bytes.Buffer
+	p := painter{} // disabled -> no ANSI, stable text
+	clackNote(&buf, p, "Heads-up", "Iris is in active development.\nExpect sharp edges.\n\nStop with iris engine stop")
+
+	out := buf.String()
+	if !strings.Contains(out, "◇  Heads-up") {
+		t.Error("missing note header glyph and title")
+	}
+	if !strings.Contains(out, "├") || !strings.Contains(out, "╯") {
+		t.Error("missing box bottom corners")
+	}
+	if !strings.Contains(out, "Iris is in active development.") {
+		t.Error("body not rendered")
+	}
+	// lines should be present with rail
+	if !strings.Contains(out, "│") {
+		t.Error("missing vertical rails in box")
+	}
+}
+
+func TestClackEngineBanner(t *testing.T) {
+	var buf bytes.Buffer
+	pDisabled := painter{}
+	engineBanner(&buf, pDisabled)
+	if buf.Len() != 0 {
+		t.Error("engineBanner with disabled painter must emit zero bytes (stable for --json/pipes)")
+	}
+
+	pEnabled := painter{enabled: true}
+	buf.Reset()
+	engineBanner(&buf, pEnabled)
+	if !strings.Contains(buf.String(), "IRIS ENGINE") && !strings.Contains(buf.String(), "██╗") {
+		t.Error("enabled banner should contain block art")
+	}
+}
+
+func TestClackSpinnerStub(t *testing.T) {
+	var buf bytes.Buffer
+	p := painter{}
+	stop := startSpinner(&buf, p, "Waiting for leadership")
+	stop("engine ready")
+	s := buf.String()
+	if !strings.Contains(s, "· Waiting for leadership") {
+		t.Error("stub path should print · msg")
+	}
+	if !strings.Contains(s, "✓ engine ready") {
+		t.Error("stub stop should print ✓ done when provided")
+	}
+}
+
+func TestClackRawFallback(t *testing.T) {
+	// Force openRawTTY to report non-TTY so clack widgets take ok=false path.
+	orig := isTerminalForTest
+	isTerminalForTest = func(int) bool { return false }
+	t.Cleanup(func() { isTerminalForTest = orig })
+
+	var buf bytes.Buffer
+	p := painter{enabled: true}
+
+	choice, ans, ok := clackSelect(&buf, p, "Pick", []clackOption{{label: "one"}, {label: "two"}})
+	if ok || choice != 0 || ans != answerQuit {
+		t.Errorf("clackSelect on forced non-tty: ok=%v choice=%d ans=%v, want ok=false + quit", ok, choice, ans)
+	}
+	if buf.Len() != 0 {
+		t.Error("clackSelect must emit nothing when !ok (no partial paint on fallback)")
+	}
+
+	yes, ans2, ok2 := clackConfirm(&buf, p, "Confirm?", true)
+	if ok2 || yes || ans2 != answerQuit {
+		t.Errorf("clackConfirm on forced non-tty: ok=%v yes=%v ans=%v, want ok=false + quit", ok2, yes, ans2)
+	}
+}

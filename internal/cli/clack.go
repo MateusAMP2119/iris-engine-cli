@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -29,8 +30,56 @@ const (
 	railEnd  = "└"
 )
 
-// clackBoxWidth is a note box's inner column budget; longer body lines wrap.
-const clackBoxWidth = 72
+// rawSession state is narrowly used to allow forcing the terminal back to
+// its pre-raw (cooked) state when a ctx cancellation aborts a widget goroutine
+// before its own defer restore can run. This prevents abort/error prints from
+// happening while the terminal is still raw. Cleared after use.
+var (
+	rawSessionMu   sync.Mutex
+	rawSessionOrig *term.State
+)
+
+// forceRestoreTerminal best-effort restores stdin to the state captured before
+// the last raw session. Called from askClack* on ctx cancel paths.
+func forceRestoreTerminal() {
+	rawSessionMu.Lock()
+	st := rawSessionOrig
+	rawSessionMu.Unlock()
+	if st != nil {
+		_ = term.Restore(int(os.Stdin.Fd()), st)
+		rawSessionMu.Lock()
+		rawSessionOrig = nil
+		rawSessionMu.Unlock()
+	}
+}
+
+// isTerminalForTest is a test seam (set only in tests via t.Cleanup) to force
+// openRawTTY to report non-terminal so clack* return ok=false (fallback path).
+var isTerminalForTest func(int) bool
+
+// defaultClackBoxWidth is the fallback inner width for boxed notes when we
+// cannot determine the terminal size.
+const defaultClackBoxWidth = 72
+
+// clackBoxInnerWidth returns the target inner width for clack boxes.
+// It prefers the actual terminal width (via term.GetSize) for better narrow
+// terminal support, with reasonable margins, otherwise the default.
+func clackBoxInnerWidth() int {
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		if cols, _, err := term.GetSize(fd); err == nil && cols > 20 {
+			// leave room for rail + indent + box borders
+			w := cols - 8
+			if w > 20 && w < defaultClackBoxWidth {
+				return w
+			}
+			if w >= defaultClackBoxWidth {
+				return defaultClackBoxWidth
+			}
+		}
+	}
+	return defaultClackBoxWidth
+}
 
 // clackIntro opens the rail: `┌  title` and one bare rail line.
 func clackIntro(w io.Writer, p painter, title string) {
@@ -48,21 +97,55 @@ func clackOutro(w io.Writer, p painter, msg string) {
 	fmt.Fprintf(w, "%s  %s\n", railEnd, msg)
 }
 
-// wrapLine hard-wraps one line to width columns on spaces, best effort.
+// wrapLine hard-wraps one line to width columns on spaces.
+// Long words (no spaces) are hard-broken to respect width.
 func wrapLine(s string, width int) []string {
-	if utf8.RuneCountInString(s) <= width {
+	if width <= 0 {
+		width = 1
+	}
+	runes := []rune(s)
+	if len(runes) <= width {
 		return []string{s}
 	}
 	var out []string
 	words := strings.Fields(s)
 	cur := ""
 	for _, word := range words {
+		wlen := utf8.RuneCountInString(word)
 		if cur == "" {
+			if wlen > width {
+				// hard-break long word
+				for len(word) > 0 {
+					r := []rune(word)
+					if len(r) > width {
+						out = append(out, string(r[:width]))
+						word = string(r[width:])
+					} else {
+						cur = word
+						break
+					}
+				}
+				continue
+			}
 			cur = word
 			continue
 		}
-		if utf8.RuneCountInString(cur)+1+utf8.RuneCountInString(word) > width {
+		if utf8.RuneCountInString(cur)+1+wlen > width {
 			out = append(out, cur)
+			if wlen > width {
+				// hard-break
+				for len(word) > 0 {
+					r := []rune(word)
+					if len(r) > width {
+						out = append(out, string(r[:width]))
+						word = string(r[width:])
+					} else {
+						cur = word
+						break
+					}
+				}
+				continue
+			}
 			cur = word
 			continue
 		}
@@ -77,7 +160,7 @@ func wrapLine(s string, width int) []string {
 	return out
 }
 
-// clackNote renders one boxed note hanging off the rail:
+// clackNote renders one boxed note hanging off the rail.
 //
 //	◇  Title ────────────────╮
 //	│                        │
@@ -85,9 +168,10 @@ func wrapLine(s string, width int) []string {
 //	│                        │
 //	├────────────────────────╯
 func clackNote(w io.Writer, p painter, title, body string) {
+	boxW := clackBoxInnerWidth()
 	var lines []string
 	for _, raw := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
-		lines = append(lines, wrapLine(raw, clackBoxWidth-4)...)
+		lines = append(lines, wrapLine(raw, boxW-4)...)
 	}
 	inner := utf8.RuneCountInString(title) + 4
 	for _, l := range lines {
@@ -95,10 +179,13 @@ func clackNote(w io.Writer, p painter, title, body string) {
 			inner = n
 		}
 	}
-	if inner > clackBoxWidth {
-		inner = clackBoxWidth
+	if inner > boxW {
+		inner = boxW
 	}
-	pad := inner - utf8.RuneCountInString(title) - 3
+	// pad for the title rule: we want " Title " + ─s + "╮" to reach the right edge.
+	// After "◇  " + cyan(title) there is one space from the format, so:
+	// title content + 1 (space) + pad + 1 (╮) + borders accounted in inner.
+	pad := inner - utf8.RuneCountInString(title) - 2
 	if pad < 1 {
 		pad = 1
 	}
@@ -147,8 +234,20 @@ type rawTTY struct {
 // cooked line dialogue.
 func openRawTTY() (*rawTTY, bool) {
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	if isTerminalForTest != nil {
+		if !isTerminalForTest(fd) {
+			return nil, false
+		}
+	} else if !term.IsTerminal(fd) {
 		return nil, false
+	}
+	// Capture the original cooked state so forceRestore can put the terminal
+	// back even if the widget goroutine hasn't returned its defer yet.
+	orig, _ := term.GetState(fd)
+	if orig != nil {
+		rawSessionMu.Lock()
+		rawSessionOrig = orig
+		rawSessionMu.Unlock()
 	}
 	state, err := term.MakeRaw(fd)
 	if err != nil {
@@ -157,8 +256,13 @@ func openRawTTY() (*rawTTY, bool) {
 	return &rawTTY{fd: fd, state: state}, true
 }
 
-// restore returns the terminal to cooked mode.
-func (r *rawTTY) restore() { _ = term.Restore(r.fd, r.state) }
+// restore returns the terminal to cooked mode and clears any stashed session state.
+func (r *rawTTY) restore() {
+	_ = term.Restore(r.fd, r.state)
+	rawSessionMu.Lock()
+	rawSessionOrig = nil
+	rawSessionMu.Unlock()
+}
 
 // readKey reads and classifies one keypress in raw mode.
 func (r *rawTTY) readKey() (clackKey, int) {
@@ -173,14 +277,17 @@ func (r *rawTTY) readKey() (clackKey, int) {
 	case '\r', '\n':
 		return keyEnter, 0
 	case 0x1b: // ESC — bare, or the lead of an arrow sequence
-		var seq [2]byte
-		if n, err := os.Stdin.Read(seq[:1]); err != nil || n == 0 || seq[0] != '[' {
+		// Read the next two bytes for CSI sequences with short timeout so a lone
+		// ESC or slow/garbage input does not hang the prompt for long.
+		seq1, ok1 := readByteShort(50 * time.Millisecond)
+		if !ok1 || seq1 != '[' {
+			return keyQuit, 0 // bare ESC or bad seq -> treat as quit (decline)
+		}
+		seq2, ok2 := readByteShort(50 * time.Millisecond)
+		if !ok2 {
 			return keyQuit, 0
 		}
-		if n, err := os.Stdin.Read(seq[1:]); err != nil || n == 0 {
-			return keyQuit, 0
-		}
-		switch seq[1] {
+		switch seq2 {
 		case 'A':
 			return keyUp, 0
 		case 'B':
@@ -212,6 +319,32 @@ func (r *rawTTY) readKey() (clackKey, int) {
 // widgets print while raw ends in \r\n explicitly.
 const rawEOL = "\r\n"
 
+// readByteShort tries to read one byte from stdin, returning ok=false if it
+// does not arrive within the timeout. Used to keep ESC sequence collection
+// from blocking the prompt on incomplete or slow input.
+func readByteShort(timeout time.Duration) (byte, bool) {
+	type res struct {
+		b   byte
+		n   int
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		var b [1]byte
+		n, err := os.Stdin.Read(b[:])
+		ch <- res{b: b[0], n: n, err: err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil || r.n == 0 {
+			return 0, false
+		}
+		return r.b, true
+	case <-time.After(timeout):
+		return 0, false
+	}
+}
+
 // ansiUp moves the cursor up n lines; ansiClear erases the current line.
 func ansiUp(w io.Writer, n int) { fmt.Fprintf(w, "\033[%dA", n) }
 func ansiClearLine(w io.Writer) { fmt.Fprint(w, "\r\033[2K") }
@@ -220,6 +353,10 @@ func ansiClearLine(w io.Writer) { fmt.Fprint(w, "\r\033[2K") }
 // 1-based index. Up/Down (or j/k) move, 1-9 jump, Enter accepts, q/Esc/
 // Ctrl-C decline. ok=false means raw mode was unavailable and nothing was
 // rendered: the caller falls back to the numbered line dialogue.
+//
+// Note: digits only support 1-9. For >9 entries (rare in catalog) the user
+// relies on arrows/jk. The line fallback supports any number.
+
 func clackSelect(w io.Writer, p painter, question string, options []clackOption) (choice int, ans promptAnswer, ok bool) {
 	tty, rawOK := openRawTTY()
 	if !rawOK {
@@ -227,7 +364,7 @@ func clackSelect(w io.Writer, p painter, question string, options []clackOption)
 	}
 	defer tty.restore()
 
-	fmt.Fprintf(w, "%s  %s %s%s", railAsk, question, p.dim("(↑/↓ move · Enter picks · q quits)"), rawEOL)
+	fmt.Fprintf(w, "%s  %s %s%s", railAsk, question, p.dim("(↑/↓/j/k or 1-9 · Enter picks · q quits)"), rawEOL)
 	idx := 0
 	render := func() {
 		for i, opt := range options {
@@ -262,10 +399,12 @@ func clackSelect(w io.Writer, p painter, question string, options []clackOption)
 		default:
 			continue
 		}
+		// Rewind to the start of the options block and repaint.
+		// Using \r + clear-to-eol on each line is more robust across terminals
+		// than mixing up/down when line lengths change.
 		ansiUp(w, len(options))
 		for range options {
-			ansiClearLine(w)
-			fmt.Fprint(w, "\033[1B")
+			fmt.Fprint(w, "\r\033[2K\n")
 		}
 		ansiUp(w, len(options))
 		render()
@@ -310,8 +449,9 @@ func clackConfirm(w io.Writer, p painter, question string, def bool) (yes bool, 
 		default:
 			continue
 		}
+		// Simple single-line repaint for confirm.
 		ansiUp(w, 1)
-		ansiClearLine(w)
+		fmt.Fprint(w, "\r\033[2K")
 		render()
 	}
 }
@@ -345,14 +485,20 @@ var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 // startSpinner animates `<frame> msg` in place on the ceremony surface and
 // returns its stop function, which clears the line and prints `✓ done` — or,
 // with an empty done, only clears (the failure path renders its own error).
-// Call only when nothing else writes to w until stop.
+//
+// Contract: call the returned stop exactly once when you want animation to end.
+// The stop func is safe to call multiple times (idempotent). Never write to w
+// from other goroutines between start and stop.
 func startSpinner(w io.Writer, p painter, msg string) func(done string) {
+	var stopOnce sync.Once
 	if !p.enabled {
 		fmt.Fprintf(w, "· %s\n", msg)
 		return func(done string) {
-			if done != "" {
-				fmt.Fprintf(w, "✓ %s\n", done)
-			}
+			stopOnce.Do(func() {
+				if done != "" {
+					fmt.Fprintf(w, "✓ %s\n", done)
+				}
+			})
 		}
 	}
 	stopCh := make(chan struct{})
@@ -373,11 +519,13 @@ func startSpinner(w io.Writer, p painter, msg string) func(done string) {
 		}
 	}()
 	return func(done string) {
-		close(stopCh)
-		<-doneCh
-		fmt.Fprint(w, "\r\033[2K")
-		if done != "" {
-			fmt.Fprintf(w, "%s %s\n", p.green("✓"), done)
-		}
+		stopOnce.Do(func() {
+			close(stopCh)
+			<-doneCh
+			fmt.Fprint(w, "\r\033[2K")
+			if done != "" {
+				fmt.Fprintf(w, "%s %s\n", p.green("✓"), done)
+			}
+		})
 	}
 }
