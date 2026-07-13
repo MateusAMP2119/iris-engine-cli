@@ -1,19 +1,7 @@
 # Iris — engine + CLI
 
 Provenance-first data engine + pipeline orchestrator, one Go binary (`cmd/iris`).
-Source of truth: `docs/Iris Specification Inventory.md` (conflict with any other doc → spec wins). Epics + build order: `docs/Iris Epics.md`. Work items: `docs/Tasks/`. Live build status: `BUILD_STATE.md`.
-
-## TDD doctrine (non-negotiable)
-
-Spec = source of truth. Test suite = spec's executable form. Implementation regenerable; durable assets = spec + suite.
-
-1. Every task starts from contract rows in `spec/contracts.yaml` (one row per contract: stable id `Sxx/slug`, doc anchor, tier, status). Add or confirm rows first.
-2. Write failing tests for every non-exempt contract at that contract's tier **before any implementation**. Tiers: `unit` (pure logic, no I/O), `integration` (fakes + local process I/O, no live Postgres), `conformance` (real binary, running daemon, real Postgres).
-3. Implement to green. Never weaken test to pass; test expectation changes only with spec delta.
-4. Tests claim contracts via Go subtest path or `// spec: <contract-id>` annotation.
-5. Every commit message names contract ids it satisfies.
-6. Traceability gate must pass: every non-exempt manifest contract claimed by test, every test claims real contract. Exempt contracts (naming, rationale, doctrine) live in manifest marked `exempt`, need no test.
-7. Nothing merges red: full suite + traceability gate green before merge.
+Reference docs: `docs/Iris Specification Inventory.md` (spec), `docs/Iris Epics.md` (epics + build order), `docs/Tasks/` (work items). (BUILD_STATE.md retired.)
 
 ## Commands
 
@@ -29,13 +17,8 @@ Spec = source of truth. Test suite = spec's executable form. Implementation rege
 
 - `master`: release line. Only receives epic-checkpoint PRs from `development`.
 - `development`: integration line. All issue branches merge here.
-- Issue branches: `issue/EXX.Y-short-name`, one per task, cut from `development`, checked out in dedicated git worktree. PR title `EXX.Y <task name>`; PR body lists task's contract ids + Done-when checklist.
-- Epic completes → PR `Epic EXX` goes `development` → `master`, waits for human review.
-- Respect each task's `Depends on` section. Dependency-independent tasks may run in parallel worktrees; tasks in one dependency chain strictly serial.
-
-## Role split
-
-Orchestrator (main session) never writes source or tests; plans, spawns coder agents, reviews diffs, runs gates, handles git/PR state. All implementation by `coder` agent (see `.claude/agents/coder.md`) inside task's worktree.
+- Issue branches: `issue/EXX.Y-short-name`, cut from `development`. PR title `EXX.Y <task name>`. 
+- Small tweaks and experiments may go on plain feature branches.
 
 ## Conventions
 

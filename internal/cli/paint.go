@@ -58,6 +58,7 @@ func (p painter) paint(code, s string) string {
 func (p painter) green(s string) string   { return p.paint(ansiGreen, s) }
 func (p painter) cyan(s string) string    { return p.paint(ansiCyan, s) }
 func (p painter) magenta(s string) string { return p.paint(ansiMagenta, s) }
+func (p painter) yellow(s string) string  { return p.paint(ansiYellow, s) }
 func (p painter) dim(s string) string     { return p.paint(ansiDim, s) }
 
 // rainbow renders s one bright color per rune (cycling R, Y, G, C, B, M), the

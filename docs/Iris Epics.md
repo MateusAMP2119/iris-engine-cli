@@ -10,7 +10,7 @@ tags:
 
 # Iris Epics
 
-Derived from the [[Iris Specification Inventory]] (source of truth; on any conflict the spec wins). ==Sixteen== capability epics in build-dependency order. Every behavioral Q/A in the spec was decomposed into testable contracts per the spec's own testing doctrine: ==520 contracts from 122 Q/As (195 unit, 230 integration, 73 conformance, 22 exempt). Updated for the 2026-07-04 git-graph surface pass: `iris data why` renamed to `iris data provenance`, `iris data wipe` moved to `iris workload wipe [<pipeline>]`, the new `workload` noun, triage folded into the shows (the gate ledger in `pipeline show`, the blast radius in `deadletter show`, `run show --trace [--down]`), the `--graph` rendering contract, the `undo` enum's `skipped` split, the `run_inputs` reverse index, and the new read routes (E14 collects the new surface).==
+Derived from the [[Iris Specification Inventory]] (source of truth; on any conflict the spec wins). ==Seventeen== capability epics in build-dependency order. Every behavioral Q/A in the spec was decomposed into testable contracts per the spec's own testing doctrine: ==530 contracts from 123 Q/As (196 unit, 237 integration, 74 conformance, 23 exempt). Updated for the 2026-07-04 git-graph surface pass: `iris data why` renamed to `iris data provenance`, `iris data wipe` moved to `iris workload wipe [<pipeline>]`, the new `workload` noun, triage folded into the shows (the gate ledger in `pipeline show`, the blast radius in `deadletter show`, `run show --trace [--down]`), the `--graph` rendering contract, the `undo` enum's `skipped` split, the `run_inputs` reverse index, and the new read routes (E14 collects the new surface).==
 
 ## How to derive tasks
 
@@ -41,6 +41,7 @@ Derived from the [[Iris Specification Inventory]] (source of truth; on any confl
 | E13  | Golden Sample and Acceptance                   | 31        | all others (the spine that proves them)                     |
 | E14  | Graph Views and Triage Surface                 | 17        | E05, E07, E09                                               |
 | E15  | Onboarding and Guided Tour                     | 14        | E02, E03, E05, E07 (the surfaces it tours)                  |
+| E16  | Install Ceremony and Pipeline Catalog          | 10        | E15 (the tour it restructures)                              |
 
 Build order is the table order ==with one exception: E14 builds before E13, the acceptance spine that proves everything above it, E14 included==. E00 is deliberately first: the harness and the red contract backlog exist before any product code, because the suite, not the implementation, is the durable asset.
 
@@ -771,3 +772,26 @@ Build order is the table order ==with one exception: E14 builds before E13, the 
 | `S08/quickstart-yes-runs-unattended` | `--yes` runs every step without prompting, works piped without ANSI, and exits with the first failing step's category. | integration |
 | `S08/quickstart-full-tour` | Real binary + real Postgres: `quickstart --yes` in a fresh workspace bootstraps the engine, applies and runs the sample, and `iris data provenance demo.colors green` names the run; the engine is left running; a second run exits 0. | conformance |
 | `S08/quickstart-install-handoff` | install.sh handoff prose: /dev/tty Y/n prompt (default yes), exec of the absolute-path binary with stdin re-tied, IRIS_FORCE/no-terminal fallback next-steps lines. | exempt |
+
+## E16 Install Ceremony and Pipeline Catalog
+
+**Goal.** `curl … | sh` becomes the guide itself: a chaptered ceremony — THE CLI (install.sh: banner, download, checksum, staged in the update grammar), THE ENGINE (workspace question defaulting `~/iris`, `engine install`, `engine start -d`, readout), THE PIPELINE (browse the embedded starter catalog, pick one, materialize/apply/run it, close on its provenance showcase). Consent per act, not per step; chapters named, never numbered, marked by the light rule-and-title device riding the rainbow palette. install.sh stays thin and version-gates the handoff by probing the installed binary (`quickstart --from-installer --json`), so an old release binary is never offered a verb it lacks. The catalog is embedded (go:embed, air-gapped), one folder per entry (`entry.yaml` metadata + `workspace/` subtree), ordered by `catalog.yaml`, default `hello_iris`; `--pipeline <id>` picks explicitly everywhere; every entry parses through the real declare loaders by test.
+
+**Depends on.** E15 (the tour it restructures).
+
+**Cutting tasks.** Four seams: the act framework and workspace prompt (carries the whole §8 delta), the catalog registry and entries, the shop and picked tour, the installer restaging and version gate.
+
+**Contracts (9 testable, 1 exempt; plus retargeted E15 rows noted in the task briefs).**
+
+| Contract | Behavior | Tier |
+| --- | --- | --- |
+| `S08/quickstart-act-structure` | Chaptered tour: ENGINE then PIPELINE chapter marks (TTY-only), steps grouped and ordered within acts, consent per act, first failing step stops the tour with that command's exit category. | integration |
+| `S08/quickstart-workspace-prompt` | The ENGINE act opens `Engine workspace [~/iris]:` — empty answer accepts, `~` expands, mkdir -p + chdir; a cwd that is already a workspace is proposed back as the default; `--yes` never prompts and uses cwd. | integration |
+| `S08/quickstart-from-installer-continuation` | `--from-installer` opens directly on the ENGINE chapter with no welcome or act gate (the installer's Y/n was consent); combined with `--json` it stays the inert step-list envelope, exit 0 — the version-probe guarantee. | integration |
+| `S08/install-ceremony-version-gate` | install.sh probes the installed binary (`quickstart --from-installer --json`, else plain `quickstart --json`) and hands off accordingly; anything older gets no handoff and no quickstart next-step line. | exempt |
+| `S08/quickstart-catalog-entries-valid` | Every embedded catalog entry parses through the real declare loaders; `entry.yaml` id matches its folder, fields non-empty, showcase.table among the entry's declared writes; `catalog.yaml` lists exactly the entry folders, ids unique, `hello_iris` first. | unit |
+| `S08/quickstart-catalog-browse-render` | The pipeline act paints the numbered shop (name + pitch), prompts `Pick a pipeline (1-N, Enter=1):`, empty answer takes entry 1, picked entry's description + finale preview render before the apply confirm; non-numeric or out-of-range answer aborts clean. | integration |
+| `S08/quickstart-catalog-pick-materialize-run` | Picking a non-default entry drives the act with that entry only: just its files materialize, apply/run/provenance argvs carry its id and showcase, the dead-letter lesson names it. | integration |
+| `S08/quickstart-catalog-pipeline-flag` | `--pipeline <id>` selects the entry explicitly in every rendering; an unknown id is a usage error (exit 2) naming the available ids. | integration |
+| `S08/quickstart-catalog-in-guides` | The plain guide and `--json` envelope carry the catalog (ids, pitches, default and selected) plus the selected entry's steps, executing nothing. | integration |
+| `S08/quickstart-catalog-picked-full-tour` | Real binary + real Postgres: `quickstart --yes --pipeline word_frequency` in a fresh workspace bootstraps, applies, runs, and `iris data provenance demo.word_counts hope` names the run; re-running exits 0. | conformance |

@@ -26,13 +26,23 @@ On top of that, every row's lineage is recorded and treated as a first-class fea
 
 ## Quick install
 
-One command, no dependencies. Installs the latest prebuilt static binary:
+One command, no dependencies. Installs the latest prebuilt static binary.
+
+**Recommended**:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/install.sh | sh
+curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
 ```
 
-The installer ends by offering the 3-minute guided tour — it bootstraps a demo engine, runs a sample pipeline, and asks a row who wrote it, each step explained and confirmed before it really runs. Take it any time with `iris quickstart`.
+See [docs/CLOUDFLARE_INSTALL_SETUP.md](docs/CLOUDFLARE_INSTALL_SETUP.md) for exact Cloudflare setup instructions.
+
+**Current** (works immediately):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/install.sh | bash
+```
+
+The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where the engine workspace should live (`~/iris` by default), bootstraps the engine there, then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
 
 Have Go 1.25+? `go install` works too:
 
@@ -71,8 +81,10 @@ iris uninstall
 Binary broken or missing? The script fallback does the same from outside:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/master/uninstall.sh | sh
+curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 ```
+
+(or the raw version: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/uninstall.sh | bash`)
 
 ---
 
@@ -216,8 +228,25 @@ CI runs all of the above on Go 1.25 and 1.26, plus golangci-lint and the cross-c
 | [Specification Inventory](docs/Iris%20Specification%20Inventory.md) | The full spec: every behavior, table, endpoint, and doctrine. Source of truth; on conflict, the spec wins |
 | [Epics](docs/Iris%20Epics.md) | The 15 capability epics (E00–E14) and their build-dependency order |
 | [Tasks](docs/Tasks) | Per-task briefs: contract lists, dependencies, Done-when checklists |
-| [BUILD_STATE.md](BUILD_STATE.md) | Live build status: every task, PR, and open item |
 | [CLAUDE.md](CLAUDE.md) | TDD doctrine, branching rules, and conventions |
+| (BUILD_STATE.md retired) | |
+
+---
+
+## Releasing
+
+Merging a PR into `master` is now the **only** action required to produce a new release of the CLI.
+
+- The release workflow automatically builds cross-platform binaries and publishes a GitHub release.
+- Version bumps default to **patch** (e.g. `v0.5.0` → `v0.5.1`).
+- Override the bump by adding one of these labels to the PR **before merging**:
+  - `release:major` (or `major` / `breaking`)
+  - `release:minor` (or `minor` / `feature`)
+- The recommended one-liner always delivers the latest release:
+
+  ```sh
+  curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
+  ```
 
 ---
 

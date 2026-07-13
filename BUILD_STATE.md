@@ -12,9 +12,19 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 ## Open items
 
-- **E15 Onboarding and Guided Tour: complete on development 2026-07-11** (PRs #133,
-  #134; 14 S08/quickstart-* contracts, strict gate zero unclaimed). Epic checkpoint
-  PR to master not opened — joins the E04–E14 checkpoint queue awaiting human review.
+- **E16 Install Ceremony and Pipeline Catalog: complete on development 2026-07-12**
+  (PRs #136–#139). Epic checkpoint PR to master not opened yet; strict traceability
+  readout fully green (0 gaps).
+- **CI flakes observed 2026-07-12** (pre-existing, not E16): (1) pgx v5.7.6
+  `panic: BUG: slow write timer already active` in pgconn.Close during SIGTERM
+  shutdown — hit `TestSignalGracefulShutdown` and `TestForegroundDefaultDetach`
+  conformance legs on separate runs; consider a pgx bump. (2)
+  `TestSelfDemotionOnSessionLoss` (integration, 3s election window) flaked once on
+  the Go 1.26 runner; passed on rerun.
+- **v0.4.0 release**: Epic E15 checkpoint merged to master (PR #135); `gh release
+  create v0.4.0` awaits the user naming the release (classifier public-surface gate).
+- E15 complete on development 2026-07-11 (PRs #133, #134; checkpoint PR #135 merged
+  to master 2026-07-12).
 - **Epic checkpoint PRs to master**: none opened yet for E04–E14/E13; await human review
   per branching rules.
 - **External conformance clusters must be PostgreSQL 16+** (`INHERIT FALSE` grant
@@ -166,6 +176,13 @@ conformance suite (real binary, real Postgres, -race) — green.
 
 - [x] E15.1 Quickstart surface and gating — done ([PR #133](https://github.com/MateusAMP2119/iris-engine-cli/pull/133)); also: startDetached argv rebuilt from cobra command (F2), spec §9 delta admitting spf13/pflag to the allowlist
 - [x] E15.2 Tour orchestration and installer handoff — done ([PR #134](https://github.com/MateusAMP2119/iris-engine-cli/pull/134)); review fix: tour steps force-local, ambient IRIS_HOST/toml host ignored with notice (spec §8 clause)
+
+## E16 Install Ceremony and Pipeline Catalog — epic PR: pending (opened 2026-07-12)
+
+- [x] E16.1 Act structure and workspace prompt — done ([PR #136](https://github.com/MateusAMP2119/iris-engine-cli/pull/136), merged red on user's call)
+- [x] E16.2 Pipeline catalog registry and starter entries — done ([PR #137](https://github.com/MateusAMP2119/iris-engine-cli/pull/137)); folds the E16.1 leader-wait race fix (ENGINE act closes only on a reported role; `TestQuickstartFullTour` conformance green again). Note: PR #137 also carries the CLAUDE.md process trim (rode in via the working tree).
+- [x] E16.3 Catalog shop and picked tour — done ([PR #139](https://github.com/MateusAMP2119/iris-engine-cli/pull/139)); shop pick replaces the generic act gate (tourPick seam, tourPrompt retired), `--pipeline` everywhere, catalog in plain guide + `--json` (golden re-pinned)
+- [x] E16.4 Installer ceremony and version gate — done ([PR #138](https://github.com/MateusAMP2119/iris-engine-cli/pull/138)); also hardens the E16.2 leader-wait: the ENGINE act closes only on role `leader` (a contending standby held the conformance tour at exit 6), spec clause tightened + lock re-recorded
 
 ## Cross-cutting devfix/debt PRs (2026-07-09/10 recovery session)
 

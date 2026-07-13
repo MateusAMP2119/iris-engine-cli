@@ -1,7 +1,7 @@
 # Iris — engine + CLI
 
 Provenance-first data engine + pipeline orchestrator, one Go binary (`cmd/iris`).
-Source of truth: `docs/Iris Specification Inventory.md` (conflict with any other doc → spec wins). Epics + build order: `docs/Iris Epics.md`. Work items: `docs/Tasks/`. Live build status: `BUILD_STATE.md`.
+Source of truth: `docs/Iris Specification Inventory.md` (conflict with any other doc → spec wins). Epics + build order: `docs/Iris Epics.md`. Work items: `docs/Tasks/`. (BUILD_STATE.md retired; no longer used for tracking.)
 
 ## TDD doctrine (non-negotiable)
 
@@ -29,13 +29,9 @@ Spec = source of truth. Test suite = spec's executable form. Implementation rege
 
 - `master`: release line. Only receives epic-checkpoint PRs from `development`.
 - `development`: integration line. All issue branches merge here.
-- Issue branches: `issue/EXX.Y-short-name`, one per task, cut from `development`, checked out in dedicated git worktree. PR title `EXX.Y <task name>`; PR body lists task's contract ids + Done-when checklist.
+- Issue branches: `issue/EXX.Y-short-name`, cut from `development`. PR title `EXX.Y <task name>`; PR body lists task's contract ids + Done-when checklist. Small tweaks may go on plain feature branches.
 - Epic completes → PR `Epic EXX` goes `development` → `master`, waits for human review.
-- Respect each task's `Depends on` section. Dependency-independent tasks may run in parallel worktrees; tasks in one dependency chain strictly serial.
-
-## Role split
-
-Orchestrator (main session) never writes source or tests; plans, spawns coder agents, reviews diffs, runs gates, handles git/PR state. All implementation by `coder` agent (see `.claude/agents/coder.md`) inside task's worktree.
+- Issue PRs merge on gates + CI green — no per-PR review step.
 
 ## Conventions
 

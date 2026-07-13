@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -114,19 +115,39 @@ type app struct {
 	// terminalConfirm uses); tests inject it to drive either rendering without a
 	// real terminal.
 	stdinIsTTY func() bool
-	// tourPrompt asks one quickstart-tour question and returns the operator's
-	// answer. It is nil in production (the tour falls back to a terminal prompt
-	// that writes the question to errOut and reads one line from the process
-	// stdin); tests inject it to script the tour without a real terminal. It is
-	// distinct from the confirm seam, whose teardown-shaped signature does not fit
-	// the tour's proceed/skip/quit answers.
-	tourPrompt func(question string, kind promptKind) (promptAnswer, error)
+	// tourPick asks the quickstart shop's pick question -- which of the n
+	// catalog entries this session runs -- and returns the choice with the
+	// operator's answer. It is nil in production (the tour falls back to a
+	// terminal pick that writes the question to errOut and reads one line from
+	// the shared stdin reader, so a type-ahead line is never dropped between the
+	// pick and the next question); tests inject it to script the shop without a
+	// real terminal. It is distinct from the confirm seam, whose teardown-shaped
+	// signature does not fit the shop's numbered choice.
+	tourPick func(question string, n int) (choice int, ans promptAnswer, err error)
+	// tourInput reads one line answer to a quickstart-tour question that carries a
+	// visible default (the ENGINE act's workspace question). It is nil in
+	// production (the tour falls back to the shared-reader terminal line read
+	// beside tourPick); tests inject it to script the answer. The caller applies
+	// def to an empty answer; the seam only reads.
+	tourInput func(prompt, def string) (string, error)
 	// runStep executes one quickstart-tour step -- an iris command given as the
 	// argv after the program name -- and returns its exit-code category. It is nil
 	// in production (the tour falls back to a fresh in-process child app running
 	// the real command implementation, never a PATH lookup); tests inject it to
 	// record the executed steps and script their exit codes.
 	runStep func(ctx context.Context, args []string) int
+	// waitForReady blocks until the workspace daemon reports a leadership role,
+	// closing the quickstart tour's ENGINE act (specification section 8). It is
+	// nil in production (the tour falls back to waitEngineReady, the bounded
+	// context-aware poll of the /info readout); tests inject it to close the act
+	// instantly or exercise the real poll against a fake daemon.
+	waitForReady func(ctx context.Context, settings config.Settings) error
+	// readyBudget bounds waitEngineReady's whole poll (zero means the production
+	// ten seconds); tests shrink it to keep the timeout leg fast.
+	readyBudget time.Duration
+	// readyEvery is waitEngineReady's poll interval (zero means the production
+	// 250ms); tests shrink it beside readyBudget.
+	readyEvery time.Duration
 	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
 	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
 	// the unix socket (the flag surface cannot contribute one on this path:

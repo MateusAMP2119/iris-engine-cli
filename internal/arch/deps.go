@@ -67,7 +67,11 @@ func AllowedDirectDependency(path string) bool {
 		"github.com/goccy/go-yaml",
 		"github.com/alexedwards/argon2id",
 		"golang.org/x/crypto",
-		"github.com/fergusstrange/embedded-postgres":
+		"github.com/fergusstrange/embedded-postgres",
+		// EXPERIMENT(clack-ceremony): raw terminal mode for the quickstart
+		// widgets. Needs a spec section 9 delta before this leaves the
+		// experiment branch.
+		"golang.org/x/term":
 		return true
 	}
 	// pgx is versioned as a subpath module (github.com/jackc/pgx/v5, .../v5/pgxpool).
