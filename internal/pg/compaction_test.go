@@ -11,10 +11,8 @@ import (
 // sealed partition's pre-images past undo eligibility are nulled, duplicate stamps
 // per (schema, table, row_pk, run_id) collapse to the latest op, and each run's
 // exact write set survives compaction.
-//
-// spec: S14/compaction-collapse-rule
 func TestCompactEntriesCollapseRule(t *testing.T) {
-	t.Run("S14/compaction-collapse-rule", func(t *testing.T) {
+	t.Run("compaction-collapse-rule", func(t *testing.T) {
 		entries := []pg.JournalEntry{
 			// run 7 writes row a three times: insert then two updates -> latest update.
 			{ID: 1, Schema: "analytics", Table: "orders", RowPK: "a", RunID: 7, Op: pg.OpInsert, PreImage: "i", Undo: pg.UndoPromoted},
@@ -80,10 +78,8 @@ func TestCompactEntriesCollapseRule(t *testing.T) {
 
 // TestCompactEntriesEmpty proves compaction of an empty or single-entry input is a
 // no-op-shaped identity (no panic, stable output).
-//
-// spec: S14/compaction-collapse-rule
 func TestCompactEntriesEmpty(t *testing.T) {
-	t.Run("S14/compaction-collapse-rule", func(t *testing.T) {
+	t.Run("compaction-collapse-rule", func(t *testing.T) {
 		if got := pg.CompactEntries(nil); len(got) != 0 {
 			t.Errorf("compact of nil = %+v, want empty", got)
 		}

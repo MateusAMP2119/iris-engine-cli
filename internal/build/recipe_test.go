@@ -10,13 +10,10 @@ import (
 )
 
 // TestBuildToolchainInferredFromRun proves the build recipe's toolchain is
-// inferred from the pipeline's run command alone (specification section 1:
-// "toolchain inferred from run"). InferRecipe takes exactly the declared argv
-// vector -- there is no separate toolchain declaration anywhere in its inputs --
-// and the interpreter position (argv[0]) decides the recipe: a version-suffixed
-// or path-qualified interpreter still names its runtime.
-//
-// spec: S01/build-toolchain-inferred-from-run
+// inferred from the pipeline's run command alone. InferRecipe takes exactly the
+// declared argv vector -- there is no separate toolchain declaration anywhere in
+// its inputs -- and the interpreter position (argv[0]) decides the recipe: a
+// version-suffixed or path-qualified interpreter still names its runtime.
 func TestBuildToolchainInferredFromRun(t *testing.T) {
 	cases := []struct {
 		name string
@@ -51,15 +48,13 @@ func TestBuildToolchainInferredFromRun(t *testing.T) {
 
 // TestToolchainInferredFromRunVector proves the engine infers the build
 // toolchain from the declared run vector with no language or build field
-// consulted (specification section 3): the canonical [python, main.py] example
-// selects the python recipe when fed straight from a parsed declaration, and the
-// declaration model itself carries no language, build, recipe, or toolchain
-// field the inference could have consulted instead.
-//
-// spec: S03/toolchain-inferred-from-run
+// consulted: the canonical [python, main.py] example selects the python recipe
+// when fed straight from a parsed declaration, and the declaration model itself
+// carries no language, build, recipe, or toolchain field the inference could
+// have consulted instead.
 func TestToolchainInferredFromRunVector(t *testing.T) {
-	// The canonical spec example, parsed as a real declaration: the run vector is
-	// the only inference input, straight off the declared model.
+	// The canonical example, parsed as a real declaration: the run vector is the
+	// only inference input, straight off the declared model.
 	decl, err := declare.ParseDeclaration([]byte("name: extract_orders\nrun: [python, main.py]\n"))
 	if err != nil {
 		t.Fatalf("ParseDeclaration: %v", err)
@@ -73,8 +68,8 @@ func TestToolchainInferredFromRunVector(t *testing.T) {
 	}
 
 	// No language or build field exists to consult: the pipeline declaration model
-	// carries none of the fields a toolchain choice could hide in. Spec section 3
-	// lists language and build among the deliberately absent fields.
+	// carries none of the fields a toolchain choice could hide in -- language and
+	// build are among the deliberately absent fields.
 	pt := reflect.TypeOf(declare.Pipeline{})
 	for i := 0; i < pt.NumField(); i++ {
 		tag := strings.Split(pt.Field(i).Tag.Get("yaml"), ",")[0]
@@ -87,11 +82,8 @@ func TestToolchainInferredFromRunVector(t *testing.T) {
 
 // TestBuildRecipeNotDeclarable proves the build recipe is the engine's choice
 // from the pipeline's runtime and cannot be declared or overridden in the
-// pipeline declaration (specification section 9: "the choice is the engine's,
-// never declared"): a declaration carrying a build, recipe, language, or
+// pipeline declaration: a declaration carrying a build, recipe, language, or
 // toolchain field is rejected outright as an unknown field.
-//
-// spec: S09/build-recipe-not-declarable
 func TestBuildRecipeNotDeclarable(t *testing.T) {
 	// Positive control: the same declaration without the offending field parses.
 	if _, err := declare.ParseDeclaration([]byte("name: extract_orders\nrun: [python, main.py]\n")); err != nil {
@@ -121,12 +113,10 @@ func TestBuildRecipeNotDeclarable(t *testing.T) {
 }
 
 // TestPinnedBuildRecipePerRuntime proves each supported runtime has exactly one
-// pinned recipe, never a menu (specification section 9): Go builds via native go
-// build, Python via PyInstaller one-file, Node via pkg. PinnedRecipe returns a
-// single Recipe -- there is no alternatives list to choose from -- and repeated
-// calls return the identical pinned value.
-//
-// spec: S09/pinned-build-recipe-per-runtime
+// pinned recipe, never a menu: Go builds via native go build, Python via
+// PyInstaller one-file, Node via pkg. PinnedRecipe returns a single Recipe --
+// there is no alternatives list to choose from -- and repeated calls return the
+// identical pinned value.
 func TestPinnedBuildRecipePerRuntime(t *testing.T) {
 	cases := []struct {
 		runtime   build.Runtime
@@ -160,8 +150,8 @@ func TestPinnedBuildRecipePerRuntime(t *testing.T) {
 		})
 	}
 
-	// The pinned toolchains are the spec's three, pairwise distinct: one recipe
-	// per runtime also means one runtime per recipe.
+	// The three pinned toolchains are pairwise distinct: one recipe per runtime
+	// also means one runtime per recipe.
 	seen := map[string]build.Runtime{}
 	for _, tc := range cases {
 		if prev, dup := seen[tc.toolchain]; dup {
@@ -172,11 +162,8 @@ func TestPinnedBuildRecipePerRuntime(t *testing.T) {
 }
 
 // TestUnsupportedRuntimeBuildError proves a run vector whose runtime has no
-// pinned recipe fails with an "unsupported runtime" error (specification
-// section 9: "Any other runtime fails with 'unsupported runtime' until a recipe
-// is added").
-//
-// spec: S09/unsupported-runtime-build-error
+// pinned recipe fails with an "unsupported runtime" error: any runtime outside
+// the pinned set fails that way until a recipe is added.
 func TestUnsupportedRuntimeBuildError(t *testing.T) {
 	cases := []struct {
 		name string

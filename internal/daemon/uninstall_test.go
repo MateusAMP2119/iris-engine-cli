@@ -71,12 +71,9 @@ func runUninstall(t *testing.T) (cluster *storetest.Recorder, data *pgtest.Recor
 }
 
 // TestUninstallEngineFullTeardown proves `iris engine uninstall` is a full engine
-// teardown (specification section 4, bootstrap Q/A): it drops the meta database
-// (all captured provenance with it), drops the data journal on the data
-// connection, deletes the object store under objects_path, and removes the socket
-// and service unit -- leaving nothing behind.
-//
-// spec: S04/uninstall-full-teardown
+// teardown: it drops the meta database (all captured provenance with it), drops the
+// data journal on the data connection, deletes the object store under objects_path,
+// and removes the socket and service unit -- leaving nothing behind.
 func TestUninstallEngineFullTeardown(t *testing.T) {
 	cluster, data, rep, s := runUninstall(t)
 
@@ -119,10 +116,7 @@ func TestUninstallEngineFullTeardown(t *testing.T) {
 // TestUninstallDropsEndpointsWithMeta proves endpoints do not outlive the engine:
 // they are meta rows (the endpoints and endpoint_filters control tables), so the
 // single DROP DATABASE meta the teardown issues removes them with everything else
-// in meta -- there is no separate endpoint teardown and none can survive
-// (specification section 7, endpoint lifecycle Q/A).
-//
-// spec: S07/engine-uninstall-drops-endpoints
+// in meta -- there is no separate endpoint teardown and none can survive.
 func TestUninstallDropsEndpointsWithMeta(t *testing.T) {
 	cluster, _, _, _ := runUninstall(t)
 
@@ -149,11 +143,9 @@ func TestUninstallDropsEndpointsWithMeta(t *testing.T) {
 }
 
 // TestUninstallDropsEngineState proves the teardown drops the engine's state in
-// full (specification section 12, destructive-ops Q/A): meta, the journal and its
-// dependent triggers (the CASCADE), and the object store under objects_path with
-// both payload kinds -- artifact bytes and archived partitions.
-//
-// spec: S12/uninstall-drops-engine-state
+// full: meta, the journal and its dependent triggers (the CASCADE), and the object
+// store under objects_path with both payload kinds -- artifact bytes and archived
+// partitions.
 func TestUninstallDropsEngineState(t *testing.T) {
 	_, data, _, s := runUninstall(t)
 
@@ -193,10 +185,8 @@ func containsString(xs []string, want string) bool {
 // TestUninstallRefusesLiveCandidate proves engine uninstall refuses while any
 // daemon candidate holds a meta connection (so shared meta is never dropped
 // under a live candidate).
-//
-// spec: S12/uninstall-refuses-live-candidate
 func TestUninstallRefusesLiveCandidate(t *testing.T) {
-	t.Run("S12/uninstall-refuses-live-candidate", func(t *testing.T) {
+	t.Run("uninstall-refuses-live-candidate", func(t *testing.T) {
 		s := teardownWorkspace(t)
 		cluster := storetest.NewRecorder()
 		data := pgtest.New()

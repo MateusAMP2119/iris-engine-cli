@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// This file is the live-daemon failover leg of specification section 15 (E11.4):
+// This file is the live-daemon failover leg (E11.4):
 // two real daemon candidates share ONE meta (the external cluster's single meta
 // database), so exactly one holds the leader advisory lock and the other blocks on
 // it as a standby. Killing the leader process abruptly (a host-loss simulation, not
@@ -37,12 +37,8 @@ func waitForRole(t *testing.T, socket, want string) bool {
 }
 
 // TestFailoverStandbyTakesOver drives two real daemons sharing one meta, kills the
-// leader, and proves the standby takes over as the dispatching leader. It claims both
-// the S15 standby-takeover contract and the S16-named real-leader-kill contract: one
+// leader, and proves the standby takes over as the dispatching leader: one
 // scenario, one real kill, both observable outcomes.
-//
-// spec: S15/failover-standby-takes-over
-// spec: S16/failover-real-leader-kill
 func TestFailoverStandbyTakesOver(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("failover needs two daemons sharing one external meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared advisory lock to contend for)")
@@ -52,7 +48,7 @@ func TestFailoverStandbyTakesOver(t *testing.T) {
 
 	// Two workspaces: each daemon has its own socket, pidfile, objects_path, and
 	// workspace tree -- distinct hosts sharing one meta. Distinct objects roots are
-	// the S15/failover-leader-own-objects-path property the integration leg proves; the
+	// the leader-own-objects-path property the integration leg proves; the
 	// takeover proves the standby leads at all.
 	wsA := shortWorkspace(t)
 	wsB := shortWorkspace(t)
@@ -114,12 +110,12 @@ func TestFailoverStandbyTakesOver(t *testing.T) {
 	// acquires the lock, runs startup reconciliation, and becomes the leader.
 	tookOver := waitForLeader(t, socketB)
 
-	t.Run("S15/failover-standby-takes-over", func(t *testing.T) {
+	t.Run("failover-standby-takes-over", func(t *testing.T) {
 		if !tookOver {
 			t.Fatalf("standby B did not take over after leader A was killed (role=%q); the freed advisory lock must promote the standby", healthzRole(t, socketB))
 		}
 	})
-	t.Run("S16/failover-real-leader-kill", func(t *testing.T) {
+	t.Run("failover-real-leader-kill", func(t *testing.T) {
 		if !tookOver {
 			t.Fatalf("killing the real leader did not result in the standby taking over (role=%q)", healthzRole(t, socketB))
 		}

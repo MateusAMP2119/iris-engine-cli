@@ -13,15 +13,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris engine stats` (specification sections 8
-// and 11): a read-only rollup readout. The CLI GETs the daemon's /stats route
-// and prints exactly the payload the route serves -- under --json, the same
-// data envelope any HTTP consumer reads, so the two surfaces are one payload by
+// This file is the CLI side of `iris engine stats`: a read-only rollup readout.
+// The CLI GETs the daemon's /stats route and prints exactly the payload the
+// route serves -- under --json, the same data envelope any HTTP consumer reads,
+// so the two surfaces are one payload by
 // construction (the parity contract). Everything shown is a current count or a
 // last-value: no time-series, no clock-derived metric, and the checkpoint chain
-// head rides the engine rollup (specification section 14: iris engine stats
-// reports the head). It is a read, served on any role; transport failure is
-// no-daemon (exit 3) with start guidance, any other failure operation-failed
+// head rides the engine rollup (iris engine stats reports the head). It is a
+// read, served on any role; transport failure is no-daemon (exit 3) with start
+// guidance, any other failure operation-failed
 // (exit 4).
 
 // engineStats is the handler for `iris engine stats`: it GETs the daemon's

@@ -15,8 +15,6 @@ import (
 // listener, real HTTP framing, and real socket I/O with no database -- the
 // database-free convention E02's daemon control plane and the CLI's socket
 // client reuse.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestUnixSocketHTTPRoundTrip(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -56,8 +54,6 @@ func TestUnixSocketHTTPRoundTrip(t *testing.T) {
 // TestUnixSocketHTTPStatusPropagates proves the socket transport is a faithful
 // HTTP channel, not a happy-path stub: a handler's non-200 status and error body
 // arrive unchanged at the client.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestUnixSocketHTTPStatusPropagates(t *testing.T) {
 	srv := socketio.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "no leader", http.StatusServiceUnavailable)

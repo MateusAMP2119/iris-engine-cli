@@ -10,18 +10,11 @@ import (
 )
 
 // This file owns promotion: the model and the live journal flip behind
-// `iris pipeline promote <name>` (specification sections 1, 5 and 12). Promotion
-// is the other half of the undo marker lifecycle wipe.go owns, and it is
-// marker-only by construction:
-//
-// Contracts satisfied here (via pg unit/integration tests):
-//   S01/promote-ends-wipe-eligibility (unit)
-//   S05/promotion-flips-open-to-promoted (integration)
-//   S05/promotion-no-data-movement (integration)
-//   S01/promote-capture-provenance-continue (integration)
+// `iris pipeline promote <name>`. Promotion is the other half of the undo marker
+// lifecycle wipe.go owns, and it is marker-only by construction:
 //
 //   - It flips the pipeline's open journal entries to undo = 'promoted', so
-//     subsequent wipes skip them (S05: wipe scope is exactly the open entries;
+//     subsequent wipes skip them (wipe scope is exactly the open entries;
 //     promoted is provenance memory, and nothing re-arms it). The released set
 //     is exactly the pipeline's wipe scope -- PlanPromotion selects it through
 //     WipeScope itself, so promotion releases precisely what a wipe would have
@@ -91,7 +84,7 @@ func PlanPromotion(journal []JournalEntry, pipeline string, runPipeline map[int6
 // applied: the model of the journal after the promotion's transaction commits.
 // Only the undo column of the flipped entries changes -- every entry survives
 // with its id, attribution, provenance key, op, and pre-image intact, and no
-// entry is added, dropped, or reordered (S05: promotion moves no data; it
+// entry is added, dropped, or reordered (promotion moves no data; it
 // narrows what wipe may touch and forgets nothing).
 func ApplyPromotion(journal []JournalEntry, plan PromotionPlan) []JournalEntry {
 	flip := make(map[int64]UndoState, len(plan.Flips))

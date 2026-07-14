@@ -13,7 +13,7 @@ import (
 // check, beside the run records the embedded Fake already serves (which back the
 // show readout's recent-runs list). It keeps the fake's value semantics -- every
 // read returns copies -- so the pipeline-show readout is proven with no live
-// Postgres (S16/integration-fakes-interfaces).
+// Postgres.
 
 // ShowFake is an in-memory store.ShowReader: the run-record Fake (recent runs) plus
 // the declaration detail, grants, dependency edges, upstream latest runs, and the

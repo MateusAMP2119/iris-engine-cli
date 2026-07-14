@@ -50,10 +50,8 @@ func (p *listingPool) query(_ context.Context, _ string, _ ...any) (poolRows, er
 // expands to every registered pipeline (AllPipelines). The active flag is the queued/
 // running-run predicate the base query computes; the default view filters on it and the
 // all view keeps every row.
-//
-// spec: S08/pipeline-list-active-default
 func TestPipelineListActiveDefault(t *testing.T) {
-	t.Run("S08/pipeline-list-active-default", func(t *testing.T) {
+	t.Run("pipeline-list-active-default", func(t *testing.T) {
 		seed := []PipelineListing{
 			{Name: "extract_orders", Active: true},  // has a running run
 			{Name: "load_customers", Active: false}, // registered, no active run

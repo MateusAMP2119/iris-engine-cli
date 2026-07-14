@@ -6,15 +6,14 @@ import (
 )
 
 // This file mounts the fixed engine-state route roster and the data-surface
-// routes (specification section 7): the meta-roster collections with their item
-// sub-routes -- /pipelines(/{name}), /runs(/{id}), /dead_letters(/{run_id}),
-// /lanes, /dependencies, /leader, /stats, /healthz,
-// /provenance/{schema}/{table}/{pk} -- the E14 graph and triage sub-routes
-// (/workload, /runs/{id}/trace, /pipelines/{name}/gate,
-// /dead_letters/{run_id}/impact), and the data surface (/data/{schema}/{table},
-// /q/{endpoint}). Every route is GET-only; the roster is a closed switch, so it
-// cannot drift at runtime, and anything outside it falls through to the mux's
-// not_found envelope.
+// routes: the meta-roster collections with their item sub-routes --
+// /pipelines(/{name}), /runs(/{id}), /dead_letters(/{run_id}), /lanes,
+// /dependencies, /leader, /stats, /healthz, /provenance/{schema}/{table}/{pk}
+// -- the E14 graph and triage sub-routes (/workload, /runs/{id}/trace,
+// /pipelines/{name}/gate, /dead_letters/{run_id}/impact), and the data surface
+// (/data/{schema}/{table}, /q/{endpoint}). Every route is GET-only; the roster
+// is a closed switch, so it cannot drift at runtime, and anything outside it
+// falls through to the mux's not_found envelope.
 //
 // E09.5 owns the mounting, the auth split, and the status matrix; the routes'
 // payloads land with their owning epics. /healthz, /leader, and /stats serve
@@ -27,8 +26,8 @@ import (
 
 // LeaderReport is the payload of GET /leader: the node's leadership role and
 // the leader's address as this node knows it, reported on leader and standby
-// alike (specification sections 7 and 15). Leader is "" on the leader itself
-// (it is the leader) and on a candidate that has not seen a leader yet.
+// alike. Leader is "" on the leader itself (it is the leader) and on a
+// candidate that has not seen a leader yet.
 type LeaderReport struct {
 	// Role is the leadership role: leader, standby, or unknown.
 	Role string `json:"role"`
@@ -140,8 +139,8 @@ func splitPath(path string) ([]string, bool) {
 }
 
 // serveLeader handles GET /leader: the leadership readout, reported identically
-// on leader and standby (specification sections 7 and 15: "GET /healthz / GET
-// /leader report role on both"). It is a read, served on any role.
+// on leader and standby ("GET /healthz / GET /leader report role on both"). It
+// is a read, served on any role.
 func (m *mux) serveLeader(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
@@ -169,10 +168,10 @@ func serveUnwiredRead(w http.ResponseWriter, r *http.Request, reader string) {
 	WriteError(w, http.StatusInternalServerError, "internal", "api: "+reader+" reader not wired")
 }
 
-// noParams enforces a paramless route's wire grammar (specification section 7:
-// an unknown or repeated param is a 400 naming it, never ignored): any query
-// param on a route that takes none is a 400 bad_param, written here. It reports
-// whether the request may proceed.
+// noParams enforces a paramless route's wire grammar (an unknown or repeated
+// param is a 400 naming it, never ignored): any query param on a route that
+// takes none is a 400 bad_param, written here. It reports whether the request
+// may proceed.
 func noParams(w http.ResponseWriter, r *http.Request) bool {
 	q := r.URL.Query()
 	if len(q) == 0 {

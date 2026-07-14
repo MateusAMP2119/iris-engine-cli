@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// This file proves the read-pool execution mechanics of specification section 7
-// with recording fakes (integration tier, no live Postgres): the SET ROLE / RESET
-// ROLE cycle per checkout around a single-statement read-only transaction, the
+// This file proves the read-pool execution mechanics with recording fakes
+// (integration tier, no live Postgres): the SET ROLE / RESET ROLE cycle per
+// checkout around a single-statement read-only transaction, the
 // session-scoped prepared statements that keep request handling from assembling
 // SQL, the write-free read surface, and the data-database-only pool target that
 // keeps engine storage unreachable.
@@ -153,15 +153,12 @@ func drain(rows ReadRows) error {
 
 const qOrdersSQL = "SELECT id, customer_id FROM analytics.orders WHERE ($1::uuid IS NULL OR customer_id = $1::uuid) ORDER BY id ASC LIMIT $2;"
 
-// TestReadPoolSetRoleCycle proves the per-checkout role cycle of specification
-// section 7: each read checks a connection out of the shared pool on the data
-// database, runs SET ROLE <pat_role>, executes a single-statement read-only
+// TestReadPoolSetRoleCycle proves the per-checkout role cycle: each read checks a
+// connection out of the shared pool on the data database, runs SET ROLE <pat_role>, executes a single-statement read-only
 // transaction, and RESET ROLE on release -- on success, on failure, and for the
 // /data statements that share the same mechanics.
-//
-// spec: S07/read-pool-set-role-cycle
 func TestReadPoolSetRoleCycle(t *testing.T) {
-	t.Run("S07/read-pool-set-role-cycle", func(t *testing.T) {
+	t.Run("read-pool-set-role-cycle", func(t *testing.T) {
 		t.Run("a read runs SET ROLE, one read-only transaction, RESET ROLE, release", func(t *testing.T) {
 			pool, a, script := newFakePool(1)
 			stmt := mustReadStatement(t, "q_orders_by_customer", qOrdersSQL)
@@ -313,14 +310,12 @@ func TestReadPoolSetRoleCycle(t *testing.T) {
 }
 
 // TestRequestTimePreparedStatements proves the session-scoped prepared-statement
-// behavior of specification section 7: request handling never assembles SQL --
+// behavior: request handling never assembles SQL --
 // each pooled session prepares the fixed statement text on first use, later reads
 // on that session execute the already-prepared statement, and request values ride
 // as bound params only.
-//
-// spec: S07/request-time-prepared-statements
 func TestRequestTimePreparedStatements(t *testing.T) {
-	t.Run("S07/request-time-prepared-statements", func(t *testing.T) {
+	t.Run("request-time-prepared-statements", func(t *testing.T) {
 		stmtText := qOrdersSQL
 
 		t.Run("first use prepares the fixed text, later uses execute without re-preparing", func(t *testing.T) {
@@ -396,14 +391,12 @@ func TestRequestTimePreparedStatements(t *testing.T) {
 	})
 }
 
-// TestReadSurfaceNoWrites proves the write-free read surface of specification
-// section 7: the pool refuses any statement that is not a single SELECT (the
+// TestReadSurfaceNoWrites proves the write-free read surface: the pool refuses
+// any statement that is not a single SELECT (the
 // journal stays readable, never writable; no DML or DDL can enter), and every
 // accepted read runs as exactly one statement inside a read-only transaction.
-//
-// spec: S07/read-surface-no-writes
 func TestReadSurfaceNoWrites(t *testing.T) {
-	t.Run("S07/read-surface-no-writes", func(t *testing.T) {
+	t.Run("read-surface-no-writes", func(t *testing.T) {
 		t.Run("only a single SELECT is accepted as a read statement", func(t *testing.T) {
 			rejected := []struct{ name, text string }{
 				{"journal-insert", "INSERT INTO iris.journal (run_id) VALUES ($1)"},
@@ -463,14 +456,12 @@ func TestReadSurfaceNoWrites(t *testing.T) {
 	})
 }
 
-// TestEngineStorageUnreachable proves the database split of specification section
-// 7: the shared read pool serves the data surface on the data database only --
+// TestEngineStorageUnreachable proves the database split: the shared read pool
+// serves the data surface on the data database only --
 // its connection can never target the meta database, so engine storage is
 // unreachable through /data and /q.
-//
-// spec: S07/engine-storage-unreachable
 func TestEngineStorageUnreachable(t *testing.T) {
-	t.Run("S07/engine-storage-unreachable", func(t *testing.T) {
+	t.Run("engine-storage-unreachable", func(t *testing.T) {
 		secret, err := GenerateSecret()
 		if err != nil {
 			t.Fatalf("GenerateSecret: %v", err)

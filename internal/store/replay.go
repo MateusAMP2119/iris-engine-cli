@@ -6,13 +6,13 @@ import (
 )
 
 // This file is the replay write: the single-writer path that disposes of a
-// dead-lettered run by minting its replacement (specification section 6.2). Replay
-// is a fresh run on current data through the normal run path -- like CreateRun it
-// stamps cause, checksum, the snapshot pin, and the consumed upstream runs -- with
-// two additions that make it a replay: replayed_from points at the run it replaces
-// (replay lineage, never parenthood), and the replaced run's dead_letters worklist
-// row is removed in the same statement, so "the replacement mints" and "the worklist
-// exits" are one atomic act. The dispatcher resolves which root causes to replay
+// dead-lettered run by minting its replacement. Replay is a fresh run on current
+// data through the normal run path -- like CreateRun it stamps cause, checksum,
+// the snapshot pin, and the consumed upstream runs -- with two additions that
+// make it a replay: replayed_from points at the run it replaces (replay lineage,
+// never parenthood), and the replaced run's dead_letters worklist row is removed
+// in the same statement, so "the replacement mints" and "the worklist exits" are
+// one atomic act. The dispatcher resolves which root causes to replay
 // (internal/dispatch, ResolveReplayTargets) and hands each here to write.
 
 // ReplayRecord is the input to ReplayRun: what the write path stamps onto the fresh
@@ -70,15 +70,15 @@ INSERT INTO run_inputs (run_id, upstream_run_id)
 SELECT new_run.id, upstream
 FROM new_run, unnest($10::bigint[]) AS upstream`
 
-// ReplayRun mints a dead-lettered run's replacement and removes the run's worklist
-// row in one atomic meta transaction (specification section 6.2): the replacement is
-// a fresh queued run on current data with cause replay and replayed_from the replaced
-// run, its consumed upstreams recorded in run_inputs, and the replaced run's
-// dead_letters entry deleted -- the replacement mints, the worklist exits, together.
-// The replaced run row itself stays in runs (a worklist exit never deletes run
+// ReplayRun mints a dead-lettered run's replacement and removes the run's
+// worklist row in one atomic meta transaction: the replacement is a fresh queued
+// run on current data with cause replay and replayed_from the replaced run, its
+// consumed upstreams recorded in run_inputs, and the replaced run's dead_letters
+// entry deleted -- the replacement mints, the worklist exits, together. The
+// replaced run row itself stays in runs (a worklist exit never deletes run
 // history). It is a leader-only meta write, riding the single Writer through the
-// atomic ExecTx path (a connection without it fails loudly rather than splitting the
-// replay across un-atomic Execs).
+// atomic ExecTx path (a connection without it fails loudly rather than splitting
+// the replay across un-atomic Execs).
 func (w *Writer) ReplayRun(ctx context.Context, rec ReplayRecord) error {
 	var artifactHash any // nil -> SQL NULL for a dev run.
 	if rec.ArtifactHash != nil {

@@ -3,8 +3,8 @@ package pg
 import "sort"
 
 // This file owns the pure wipe model: the algorithm behind `iris workload wipe
-// [<pipeline>]` and behind declare destroy's data revert (specification sections
-// 5, 6.3, 12 and 14). It plans a wipe entirely over in-memory journal rows -- no
+// [<pipeline>]` and behind declare destroy's data revert. It plans a wipe
+// entirely over in-memory journal rows -- no
 // SQL is built or executed here; a later task feeds the plan to the data
 // database in one transaction (journal and tables co-reside: no partial wipe).
 // Keeping the algorithm pure keeps every rule unit-testable and keeps the live
@@ -12,52 +12,49 @@ import "sort"
 //
 // The rules modeled, in the order the plan applies them:
 //
-//   - Scope (S05/wipe-scope-rule). Wipe scope is exactly the journal entries
-//     still undo = 'open': written under disposable data_mode and unreleased by
-//     promotion (promotion flips open entries to 'promoted'; permanent-mode
-//     writes are born 'promoted'; earlier wipes leave 'wiped' or 'skipped').
-//     Everything outside 'open' is provenance memory only, and no operation in
-//     this model -- or anywhere -- re-arms it.
+//   - Scope. Wipe scope is exactly the journal entries still undo = 'open':
+//     written under disposable data_mode and unreleased by promotion (promotion
+//     flips open entries to 'promoted'; permanent-mode writes are born 'promoted';
+//     earlier wipes leave 'wiped' or 'skipped'). Everything outside 'open' is
+//     provenance memory only, and no operation in this model -- or anywhere --
+//     re-arms it.
 //
-//   - Reverse replay (S05/wipe-reverse-replay). Scope entries replay in reverse
-//     id order: a disposable insert reverts by deleting the row, a wipe-eligible
-//     update or delete by restoring its captured pre-image. Reverse order is
-//     what unwinds same-row stacking inside the scope: journal ids per (schema,
-//     table, row_pk) are strictly commit-ordered (the trigger fires in the
-//     writing transaction), so replaying newest-first rewinds a contested row
-//     layer by layer to its pre-scope state.
+//   - Reverse replay. Scope entries replay in reverse id order: a disposable
+//     insert reverts by deleting the row, a wipe-eligible update or delete by
+//     restoring its captured pre-image. Reverse order is what unwinds same-row
+//     stacking inside the scope: journal ids per (schema, table, row_pk) are
+//     strictly commit-ordered (the trigger fires in the writing transaction), so
+//     replaying newest-first rewinds a contested row layer by layer to its
+//     pre-scope state.
 //
-//   - Conflict skip (S05/wipe-conflict-skip). An open entry is conflict-skipped,
-//     its row left as-is, whenever a later journal entry exists for the same
-//     (schema, table, row_pk) whose write is still in the row's value. The check
-//     is journal-internal with no image comparison -- every write is captured,
-//     so it is total -- and "still in the row's value" is decidable from undo
-//     alone: 'promoted', 'skipped', and out-of-scope 'open' writes are in the
-//     value; a 'wiped' write is not (spec section 5: "a skipped write is still
-//     in the row's value, a wiped one is not"). Later same-scope entries never
-//     conflict: replay visits them first, retiring them to 'wiped', which is
-//     exactly why the replay runs in reverse. The report names the conflicting
-//     run: the nearest later still-in-value entry's run, the write that sits
-//     immediately on top of the skipped one.
+//   - Conflict skip. An open entry is conflict-skipped, its row left as-is,
+//     whenever a later journal entry exists for the same (schema, table, row_pk)
+//     whose write is still in the row's value. The check is journal-internal with
+//     no image comparison -- every write is captured, so it is total -- and "still
+//     in the row's value" is decidable from undo alone: 'promoted', 'skipped', and
+//     out-of-scope 'open' writes are in the value; a 'wiped' write is not. Later
+//     same-scope entries never conflict: replay visits them first, retiring them
+//     to 'wiped', which is exactly why the replay runs in reverse. The report
+//     names the conflicting run: the nearest later still-in-value entry's run, the
+//     write that sits immediately on top of the skipped one.
 //
-//   - Retirement (S05/wipe-retires-all-visited). Every visited open entry is
-//     retired: reverted ones to 'wiped', conflict-skipped ones to 'skipped'.
-//     Retired entries leave the wipe scope, so conflicts are reported once and
-//     never re-visited, and the summary reports both counts.
+//   - Retirement. Every visited open entry is retired: reverted ones to 'wiped',
+//     conflict-skipped ones to 'skipped'. Retired entries leave the wipe scope, so
+//     conflicts are reported once and never re-visited, and the summary reports
+//     both counts.
 //
-//   - Pipeline narrowing (S05/wipe-pipeline-scope). A named wipe narrows the
-//     scope to one pipeline's journal entries -- attributed through the run that
-//     wrote them -- leaving other pipelines' open entries untouched; a bare wipe
-//     covers the whole scope. Declare destroy's data revert is exactly the
-//     narrowed form (PlanDestroyRevert delegates to PlanWipe).
+//   - Pipeline narrowing. A named wipe narrows the scope to one pipeline's journal
+//     entries -- attributed through the run that wrote them -- leaving other
+//     pipelines' open entries untouched; a bare wipe covers the whole scope.
+//     Declare destroy's data revert is exactly the narrowed form
+//     (PlanDestroyRevert delegates to PlanWipe).
 //
-//   - Cursor rides along (S06.3/wipe-reverts-cursor-with-data). A pipeline's
-//     source cursor lives in a declared table it writes, so a run's
-//     cursor-advance is a journaled write like any other and needs no special
-//     case here: wiping the run restores the pre-advance cursor row in the same
-//     plan as the run's data, so the next pass reprocesses exactly the reverted
-//     window and never silently skips it. That the cursor is handled by NOT
-//     being special is the point: an engine-held cursor field would be
+//   - Cursor rides along. A pipeline's source cursor lives in a declared table it
+//     writes, so a run's cursor-advance is a journaled write like any other and
+//     needs no special case here: wiping the run restores the pre-advance cursor
+//     row in the same plan as the run's data, so the next pass reprocesses exactly
+//     the reverted window and never silently skips it. That the cursor is handled
+//     by NOT being special is the point: an engine-held cursor field would be
 //     unattributed and unrevertible.
 //
 // Sealed partitions are out of reach by construction: a partition seals only
@@ -65,8 +62,7 @@ import "sort"
 // in unsealed partitions and this model never needs to know about sealing.
 
 // UndoState is a journal entry's undo lifecycle state: the data_journal.undo
-// value set (specification section 4), mirrored here so the wipe model and the
-// journal DDL agree.
+// value set, mirrored here so the wipe model and the journal DDL agree.
 type UndoState string
 
 // The journal undo states.
@@ -97,7 +93,7 @@ type RowKey struct {
 }
 
 // JournalEntry is one data_journal row in memory: the fixture shape the pure
-// wipe model consumes (specification section 4; the DDL lives in schema.go).
+// wipe model consumes (the DDL lives in schema.go).
 // Attribution columns the wipe never reads (pg_role, recorded_at) are omitted:
 // this is the wipe-relevant projection of a journal row, not a second schema.
 type JournalEntry struct {
@@ -282,7 +278,7 @@ func PlanWipe(journal []JournalEntry, target WipeTarget) WipePlan {
 // PlanDestroyRevert plans declare destroy's data revert for one pipeline: it is
 // exactly the narrowed wipe (`iris workload wipe <pipeline>`) on the destroy
 // target, by delegation rather than by a parallel implementation, so the two
-// can never drift (specification sections 5 and 12).
+// can never drift.
 func PlanDestroyRevert(journal []JournalEntry, pipeline string, runPipeline map[int64]string) WipePlan {
 	return PlanWipe(journal, WipeTarget{Pipeline: pipeline, RunPipeline: runPipeline})
 }
@@ -321,7 +317,7 @@ func revertOf(e JournalEntry) RowRevert {
 }
 
 // CompactJournal applies the compaction collapse rule to a set of journal
-// entries (S14/compaction-collapse-rule). It is pure unit logic.
+// entries. It is pure unit logic.
 //
 // Rules:
 //   - Pre-images are nulled for any entry whose undo is not UndoOpen (released

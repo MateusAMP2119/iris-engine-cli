@@ -11,16 +11,15 @@ import (
 )
 
 // This file proves the failover core of leader election at integration tier,
-// against the meta-store fake and with no live Postgres (specification sections 15
-// and 16). Leadership is a Postgres session advisory lock: the leader holds it,
-// standby candidates block acquiring it, and the holder's session ending -- an
-// explicit release or connection death -- promotes the next standby. The other half
-// of the invariant is the write guard: meta writes are never issued over a session
-// that has not (re-)acquired the leader lock, so across a failover there is no
-// second writer and no overlapping run. The one real conformance leg (two daemon
-// candidates, leader killed) rides E13; everything here drives the fake
-// (storetest.LockSet / storetest.FakeLock) exactly as specification section 16
-// prescribes for failover testing: "standby blocks, release promotes".
+// against the meta-store fake and with no live Postgres. Leadership is a Postgres
+// session advisory lock: the leader holds it, standby candidates block acquiring
+// it, and the holder's session ending -- an explicit release or connection death
+// -- promotes the next standby. The other half of the invariant is the write
+// guard: meta writes are never issued over a session that has not (re-)acquired
+// the leader lock, so across a failover there is no second writer and no
+// overlapping run. The one real conformance leg (two daemon candidates, leader
+// killed) rides E13; everything here drives the fake (storetest.LockSet /
+// storetest.FakeLock): standby blocks, release promotes.
 
 // promotionTimeout bounds every positive wait (a promotion that must happen);
 // assertions wait on lock state, never a fixed sleep standing in for readiness.
@@ -32,14 +31,12 @@ const promotionTimeout = 3 * time.Second
 // readiness sleep.
 const blockedProbe = 50 * time.Millisecond
 
-// TestAdvisoryLockLeaderElection proves the election mechanism (specification
-// section 15): leadership is a session advisory lock, a standby blocked acquiring
-// the meta leader lock stays blocked while the holder's session is alive, and it
-// acquires the lock -- becomes leader -- when the previous holder's SESSION ENDS
-// (connection death, the failover trigger; not an explicit release, which
-// TestFailoverLockFake covers).
-//
-// spec: S15/advisory-lock-leader-election
+// TestAdvisoryLockLeaderElection proves the election mechanism: leadership is a
+// session advisory lock, a standby blocked acquiring the meta leader lock stays
+// blocked while the holder's session is alive, and it acquires the lock --
+// becomes leader -- when the previous holder's SESSION ENDS (connection death,
+// the failover trigger; not an explicit release, which TestFailoverLockFake
+// covers).
 func TestAdvisoryLockLeaderElection(t *testing.T) {
 	ctx := context.Background()
 	set := storetest.NewLockSet()
@@ -69,9 +66,8 @@ func TestAdvisoryLockLeaderElection(t *testing.T) {
 		t.Fatal("blocked standby reports the lock held")
 	}
 
-	// The previous holder's session ends -- connection death releases the lock
-	// (specification section 15) -- and the blocked standby acquires it, becoming
-	// leader.
+	// The previous holder's session ends -- connection death releases the lock --
+	// and the blocked standby acquires it, becoming leader.
 	leader.LoseSession()
 
 	select {
@@ -90,11 +86,9 @@ func TestAdvisoryLockLeaderElection(t *testing.T) {
 	}
 }
 
-// TestFailoverLockFake proves the fake-tier failover doctrine (specification
-// section 16, failover testing): against the meta-store fake, a standby candidate
-// blocks while the leader lock is held and is promoted when the lock is released.
-//
-// spec: S16/failover-lock-fake
+// TestFailoverLockFake proves the fake-tier failover doctrine: against the
+// meta-store fake, a standby candidate blocks while the leader lock is held and
+// is promoted when the lock is released.
 func TestFailoverLockFake(t *testing.T) {
 	ctx := context.Background()
 	set := storetest.NewLockSet()
@@ -142,16 +136,13 @@ func TestFailoverLockFake(t *testing.T) {
 	}
 }
 
-// TestNoMetaWriteWithoutLock proves the single-writer invariant across failover
-// (specification section 15): meta writes are never issued over a session that has
-// not re-acquired the leader lock. The lock-guarded write connection refuses a
-// write from a session that never acquired the lock, refuses every write from a
-// deposed leader whose session ended, and a dead session can never re-acquire --
-// leadership (and with it the write path) requires a fresh session. So across a
-// failover the meta write record shows exactly one writer at a time and no
-// overlapping run.
-//
-// spec: S15/no-meta-write-without-lock
+// TestNoMetaWriteWithoutLock proves the single-writer invariant across failover:
+// meta writes are never issued over a session that has not re-acquired the leader
+// lock. The lock-guarded write connection refuses a write from a session that
+// never acquired the lock, refuses every write from a deposed leader whose
+// session ended, and a dead session can never re-acquire -- leadership (and with
+// it the write path) requires a fresh session. So across a failover the meta
+// write record shows exactly one writer at a time and no overlapping run.
 func TestNoMetaWriteWithoutLock(t *testing.T) {
 	ctx := context.Background()
 
@@ -245,8 +236,8 @@ func TestNoMetaWriteWithoutLock(t *testing.T) {
 		}
 
 		// And the dead session can never re-acquire: re-acquisition demands a fresh
-		// session (a new handle), exactly the spec's "re-enters standby on a fresh
-		// session". The refused Acquire keeps the deposed session permanently
+		// session (a new handle), since a deposed leader re-enters standby only on a
+		// fresh session. The refused Acquire keeps the deposed session permanently
 		// writeless.
 		if err := lockA.Acquire(ctx); !errors.Is(err, storetest.ErrSessionEnded) {
 			t.Errorf("deposed leader re-Acquire on its dead session: err = %v, want ErrSessionEnded", err)

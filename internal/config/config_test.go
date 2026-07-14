@@ -15,15 +15,13 @@ import (
 func sp(s string) *string { return &s }
 func ip(i int64) *int64   { return &i }
 
-// TestConfigPrecedenceOrder proves the strict, per-field precedence of
-// specification section 8: command flags override IRIS_* env, which override
-// iris.toml, which override built-in defaults. It walks every layer relationship
-// for a string field (Socket) and an integer field (Retain), proves an unset
-// higher layer preserves the lower one, and proves the set-vs-zero distinction:
-// a layer that explicitly sets a field to its zero value still overrides the
-// layer below, while a layer that leaves the field unset does not.
-//
-// spec: S08/config-precedence-order
+// TestConfigPrecedenceOrder proves the strict, per-field precedence: command
+// flags override IRIS_* env, which override iris.toml, which override built-in
+// defaults. It walks every layer relationship for a string field (Socket) and an
+// integer field (Retain), proves an unset higher layer preserves the lower one,
+// and proves the set-vs-zero distinction: a layer that explicitly sets a field to
+// its zero value still overrides the layer below, while a layer that leaves the
+// field unset does not.
 func TestConfigPrecedenceOrder(t *testing.T) {
 	// Layers are passed to Resolve lowest-precedence first: defaults, file, env,
 	// flags.
@@ -126,13 +124,11 @@ func TestConfigPrecedenceOrder(t *testing.T) {
 }
 
 // TestDocumentedEnvVarsRecognized proves every documented IRIS_* environment
-// variable of specification section 8 is recognized and supplies the value for
-// its corresponding setting: IRIS_SOCKET, IRIS_HOST, IRIS_TOKEN, IRIS_PG_DSN,
-// IRIS_RETAIN, IRIS_JOURNAL_PARTITION_ROWS, IRIS_OBJECTS_PATH. It also proves an
-// unset (empty) variable contributes nothing (the setting falls back to its
-// default), and that the two integer variables parse.
-//
-// spec: S08/documented-env-vars-recognized
+// variable is recognized and supplies the value for its corresponding setting:
+// IRIS_SOCKET, IRIS_HOST, IRIS_TOKEN, IRIS_PG_DSN, IRIS_RETAIN,
+// IRIS_JOURNAL_PARTITION_ROWS, IRIS_OBJECTS_PATH. It also proves an unset (empty)
+// variable contributes nothing (the setting falls back to its default), and that
+// the two integer variables parse.
 func TestDocumentedEnvVarsRecognized(t *testing.T) {
 	// Each documented variable, in isolation, maps to exactly its setting.
 	stringVars := []struct {
@@ -221,14 +217,11 @@ func TestDocumentedEnvVarsRecognized(t *testing.T) {
 	})
 }
 
-// TestZeroConfigDefaults proves the zero-config path of specification section 8:
-// with no flags, no environment, and no iris.toml, the CLI defaults to the local
-// socket under the workspace .iris directory and the engine defaults to managed
-// Postgres (no admin DSN configured -> managed mode). It resolves both the bare
-// defaults layer and the full four-layer stack with every other source empty,
-// which must agree.
-//
-// spec: S08/zero-config-defaults
+// TestZeroConfigDefaults proves the zero-config path: with no flags, no
+// environment, and no iris.toml, the CLI defaults to the local socket under the
+// workspace .iris directory and the engine defaults to managed Postgres (no admin
+// DSN configured -> managed mode). It resolves both the bare defaults layer and
+// the full four-layer stack with every other source empty, which must agree.
 func TestZeroConfigDefaults(t *testing.T) {
 	const ws = "/home/dev/project"
 

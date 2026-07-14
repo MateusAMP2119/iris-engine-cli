@@ -11,7 +11,7 @@ import (
 )
 
 // This file proves the daemon's engine-inspect read plane is wired into the
-// production Run() codepath (specification section 11). The plane behavior itself
+// production Run() codepath. The plane behavior itself
 // is covered by an integration test that constructs the mux with the handler
 // installed directly; that test passes even when Run() forgets to wire the
 // handler. Only driving the shipped binary against a live daemon proves the route
@@ -26,7 +26,7 @@ import (
 // Run() codepath: an unwired inspect plane 500s ("api: inspect not available") and
 // the CLI exits operation-failed; the wired plane exits clean with the DDL dump.
 func TestEngineInspectServesDDL(t *testing.T) {
-	t.Run("S11/inspect-dumps-engine-ddl", func(t *testing.T) {
+	t.Run("inspect-dumps-engine-ddl", func(t *testing.T) {
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")

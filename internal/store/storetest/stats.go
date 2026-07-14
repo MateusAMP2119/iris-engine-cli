@@ -12,7 +12,7 @@ import (
 // registry roster, the journal counters, and the checkpoint chain, beside the
 // run records the embedded Fake already serves. It keeps the fake's value
 // semantics -- every read returns copies -- so the stats rollup is proven with
-// no live Postgres (S16/integration-fakes-interfaces).
+// no live Postgres.
 
 // StatsFake is an in-memory store.StatsSource: the run-record Fake plus the
 // stats rollup's other sources. The zero value is not usable; construct one

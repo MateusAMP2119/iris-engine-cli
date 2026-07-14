@@ -26,12 +26,11 @@ func argsContain(args []any, want any) bool {
 // downstream's awaited upstream run is dead-lettered, the single writer mints the
 // downstream a NEVER-EXECUTED dead-lettered run (state dead_lettered, cause
 // propagated, no exit_code or handle), its dead_letters worklist row (reason
-// upstream_dead_lettered, failed_upstream the immediate upstream), and the poisoned
-// upstream run recorded in run_inputs -- all as ONE atomic transaction (a single CTE),
-// so the three rows commit together or not at all and the downstream's dead-letter can
-// never be left without its worklist row or its lineage (specification section 6.2).
-//
-// spec: S06.2/propagation-writes-dead-run
+// upstream_dead_lettered, failed_upstream the immediate upstream), and the
+// poisoned upstream run recorded in run_inputs -- all as ONE atomic transaction
+// (a single CTE), so the three rows commit together or not at all and the
+// downstream's dead-letter can never be left without its worklist row or its
+// lineage.
 func TestDeadLetterPropagatedWritesDeadRun(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -99,13 +98,11 @@ func TestDeadLetterPropagatedWritesDeadRun(t *testing.T) {
 }
 
 // TestFailedUpstreamAttribution proves the attribution asymmetry the dead_letters
-// table encodes (specification section 4): a PROPAGATED dead-lettering records the
-// immediate upstream in failed_upstream, while a DIRECT failure (a run that failed on
-// its own) leaves failed_upstream null. The propagation write names the upstream; the
-// direct-failure write (DeadLetterRun) writes no failed_upstream column at all, so it
-// defaults to SQL NULL.
-//
-// spec: S04/failed-upstream-attribution
+// table encodes: a PROPAGATED dead-lettering records the immediate upstream in
+// failed_upstream, while a DIRECT failure (a run that failed on its own) leaves
+// failed_upstream null. The propagation write names the upstream; the
+// direct-failure write (DeadLetterRun) writes no failed_upstream column at all,
+// so it defaults to SQL NULL.
 func TestFailedUpstreamAttribution(t *testing.T) {
 	ctx := context.Background()
 

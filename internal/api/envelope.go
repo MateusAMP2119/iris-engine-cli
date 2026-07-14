@@ -12,25 +12,25 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the response-side half of the read-API wire contract
-// (specification section 7): the { "data": [...], "page": { "next_after":
-// <key|null>, "limit": <n> } } success envelope, the shared error envelope with
-// its closed code set, and the per-column-type JSON serialization rules. It is
-// pure rendering: a compiled response shape (ordered columns with their Postgres
-// types), served rows, and the request's cursor plan go in; the exact envelope
-// bytes come out. It never opens a connection, touches a server, or interprets a
-// value beyond its declared type -- in particular a recorded_at audit string is
-// an opaque text value, emitted verbatim and never parsed or ordered by. The
-// route layer (E09.5/E09.8) calls RenderPage/RenderError and writes the bytes;
-// EncodeRow is the shared row form the NDJSON stream reuses (same rows, one per
-// line, no envelope).
+// This file is the response-side half of the read-API wire contract: the {
+// "data": [...], "page": { "next_after": <key|null>, "limit": <n> } } success
+// envelope, the shared error envelope with its closed code set, and the
+// per-column-type JSON serialization rules. It is pure rendering: a compiled
+// response shape (ordered columns with their Postgres types), served rows, and
+// the request's cursor plan go in; the exact envelope bytes come out. It never
+// opens a connection, touches a server, or interprets a value beyond its
+// declared type -- in particular a recorded_at audit string is an opaque text
+// value, emitted verbatim and never parsed or ordered by. The route layer
+// (E09.5/E09.8) calls RenderPage/RenderError and writes the bytes; EncodeRow is
+// the shared row form the NDJSON stream reuses (same rows, one per line, no
+// envelope).
 //
 // Byte-exactness is deliberate: rows mirror the source columns in projection
 // order (never a canonicalized or alphabetized object), so the renderer builds
 // the JSON itself instead of round-tripping through a Go map.
 
-// ErrorCode is a wire error code: the closed set the error envelope admits
-// (specification section 7). Nothing outside this set is ever emitted.
+// ErrorCode is a wire error code: the closed set the error envelope admits.
+// Nothing outside this set is ever emitted.
 type ErrorCode string
 
 // The closed error-code set.
@@ -61,10 +61,10 @@ func (c ErrorCode) Valid() bool {
 	}
 }
 
-// HTTPStatus returns the code's fixed HTTP status (specification section 7
-// status matrix): 400 bad_param, 401 unauthorized, 403 forbidden, 404 not_found,
-// 405 method_not_allowed, 500 internal. An out-of-set code maps to 500
-// defensively; RenderError refuses it before it can be served.
+// HTTPStatus returns the code's fixed HTTP status (the status matrix): 400
+// bad_param, 401 unauthorized, 403 forbidden, 404 not_found, 405
+// method_not_allowed, 500 internal. An out-of-set code maps to 500 defensively;
+// RenderError refuses it before it can be served.
 func (c ErrorCode) HTTPStatus() int {
 	switch c {
 	case CodeBadParam:
@@ -84,11 +84,11 @@ func (c ErrorCode) HTTPStatus() int {
 
 // ResponseColumn is one column of a route's response shape: its name and its
 // Postgres type, which picks the serialization rule. A response's columns are
-// ordered; rows mirror them in that order (specification section 7).
+// ordered; rows mirror them in that order.
 type ResponseColumn struct {
 	// Name is the source column name, the row object's key.
 	Name string
-	// PgType is the column's Postgres type (the closed section 5 mapping), which
+	// PgType is the column's Postgres type (the closed type mapping), which
 	// selects the JSON form.
 	PgType string
 }
@@ -125,14 +125,14 @@ func EndpointColumns(ce *declare.CompiledEndpoint, src *declare.Table) ([]Respon
 	return out, nil
 }
 
-// RenderPage renders the success envelope for one served page (specification
-// section 7): { "data": [ <rows> ], "page": { "next_after": <key|null>,
-// "limit": <n> } }. data is always a JSON array (empty, never null); rows
-// mirror cols in order; next_after is the last served row's key when the page
-// filled to the cursor's limit (nil -> null otherwise), serialized per the key
-// column's type -- a composite key renders as the ordered key tuple. Every
-// cursor key column must be in cols; a key outside the shape is a route
-// misconfiguration, surfaced as an error, never a silent null.
+// RenderPage renders the success envelope for one served page: { "data": [
+// <rows> ], "page": { "next_after": <key|null>, "limit": <n> } }. data is
+// always a JSON array (empty, never null); rows mirror cols in order;
+// next_after is the last served row's key when the page filled to the cursor's
+// limit (nil -> null otherwise), serialized per the key column's type -- a
+// composite key renders as the ordered key tuple. Every cursor key column must
+// be in cols; a key outside the shape is a route misconfiguration, surfaced as
+// an error, never a silent null.
 func RenderPage(cols []ResponseColumn, rows []map[string]any, cursor CursorPlan) ([]byte, error) {
 	typeFor := make(map[string]string, len(cols))
 	for _, c := range cols {
@@ -200,10 +200,10 @@ func writeNextAfter(b *bytes.Buffer, cursor CursorPlan, typeFor map[string]strin
 	return nil
 }
 
-// RenderError renders the error envelope (specification section 7): the same
-// envelope reused with an error object, { "error": { "code": <code>,
-// "message": <message> } }. The code must be in the closed set; an out-of-set
-// code is refused here so it can never reach the wire.
+// RenderError renders the error envelope: the same envelope reused with an
+// error object, { "error": { "code": <code>, "message": <message> } }. The code
+// must be in the closed set; an out-of-set code is refused here so it can never
+// reach the wire.
 func RenderError(code ErrorCode, message string) ([]byte, error) {
 	if !code.Valid() {
 		return nil, fmt.Errorf("api: render error: code %q is outside the closed set (bad_param, unauthorized, forbidden, not_found, method_not_allowed, internal)", code)
@@ -222,10 +222,10 @@ func RenderError(code ErrorCode, message string) ([]byte, error) {
 }
 
 // EncodeRow renders one row as a JSON object whose keys are exactly cols in
-// order (rows mirror source columns, specification section 7), each value
-// serialized per its column's Postgres type. A row missing a column is a
-// rendering fault (an error naming the column), never an omitted key or a null
-// hole. The NDJSON stream serves this same form, one row per line, no envelope.
+// order (rows mirror source columns), each value serialized per its column's
+// Postgres type. A row missing a column is a rendering fault (an error naming
+// the column), never an omitted key or a null hole. The NDJSON stream serves
+// this same form, one row per line, no envelope.
 func EncodeRow(cols []ResponseColumn, row map[string]any) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')
@@ -253,14 +253,14 @@ func EncodeRow(cols []ResponseColumn, row map[string]any) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// encodeValue serializes one value per its column's Postgres type
-// (specification section 7): int/bigint/smallint/double as JSON numbers,
-// numeric as a string (no float round-trip loss), bool as a JSON boolean,
-// text/varchar/uuid as strings, timestamptz/timestamp/date/time as RFC 3339
-// strings, json/jsonb inline (compacted, structure untouched), bytea as base64,
-// and SQL NULL (a nil value) as JSON null for every type. A Go value whose type
-// does not match its column's wire type is an error, never a coercion: a
-// mismatch is a read-layer fault that must surface, not serialize.
+// encodeValue serializes one value per its column's Postgres type:
+// int/bigint/smallint/double as JSON numbers, numeric as a string (no float
+// round-trip loss), bool as a JSON boolean, text/varchar/uuid as strings,
+// timestamptz/timestamp/date/time as RFC 3339 strings, json/jsonb inline
+// (compacted, structure untouched), bytea as base64, and SQL NULL (a nil value)
+// as JSON null for every type. A Go value whose type does not match its
+// column's wire type is an error, never a coercion: a mismatch is a read-layer
+// fault that must surface, not serialize.
 func encodeValue(pgType string, v any) ([]byte, error) {
 	if v == nil {
 		return []byte("null"), nil

@@ -12,8 +12,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of iris pipeline build (specification sections 1, 8, and
-// 9): the one explicit entry point that compiles anything -- declare apply never
+// This file is the CLI side of iris pipeline build: the one explicit entry point
+// that compiles anything -- declare apply never
 // builds. build is a control mutation POSTed to the leader-gated /pipeline/build
 // route; a successful build reports the new artifact's content hash (the identity
 // the executed bytes are always recognizable by) and exits 0. A build failure

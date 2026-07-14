@@ -12,18 +12,17 @@ import (
 	"strings"
 )
 
-// This file holds the two source-level structural checks E02.6 adds: the
-// single-writer construction rule and the no-busy-retry rule (specification
-// sections 6.1 and 2). Both parse the module's own Go source (never executing the
-// toolchain), like the import-graph checks, but they inspect identifiers and call
-// sites rather than import edges.
+// This file holds the two source-level structural checks: the single-writer
+// construction rule and the no-busy-retry rule. Both parse the module's own Go
+// source (never executing the toolchain), like the import-graph checks, but they
+// inspect identifiers and call sites rather than import edges.
 
 // KindSingleWriter is a package other than internal/dispatch constructing a meta
 // writer (calling store.NewWriter): a second meta write path.
 const KindSingleWriter = "single-writer-construction"
 
 // KindBusyRetry is an identifier in a read/write path named for a retry or backoff
-// mechanism: a busy-retry the spec bans (specification section 2).
+// mechanism: a busy-retry the engine bans.
 const KindBusyRetry = "busy-retry"
 
 // storeNewWriter is the constructor whose call site the single-writer rule
@@ -48,10 +47,10 @@ var busyRetryTokens = []string{"retry", "backoff", "reattempt"}
 
 // CheckSingleWriterConstruction returns a violation for every package -- other than
 // internal/dispatch -- that constructs the meta writer by calling store.NewWriter.
-// The dispatcher owns the sole meta writer (specification section 6.1); restricting
-// the constructor's call site to dispatch means no other component can mint a
-// second writer and open a second meta write path. module is the module path, used
-// to recognize the store import.
+// The dispatcher owns the sole meta writer; restricting the constructor's call
+// site to dispatch means no other component can mint a second writer and open a
+// second meta write path. module is the module path, used to recognize the store
+// import.
 func CheckSingleWriterConstruction(root, module string) ([]Violation, error) {
 	storeImport := module + "/internal/store"
 	var vs []Violation
@@ -75,8 +74,8 @@ func CheckSingleWriterConstruction(root, module string) ([]Violation, error) {
 
 // CheckNoBusyRetry returns a violation for every identifier in a scanned package
 // (store, pg, dispatch) named for a retry or backoff mechanism. Readers use plain
-// MVCC connections with no busy-retry anywhere (specification section 2); the meta
-// write path and the dispatcher likewise never spin on a failed operation. The
+// MVCC connections with no busy-retry anywhere; the meta write path and the
+// dispatcher likewise never spin on a failed operation. The
 // check is a documented name-based heuristic over identifiers, so a busy-retry loop
 // (which would name a retry counter, a backoff duration, or a reattempt helper) is
 // caught while the doc comments describing the absence of retry are not.
@@ -90,7 +89,7 @@ func CheckNoBusyRetry(root string) ([]Violation, error) {
 			vs = append(vs, Violation{
 				Kind:    KindBusyRetry,
 				Subject: rel,
-				Detail: fmt.Sprintf("identifier %q in %s names a retry/backoff mechanism; readers and the meta write path carry no busy-retry (specification section 2)",
+				Detail: fmt.Sprintf("identifier %q in %s names a retry/backoff mechanism; readers and the meta write path carry no busy-retry",
 					name, filepath.Base(path)),
 			})
 		}

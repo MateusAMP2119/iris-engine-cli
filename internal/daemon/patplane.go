@@ -17,21 +17,21 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's leader-side PAT-mint plane (specification sections 4 and
-// 7): the composition root that turns POST /pat/create into a minted token, its
-// expanded read grants, the provisioned data-database read role, and the atomic meta
-// persistence -- then returns the show-once token exactly once. It is leader-only:
-// the api mux gates the mutation to the leader, and the single meta writer only
-// exists once a candidate wins the lock, so the orchestrator is installed on winning
-// leadership and cleared on demotion; a swappable patPlane holds it and satisfies
+// This file is the daemon's leader-side PAT-mint plane: the composition root that
+// turns POST /pat/create into a minted token, its expanded read grants, the
+// provisioned data-database read role, and the atomic meta persistence -- then
+// returns the show-once token exactly once. It is leader-only: the api mux gates
+// the mutation to the leader, and the single meta writer only exists once a
+// candidate wins the lock, so the orchestrator is installed on winning leadership
+// and cleared on demotion; a swappable patPlane holds it and satisfies
 // api.PATMintHandler for the daemon's whole life.
 //
-// The mint order is deliberate (specification section 7): mint the token, expand the
-// read grants against the leader's declared fields and applied endpoints, provision
-// the NOLOGIN data role on the data database with those grants (data first, so a
-// failed provision never leaves a PAT that cannot read), then persist the pats,
-// pat_scopes, role, and grant rows as one atomic meta transaction, and finally return
-// the show-once token. A failed provision or persist mints nothing durable.
+// The mint order is deliberate: mint the token, expand the read grants against the
+// leader's declared fields and applied endpoints, provision the NOLOGIN data role
+// on the data database with those grants (data first, so a failed provision never
+// leaves a PAT that cannot read), then persist the pats, pat_scopes, role, and
+// grant rows as one atomic meta transaction, and finally return the show-once
+// token. A failed provision or persist mints nothing durable.
 
 // patPlane is the daemon's api.PATMintHandler: a stable handle the mux binds to for
 // the daemon's whole life, delegating to the live orchestrator when the daemon leads
@@ -100,13 +100,13 @@ func newPATMintOrchestrator(workspace string, submit dispatch.Submitter, data pg
 	return &patMintOrchestrator{workspace: workspace, submit: submit, data: data, endpoints: endpoints, logger: logger}
 }
 
-// mint mints, provisions, and persists one PAT (specification sections 4 and 7). It
-// validates the scope set, mints a fresh token and its argon2id hash, and -- for a
-// data-scope PAT -- expands its --read/--endpoint grants against the leader's
-// declared fields and applied endpoints, provisions the NOLOGIN read role on the
-// data database (with those grants and membership in the engine read-pool login),
-// and persists the pats/pat_scopes/role/grants rows as one atomic meta transaction.
-// It returns the show-once token exactly once. Any failure mints nothing durable.
+// mint mints, provisions, and persists one PAT. It validates the scope set, mints a
+// fresh token and its argon2id hash, and -- for a data-scope PAT -- expands its
+// --read/--endpoint grants against the leader's declared fields and applied
+// endpoints, provisions the NOLOGIN read role on the data database (with those
+// grants and membership in the engine read-pool login), and persists the
+// pats/pat_scopes/role/grants rows as one atomic meta transaction. It returns the
+// show-once token exactly once. Any failure mints nothing durable.
 func (o *patMintOrchestrator) mint(ctx context.Context, req api.PATCreateRequest) (api.PATCreateResult, error) {
 	scopes, err := pat.ParseScopes(req.Scopes)
 	if err != nil {

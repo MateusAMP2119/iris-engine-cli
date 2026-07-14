@@ -5,14 +5,12 @@ import (
 	"testing"
 )
 
-// TestPruneStatementsNeverTouchJournal proves run pruning never deletes data_journal
-// rows: capture rows are bounded only by the journal's own lifecycle, never by run
-// pruning (specification section 6.2). The prune statement batch is a closed set that
+// TestPruneStatementsNeverTouchJournal proves run pruning never deletes
+// data_journal rows: capture rows are bounded only by the journal's own
+// lifecycle, never by run pruning. The prune statement batch is a closed set that
 // touches only run_summaries, run_inputs, and runs; no statement references
 // data_journal, and none deletes from the journal. It is pure over the built
 // statements -- no I/O.
-//
-// spec: S06.2/prune-never-touches-journal
 func TestPruneStatementsNeverTouchJournal(t *testing.T) {
 	summary := BuildRunSummary(PrunableRun{
 		RunID:                  42,

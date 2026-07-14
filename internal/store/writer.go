@@ -6,13 +6,13 @@ import (
 )
 
 // This file is the single-writer meta path: the one type through which every meta
-// write flows (specification sections 2 and 6.1). Only the leader writes meta, and
-// it does so through exactly one Writer, driven serially by the one dispatcher
-// goroutine (internal/dispatch). The construction is deliberately narrow: a Writer
-// is built only from a MetaWriteConn -- the leader's live meta connection -- and
-// the sole constructor (NewWriter) is called only by the dispatcher (enforced by a
-// static architecture check), so no other component can mint a meta writer and
-// open a second write path.
+// write flows. Only the leader writes meta, and it does so through exactly one
+// Writer, driven serially by the one dispatcher goroutine (internal/dispatch).
+// The construction is deliberately narrow: a Writer is built only from a
+// MetaWriteConn -- the leader's live meta connection -- and the sole constructor
+// (NewWriter) is called only by the dispatcher (enforced by a static architecture
+// check), so no other component can mint a meta writer and open a second write
+// path.
 
 // MetaWriteConn is the leader's live meta write connection: the one connection meta
 // mutations are issued on. The pgx-backed meta client supplies the production
@@ -41,11 +41,11 @@ func NewWriter(conn MetaWriteConn) *Writer {
 	return &Writer{conn: conn}
 }
 
-// EnsureSchema issues the meta control-table DDL create-if-missing on the leader's
-// connection: the schema re-check the leader performs at election (specification
-// section 4, re-checked at each leader election). It is a leader-only meta write,
-// so it runs through the single Writer -- not from a candidate that has not won the
-// lock, and not on any connection but the leader's.
+// EnsureSchema issues the meta control-table DDL create-if-missing on the
+// leader's connection: the schema re-check the leader performs at election. It is
+// a leader-only meta write, so it runs through the single Writer -- not from a
+// candidate that has not won the lock, and not on any connection but the
+// leader's.
 func (w *Writer) EnsureSchema(ctx context.Context) error {
 	for _, stmt := range MetaSchema().DDL() {
 		if err := w.conn.Exec(ctx, stmt); err != nil {
@@ -60,21 +60,21 @@ const insertJournalCheckpointSQL = `INSERT INTO journal_checkpoints
 VALUES ($1, $2, $3, $4, $5, $6, now()::text)`
 
 // advertiseLeaderSQL upserts the leader's advertised address into the single-row
-// leadership table (specification section 4, leadership Q/A). It is one atomic
-// statement pinned to id = 1: the leader writes it on winning the advisory lock and
-// re-advertises each term, so a re-elected or failover leader supersedes the prior
-// address rather than appending a second row. now()::text stamps the opaque audit
-// column, matching the recorded_at convention elsewhere in meta.
+// leadership table. It is one atomic statement pinned to id = 1: the leader
+// writes it on winning the advisory lock and re-advertises each term, so a
+// re-elected or failover leader supersedes the prior address rather than
+// appending a second row. now()::text stamps the opaque audit column, matching
+// the recorded_at convention elsewhere in meta.
 const advertiseLeaderSQL = `INSERT INTO leadership (id, advertised_addr, recorded_at)
 VALUES (1, $1, now()::text)
 ON CONFLICT (id) DO UPDATE SET advertised_addr = EXCLUDED.advertised_addr, recorded_at = EXCLUDED.recorded_at`
 
-// AdvertiseLeader records this leader's advertised address so a standby can name it
-// for retargeting (exit 6, GET /leader -- specification sections 7, 8, and 15). addr
-// is the leader's TCP listen address (empty when socket-only: a socket-only leader
-// still advertises, clearing any stale prior address, and the empty value renders as
-// "unknown"). The upsert is one atomic statement, so re-advertising a term never
-// leaves two leadership rows. It is a leader-only meta write, riding the single Writer.
+// AdvertiseLeader records this leader's advertised address so a standby can name
+// it for retargeting (exit 6, GET /leader). addr is the leader's TCP listen
+// address (empty when socket-only: a socket-only leader still advertises,
+// clearing any stale prior address, and the empty value renders as "unknown").
+// The upsert is one atomic statement, so re-advertising a term never leaves two
+// leadership rows. It is a leader-only meta write, riding the single Writer.
 func (w *Writer) AdvertiseLeader(ctx context.Context, addr string) error {
 	if err := w.conn.Exec(ctx, advertiseLeaderSQL, addr); err != nil {
 		return fmt.Errorf("store: writer advertise leader %q: %w", addr, err)
@@ -112,13 +112,13 @@ SELECT id, $4, $5 FROM updated`
 	markRunRunningSQL  = "UPDATE runs SET state = $1, handle = $2 WHERE id = $3 AND state = $4"
 )
 
-// MarkRunRunning records a started run: in one guarded statement it transitions the
-// run from queued to running and records its subprocess process-group id as
-// runs.handle (specification section 1: handle = process-group id, set when the
-// subprocess starts). The dispatcher submits it through the single writer the moment
-// exec starts a run. The UPDATE is guarded on the queued state, so it can only ever
-// act on a run that has not already started -- never one already running or terminal
-// -- and it is one atomic Exec, never a read-then-write that could split. It is a
+// MarkRunRunning records a started run: in one guarded statement it transitions
+// the run from queued to running and records its subprocess process-group id as
+// runs.handle (handle = process-group id, set when the subprocess starts). The
+// dispatcher submits it through the single writer the moment exec starts a run.
+// The UPDATE is guarded on the queued state, so it can only ever act on a run
+// that has not already started -- never one already running or terminal -- and it
+// is one atomic Exec, never a read-then-write that could split. It is a
 // leader-only meta write, riding the single Writer.
 func (w *Writer) MarkRunRunning(ctx context.Context, id string, pgid int) error {
 	if err := w.conn.Exec(ctx, markRunRunningSQL, RunRunning, pgid, id, RunQueued); err != nil {
@@ -131,8 +131,8 @@ func (w *Writer) MarkRunRunning(ctx context.Context, id string, pgid int) error 
 // the run from running to the dead_lettered terminal state and records its
 // dead_letters worklist row with the given reason and human error detail. Crash
 // reconciliation calls it for a run left running when the daemon died (reason
-// ReasonStopped, detail "daemon terminated while run was in flight" -- specification
-// section 2 crash recovery). The state transition and worklist insert are a single
+// ReasonStopped, detail "daemon terminated while run was in flight"). The state
+// transition and worklist insert are a single
 // CTE, so they commit together or not at all: a dead_lettered run can never be left
 // without its worklist row. It is a leader-only meta write, riding the single Writer.
 func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetterReason, detail string) error {
@@ -143,8 +143,8 @@ func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetter
 }
 
 // DeleteQueuedRun deletes a queued never-started run so the next dispatch pass
-// recreates it (specification section 2 crash recovery: queued runs consumed
-// nothing, so they are deleted, not dead-lettered). The DELETE is guarded on the
+// recreates it (queued runs consumed nothing, so they are deleted, not
+// dead-lettered). The DELETE is guarded on the
 // queued state: it can never remove a run that has since started. It is a
 // leader-only meta write, riding the single Writer.
 func (w *Writer) DeleteQueuedRun(ctx context.Context, id string) error {
@@ -155,11 +155,11 @@ func (w *Writer) DeleteQueuedRun(ctx context.Context, id string) error {
 }
 
 // MigrationHead is one applied-migration ledger row an engine records against the
-// meta migrations table (specification section 4): the (schema, table,
-// migration_id) key, the parent migration id, and the checksum of table.yaml at
-// that revision. The applied_seq identity column is assigned by meta on insert,
-// never carried here. It is the durable applied head that ledger-versus-disk drift
-// detection compares against the migrations/ files on disk.
+// meta migrations table: the (schema, table, migration_id) key, the parent
+// migration id, and the checksum of table.yaml at that revision. The applied_seq
+// identity column is assigned by meta on insert, never carried here. It is the
+// durable applied head that ledger-versus-disk drift detection compares against
+// the migrations/ files on disk.
 type MigrationHead struct {
 	// Schema is the declared table's schema.
 	Schema string
@@ -183,12 +183,12 @@ type MigrationHead struct {
 const recordMigrationHeadSQL = `INSERT INTO migrations ("schema", "table", migration_id, parent, checksum)
 VALUES ($1, $2, $3, $4, $5)`
 
-// RecordMigrationHead inserts a migrations row recording a table's applied head so
-// each table's applied migration is durably recorded for ledger-versus-disk drift
-// detection (specification section 4). The insert is one atomic statement; an empty
-// parent (the create head) is recorded as SQL NULL rather than an empty string, so
-// the create head is distinguishable from a migration that names "" as its parent.
-// It is a leader-only meta write, riding the single Writer.
+// RecordMigrationHead inserts a migrations row recording a table's applied head
+// so each table's applied migration is durably recorded for ledger-versus-disk
+// drift detection. The insert is one atomic statement; an empty parent (the
+// create head) is recorded as SQL NULL rather than an empty string, so the create
+// head is distinguishable from a migration that names "" as its parent. It is a
+// leader-only meta write, riding the single Writer.
 func (w *Writer) RecordMigrationHead(ctx context.Context, head MigrationHead) error {
 	var parent any // nil -> SQL NULL for the create head.
 	if head.Parent != "" {
@@ -201,9 +201,8 @@ func (w *Writer) RecordMigrationHead(ctx context.Context, head MigrationHead) er
 }
 
 // insertCheckpointSQL inserts one journal_checkpoints row. It is insert-only by
-// design (specification section 4): callers never UPDATE or DELETE from the table;
-// retention and prune paths never touch it (S04/checkpoints-insert-only,
-// S14/checkpoints-never-pruned).
+// design: callers never UPDATE or DELETE from the table; retention and prune
+// paths never touch it.
 const insertCheckpointSQL = `INSERT INTO journal_checkpoints (id_from, id_to, digest, parent_digest, signature, location, recorded_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)`
 

@@ -1,8 +1,8 @@
 package dispatch
 
-// This file is the pure core of startup reconciliation (specification section 2,
-// crash recovery). A leader -- cold start or failover, the same code path -- runs
-// reconciliation before dispatching any lane: it disposes of the run records a
+// This file is the pure core of startup reconciliation (crash recovery). A leader --
+// cold start or failover, the same code path -- runs reconciliation before
+// dispatching any lane: it disposes of the run records a
 // crashed or deposed predecessor left behind. Leftover *running* runs are
 // dead-lettered (reason stopped, "daemon terminated while run was in flight");
 // *queued* never-started runs are deleted (they consumed nothing, so the next pass
@@ -20,18 +20,16 @@ package dispatch
 import "github.com/MateusAMP2119/iris-engine-cli/internal/store"
 
 // DaemonTerminatedDetail is the human error detail recorded (in dead_letters.error)
-// for a run left in flight when the daemon terminated. The dead-letter *reason*
-// enum is store.ReasonStopped; this string is the detail beside it (specification
-// section 2 crash recovery: 'dead-lettered (stopped, "daemon terminated while run
-// was in flight")').
+// for a run left in flight when the daemon terminated. The dead-letter *reason* enum
+// is store.ReasonStopped; this string is the detail beside it (crash recovery:
+// 'dead-lettered (stopped, "daemon terminated while run was in flight")').
 const DaemonTerminatedDetail = "daemon terminated while run was in flight"
 
-// ActionKind is the kind of one reconciliation action. The set is closed and
-// small -- kill, dead-letter, delete-queued -- and there is deliberately no journal
-// action of any kind: reconciliation never reads, writes, or replays the journal
-// (specification section 2 crash recovery: "No journal step"). AllActionKinds
-// enumerates the whole vocabulary so a test can prove the absence of a journal
-// action.
+// ActionKind is the kind of one reconciliation action. The set is closed and small --
+// kill, dead-letter, delete-queued -- and there is deliberately no journal action of
+// any kind: reconciliation never reads, writes, or replays the journal (crash
+// recovery: "No journal step"). AllActionKinds enumerates the whole vocabulary so a
+// test can prove the absence of a journal action.
 type ActionKind int
 
 // The reconciliation action kinds -- the complete vocabulary.
@@ -120,9 +118,8 @@ type DisposalAction struct {
 }
 
 // Plan is the ordered reconciliation plan: every kill happens before any disposal
-// (specification section 2 crash recovery: survivors are SIGKILLed "first"). The
-// Reconciler runs all Kills, then all Disposals, so the kill-before-disposal order
-// is structural.
+// (crash recovery: survivors are SIGKILLed "first"). The Reconciler runs all Kills,
+// then all Disposals, so the kill-before-disposal order is structural.
 type Plan struct {
 	// Kills are the surviving process groups to SIGKILL, before any disposal.
 	Kills []KillAction

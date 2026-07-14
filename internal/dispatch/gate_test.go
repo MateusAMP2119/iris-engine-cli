@@ -51,8 +51,6 @@ func notConsumed(edges []dispatch.Edge) []bool { return make([]bool, len(edges))
 // ineligible when it has not; with no depends_on edges at all, the pipeline is
 // ungated and always eligible. The decision imposes no execution order -- it carries
 // no ordering field -- so eligibility is a pure data check, never a sequence.
-//
-// spec: S01/depends-on-eligibility-gate
 func TestGateEligibilityOnUpstreamOutput(t *testing.T) {
 	// Upstream has output (a success): the gate opens, the dependent is eligible.
 	edges := []dispatch.Edge{succeeded("extract_orders", 42)}
@@ -81,8 +79,6 @@ func TestGateEligibilityOnUpstreamOutput(t *testing.T) {
 // holds whether the upstream sits in the same lane or another. The gate takes no lane
 // or order input and returns no ordering field, so a cross-lane edge can only gate on
 // data (the upstream's run), never sequence the lanes.
-//
-// spec: S03/cross-lane-gate-not-order
 func TestCrossLaneGateIsDataNotOrder(t *testing.T) {
 	// The gate's inputs carry no lane: an edge gates on upstream output alone.
 	assertNoLaneField(t, reflect.TypeOf(dispatch.Edge{}))
@@ -108,8 +104,6 @@ func TestCrossLaneGateIsDataNotOrder(t *testing.T) {
 // composer-assigned turn and never changes its walk position: the Decision exposes no
 // walk-position/order field, and the decision is a pure function of the edges, so it
 // cannot depend on or alter any position in the walk.
-//
-// spec: S06.1/gate-never-reorders-walk
 func TestGateNeverReordersWalk(t *testing.T) {
 	// No position, order, turn, or index field: the gate returns run-or-skip, nothing
 	// that could move a pipeline in the walk.
@@ -133,8 +127,6 @@ func TestGateNeverReordersWalk(t *testing.T) {
 // seam), with no mutable cursor: flipping the run_inputs answer flips the verdict
 // between open and up_to_date, the reader is actually consulted, and the Gate holds no
 // cursor/watermark field of its own.
-//
-// spec: S04/gate-consumed-check-via-run-inputs
 func TestGateConsumedCheckViaRunInputs(t *testing.T) {
 	ctx := context.Background()
 	edges := []dispatch.Edge{succeeded("extract_orders", 42)}
@@ -182,8 +174,6 @@ func TestGateConsumedCheckViaRunInputs(t *testing.T) {
 // rule regardless of lane. A success already consumed is up_to_date, a still-pending
 // upstream is pending, and a dead-lettered upstream is poisoned -- the gate opens on a
 // SUCCESS and only a success.
-//
-// spec: S06.2/gate-awaits-latest-success
 func TestGateAwaitsLatestSuccess(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -223,8 +213,6 @@ func TestGateAwaitsLatestSuccess(t *testing.T) {
 // run_inputs row per edge (each edge's latest success). A single unresolved edge
 // (pending) blocks the run; an edge already up_to_date does not block a run another
 // edge's new success triggers, but it is still recorded for the new run.
-//
-// spec: S06.2/multi-edge-all-resolve
 func TestMultiEdgeAllResolve(t *testing.T) {
 	// Every edge resolves to an unconsumed success: the dependent runs, one row per
 	// edge, in edge order.
@@ -259,8 +247,6 @@ func TestMultiEdgeAllResolve(t *testing.T) {
 // upstream's NEXT success from pass one and never consumes a run that predates the
 // edge: an upstream success at or below the edge's establishment baseline is history
 // (pending, no run row), and only a success minted after the edge opens the gate.
-//
-// spec: S06.2/new-edge-awaits-next-success
 func TestNewEdgeAwaitsNextSuccess(t *testing.T) {
 	// Edge established when the upstream's tip was run 50: run 50 is history.
 	historical := []dispatch.Edge{{Upstream: "a", Latest: dispatch.UpstreamSucceeded, LatestRunID: 50, AwaitedFrom: 50}}
@@ -286,8 +272,6 @@ func TestNewEdgeAwaitsNextSuccess(t *testing.T) {
 // TestNoNewUpstreamSkips proves the dependent gets no run row on a pass when the
 // awaited upstream run is pending or when nothing new exists since it last consumed:
 // both a still-in-flight upstream and an already-consumed latest success mint no run.
-//
-// spec: S06.2/no-new-upstream-skips
 func TestNoNewUpstreamSkips(t *testing.T) {
 	// Nothing new: the latest success was already consumed.
 	upToDate := []dispatch.Edge{succeeded("a", 30)}
@@ -306,8 +290,6 @@ func TestNoNewUpstreamSkips(t *testing.T) {
 // not owed: the gate reads only the upstream's LATEST run and consumes exactly it,
 // with no backlog of the older successes it skipped. Structurally, an edge carries a
 // single latest run, not a queue -- there is no buffer or head-of-line blocking.
-//
-// spec: S06.2/superseded-not-owed
 func TestSupersededNotOwed(t *testing.T) {
 	// Runs 61 and 62 succeeded and were never consumed, but 63 is now the latest: the
 	// gate reads only 63 and consumes only 63; 61 and 62 are superseded, not queued.
@@ -371,7 +353,7 @@ func assertNoCursorField(t *testing.T, typ reflect.Type) {
 }
 
 // assertNoBacklogField fails when the edge carries a slice of upstream runs: the gate
-// reads only the latest run, so a backlog slice would be a buffer the spec forbids.
+// reads only the latest run, so a backlog slice would be a buffer it must not hold.
 func assertNoBacklogField(t *testing.T, typ reflect.Type) {
 	t.Helper()
 	for i := 0; i < typ.NumField(); i++ {

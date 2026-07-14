@@ -6,13 +6,12 @@ import (
 	"fmt"
 )
 
-// This file is the read-back half of the endpoint apply lifecycle (specification
-// section 7): the plain-MVCC reader the daemon reloads persisted endpoints from at
-// startup, so a restart or failover serves every applied endpoint without a re-apply.
-// The endpoints and endpoint_filters rows persist the shape; the daemon recompiles
-// the derived SQL from them (S07/endpoint-sql-deterministic), which is why the SQL is
-// deliberately never stored. Reads ride the reader pool (any node), never the single
-// writer.
+// This file is the read-back half of the endpoint apply lifecycle: the plain-MVCC
+// reader the daemon reloads persisted endpoints from at startup, so a restart or
+// failover serves every applied endpoint without a re-apply. The endpoints and
+// endpoint_filters rows persist the shape; the daemon recompiles the derived SQL
+// from them, which is why the SQL is deliberately never stored. Reads ride the
+// reader pool (any node), never the single writer.
 
 const (
 	// selectEndpointsSQL reads every persisted endpoint's shape row, name-ordered for

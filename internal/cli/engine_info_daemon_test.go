@@ -54,9 +54,9 @@ type infoJSON struct {
 	Uptime string `json:"uptime"`
 }
 
-// TestEngineInfoReadout proves the `iris engine info` readout (specification
-// sections 11 and 15) against a real mux over a unix socket: the full field set,
-// and the leadership role with the leader named when known.
+// TestEngineInfoReadout proves the `iris engine info` readout against a real mux
+// over a unix socket: the full field set, and the leadership role with the
+// leader named when known.
 func TestEngineInfoReadout(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
@@ -84,8 +84,7 @@ func TestEngineInfoReadout(t *testing.T) {
 		return daemon.NewInfoPlane(role, pc, daemon.InfoConfig{Socket: sock, TCP: "127.0.0.1:7433"})
 	}
 
-	// spec: S11/info-readout-fields
-	t.Run("S11/info-readout-fields", func(t *testing.T) {
+	t.Run("info-readout-fields", func(t *testing.T) {
 		sock := shortSocket(t)
 		startInfoDaemon(t, sock, newLeaderPlane(sock))
 
@@ -141,8 +140,7 @@ func TestEngineInfoReadout(t *testing.T) {
 		}
 	})
 
-	// spec: S15/engine-info-reports-role
-	t.Run("S15/engine-info-reports-role", func(t *testing.T) {
+	t.Run("engine-info-reports-role", func(t *testing.T) {
 		t.Run("leader reports leader", func(t *testing.T) {
 			sock := shortSocket(t)
 			startInfoDaemon(t, sock, newLeaderPlane(sock))

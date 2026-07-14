@@ -18,8 +18,6 @@ import (
 // TestFakeRunnerSatisfiesRunner proves the fake process runner stands behind the
 // exec seam: it implements exec.Runner, so dispatch code runs against it with no
 // real process.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerSatisfiesRunner(t *testing.T) {
 	fake := exectest.New()
 	fake.Script("noop", exectest.Outcome{Exit: 0})
@@ -39,8 +37,6 @@ func TestFakeRunnerSatisfiesRunner(t *testing.T) {
 // TestFakeRunnerScriptedOutcome proves the fake streams a scripted subprocess's
 // output to the seam's writers and reports its scripted exit status through
 // Wait, all with no real process and a fake process-group handle.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerScriptedOutcome(t *testing.T) {
 	ctx := context.Background()
 	r := exectest.New()
@@ -72,8 +68,6 @@ func TestFakeRunnerScriptedOutcome(t *testing.T) {
 // the exec fake and the meta-store fake together with no real process or
 // database, and it synchronizes purely on channels and run state -- never a
 // fixed sleep.
-//
-// spec: S16/integration-fakes-interfaces
 func TestDispatchShapedComposerOrderStreamCancel(t *testing.T) {
 	ctx := context.Background()
 	runner := exectest.New()
@@ -128,8 +122,8 @@ func TestDispatchShapedComposerOrderStreamCancel(t *testing.T) {
 			t.Fatalf("Wait(%s): %v", pipeline, err)
 		}
 		if st.Signaled {
-			// A cancelled run dead-letters with the spec's reason token "stopped"
-			// (specification sections 4 and 8), never the prose "cancelled".
+			// A cancelled run dead-letters with the reason token "stopped", never
+			// the prose "cancelled".
 			if _, err := meta.SetRunState(ctx, run.ID, store.RunDeadLettered, store.WithReason("stopped")); err != nil {
 				t.Fatalf("dead-letter: %v", err)
 			}
@@ -179,8 +173,6 @@ func TestDispatchShapedComposerOrderStreamCancel(t *testing.T) {
 // TestFakeRunnerContextCancel proves a blocking scripted run also unblocks when
 // the context passed to Start is cancelled -- the other half of the engine's
 // cancel path -- reported as a signaled terminal status.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := exectest.New()
@@ -209,8 +201,6 @@ func TestFakeRunnerContextCancel(t *testing.T) {
 // as the real runner and the Spec doc: Argv must be non-empty. A fake that
 // silently ran an empty argv would let a bug slip past every integration test
 // that the real runner rejects at once.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerRejectsEmptyArgv(t *testing.T) {
 	r := exectest.New()
 	_, err := r.Start(context.Background(), exec.Spec{})
@@ -247,8 +237,6 @@ func (w *gateWriter) String() string {
 // TestFakeRunnerStreamsAsynchronously proves the fake streams output after Start
 // returns, mirroring the real runner: Start does not block on a backpressured
 // writer, and output is delivered concurrently with the handle's lifetime.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerStreamsAsynchronously(t *testing.T) {
 	r := exectest.New()
 	r.Script("stream", exectest.Outcome{Stdout: "streamed-output\n", Exit: 0})
@@ -305,8 +293,6 @@ func (errWriter) Write([]byte) (int, error) { return 0, errWrite }
 // streaming is reported from Wait, not Start, and -- mirroring the real runner --
 // alongside the run's recorded terminal status rather than a zero one: a clean
 // run whose output sink fails reports exit 0 with the writer error.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerWriterErrorSurfacesFromWait(t *testing.T) {
 	r := exectest.New()
 	r.Script("noisy", exectest.Outcome{Stdout: "data\n", Exit: 0})
@@ -328,8 +314,6 @@ func TestFakeRunnerWriterErrorSurfacesFromWait(t *testing.T) {
 // runner's precedence: when the run exits non-zero, its terminal status subsumes
 // the streaming-writer error (os/exec's ExitError subsumes a copy error), so Wait
 // reports the recorded non-zero status with no error rather than the writer error.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunnerWriterErrorSubsumedByNonZeroExit(t *testing.T) {
 	r := exectest.New()
 	r.Script("failing", exectest.Outcome{Stdout: "data\n", Exit: 3})

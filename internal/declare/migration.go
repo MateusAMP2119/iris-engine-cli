@@ -7,7 +7,7 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// This file holds the migration-file format of specification section 5: the
+// This file holds the migration-file format: the
 // immutable additive-migration ledger file an engine writes under a table
 // folder's migrations/ directory (e.g. migrations/0002_add_status.yaml). Only
 // the file format lives here -- its fields, its canonical YAML shape, and its
@@ -16,9 +16,8 @@ import (
 // must take.
 
 // MigrationColumn is the column definition a migration file records: the name,
-// YAML type, and optional raw-SQL default of the added column (specification
-// section 5). It is the minimal shape the add_column op needs; the default is
-// omitted when empty, matching the section 5 example.
+// YAML type, and optional raw-SQL default of the added column. It is the minimal
+// shape the add_column op needs; the default is omitted when empty.
 type MigrationColumn struct {
 	// Name is the added column's name.
 	Name string `yaml:"name"`
@@ -29,8 +28,8 @@ type MigrationColumn struct {
 	Default string `yaml:"default,omitempty"`
 }
 
-// MigrationFile is one immutable additive-migration ledger file (specification
-// section 5). It records the migration id, its parent id, the operation, the
+// MigrationFile is one immutable additive-migration ledger file.
+// It records the migration id, its parent id, the operation, the
 // column definition, and the checksum of table.yaml at this revision. The id and
 // parent are zero-padded sequence strings (e.g. "0002", "0001") matching the
 // migration filename's numeric prefix; string preserves the padding a bare
@@ -49,8 +48,8 @@ type MigrationFile struct {
 }
 
 // MarshalMigration renders a migration file as its canonical YAML bytes, the
-// on-disk form written under migrations/ (specification section 5). Field order
-// is fixed by the struct: id, parent, op, column, checksum.
+// on-disk form written under migrations/. Field order is fixed by the struct:
+// id, parent, op, column, checksum.
 func MarshalMigration(m MigrationFile) ([]byte, error) {
 	data, err := yaml.Marshal(m)
 	if err != nil {
@@ -70,8 +69,8 @@ func ParseMigration(data []byte) (MigrationFile, error) {
 }
 
 // ChecksumTableYAML returns a migration file's checksum of table.yaml at a
-// revision: the SHA-256 of the file's raw bytes, hex-encoded (specification
-// section 5). The bytes are hashed verbatim, with no canonicalization or
+// revision: the SHA-256 of the file's raw bytes, hex-encoded.
+// The bytes are hashed verbatim, with no canonicalization or
 // re-serialization, so the checksum pins the exact table.yaml revision the
 // migration was cut from.
 func ChecksumTableYAML(raw []byte) string {

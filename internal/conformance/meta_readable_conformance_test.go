@@ -112,20 +112,18 @@ func readPostmasterPort(t *testing.T, pidPath string) string {
 }
 
 // TestMetaReadableWhileRunning proves any Postgres client can read the meta database
-// read-only while the daemon runs, unblocked (specification section 4): the
+// read-only while the daemon runs, unblocked: the
 // leader-election advisory lock guards leadership, not rows, so an independent MVCC
 // client reads the control tables without contending with the leader's held lock or
 // its single-writer session. It drives the real binary end to end -- engine install,
 // engine start -d, an independent pgx client reading meta while the daemon holds the
 // lock, engine stop.
 //
-// The journal read the contract also names lands with the journal DDL (E06); E02.6
+// The journal read that pairs with it lands with the journal DDL (E06); E02.6
 // creates only the meta database, so the meta-readability half -- the property the
 // advisory lock could threaten -- is what this leg proves.
-//
-// spec: S04/meta-readable-while-running
 func TestMetaReadableWhileRunning(t *testing.T) {
-	t.Run("S04/meta-readable-while-running", func(t *testing.T) {
+	t.Run("meta-readable-while-running", func(t *testing.T) {
 		// Freshen the shared external cluster first: FORCE-dropping the meta/data
 		// databases evicts a prior test's lingering daemon sessions -- including a
 		// still-held leader advisory lock -- so this daemon elects promptly instead of

@@ -5,9 +5,9 @@ package dispatch
 // reader seam, computes the Plan, best-effort SIGKILLs surviving process groups
 // through the group-kill seam FIRST, then disposes of each run -- dead-letter a
 // running run, delete a queued one -- through the single-writer dispatch path, so
-// every reconciliation meta write rides the one meta writer (specification
-// section 2: single writer). It runs before any lane dispatch, identically on cold
-// start and failover, driven by the leader (internal/daemon).
+// every reconciliation meta write rides the one meta writer (single writer). It runs
+// before any lane dispatch, identically on cold start and failover, driven by the
+// leader (internal/daemon).
 
 import (
 	"context"

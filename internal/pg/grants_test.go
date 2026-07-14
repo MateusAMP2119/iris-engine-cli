@@ -12,8 +12,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg/pgtest"
 )
 
-// This file proves the data-database grant surface of specification sections 3, 4,
-// 5, and 7: the field-level GRANT DDL rendering, and reconciliation of a role's
+// This file proves the data-database grant surface: the field-level GRANT DDL
+// rendering, and reconciliation of a role's
 // live grants against the meta access ledger -- the ledger is authoritative, the
 // reconcile emits GRANT DDL to make Postgres match it additively, and strays
 // beyond the ledger are reported, never silently fixed. The generated DDL is
@@ -41,10 +41,8 @@ var _ pg.LiveGrantReader = fakeLiveGrants{}
 // column-level GRANT diffed against a golden -- reads as SELECT, writes as
 // INSERT/UPDATE. Three declared fields (two read, one write) yield exactly three
 // GRANT statements, in declaration order.
-//
-// spec: S03/apply-grants-exact-declared
 func TestApplyGrantsExactDeclared(t *testing.T) {
-	t.Run("S03/apply-grants-exact-declared", func(t *testing.T) {
+	t.Run("apply-grants-exact-declared", func(t *testing.T) {
 		ctx := context.Background()
 		reads := []declare.Access{{Table: "analytics.orders", Fields: []string{"id", "amount"}}}
 		writes := []declare.Access{{Table: "raw.orders_staging", Fields: []string{"id"}}}
@@ -76,10 +74,8 @@ func TestApplyGrantsExactDeclared(t *testing.T) {
 // reconciliation emits grant DDL onto the data database to match it: with the role
 // holding no live grants, reconcile issues exactly one GRANT per ledger field, in
 // ledger order, and reports no stray.
-//
-// spec: S04/ledger-truth-reconciled
 func TestLedgerTruthReconciled(t *testing.T) {
-	t.Run("S04/ledger-truth-reconciled", func(t *testing.T) {
+	t.Run("ledger-truth-reconciled", func(t *testing.T) {
 		ctx := context.Background()
 		ledger := []declare.FieldGrant{
 			{Schema: "analytics", Table: "orders", Field: "id", Access: declare.AccessRead},
@@ -107,10 +103,8 @@ func TestLedgerTruthReconciled(t *testing.T) {
 // role lacks is granted (additive), while a live grant beyond the ledger is
 // reported as a non-additive stray and never revoked. The recording fake captures
 // only the additive GRANT -- no REVOKE is ever issued.
-//
-// spec: S05/grant-drift-reconcile
 func TestGrantDriftReconcile(t *testing.T) {
-	t.Run("S05/grant-drift-reconcile", func(t *testing.T) {
+	t.Run("grant-drift-reconcile", func(t *testing.T) {
 		ctx := context.Background()
 		ledger := []declare.FieldGrant{
 			{Schema: "analytics", Table: "orders", Field: "id", Access: declare.AccessRead},
@@ -162,10 +156,8 @@ func TestGrantDriftReconcile(t *testing.T) {
 // schema.table minted when the table had [id, amount] fixes that two-field ledger;
 // after the table later gains a status column, reconcile grants only id and amount
 // and never status -- even though re-expanding the bare grant now would include it.
-//
-// spec: S07/data-pat-no-post-mint-columns
 func TestDataPATNoPostMintColumns(t *testing.T) {
-	t.Run("S07/data-pat-no-post-mint-columns", func(t *testing.T) {
+	t.Run("data-pat-no-post-mint-columns", func(t *testing.T) {
 		// Mint time: the table has exactly [id, amount].
 		mintFields := map[string][]string{"analytics.orders": {"id", "amount"}}
 		ledger, err := declare.ExpandDataPATGrants(

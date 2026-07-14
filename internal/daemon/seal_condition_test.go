@@ -2,15 +2,12 @@ package daemon
 
 import "testing"
 
-// TestSealDue proves the pure seal condition (specification section 14): a partition
-// seals only when it is past the row threshold, every in-flight run writing into it
-// has finished (no run running), and it holds rows. A below-threshold partition, an
-// empty partition, an in-flight run, or a disabled (non-positive) threshold all
-// defer the seal.
-//
-// spec: S14/seal-condition
+// TestSealDue proves the pure seal condition: a partition seals only when it is
+// past the row threshold, every in-flight run writing into it has finished (no run
+// running), and it holds rows. A below-threshold partition, an empty partition, an
+// in-flight run, or a disabled (non-positive) threshold all defer the seal.
 func TestSealDue(t *testing.T) {
-	t.Run("S14/seal-condition", func(t *testing.T) {
+	t.Run("seal-condition", func(t *testing.T) {
 		cases := []struct {
 			name         string
 			residentRows int64

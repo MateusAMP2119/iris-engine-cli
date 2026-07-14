@@ -10,12 +10,12 @@ import (
 
 // This file is the run-environment resolver: the pure, leader-side computation that
 // turns a pipeline's declared env map and env_file list into the deterministic
-// declared overlay a run starts with (specification section 3: env/env_file). The
-// overlay is what StartRun's composeEnv (run.go) appends after the inherited daemon
-// environment, so os/exec keeps the overlay's value for any key the daemon also sets
-// -- the declared entries win over the inherited environment. The resolver reads no
-// clock and performs no I/O of its own: the host-env lookup and the file reader are
-// injected, so the leader passes os.Getenv and os.ReadFile while a test passes fakes.
+// declared overlay a run starts with (env/env_file). The overlay is what StartRun's
+// composeEnv (run.go) appends after the inherited daemon environment, so os/exec
+// keeps the overlay's value for any key the daemon also sets -- the declared entries
+// win over the inherited environment. The resolver reads no clock and performs no I/O
+// of its own: the host-env lookup and the file reader are injected, so the leader
+// passes os.Getenv and os.ReadFile while a test passes fakes.
 //
 // Precedence, lowest to highest: inherited daemon environment (added by composeEnv,
 // not here) < env_file entries (later files over earlier) < declared env entries.

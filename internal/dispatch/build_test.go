@@ -18,15 +18,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the dispatch-level build op (specification sections 1, 4, and 9):
-// `iris pipeline build` drives the pipeline's one pinned recipe toolchain through the
-// exec seam to compile the source into one self-contained binary, hashes the produced
-// bytes, stores them in the content-addressed object store under that hash, and
-// records the hash as an immutable artifacts row through the single meta writer.
-// The toolchain subprocess is a fake (the exec seam's whole point: it records the
-// invocation and materializes the binary bytes with no real PyInstaller/pkg -- real
-// toolchain invocations are conformance work, E13); the hashing, object storage, and
-// single-writer record are the real production path.
+// This file proves the dispatch-level build op: `iris pipeline build` drives the
+// pipeline's one pinned recipe toolchain through the exec seam to compile the source
+// into one self-contained binary, hashes the produced bytes, stores them in the
+// content-addressed object store under that hash, and records the hash as an
+// immutable artifacts row through the single meta writer. The toolchain subprocess is
+// a fake (the exec seam's whole point: it records the invocation and materializes the
+// binary bytes with no real PyInstaller/pkg -- real toolchain invocations are
+// conformance work, E13); the hashing, object storage, and single-writer record are
+// the real production path.
 
 // toolchainRunner is a fake exec.Runner standing in for a build toolchain: it
 // records every Start invocation and materializes Output at the binary path the
@@ -155,13 +155,11 @@ func artifactInserts(stmts []storetest.RecordedStatement) []storetest.RecordedSt
 }
 
 // TestBuildSingleBinaryContentHash proves `iris pipeline build` compiles the source
-// into ONE self-contained binary and records its content hash (specification
-// section 1): exactly one toolchain invocation of the runtime's one pinned recipe
-// (a python run vector selects PyInstaller one-file -- the engine's choice, never
-// declared), and the recorded hash is the SHA-256 of exactly the produced binary's
-// bytes, so the executed bytes are always identifiable from the hash alone.
-//
-// spec: S01/build-single-binary-content-hash
+// into ONE self-contained binary and records its content hash: exactly one toolchain
+// invocation of the runtime's one pinned recipe (a python run vector selects
+// PyInstaller one-file -- the engine's choice, never declared), and the recorded hash
+// is the SHA-256 of exactly the produced binary's bytes, so the executed bytes are
+// always identifiable from the hash alone.
 func TestBuildSingleBinaryContentHash(t *testing.T) {
 	h := newBuildHarness(t)
 
@@ -203,12 +201,10 @@ func TestBuildSingleBinaryContentHash(t *testing.T) {
 }
 
 // TestBuildRecordsHashAndBytes proves a successful build records the produced
-// binary's content hash in the artifacts table (through the single meta writer)
-// AND stores the binary's bytes in the object store under that hash -- and that a
-// failed build records neither (specification section 9: "Building records the
-// binary's content hash in artifacts and its bytes in the object store").
-//
-// spec: S09/build-records-hash-and-bytes
+// binary's content hash in the artifacts table (through the single meta writer) AND
+// stores the binary's bytes in the object store under that hash -- and that a failed
+// build records neither ("Building records the binary's content hash in artifacts and
+// its bytes in the object store").
 func TestBuildRecordsHashAndBytes(t *testing.T) {
 	t.Run("success records hash row and object bytes", func(t *testing.T) {
 		h := newBuildHarness(t)
@@ -269,13 +265,11 @@ func TestBuildRecordsHashAndBytes(t *testing.T) {
 	})
 }
 
-// TestArtifactRebuildInsertsNewRow proves artifact rows are immutable
-// (specification section 4): a rebuild of changed source inserts a NEW row under a
-// NEW hash -- the write path issues only plain INSERTs against artifacts, never an
-// UPDATE, DELETE, or upsert -- the first object's bytes stay untouched in the
-// object store, and the pipeline's current artifact is its newest row (the rebuild's).
-//
-// spec: S04/artifact-rebuild-inserts-new
+// TestArtifactRebuildInsertsNewRow proves artifact rows are immutable: a rebuild of
+// changed source inserts a NEW row under a NEW hash -- the write path issues only
+// plain INSERTs against artifacts, never an UPDATE, DELETE, or upsert -- the first
+// object's bytes stay untouched in the object store, and the pipeline's current
+// artifact is its newest row (the rebuild's).
 func TestArtifactRebuildInsertsNewRow(t *testing.T) {
 	h := newBuildHarness(t)
 	target := pyTarget(t)
@@ -349,13 +343,11 @@ func flagValue(argv []string, flag string) string {
 	return ""
 }
 
-// TestBuildGoPackageFromRunVector proves the Go recipe compiles the package the
-// run vector actually names, not the folder root (specification section 1: build
-// compiles the source into one self-contained binary). A pipeline whose main
-// package is a subdirectory -- run [go, run, ./cmd/etl] -- must build ./cmd/etl, so
-// the executed binary is the declared entry point, never a stray root package.
-//
-// spec: S01/build-single-binary-content-hash
+// TestBuildGoPackageFromRunVector proves the Go recipe compiles the package the run
+// vector actually names, not the folder root (build compiles the source into one
+// self-contained binary). A pipeline whose main package is a subdirectory -- run [go,
+// run, ./cmd/etl] -- must build ./cmd/etl, so the executed binary is the declared
+// entry point, never a stray root package.
 func TestBuildGoPackageFromRunVector(t *testing.T) {
 	h := newBuildHarness(t)
 	h.runner.Output = []byte("#!ELF fake go binary from ./cmd/etl")
@@ -382,13 +374,11 @@ func TestBuildGoPackageFromRunVector(t *testing.T) {
 }
 
 // TestBuildRejectsUnbuildableRunVectors proves a run vector with no single source
-// file to compile is rejected with a clear error BEFORE any toolchain runs
-// (specification sections 1 and 9): module (`python -m etl`) and inline
-// (`python -c ...`, `node -e ...`) forms, an interpreter with no script, and a Go
-// vector that is not `go run <package>` all fail without exec, so the toolchain is
-// never handed a flag or module name as if it were the entry source.
-//
-// spec: S01/build-single-binary-content-hash
+// file to compile is rejected with a clear error BEFORE any toolchain runs: module
+// (`python -m etl`) and inline (`python -c ...`, `node -e ...`) forms, an interpreter
+// with no script, and a Go vector that is not `go run <package>` all fail without
+// exec, so the toolchain is never handed a flag or module name as if it were the
+// entry source.
 func TestBuildRejectsUnbuildableRunVectors(t *testing.T) {
 	cases := []struct {
 		name string
@@ -418,12 +408,9 @@ func TestBuildRejectsUnbuildableRunVectors(t *testing.T) {
 }
 
 // TestBuildEntryScriptIgnoresProgramArgs proves the interpreted entry the toolchain
-// compiles is the declared script, not the run vector's trailing token
-// (specification section 1). Program args after the script -- run
-// [python, main.py, --verbose] -- are the pipeline's, never the entry: pyinstaller
-// receives main.py and never the --verbose flag.
-//
-// spec: S01/build-single-binary-content-hash
+// compiles is the declared script, not the run vector's trailing token. Program args
+// after the script -- run [python, main.py, --verbose] -- are the pipeline's, never
+// the entry: pyinstaller receives main.py and never the --verbose flag.
 func TestBuildEntryScriptIgnoresProgramArgs(t *testing.T) {
 	h := newBuildHarness(t)
 	if _, err := h.builder.Build(context.Background(), dispatch.BuildTarget{
@@ -444,10 +431,8 @@ func TestBuildEntryScriptIgnoresProgramArgs(t *testing.T) {
 
 // TestBuildPyInstallerStagesScratchDirs proves the PyInstaller invocation pins its
 // scratch outputs -- the work dir, the .spec dir, and the dist dir -- outside the
-// pipeline's source folder (specification section 9), so a real one-file build never
-// litters build/ and <name>.spec into the user's source tree.
-//
-// spec: S01/build-single-binary-content-hash
+// pipeline's source folder, so a real one-file build never litters build/ and
+// <name>.spec into the user's source tree.
 func TestBuildPyInstallerStagesScratchDirs(t *testing.T) {
 	h := newBuildHarness(t)
 	target := pyTarget(t)

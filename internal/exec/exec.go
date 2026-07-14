@@ -1,17 +1,16 @@
 // Package exec is the subprocess execution seam: the only code that spawns
-// pipeline subprocesses (specification section 10). It owns direct exec (never a
-// shell), process groups, kill/cancel, and output capture. A run's handle is its
-// process-group id (runs.handle); the engine owns the run, captures its output,
-// and cancels or kills it reliably (section 1).
+// pipeline subprocesses. It owns direct exec (never a shell), process groups,
+// kill/cancel, and output capture. A run's handle is its process-group id
+// (runs.handle); the engine owns the run, captures its output, and cancels or
+// kills it reliably.
 //
 // This package defines the seam and its real unix implementation (the seed of
 // E05.1's exec seam), kept small and production-quality: Start(ctx, spec) yields
 // a Handle over its own process group, which the caller Waits on and can Kill as
 // a group. A fake (internal/exec/exectest) satisfies the same interface with no
 // real process, so dispatch tests run runs, stream output, and cancel mid-flight
-// with no OS process (S16/integration-fakes-interfaces); the real implementation
-// here is exercised against throwaway scripts for real
-// (S16/real-process-io-throwaway-scripts).
+// with no OS process; the real implementation here is exercised against
+// throwaway scripts for real.
 package exec
 
 import (

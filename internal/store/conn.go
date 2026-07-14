@@ -6,10 +6,10 @@ import (
 )
 
 // This file holds the meta connection-opening seam. Every meta connection derives
-// from the single daemon-owned admin DSN (specification section 2): store never
-// accepts a raw connection string, only a ConnSource the daemon builds from the
-// admin DSN, so no meta connection can originate from anywhere else. The real
-// pgx-backed Dialer lands in E02.3; a recording fake stands in until then.
+// from the single daemon-owned admin DSN: store never accepts a raw connection
+// string, only a ConnSource the daemon builds from the admin DSN, so no meta
+// connection can originate from anywhere else. The real pgx-backed Dialer lands
+// in E02.3; a recording fake stands in until then.
 
 // ConnSource yields the connection string store dials for the meta database. The
 // daemon builds the sole production source from its admin DSN, so a ConnSource is

@@ -45,11 +45,11 @@ func deletes(p dispatch.Plan) []dispatch.DisposalAction {
 
 // TestReconcileInflightRunsDeadLettered proves the pure reconciliation core
 // dead-letters every leftover running run with reason stopped and the daemon-
-// terminated detail, and never deletes one (specification section 2 crash recovery:
-// leftover running runs are dead-lettered, "daemon terminated while run was in
-// flight"; the enum is stopped, the string is the error detail).
+// terminated detail, and never deletes one (crash recovery: leftover running runs are
+// dead-lettered, "daemon terminated while run was in flight"; the enum is stopped,
+// the string is the error detail).
 func TestReconcileInflightRunsDeadLettered(t *testing.T) {
-	t.Run("S02/inflight-runs-deadlettered", func(t *testing.T) {
+	t.Run("inflight-runs-deadlettered", func(t *testing.T) {
 		view := dispatch.ReconcileView{
 			Runs:        []store.Run{runningRun("run-1", 4242), runningRun("run-2", 0)},
 			SpawnedHere: dispatch.SingleHostMatcher(),
@@ -71,18 +71,18 @@ func TestReconcileInflightRunsDeadLettered(t *testing.T) {
 				t.Errorf("run %s dead-letter detail = %q, want %q", dl.RunID, dl.Detail, dispatch.DaemonTerminatedDetail)
 			}
 			if dl.Detail != "daemon terminated while run was in flight" {
-				t.Errorf("run %s detail string drifted from the spec's exact wording: %q", dl.RunID, dl.Detail)
+				t.Errorf("run %s detail string drifted from the required exact wording: %q", dl.RunID, dl.Detail)
 			}
 		}
 	})
 }
 
 // TestReconcileQueuedRunsDeleted proves queued never-started runs are deleted, not
-// dead-lettered, so the next dispatch pass recreates them (specification section 2
-// crash recovery: "Queued never-started runs: deleted, not dead-lettered"). Terminal
-// runs among the fixtures are left untouched.
+// dead-lettered, so the next dispatch pass recreates them (crash recovery: "Queued
+// never-started runs: deleted, not dead-lettered"). Terminal runs among the fixtures
+// are left untouched.
 func TestReconcileQueuedRunsDeleted(t *testing.T) {
-	t.Run("S02/queued-runs-deleted", func(t *testing.T) {
+	t.Run("queued-runs-deleted", func(t *testing.T) {
 		view := dispatch.ReconcileView{
 			Runs: []store.Run{
 				queuedRun("run-1"),
@@ -118,15 +118,14 @@ func TestReconcileQueuedRunsDeleted(t *testing.T) {
 	})
 }
 
-// TestReconcileNoJournalTouch proves reconciliation performs no journal step
-// (specification section 2 crash recovery: "No journal step"). Two mechanisms: the
-// action vocabulary is a closed set of kill/dead-letter/delete with no journal
-// (replay, wipe, promotion) action of any kind; and the pure-core source file
-// imports nothing journal-related -- the journal lives in the internal/pg data
-// client (public.data_journal in the data database), which reconcile.go never
-// imports.
+// TestReconcileNoJournalTouch proves reconciliation performs no journal step (crash
+// recovery: "No journal step"). Two mechanisms: the action vocabulary is a closed set
+// of kill/dead-letter/delete with no journal (replay, wipe, promotion) action of any
+// kind; and the pure-core source file imports nothing journal-related -- the journal
+// lives in the internal/pg data client (public.data_journal in the data database),
+// which reconcile.go never imports.
 func TestReconcileNoJournalTouch(t *testing.T) {
-	t.Run("S02/reconcile-no-journal-touch", func(t *testing.T) {
+	t.Run("reconcile-no-journal-touch", func(t *testing.T) {
 		t.Run("the action vocabulary has no journal action", func(t *testing.T) {
 			kinds := dispatch.AllActionKinds()
 			want := []dispatch.ActionKind{dispatch.ActionKill, dispatch.ActionDeadLetter, dispatch.ActionDeleteQueued}

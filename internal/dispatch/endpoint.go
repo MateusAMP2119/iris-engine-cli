@@ -1,15 +1,14 @@
 package dispatch
 
-// This file is the endpoint apply lifecycle op (specification section 7): the
-// leader-side path that takes E09.2's compiled endpoint shapes live. An apply
-// prepare-verifies each endpoint's one derived SQL statement against the DATA
-// database (a shape whose statement Postgres refuses never publishes), then
-// persists every shape to endpoints + endpoint_filters as one atomic meta
-// transaction through the single writer, and only on commit swaps the shapes
-// into the live serving registry -- so an applied endpoint takes effect
-// immediately, with no daemon restart, and a failed apply changes nothing,
-// neither meta nor the serving surface. Remove retires the shape the same way:
-// meta rows first, live registry on commit.
+// This file is the endpoint apply lifecycle op: the leader-side path that takes
+// E09.2's compiled endpoint shapes live. An apply prepare-verifies each endpoint's
+// one derived SQL statement against the DATA database (a shape whose statement
+// Postgres refuses never publishes), then persists every shape to endpoints +
+// endpoint_filters as one atomic meta transaction through the single writer, and only
+// on commit swaps the shapes into the live serving registry -- so an applied endpoint
+// takes effect immediately, with no daemon restart, and a failed apply changes
+// nothing, neither meta nor the serving surface. Remove retires the shape the same
+// way: meta rows first, live registry on commit.
 //
 // The lifecycle is deliberately independent of the workload graph: apply reads
 // no registry and writes no workload table, remove retires shape only, and
@@ -32,12 +31,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// PrepareVerifier prepare-verifies one derived endpoint statement against the
-// data database (specification section 7: apply prepare-verifies the derived
-// SQL). The production implementation issues a PREPARE on a data-database
-// connection so Postgres itself vets the statement -- source present, columns
-// real, types castable -- before anything persists; a recording fake stands in
-// for integration tests.
+// PrepareVerifier prepare-verifies one derived endpoint statement against the data
+// database (apply prepare-verifies the derived SQL). The production implementation
+// issues a PREPARE on a data-database connection so Postgres itself vets the
+// statement -- source present, columns real, types castable -- before anything
+// persists; a recording fake stands in for integration tests.
 type PrepareVerifier interface {
 	// PrepareVerify vets the derived SQL of the named endpoint against the data
 	// database, returning Postgres's refusal verbatim on failure.
@@ -50,8 +48,7 @@ type PrepareVerifier interface {
 // immutable thereafter; a re-apply swaps the map entry, never the shape a
 // prior checkout returned, so an in-flight request finishes with the shape it
 // started with while the very next request sees the new one (the
-// request-boundary swap of specification section 7). It satisfies the api
-// layer's EndpointSource seam.
+// request-boundary swap). It satisfies the api layer's EndpointSource seam.
 type EndpointRegistry struct {
 	mu     sync.RWMutex
 	shapes map[string]*declare.CompiledEndpoint
@@ -86,12 +83,12 @@ func (r *EndpointRegistry) publish(eps []*declare.CompiledEndpoint) {
 	}
 }
 
-// Reload replaces the whole live shape set with a reloaded set at daemon startup,
-// so a restart or failover serves every persisted endpoint without a re-apply
-// (specification section 7). It swaps the map wholesale in one lock hold: the
-// registry starts empty each process, so the reloaded set IS the truth. Callers
-// pass the endpoints recompiled from the persisted meta rows; a nil or empty set
-// leaves an empty registry (no persisted endpoints to serve).
+// Reload replaces the whole live shape set with a reloaded set at daemon startup, so
+// a restart or failover serves every persisted endpoint without a re-apply. It swaps
+// the map wholesale in one lock hold: the registry starts empty each process, so the
+// reloaded set IS the truth. Callers pass the endpoints recompiled from the persisted
+// meta rows; a nil or empty set leaves an empty registry (no persisted endpoints to
+// serve).
 func (r *EndpointRegistry) Reload(eps []*declare.CompiledEndpoint) {
 	shapes := make(map[string]*declare.CompiledEndpoint, len(eps))
 	for _, ep := range eps {
@@ -129,17 +126,15 @@ func NewEndpointApplier(verify PrepareVerifier, submit Submitter, live *Endpoint
 	return &EndpointApplier{verify: verify, submit: submit, live: live}
 }
 
-// Apply publishes compiled endpoints (specification section 7), in three
-// strictly ordered steps: (1) prepare-verify every endpoint's derived SQL
-// against the data database -- any refusal returns before any write, so a
-// multi-endpoint apply is all-or-nothing from the first step; (2) persist
-// every shape to endpoints + endpoint_filters as one atomic meta transaction
-// through the single writer; (3) only on commit, swap the shapes into the
-// live registry, making the apply effective immediately -- requests serve the
-// new shapes with no daemon restart, and a failed apply leaves both meta and
-// the serving surface exactly as they were. It reads no workload registry and
-// writes no workload table: the endpoint lifecycle is independent of declare
-// apply.
+// Apply publishes compiled endpoints, in three strictly ordered steps: (1)
+// prepare-verify every endpoint's derived SQL against the data database -- any
+// refusal returns before any write, so a multi-endpoint apply is all-or-nothing from
+// the first step; (2) persist every shape to endpoints + endpoint_filters as one
+// atomic meta transaction through the single writer; (3) only on commit, swap the
+// shapes into the live registry, making the apply effective immediately -- requests
+// serve the new shapes with no daemon restart, and a failed apply leaves both meta
+// and the serving surface exactly as they were. It reads no workload registry and
+// writes no workload table: the endpoint lifecycle is independent of declare apply.
 func (a *EndpointApplier) Apply(ctx context.Context, eps []*declare.CompiledEndpoint) error {
 	if len(eps) == 0 {
 		return errors.New("dispatch: apply endpoints: nothing to apply")
@@ -169,12 +164,11 @@ func (a *EndpointApplier) Apply(ctx context.Context, eps []*declare.CompiledEndp
 	return nil
 }
 
-// Remove retires one endpoint (specification section 7): it deletes the
-// persisted shape (filter rows, then the endpoints row) as one atomic meta
-// transaction through the single writer, and only on commit retires the shape
-// from the live registry -- the next request sees 404, an in-flight one
-// finishes its checked-out shape. It retires shape only: no declared table,
-// no data, no workload row -- remove is independent of declare destroy. An
+// Remove retires one endpoint: it deletes the persisted shape (filter rows, then the
+// endpoints row) as one atomic meta transaction through the single writer, and only
+// on commit retires the shape from the live registry -- the next request sees 404, an
+// in-flight one finishes its checked-out shape. It retires shape only: no declared
+// table, no data, no workload row -- remove is independent of declare destroy. An
 // unknown endpoint is refused by name before any write.
 func (a *EndpointApplier) Remove(ctx context.Context, name string) error {
 	if _, ok := a.live.Endpoint(name); !ok {

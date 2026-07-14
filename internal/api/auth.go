@@ -7,12 +7,11 @@ import (
 	"strings"
 )
 
-// TokenVerifier resolves a PAT presented over a TCP request (specification
-// section 7: "TCP: Authorization: Bearer <token> per request") to the
-// authority it carries. It is the seam the real PAT store (argon2id
-// prefix+hash lookup over the E09.1 store) plugs into; until that wiring lands
-// the daemon uses RejectAllVerifier, the honest state of a fresh deployment
-// with no PAT minted.
+// TokenVerifier resolves a PAT presented over a TCP request (TCP carries
+// Authorization: Bearer <token> per request) to the authority it carries. It is
+// the seam the real PAT store (argon2id prefix+hash lookup over the E09.1 store)
+// plugs into; until that wiring lands the daemon uses RejectAllVerifier, the
+// honest state of a fresh deployment with no PAT minted.
 type TokenVerifier interface {
 	// VerifyToken resolves the bearer token: on success it returns the PAT's
 	// authority (identity plus minted scopes) the mux scope-checks each route
@@ -44,8 +43,8 @@ func (rejectAllVerifier) VerifyToken(context.Context, string) (Authority, error)
 }
 
 // RequirePAT wraps h so every request must present a valid PAT as
-// Authorization: Bearer <token>, verified by v (specification sections 2 and 7).
-// A missing/malformed header or a rejected token is 401 unauthorized and the
+// Authorization: Bearer <token>, verified by v. A missing/malformed header or a
+// rejected token is 401 unauthorized and the
 // wrapped handler is never reached; an accepted token passes the request through
 // carrying the PAT's resolved authority in its context, which the mux
 // scope-checks per route. The daemon wraps this around the shared mux for the

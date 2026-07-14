@@ -9,7 +9,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the live pipeline-role surface of specification sections 4 and 7: the
+// This file is the live pipeline-role surface: the
 // least-privilege Postgres login role the engine ensures for each pipeline, the grants
 // it applies onto the data database, and the meta-database denial that keeps the
 // control plane unreachable to a pipeline. pg owns the data cluster, so the CREATE
@@ -32,7 +32,7 @@ func PipelineRoleName(pipeline string) string {
 }
 
 // RoleProvision is the request to provision one least-privilege pipeline login role on
-// the data cluster (specification sections 4 and 7): the role name, the credential-
+// the data cluster: the role name, the credential-
 // bearing password DDL the meta layer renders, the meta database the role must not
 // reach, the data database it connects to, and the declared field grants.
 type RoleProvision struct {
@@ -55,8 +55,8 @@ type RoleProvision struct {
 }
 
 // ProvisionPipelineRole ensures a pipeline's least-privilege login role exists on the
-// data cluster with exactly its declared access, issuing the DDL through db in order
-// (specification sections 4 and 7). It is idempotent: the role is created (with its
+// data cluster with exactly its declared access, issuing the DDL through db in order.
+// It is idempotent: the role is created (with its
 // least-privilege attributes baked in) if missing, and every credential/GRANT/REVOKE is
 // idempotent, so a re-provision (including a credential rotation) is a safe
 // no-op-or-update. Crucially it never re-asserts the role's attributes with an
@@ -72,7 +72,7 @@ type RoleProvision struct {
 //     exist (attributes at CREATE, never a re-asserting ALTER);
 //  3. set the engine-minted credential (the meta-rendered CredentialDDL);
 //  4. deny the meta database -- revoke CONNECT from PUBLIC (default-deny) and from the
-//     role -- so the control plane is unreachable to the pipeline (section 2);
+//     role -- so the control plane is unreachable to the pipeline;
 //  5. grant CONNECT on the data database, capture reachability (USAGE on iris + EXECUTE
 //     on iris.capture()), and USAGE on each granted schema;
 //  6. apply each declared field grant (RenderGrant).
@@ -121,7 +121,7 @@ func renderProvisionPipelineRole(spec RoleProvision) ([]string, error) {
 		// schema, EXECUTE on iris.capture()) fail with `schema "iris" does not exist`
 		// when role provisioning runs before capture install, so provisioning ensures
 		// the schema and the always-on capture function itself first -- self-healing and
-		// order-independent (specification section 4: capture is always on, every role).
+		// order-independent (capture is always on, for every role).
 		// Both are idempotent (CREATE SCHEMA IF NOT EXISTS, CREATE OR REPLACE FUNCTION);
 		// the same iris.capture() body EnsureCaptureFunction applies, so provisioning a
 		// role never diverges from the engine's capture install.
@@ -159,8 +159,8 @@ $iris_pipeline_role$;`, quoteStringLiteral(spec.Role), role),
 
 	// 5 (cont.). Capture reachability, pipeline-independent: USAGE on the engine's iris
 	// schema and EXECUTE on iris.capture(), so a freshly provisioned role's write fires
-	// the always-on capture trigger out of the box (specification section 4: capture is
-	// always on, every role). Without these the per-table trigger's call into
+	// the always-on capture trigger out of the box (capture is always on, for every
+	// role). Without these the per-table trigger's call into
 	// iris.capture() is refused and the write fails, so the grants are part of every
 	// pipeline role, not per-declaration. The function is SECURITY DEFINER, so the
 	// journal INSERT still runs as the journal owner, never the pipeline role. Both are

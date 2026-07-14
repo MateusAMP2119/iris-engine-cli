@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// daemonFlags are the daemon-scoped flags of specification section 8: they
-// configure a running engine and so belong only to `iris engine start`, the
+// daemonFlags are the daemon-scoped flags: they configure a running engine and
+// so belong only to `iris engine start`, the
 // command that starts the daemon. -d is the shorthand of --detach.
 var daemonFlags = []string{
 	"detach",
@@ -25,8 +25,7 @@ var daemonFlags = []string{
 // tree registers or inherits any of them. The chain begins at engine start, so its
 // configuration surface is not leaked onto reads or one-off verbs.
 func TestEngineStartOwnsDaemonFlags(t *testing.T) {
-	// spec: S08/engine-start-owns-daemon-flags
-	t.Run("S08/engine-start-owns-daemon-flags", func(t *testing.T) {
+	t.Run("engine-start-owns-daemon-flags", func(t *testing.T) {
 		root := testRoot()
 
 		walk(root, func(c *cobra.Command) {

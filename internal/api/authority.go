@@ -8,9 +8,9 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
-// This file is the request-authority model of the read API (specification
-// section 7): who a request acts as, and which scope each route demands. The
-// two transports resolve authority differently -- a unix-socket request is
+// This file is the request-authority model of the read API: who a request acts
+// as, and which scope each route demands. The two transports resolve authority
+// differently -- a unix-socket request is
 // ambient (local, filesystem-guarded: full authority, no token), while a TCP
 // request's bearer token resolves to the PAT's minted scopes -- but the mux
 // checks every route against one Authority regardless of transport, so the
@@ -29,14 +29,14 @@ type Authority struct {
 	// {control, read, data}.
 	Scopes []pat.Scope
 	// DataRole is the engine-managed read-only Postgres role a data-scope PAT
-	// owns (specification section 7): the role every data-surface read this
-	// authority makes executes as, via SET ROLE on the shared read pool. Empty
+	// owns: the role every data-surface read this authority makes executes as,
+	// via SET ROLE on the shared read pool. Empty
 	// for a PAT without the data scope and for ambient authority (an ambient
 	// read runs as the engine itself).
 	DataRole string
 	// Ambient marks a unix-socket request: local and filesystem-guarded, it
-	// passes every scope check without a PAT (specification section 7:
-	// "Socket: ambient authorization").
+	// passes every scope check without a PAT (the socket carries ambient
+	// authorization).
 	Ambient bool
 }
 
@@ -75,9 +75,9 @@ func AuthorityFrom(ctx context.Context) Authority {
 	return Authority{Ambient: true}
 }
 
-// requiredScope returns the scope the route at path demands (specification
-// section 7: every route is scope-checked). The data surface (/data, /q)
-// demands data; the control-plane mutations demand control; everything else --
+// requiredScope returns the scope the route at path demands (every route is
+// scope-checked). The data surface (/data, /q) demands data; the control-plane
+// mutations demand control; everything else --
 // the engine-state roster, /healthz, /leader, and any unknown path about to
 // 404 -- demands read, so a data-only PAT sees no engine internals and cannot
 // even probe which engine-state routes exist.
@@ -102,9 +102,9 @@ func requiredScope(path string) pat.Scope {
 	// Known control-plane mutation paths (exact) require control scope even though
 	// their first segment may otherwise be a read surface (e.g. workload reads).
 	// This implements the remote tiering for declare destroy, workload wipe,
-	// deadletter drain/replay, run cancel, endpoint apply, and PAT mint over TCP
-	// (specification sections 7 and 12). Publishing a read surface and minting a PAT
-	// are control-plane mutations; the endpoint reads themselves are /q, gated as data.
+	// deadletter drain/replay, run cancel, endpoint apply, and PAT mint over TCP.
+	// Publishing a read surface and minting a PAT are control-plane mutations; the
+	// endpoint reads themselves are /q, gated as data.
 	switch path {
 	case "/deadletter/drain", "/deadletter/replay", "/workload/wipe", "/run/cancel",
 		"/endpoint/apply", "/pat/create":
@@ -114,10 +114,9 @@ func requiredScope(path string) pat.Scope {
 }
 
 // authorize checks the request's authority against its route's required scope,
-// writing the 403 forbidden envelope (specification section 7 status matrix:
-// missing scope = 403) and reporting false when the scope is missing. It runs
-// before routing, so every route -- read surfaces and control plane alike -- is
-// scope-checked in one place.
+// writing the 403 forbidden envelope (missing scope = 403) and reporting false
+// when the scope is missing. It runs before routing, so every route -- read
+// surfaces and control plane alike -- is scope-checked in one place.
 func (m *mux) authorize(w http.ResponseWriter, r *http.Request) bool {
 	need := requiredScope(r.URL.Path)
 	if AuthorityFrom(r.Context()).Allows(need) {

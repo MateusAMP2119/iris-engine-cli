@@ -2,8 +2,8 @@ package arch
 
 import "strings"
 
-// This file holds the CLI-never-opens-meta check (specification section 2): the
-// CLI has no path to a database. Every state change the CLI requests is executed by
+// This file holds the CLI-never-opens-meta check: the CLI has no path to a
+// database. Every state change the CLI requests is executed by
 // the leader daemon over the control connection, so the CLI process never opens a
 // connection to meta or the data database -- it holds neither database client. The
 // daemon (which the CLI dials over the socket) holds store (meta) and pg (data);

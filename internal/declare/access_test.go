@@ -12,7 +12,7 @@ import (
 // omitting fields (or naming a table that is not exactly schema.table) is
 // rejected, with no implicit all-columns fallback.
 func TestAccessEntryTableFieldsRequired(t *testing.T) {
-	t.Run("S03/access-entry-table-fields-required", func(t *testing.T) {
+	t.Run("access-entry-table-fields-required", func(t *testing.T) {
 		cases := []struct {
 			name  string
 			p     *declare.Pipeline
@@ -86,7 +86,7 @@ func TestAccessEntryTableFieldsRequired(t *testing.T) {
 // targeting public.* (public is engine-reserved), in both reads and writes,
 // while a non-public entry with the same shape is accepted.
 func TestPublicReadsWritesRejected(t *testing.T) {
-	t.Run("S03/public-reads-writes-rejected", func(t *testing.T) {
+	t.Run("public-reads-writes-rejected", func(t *testing.T) {
 		cases := []struct {
 			name  string
 			p     *declare.Pipeline
@@ -140,7 +140,7 @@ func TestPublicReadsWritesRejected(t *testing.T) {
 // under schemas/ (public is engine-reserved), while a schemas/ tree without one
 // is unaffected.
 func TestPublicSchemaFolderRejected(t *testing.T) {
-	t.Run("S03/public-schema-folder-rejected", func(t *testing.T) {
+	t.Run("public-schema-folder-rejected", func(t *testing.T) {
 		t.Run("public schema folder rejected", func(t *testing.T) {
 			dir := writeTree(t, t.TempDir(), map[string]string{
 				"public/orders/table.yaml": "schema: public\ntable: orders\n",
@@ -182,7 +182,7 @@ func TestPublicSchemaFolderRejected(t *testing.T) {
 // depends_on of their own leaves the dependency graph edge-free for both --
 // ordering derives only from lanes and depends_on, never from access overlap.
 func TestReadsWritesNoOrdering(t *testing.T) {
-	t.Run("S03/reads-writes-no-ordering", func(t *testing.T) {
+	t.Run("reads-writes-no-ordering", func(t *testing.T) {
 		overlap := declare.Access{Table: "analytics.orders", Fields: []string{"id", "amount"}}
 		a := &declare.Pipeline{Name: "a", Writes: []declare.Access{overlap}}
 		b := &declare.Pipeline{Name: "b", Writes: []declare.Access{overlap}}

@@ -39,9 +39,7 @@ func settingsWith(tomlDSN, envDSN, flagDSN string) config.Settings {
 
 // TestAdminDSNPrecedence proves the admin DSN resolves at startup as --pg-dsn over
 // IRIS_PG_DSN over iris.toml pg_dsn, and that with none present resolution fails
-// fast with no default (specification section 2, admin credential Q/A).
-//
-// spec: S02/admin-dsn-precedence
+// fast with no default.
 func TestAdminDSNPrecedence(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -82,10 +80,8 @@ func TestAdminDSNPrecedence(t *testing.T) {
 // redacts under every fmt verb (so it never leaks into a log line), it cannot be
 // serialized into meta or a CLI response (no exported field, not a Marshaler), and
 // resolving it — the same chain a daemonless lifecycle command runs — writes it to
-// no local file (specification section 2: never in meta, CLI never sees it,
-// daemonless commands resolve the same chain and never store it).
-//
-// spec: S02/admin-dsn-memory-only
+// no local file (never in meta, CLI never sees it, daemonless commands resolve the
+// same chain and never store it).
 func TestAdminDSNMemoryOnly(t *testing.T) {
 	// A password marker embedded in the DSN. If any leak vector surfaces the raw
 	// string, this marker appears in the output.
@@ -173,8 +169,6 @@ func TestAdminDSNMemoryOnly(t *testing.T) {
 // reflection and print the unexported connection string verbatim. AdminDSN and
 // ConnectionSource each implement fmt.Formatter, which preempts every formatting
 // path, so no verb can leak the DSN.
-//
-// spec: S02/admin-dsn-memory-only
 func TestAdminDSNRedactsEveryVerb(t *testing.T) {
 	const marker = "unguessablemarker9x7"
 	const fixtureDSN = "postgres://admin:" + marker + "@db.internal:5432/meta?sslmode=require"
@@ -212,12 +206,10 @@ func (r *recordingDialer) Dial(_ context.Context, connString string) error {
 }
 
 // TestConnectionsDeriveAdminDSN proves every Postgres connection the engine opens
-// derives from the single daemon-owned admin DSN: the daemon dials meta (store)
-// and data (pg) only from the admin DSN's derived source, and the source type the
+// derives from the single daemon-owned admin DSN: the daemon dials meta (store) and
+// data (pg) only from the admin DSN's derived source, and the source type the
 // store/pg entry points require can carry a meaningful DSN only when built from the
-// admin DSN (a forged zero-value source is inert) (specification section 2).
-//
-// spec: S02/connections-derive-admin-dsn
+// admin DSN (a forged zero-value source is inert).
 func TestConnectionsDeriveAdminDSN(t *testing.T) {
 	ctx := context.Background()
 	const adminDSN = "postgres://admin@cluster:5432/postgres"

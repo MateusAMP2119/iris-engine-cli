@@ -35,15 +35,14 @@ type applyEnvelope struct {
 }
 
 // TestCrossModeWarningRidesJSON proves the cross-mode read warning is carried in
-// apply's --json output (specification section 5), and that the warning
-// accompanies the apply rather than replacing it: apply still falls through to the
+// apply's --json output, and that the warning accompanies the apply rather than
+// replacing it: apply still falls through to the
 // daemon dial (exit 3, no daemon reachable), and the warning rides the single
 // terminal --json envelope. The applyWarnings seam stands in for the meta-backed
 // data-mode facts apply reads once it runs against the daemon (E03.9/E03.10); here
 // it runs the real declare.CheckCrossModeReads over the parsed declaration, so what
 // is proven is the warning structure riding the --json envelope end to end.
 func TestCrossModeWarningRidesJSON(t *testing.T) {
-	// spec: S05/cross-mode-warning-rides-json
 	dir := t.TempDir()
 	target := filepath.Join(dir, "iris-declare.yaml")
 	if err := os.WriteFile(target, []byte(crossModeReaderYAML), 0o644); err != nil {
@@ -110,7 +109,6 @@ func TestCrossModeWarningRidesJSON(t *testing.T) {
 // warning surface is additive, not a behavior change to apply's existing single-
 // file resolution contract.
 func TestApplyNoWarningsUnchanged(t *testing.T) {
-	// spec: S05/cross-mode-warning-rides-json
 	dir := t.TempDir()
 	target := filepath.Join(dir, "iris-declare.yaml")
 	if err := os.WriteFile(target, []byte(crossModeReaderYAML), 0o644); err != nil {

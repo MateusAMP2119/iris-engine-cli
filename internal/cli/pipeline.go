@@ -12,8 +12,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of iris pipeline run and iris pipeline list (specification
-// section 8). run is a control mutation POSTed to the leader-gated /pipeline/run route;
+// This file is the CLI side of iris pipeline run and iris pipeline list. run is
+// a control mutation POSTed to the leader-gated /pipeline/run route;
 // its business outcome rides the response body's state field, which the CLI maps to an
 // exit-code category: queued or succeeded is success (0), ineligible is operation-failed
 // (4) with the gate reason, dead-lettered is exit 5. list is a read GET to
@@ -22,7 +22,7 @@ import (
 // on the mutation is exit 6 with leader guidance.
 
 // pipelineRun is the handler for `iris pipeline run <name>`: it POSTs the run request to
-// the daemon and maps the outcome to a section-8 exit code.
+// the daemon and maps the outcome to an exit code.
 func (a *app) pipelineRun() runE {
 	return func(cmd *cobra.Command, args []string) error {
 		settings := a.resolveTarget(cmd)

@@ -11,9 +11,9 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris engine inspect` (specification sections 8
-// and 11): the read-only engine-table DDL dump. The CLI GETs the daemon's
-// /inspect route and prints exactly the statements the route serves -- under
+// This file is the CLI side of `iris engine inspect`: the read-only engine-table
+// DDL dump. The CLI GETs the daemon's /inspect route and prints exactly the
+// statements the route serves -- under
 // --json the same data envelope any HTTP consumer reads. The dump renders the
 // embedded schema model, so inspect reads no rows and mutates no engine state;
 // it is served on any role. Transport failure is no-daemon (exit 3) with start

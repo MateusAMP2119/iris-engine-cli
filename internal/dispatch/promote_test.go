@@ -11,14 +11,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the dispatch-level promote op behind `iris pipeline promote`
-// (specification sections 1, 5, and 12): promotion flips the pipeline's
-// per-pipeline data_mode in meta from disposable to permanent through the single
-// writer, is refused whenever the pipeline is not in built state (so a
-// source-only pipeline can never hold permanent data), and repeats the
-// cross-mode read warning while any upstream read dependency is still
-// disposable. The meta facts ride a fake store.PromoteStateReader; the write
-// path is the real Dispatcher over a recording write connection.
+// This file proves the dispatch-level promote op behind `iris pipeline promote`:
+// promotion flips the pipeline's per-pipeline data_mode in meta from disposable to
+// permanent through the single writer, is refused whenever the pipeline is not in
+// built state (so a source-only pipeline can never hold permanent data), and repeats
+// the cross-mode read warning while any upstream read dependency is still disposable.
+// The meta facts ride a fake store.PromoteStateReader; the write path is the real
+// Dispatcher over a recording write connection.
 
 // promoteState is a canned store.PromoteStateReader: the meta facts the promote
 // gate consults, fixed by the test.
@@ -65,13 +64,11 @@ func newPromoteHarness(t *testing.T, state *promoteState) (*dispatch.Promoter, *
 	return dispatch.NewPromoter(state, d, dispatch.WithJournalPromoter(journal)), rec, journal
 }
 
-// TestPromoteRequiresBuilt proves `iris pipeline promote` marks data permanent
-// only when the pipeline is built, and is rejected for a source-only pipeline
-// (specification section 1: "marks data permanent, only once built"). A
-// source-only pipeline (no recorded artifact) is refused before any write; a
-// built pipeline promotes, and the outcome is the permanent data mode.
-//
-// spec: S01/promote-requires-built
+// TestPromoteRequiresBuilt proves `iris pipeline promote` marks data permanent only
+// when the pipeline is built, and is rejected for a source-only pipeline ("marks data
+// permanent, only once built"). A source-only pipeline (no recorded artifact) is
+// refused before any write; a built pipeline promotes, and the outcome is the
+// permanent data mode.
 func TestPromoteRequiresBuilt(t *testing.T) {
 	t.Run("source-only pipeline is rejected", func(t *testing.T) {
 		p, rec, journal := newPromoteHarness(t, &promoteState{
@@ -112,12 +109,9 @@ func TestPromoteRequiresBuilt(t *testing.T) {
 	})
 }
 
-// TestPromoteGatedOnBuilt proves `iris pipeline promote` refuses when the
-// pipeline is not in built state (specification section 5: the data_mode flip is
-// gated on built), and refuses an unregistered pipeline outright -- neither path
-// reaches the single writer.
-//
-// spec: S05/promote-gated-on-built
+// TestPromoteGatedOnBuilt proves `iris pipeline promote` refuses when the pipeline is
+// not in built state (the data_mode flip is gated on built), and refuses an
+// unregistered pipeline outright -- neither path reaches the single writer.
 func TestPromoteGatedOnBuilt(t *testing.T) {
 	t.Run("un-built pipeline is refused", func(t *testing.T) {
 		p, rec, _ := newPromoteHarness(t, &promoteState{
@@ -151,12 +145,10 @@ func TestPromoteGatedOnBuilt(t *testing.T) {
 }
 
 // TestPromoteFlipsDataMode proves the promote op's meta effect is exactly the
-// per-pipeline data_mode flip from disposable to permanent, issued through the
-// single writer (specification section 5: control truth is per-pipeline
-// data_mode in meta; promote flips it permanent), and that re-promoting an
-// already-permanent pipeline is an idempotent no-op.
-//
-// spec: S05/promote-flips-data-mode
+// per-pipeline data_mode flip from disposable to permanent, issued through the single
+// writer (control truth is per-pipeline data_mode in meta; promote flips it
+// permanent), and that re-promoting an already-permanent pipeline is an idempotent
+// no-op.
 func TestPromoteFlipsDataMode(t *testing.T) {
 	t.Run("disposable flips to permanent through the single writer", func(t *testing.T) {
 		p, rec, _ := newPromoteHarness(t, &promoteState{
@@ -196,13 +188,10 @@ func TestPromoteFlipsDataMode(t *testing.T) {
 }
 
 // TestPromoteRepeatsCrossModeWarning proves promote repeats the cross-mode read
-// warning while an upstream read dependency remains in disposable data_mode
-// (specification section 5: apply warns, and promote repeats it while the
-// upstream stays disposable). The warning is advisory -- it never blocks the
-// promote -- it repeats on every invocation while the upstream is disposable,
-// and it stops once the upstream itself is promoted.
-//
-// spec: S05/promote-repeats-cross-mode-warning
+// warning while an upstream read dependency remains in disposable data_mode (apply
+// warns, and promote repeats it while the upstream stays disposable). The warning is
+// advisory -- it never blocks the promote -- it repeats on every invocation while the
+// upstream is disposable, and it stops once the upstream itself is promoted.
 func TestPromoteRepeatsCrossModeWarning(t *testing.T) {
 	state := &promoteState{
 		registered: true, mode: store.DataPermanent, built: true,

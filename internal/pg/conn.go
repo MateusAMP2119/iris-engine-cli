@@ -6,7 +6,7 @@ import (
 )
 
 // This file holds the data connection-opening seam. Every data connection derives
-// from the single daemon-owned admin DSN (specification section 2): pg never
+// from the single daemon-owned admin DSN: pg never
 // accepts a raw connection string, only a ConnSource the daemon builds from the
 // admin DSN, so no data connection can originate from anywhere else. The real
 // pgx-backed Dialer lands in E02.3; a recording fake stands in until then.

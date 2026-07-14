@@ -14,11 +14,11 @@ import (
 
 // This file proves the apply op validates the dependency graph on the serialized
 // single-writer path, closing the read-validate-write race two concurrent applies
-// could otherwise exploit to commit a dependency cycle (specification sections 3 and
-// 6.3). Both applies run through one Dispatcher over a fake that couples the read
-// and write seams -- a read observes prior committed writes -- so if validation ran
-// on a pre-write snapshot outside the writer, both A->B and B->A would pass
-// acyclicity and both would commit, leaving a cycle.
+// could otherwise exploit to commit a dependency cycle. Both applies run through one
+// Dispatcher over a fake that couples the read and write seams -- a read observes
+// prior committed writes -- so if validation ran on a pre-write snapshot outside the
+// writer, both A->B and B->A would pass acyclicity and both would commit, leaving a
+// cycle.
 
 // rendezvous forces two callers to meet before either proceeds, with a timeout
 // fallback so a lone caller (the serialized path, where the two reads can never be
@@ -175,10 +175,8 @@ func (c *coupledRegistry) edgeCount() int {
 // observed by the other's acyclicity check, which then rejects. Exactly one apply
 // succeeds; the other fails with a cycle rejection, and the registry keeps a single
 // edge. Run repeatedly under -race to exercise the interleaving.
-//
-// spec: S03/depends-on-cycle-rejected
 func TestApplyConcurrentCycleRejected(t *testing.T) {
-	t.Run("S03/depends-on-cycle-rejected", func(t *testing.T) {
+	t.Run("depends-on-cycle-rejected", func(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			reg := newCoupledRegistry(newRendezvous(300 * time.Millisecond))
 			reg.seed("A", "B") // both upstreams registered; the only failure is the cycle.

@@ -11,19 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// This file is the execution machinery under every data-surface read
-// (specification section 7): the shared read pool on the data database. Each read
-// checks a connection out of the shared pool, runs SET ROLE <pat_role>, executes a
-// single-statement read-only transaction, and RESET ROLE on release; the same
-// mechanics serve /q and /data alike. Request handling never assembles SQL: only
-// an engine-built ReadStatement -- a fixed parameterized SELECT -- can enter the
-// pool, each pooled session prepares that fixed text on first use (session-scoped
-// prepared statements), and every request value rides as a bound parameter. The
-// pool can never address the meta database (BuildReadPoolConn refuses it), so
-// engine storage stays unreachable through the data surface, and a read-only
-// transaction plus the SELECT-only statement gate leave no mutation path anywhere
-// on the read surface: the journal is readable, never writable, and all changes go
-// via the control plane.
+// This file is the execution machinery under every data-surface read: the shared
+// read pool on the data database. Each read checks a connection out of the shared
+// pool, runs SET ROLE <pat_role>, executes a single-statement read-only
+// transaction, and RESET ROLE on release; the same mechanics serve /q and /data
+// alike. Request handling never assembles SQL: only an engine-built ReadStatement
+// -- a fixed parameterized SELECT -- can enter the pool, each pooled session
+// prepares that fixed text on first use (session-scoped prepared statements), and
+// every request value rides as a bound parameter. The pool can never address the
+// meta database (BuildReadPoolConn refuses it), so engine storage stays
+// unreachable through the data surface, and a read-only transaction plus the
+// SELECT-only statement gate leave no mutation path anywhere on the read surface:
+// the journal is readable, never writable, and all changes go via the control
+// plane.
 
 // The fixed session-control statements of the read cycle. They are constants --
 // never assembled -- and they are the only non-prepared SQL the pool ever issues.
@@ -36,8 +36,8 @@ const (
 
 // ErrReadPoolMetaDatabase is returned by BuildReadPoolConn when the requested
 // database is the meta database: the read pool serves the data surface (/data,
-// /q) and never addresses engine storage (specification section 7: meta is a
-// separate database the data surface cannot reach).
+// /q) and never addresses engine storage (meta is a separate database the data
+// surface cannot reach).
 var ErrReadPoolMetaDatabase = errors.New("store: the read pool serves the data surface and never addresses the meta database")
 
 // readStatementNameRe is the shape of a prepared-statement name: a bare lowercase
@@ -125,10 +125,10 @@ type readAcquirer interface {
 	acquire(ctx context.Context) (readSession, error)
 }
 
-// ReadPool is the shared read pool on the data database (specification section
-// 7): every /q and /data read runs through it, one checkout per read, with the
-// SET ROLE / read-only transaction / RESET ROLE cycle wrapped around a
-// session-scoped prepared statement.
+// ReadPool is the shared read pool on the data database: every /q and /data read
+// runs through it, one checkout per read, with the SET ROLE / read-only
+// transaction / RESET ROLE cycle wrapped around a session-scoped prepared
+// statement.
 type ReadPool struct {
 	pool readAcquirer
 }

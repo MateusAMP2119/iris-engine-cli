@@ -13,10 +13,10 @@ import (
 )
 
 // This file is the shared JSON-request half of the daemon-touching commands whose
-// outcome is a section-7 data envelope rather than the control result shape
+// outcome is a data envelope rather than the control result shape
 // (endpoint apply, pat create). It resolves the daemon target through the
 // configuration precedence, POSTs the request (attaching the PAT over TCP), and
-// classifies the response into the section-8 exit categories -- a transport failure
+// classifies the response into the exit categories -- a transport failure
 // is no-daemon (exit 3), a not_leader rejection is exit 6, any other error is
 // operation-failed (exit 4), a 200 decodes the {"data": ...} envelope into out.
 

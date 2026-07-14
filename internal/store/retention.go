@@ -7,21 +7,20 @@ import (
 	"strings"
 )
 
-// This file is the retention write surface (specification sections 4 and 6.2): the
-// leader-only path that archives a run into run_summaries and then prunes it. A
-// pruned run first leaves a compact, FK-free archival summary -- run_summaries
-// outlives everything it summarizes -- written in the SAME meta transaction that
-// deletes the run and cascades its run_inputs rows, so a surviving reference resolves
-// to a run row or its summary, never to a hole. run_summaries is insert-only and
-// never touched by a delete; the data journal is never touched (capture rows are
-// bounded by the journal's own lifecycle, not by run pruning). The run's per-run log
-// file is deleted after the meta transaction commits, through a caller-supplied hook
-// so this leaf package never reaches into the daemon's log layout.
+// This file is the retention write surface: the leader-only path that archives a
+// run into run_summaries and then prunes it. A pruned run first leaves a compact,
+// FK-free archival summary -- run_summaries outlives everything it summarizes --
+// written in the SAME meta transaction that deletes the run and cascades its
+// run_inputs rows, so a surviving reference resolves to a run row or its summary,
+// never to a hole. run_summaries is insert-only and never touched by a delete;
+// the data journal is never touched (capture rows are bounded by the journal's
+// own lifecycle, not by run pruning). The run's per-run log file is deleted after
+// the meta transaction commits, through a caller-supplied hook so this leaf
+// package never reaches into the daemon's log layout.
 
-// PrunableRun is the full run record the pruner archives before deleting it: exactly
-// the fields run_summaries preserves (specification section 4). It is the pruner's
-// input, read from the run row being pruned; BuildRunSummary copies it into the
-// archival shape.
+// PrunableRun is the full run record the pruner archives before deleting it:
+// exactly the fields run_summaries preserves. It is the pruner's input, read from
+// the run row being pruned; BuildRunSummary copies it into the archival shape.
 type PrunableRun struct {
 	// RunID is the run's meta identity (runs.id), the summary's primary key.
 	RunID int64
@@ -46,10 +45,10 @@ type PrunableRun struct {
 }
 
 // RunSummary is the archival-tier row the pruner writes before deleting a run
-// (specification section 4, run_summaries): the pin and provenance that outlive
-// pruning. consumed_upstream_run_ids is JSON, so it survives without a run_inputs FK.
-// recorded_at is not carried here: it is stamped DB-side (now()::text) at insert, so
-// no clock is read in the engine.
+// (run_summaries): the pin and provenance that outlive pruning.
+// consumed_upstream_run_ids is JSON, so it survives without a run_inputs FK.
+// recorded_at is not carried here: it is stamped DB-side (now()::text) at insert,
+// so no clock is read in the engine.
 type RunSummary struct {
 	// RunID is the summarized run's identity (run_summaries.run_id PK).
 	RunID int64
@@ -72,13 +71,13 @@ type RunSummary struct {
 	JournalCeiling *int64
 }
 
-// BuildRunSummary copies a run being pruned into its archival summary (specification
-// section 4): run_id, pipeline (copied, never an FK), state, artifact_hash,
-// declaration_checksum, the consumed upstream run ids as a JSON array, and the
-// snapshot pin (snapshot_lsn / journal_floor / journal_ceiling -- the input state
-// that survives pruning). It is pure: no reads, no writes, no clock. An empty or nil
-// consumed-upstreams set becomes the JSON empty array "[]" (never "null"), so the
-// column is always a well-formed array a provenance query can read.
+// BuildRunSummary copies a run being pruned into its archival summary: run_id,
+// pipeline (copied, never an FK), state, artifact_hash, declaration_checksum, the
+// consumed upstream run ids as a JSON array, and the snapshot pin (snapshot_lsn /
+// journal_floor / journal_ceiling -- the input state that survives pruning). It
+// is pure: no reads, no writes, no clock. An empty or nil consumed-upstreams set
+// becomes the JSON empty array "[]" (never "null"), so the column is always a
+// well-formed array a provenance query can read.
 func BuildRunSummary(run PrunableRun) RunSummary {
 	return RunSummary{
 		RunID:                      run.RunID,
@@ -115,14 +114,15 @@ VALUES ($1, $2, $3, $4, $5, $6::json, $7, $8, $9, now()::text)`
 	deleteRunSQL = `DELETE FROM runs WHERE id = $1`
 )
 
-// pruneStatements builds the atomic batch that prunes one run: the archival summary
-// INSERT first, then the run's run_inputs cascade, then the run DELETE. The order is
-// load-bearing -- the summary is written before the run is deleted (so a surviving
-// reference never dangles), and run_inputs is deleted before runs (the ledger rows
-// reference the run row). It is pure and closed: the batch names only run_summaries,
-// run_inputs, and runs -- never data_journal (capture rows are bounded by the
-// journal's own lifecycle, section 6.2) and never a DELETE against the insert-only
-// run_summaries. PruneRun submits the whole batch as one meta transaction.
+// pruneStatements builds the atomic batch that prunes one run: the archival
+// summary INSERT first, then the run's run_inputs cascade, then the run DELETE.
+// The order is load-bearing -- the summary is written before the run is deleted
+// (so a surviving reference never dangles), and run_inputs is deleted before runs
+// (the ledger rows reference the run row). It is pure and closed: the batch names
+// only run_summaries, run_inputs, and runs -- never data_journal (capture rows
+// are bounded by the journal's own lifecycle) and never a DELETE against the
+// insert-only run_summaries. PruneRun submits the whole batch as one meta
+// transaction.
 func pruneStatements(s RunSummary) []Statement {
 	return []Statement{
 		{SQL: insertRunSummarySQL, Args: []any{
@@ -134,16 +134,16 @@ func pruneStatements(s RunSummary) []Statement {
 	}
 }
 
-// PruneRun archives a run and prunes it (specification sections 4 and 6.2): it writes
-// the run's compact archival summary into run_summaries and, in the SAME meta
-// transaction, deletes the run's run_inputs rows and the run row itself -- so a pruned
-// run always leaves its summary and a surviving reference resolves to a run or its
-// summary, never a hole. run_summaries is insert-only and never touched by a delete,
-// and the data journal is never touched. After the meta transaction commits, the run's
-// per-run log file is deleted through deleteLog (the daemon's
-// RunLogWriter.DeleteOnPrune, passed in so this leaf package never imports the daemon;
-// an already-absent log is not an error, so the delete is idempotent). deleteLog may
-// be nil, in which case no log deletion is attempted.
+// PruneRun archives a run and prunes it: it writes the run's compact archival
+// summary into run_summaries and, in the SAME meta transaction, deletes the run's
+// run_inputs rows and the run row itself -- so a pruned run always leaves its
+// summary and a surviving reference resolves to a run or its summary, never a
+// hole. run_summaries is insert-only and never touched by a delete, and the data
+// journal is never touched. After the meta transaction commits, the run's per-run
+// log file is deleted through deleteLog (the daemon's RunLogWriter.DeleteOnPrune,
+// passed in so this leaf package never imports the daemon; an already-absent log
+// is not an error, so the delete is idempotent). deleteLog may be nil, in which
+// case no log deletion is attempted.
 //
 // It is a leader-only meta write, riding the single Writer through the atomic ExecTx
 // path (a connection without it fails loudly rather than splitting the prune across

@@ -12,11 +12,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris run cancel <run>` (specification section 6.3:
-// only an operator cancel frees a hung run). Cancel is a leader-owned disposition: the
+// This file is the CLI side of `iris run cancel <run>` (only an operator cancel
+// frees a hung run). Cancel is a leader-owned disposition: the
 // CLI validates the run ref locally, then POSTs it to the daemon's leader-gated cancel
 // route. The leader kills the run's process group and dead-letters it as stopped. The
-// exit code follows the section-8 categories: success 0, no daemon reachable 3, not the
+// exit code follows the standard categories: success 0, no daemon reachable 3, not the
 // leader 6, any other failure (unknown or already-terminal run) 4.
 
 // runCancelReq is the POST /run/cancel body: the run to cancel.
@@ -35,7 +35,7 @@ type runCancelResult struct {
 }
 
 // runCancel is the handler for `iris run cancel <run>`. It validates the run ref, then
-// POSTs it to the leader's cancel route and maps the outcome to a section-8 exit
+// POSTs it to the leader's cancel route and maps the outcome to an exit
 // category.
 func (a *app) runCancel() runE {
 	return func(cmd *cobra.Command, args []string) error {

@@ -1,7 +1,7 @@
 // Package storetest provides an in-memory fake of the meta client seam
 // (internal/store). It stands in for meta so the wiring around the control-plane
 // database -- run records and their state transitions -- is tested with no live
-// Postgres (S16/integration-fakes-interfaces).
+// Postgres.
 //
 // The fake is a faithful, concurrency-safe stand-in with database-like value
 // semantics: every method returns copies, so a caller cannot reach back through

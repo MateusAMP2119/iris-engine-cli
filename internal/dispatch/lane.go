@@ -10,7 +10,7 @@ import (
 // This file is the lane model and walk: the pure construction that turns the
 // persisted lanes roster plus the set of registered pipelines into the per-lane
 // runnable walk, and the lane runner that walks one lane serially while distinct
-// lanes run in parallel (specification sections 4, 6.1, and 6.3).
+// lanes run in parallel.
 //
 // Composer order is pure sequencing. A lane's walk carries an order and nothing
 // else: no data link between members, no failure propagation, no eligibility
@@ -18,10 +18,10 @@ import (
 // dispatcher's, not the lane's. The lane runner here starts each member in turn
 // and never gates the walk on a member's outcome.
 
-// LaneRow is one persisted lanes-table row: a (lane, pipeline) placement at a
-// walk position. It mirrors the lanes read seam -- lanes holds pipeline names,
-// never foreign keys, so a row may name a folder that is not (or no longer) a
-// registered pipeline; the walk skips such names (specification section 4).
+// LaneRow is one persisted lanes-table row: a (lane, pipeline) placement at a walk
+// position. It mirrors the lanes read seam -- lanes holds pipeline names, never
+// foreign keys, so a row may name a folder that is not (or no longer) a registered
+// pipeline; the walk skips such names.
 type LaneRow struct {
 	// Lane is the lane the row places its pipeline in.
 	Lane string
@@ -46,14 +46,12 @@ type Lane struct {
 // and the set of registered pipelines. It is pure: no I/O, and its result is a
 // function of its inputs alone.
 //
-// Within each lane the members are ordered by pos, and any name with no
-// registered pipeline is skipped (specification sections 4 and 6.3); a lane left
-// with no registered member contributes nothing and is omitted. A registered
-// pipeline that no lane row names is scheduled as its own anonymous lane, named
-// for itself and parallel with everything (specification section 4). Composer-
-// unordered pipelines get no declaration-order tiebreak: each such pipeline is
-// its own lane, never merged into a shared ordered walk (specification section
-// 6.1).
+// Within each lane the members are ordered by pos, and any name with no registered
+// pipeline is skipped; a lane left with no registered member contributes nothing and
+// is omitted. A registered pipeline that no lane row names is scheduled as its own
+// anonymous lane, named for itself and parallel with everything. Composer-unordered
+// pipelines get no declaration-order tiebreak: each such pipeline is its own lane,
+// never merged into a shared ordered walk.
 //
 // registered maps each registered pipeline name to true. The returned lanes are
 // sorted by name for a stable result; that order is not an execution order --
@@ -100,11 +98,10 @@ func BuildWalk(rows []LaneRow, registered map[string]bool) []Lane {
 	return lanes
 }
 
-// RunOutcome is the terminal disposition of a single run, as reported to the
-// lane runner. The runner never gates its walk on it: composer order sequences
-// members, it does not propagate failure (specification section 6.1). Recording
-// the outcome and any depends_on propagation belong to the dispatcher in later
-// epics.
+// RunOutcome is the terminal disposition of a single run, as reported to the lane
+// runner. The runner never gates its walk on it: composer order sequences members, it
+// does not propagate failure. Recording the outcome and any depends_on propagation
+// belong to the dispatcher in later epics.
 type RunOutcome int
 
 // The terminal run dispositions the lane runner distinguishes.
@@ -120,11 +117,10 @@ const (
 // state, returning that terminal disposition. It is the lane runner's seam onto
 // run execution: the runner owns sequencing, RunStarter owns the run.
 //
-// A returned error means the run could not be carried out at all -- for example
-// ctx was cancelled -- and stops the lane's walk. A run that executes and then
+// A returned error means the run could not be carried out at all -- for example ctx
+// was cancelled -- and stops the lane's walk. A run that executes and then
 // dead-letters is not an error: it returns (RunDeadLettered, nil), and the lane
-// proceeds to its next member, because composer order never gates
-// (specification section 6.1).
+// proceeds to its next member, because composer order never gates.
 type RunStarter interface {
 	StartRun(ctx context.Context, pipeline string) (RunOutcome, error)
 }
@@ -132,7 +128,7 @@ type RunStarter interface {
 // LaneRunner walks one lane's members in composer order, serially. It is the
 // one-goroutine-per-lane unit: RunPass performs a single ordered pass, and the
 // perpetual repetition and idle watermark of the lane loop layer on top in later
-// epics (specification section 6.3).
+// epics.
 type LaneRunner struct {
 	lane    Lane
 	starter RunStarter
@@ -164,11 +160,11 @@ func (r *LaneRunner) RunPass(ctx context.Context) error {
 	return nil
 }
 
-// RunLanes runs every lane's pass concurrently: one goroutine per lane, all
-// launched before any is awaited, so lanes run in parallel with no engine cap
-// and no cross-lane serialization (specification section 6.1). It returns when
-// every lane's pass has finished, joining any per-lane errors so one lane's
-// failure to run neither hides another's nor leaks a goroutine.
+// RunLanes runs every lane's pass concurrently: one goroutine per lane, all launched
+// before any is awaited, so lanes run in parallel with no engine cap and no
+// cross-lane serialization. It returns when every lane's pass has finished, joining
+// any per-lane errors so one lane's failure to run neither hides another's nor leaks
+// a goroutine.
 func RunLanes(ctx context.Context, lanes []Lane, starter RunStarter) error {
 	errs := make([]error, len(lanes))
 	var wg sync.WaitGroup

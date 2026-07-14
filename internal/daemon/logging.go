@@ -7,13 +7,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 )
 
-// This file is the daemon's slog wiring (specification section 2: "Structured
-// JSON logs (slog); human console in foreground"). LoggerFor is the pure
-// constructor that picks the handler for a run mode -- a JSON handler when the
-// daemon runs detached, a human-readable text handler when it runs attached in the
-// foreground. OpenDaemonLogger is the daemon-mode path: it routes that JSON logger
-// through the size-based rotator over the workspace daemon.log, so a detached
-// daemon's structured logs land in the rotated log the operator tails.
+// This file is the daemon's slog wiring (structured JSON logs (slog); human console
+// in foreground). LoggerFor is the pure constructor that picks the handler for a
+// run mode -- a JSON handler when the daemon runs detached, a human-readable text
+// handler when it runs attached in the foreground. OpenDaemonLogger is the
+// daemon-mode path: it routes that JSON logger through the size-based rotator over
+// the workspace daemon.log, so a detached daemon's structured logs land in the
+// rotated log the operator tails.
 
 // LogMode selects the daemon's log handler.
 type LogMode int
@@ -41,9 +41,8 @@ func LoggerFor(mode LogMode, w io.Writer) *slog.Logger {
 
 // OpenDaemonLogger builds the structured JSON logger a detached daemon writes to
 // its size-rotated daemon.log, returning the logger and the rotator to close on
-// shutdown (specification section 2: JSON logs, size-based rotation). It ensures
-// the log directory first. The caller closes the returned io.Closer when the
-// daemon exits.
+// shutdown (JSON logs, size-based rotation). It ensures the log directory first.
+// The caller closes the returned io.Closer when the daemon exits.
 func OpenDaemonLogger(s config.Settings) (*slog.Logger, io.Closer, error) {
 	if err := EnsureLogsDir(s); err != nil {
 		return nil, nil, err

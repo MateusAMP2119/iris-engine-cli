@@ -12,16 +12,16 @@ import (
 )
 
 // This file is the daemon's runs-collection plane: the api.RunsHandler behind GET
-// /runs[?include=inputs] and GET /runs/{id} (and therefore behind `iris run list` --
-// specification section 7). It composes the store's plain-MVCC run-lineage reads
-// into the collection the rail renderer draws: each row its run, and -- under
-// include=inputs -- its consumed upstream ids and replayed_from as plain attributes
-// (parents-per-row, never a separate edge array). It is a read, served on any role
-// from the reader pool, and mutates nothing.
+// /runs[?include=inputs] and GET /runs/{id} (and therefore behind `iris run list`).
+// It composes the store's plain-MVCC run-lineage reads into the collection the rail
+// renderer draws: each row its run, and -- under include=inputs -- its consumed
+// upstream ids and replayed_from as plain attributes (parents-per-row, never a
+// separate edge array). It is a read, served on any role from the reader pool, and
+// mutates nothing.
 //
-// The consumed upstream ids come straight off run_inputs, which is FK-free
-// (specification section 4): an id may name a run since pruned, so it is carried
-// verbatim -- the renderer's visible gap, never resolved away against a live run.
+// The consumed upstream ids come straight off run_inputs, which is FK-free: an id
+// may name a run since pruned, so it is carried verbatim -- the renderer's visible
+// gap, never resolved away against a live run.
 
 // runsPlane is the api.RunsHandler over the store's run-lineage read seam.
 type runsPlane struct {
@@ -81,8 +81,8 @@ func (p *runsPlane) GetRun(ctx context.Context, id string, includeInputs bool) (
 
 // runRowFrom maps one store.RunLineage into the wire row. The lineage attributes
 // (consumed upstream ids, replayed_from) ride only under includeInputs -- the bare
-// /runs view is id, pipeline, state alone (specification section 7). Inputs are
-// rendered as the upstream ids' decimal strings, ascending, one solid edge each.
+// /runs view is id, pipeline, state alone. Inputs are rendered as the upstream ids'
+// decimal strings, ascending, one solid edge each.
 func runRowFrom(rl store.RunLineage, includeInputs bool) api.RunRow {
 	row := api.RunRow{
 		ID:       strconv.FormatInt(rl.ID, 10),

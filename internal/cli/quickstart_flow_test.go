@@ -160,8 +160,7 @@ func startHealthzDaemon(t *testing.T, sock string) {
 // error (exit 2) with local-tour guidance -- the tour provisions a local engine
 // -- while --socket stays accepted, in every rendering mode.
 func TestQuickstartRefusesRemoteHost(t *testing.T) {
-	// spec: S08/quickstart-refuses-remote-host
-	t.Run("S08/quickstart-refuses-remote-host", func(t *testing.T) {
+	t.Run("quickstart-refuses-remote-host", func(t *testing.T) {
 		t.Run("--host is a usage error with local-tour guidance", func(t *testing.T) {
 			for _, tty := range []bool{false, true} {
 				var out, errb bytes.Buffer
@@ -214,8 +213,7 @@ func TestQuickstartRefusesRemoteHost(t *testing.T) {
 func TestQuickstartStepOrderConfirmed(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-step-order-confirmed
-	t.Run("S08/quickstart-step-order-confirmed", func(t *testing.T) {
+	t.Run("quickstart-step-order-confirmed", func(t *testing.T) {
 		t.Run("acts run in order, one consent each, steps straight through", func(t *testing.T) {
 			chdirWorkspace(t)
 			wd := mustGetwd(t)
@@ -269,8 +267,7 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 func TestQuickstartDeclineCleanAbort(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-decline-clean-abort
-	t.Run("S08/quickstart-decline-clean-abort", func(t *testing.T) {
+	t.Run("quickstart-decline-clean-abort", func(t *testing.T) {
 		t.Run("declining the workspace question executes nothing", func(t *testing.T) {
 			scratch := t.TempDir()
 			t.Chdir(scratch)
@@ -393,8 +390,7 @@ func TestQuickstartDeclineCleanAbort(t *testing.T) {
 func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-adaptive-skip-running-engine
-	t.Run("S08/quickstart-adaptive-skip-running-engine", func(t *testing.T) {
+	t.Run("quickstart-adaptive-skip-running-engine", func(t *testing.T) {
 		chdirWorkspace(t)
 		sock := shortSocket(t)
 		startHealthzDaemon(t, sock)
@@ -455,8 +451,7 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 func TestQuickstartYesRunsUnattended(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-yes-runs-unattended
-	t.Run("S08/quickstart-yes-runs-unattended", func(t *testing.T) {
+	t.Run("quickstart-yes-runs-unattended", func(t *testing.T) {
 		t.Run("piped --yes runs every step in cwd with zero prompts and zero ANSI", func(t *testing.T) {
 			dir := t.TempDir() // empty and not a workspace: --yes still works right here
 			t.Chdir(dir)
@@ -575,8 +570,7 @@ func equalStrings(got, want []string) bool {
 func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-refuses-remote-host
-	t.Run("S08/quickstart-refuses-remote-host", func(t *testing.T) {
+	t.Run("quickstart-refuses-remote-host", func(t *testing.T) {
 		t.Run("ambient IRIS_HOST never reaches a tour step", func(t *testing.T) {
 			chdirWorkspace(t)
 

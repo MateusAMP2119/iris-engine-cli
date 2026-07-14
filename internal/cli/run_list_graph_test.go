@@ -14,8 +14,8 @@ import (
 )
 
 // This file is the honesty suite for `iris run list --graph`, the lineage rail
-// rendering (specification section 8 CLI contract). The rendering contract is
-// honesty made testable: a solid stroke is a run_inputs edge and nothing else, a
+// rendering. The rendering contract is honesty made testable: a solid stroke is
+// a run_inputs edge and nothing else, a
 // dotted rail is same-pipeline serial order (sequence, never ancestry), a replay
 // is an annotation never an edge, run-id gaps stay visible, --graph is
 // presentation only (--json never carries drawing), and past the rail cap the
@@ -69,8 +69,7 @@ func runGraphCLI(t *testing.T, sock string, args ...string) (stdout, stderr stri
 // stroke at all.
 func TestGraphSolidEdgesRunInputsOnly(t *testing.T) {
 	clearTargetEnv(t)
-	// spec: S08/graph-solid-edges-run-inputs-only
-	t.Run("S08/graph-solid-edges-run-inputs-only", func(t *testing.T) {
+	t.Run("graph-solid-edges-run-inputs-only", func(t *testing.T) {
 		sock := shortSocket(t)
 		// Newest-first: 4 unrelated (no edge), 3 consumes 2 (solid edge), 2 and 1
 		// are same-pipeline serial (dotted, never solid).
@@ -104,8 +103,7 @@ func TestGraphSolidEdgesRunInputsOnly(t *testing.T) {
 // and no fabricated ancestry.
 func TestGraphDottedSerialNeverAncestry(t *testing.T) {
 	clearTargetEnv(t)
-	// spec: S08/graph-dotted-serial-never-ancestry
-	t.Run("S08/graph-dotted-serial-never-ancestry", func(t *testing.T) {
+	t.Run("graph-dotted-serial-never-ancestry", func(t *testing.T) {
 		sock := shortSocket(t)
 		rows := []runRow{
 			{ID: "2", Pipeline: "p", State: "succeeded"},
@@ -141,8 +139,7 @@ func TestGraphDottedSerialNeverAncestry(t *testing.T) {
 // annotation on the run node and never as a graph edge: the annotation text is
 // present, and the replay adds no stroke beyond the (unrelated) serial rail.
 func TestGraphReplayAnnotationNeverEdge(t *testing.T) {
-	// spec: S08/graph-replay-annotation-never-edge
-	t.Run("S08/graph-replay-annotation-never-edge", func(t *testing.T) {
+	t.Run("graph-replay-annotation-never-edge", func(t *testing.T) {
 		rows := []runRow{
 			{ID: "5", Pipeline: "p", State: "dead_lettered", ReplayedFrom: "2"},
 			{ID: "4", Pipeline: "p", State: "succeeded"},
@@ -165,8 +162,7 @@ func TestGraphReplayAnnotationNeverEdge(t *testing.T) {
 // TestGraphIDGapsVisible proves missing run ids leave a visible gap and the
 // rendering never renumbers or fabricates continuity.
 func TestGraphIDGapsVisible(t *testing.T) {
-	// spec: S08/graph-id-gaps-visible
-	t.Run("S08/graph-id-gaps-visible", func(t *testing.T) {
+	t.Run("graph-id-gaps-visible", func(t *testing.T) {
 		rows := []runRow{
 			{ID: "10", Pipeline: "p", State: "succeeded"},
 			{ID: "8", Pipeline: "p", State: "succeeded"}, // 9 is missing
@@ -188,8 +184,7 @@ func TestGraphIDGapsVisible(t *testing.T) {
 // carries the same rows the flat read returns, and a --json read never carries
 // drawing.
 func TestGraphPresentationalOnly(t *testing.T) {
-	// spec: S08/graph-presentational-only
-	t.Run("S08/graph-presentational-only", func(t *testing.T) {
+	t.Run("graph-presentational-only", func(t *testing.T) {
 		rows := []runRow{
 			{ID: "2", Pipeline: "load", State: "succeeded", Inputs: []string{"1"}},
 			{ID: "1", Pipeline: "extract", State: "succeeded"},
@@ -230,8 +225,7 @@ func TestGraphPresentationalOnly(t *testing.T) {
 // TestGraphRailCapFilterHint proves that past the rail cap the renderer refuses
 // to weave and prints the --lane/--pipeline filter hint instead of degrading.
 func TestGraphRailCapFilterHint(t *testing.T) {
-	// spec: S08/graph-rail-cap-filter-hint
-	t.Run("S08/graph-rail-cap-filter-hint", func(t *testing.T) {
+	t.Run("graph-rail-cap-filter-hint", func(t *testing.T) {
 		var rows []runRow
 		for i := railCap + 5; i >= 1; i-- {
 			rows = append(rows, runRow{
@@ -256,8 +250,7 @@ func TestGraphRailCapFilterHint(t *testing.T) {
 // drives the real CLI end to end over a fake daemon socket.
 func TestGraphASCIIGolden(t *testing.T) {
 	clearTargetEnv(t)
-	// spec: S08/graph-ascii-golden
-	t.Run("S08/graph-ascii-golden", func(t *testing.T) {
+	t.Run("graph-ascii-golden", func(t *testing.T) {
 		sock := shortSocket(t)
 		rows := []runRow{
 			{ID: "7", Pipeline: "load_orders", State: "succeeded", ReplayedFrom: "3"},

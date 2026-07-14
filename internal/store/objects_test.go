@@ -12,18 +12,13 @@ import (
 )
 
 // TestObjectStoreContentAddressed proves the object-store half of the build
-// contract (specification sections 4 and 9, plus the spec's Naming block:
-// "object store" at objects_path holds content-addressed artifact bytes). A
-// successful build stores the produced binary's bytes as one plain file under
-// the binary's content hash: Put returns the SHA-256 hex hash of exactly the
-// bytes written, the bytes land at <root>/<hash> byte-for-byte, objects are
-// write-once (re-storing identical bytes is idempotent, never a rewrite), and
-// distinct bytes land under distinct hashes with earlier objects untouched.
-//
-// spec: S09/build-records-hash-and-bytes
-// spec: S10/objects-store-hash-keyed
-// spec: S14/object-store-content-addressed
-// spec: S14/objects-immutable-write-once
+// contract: the object store at objects_path holds content-addressed artifact
+// bytes. A successful build stores the produced binary's bytes as one plain file
+// under the binary's content hash: Put returns
+// the SHA-256 hex hash of exactly the bytes written, the bytes land at
+// <root>/<hash> byte-for-byte, objects are write-once (re-storing identical bytes
+// is idempotent, never a rewrite), and distinct bytes land under distinct hashes
+// with earlier objects untouched.
 func TestObjectStoreContentAddressed(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "objects")
 	s := store.NewObjectStore(root)

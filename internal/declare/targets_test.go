@@ -25,13 +25,12 @@ func writeDeclFile(t *testing.T, path, contents string) {
 const targetPipelineYAML = "name: extract\nrun: [python, main.py]\n"
 
 // TestResolveDeclarationFile proves the target-resolution rule behind iris
-// declare apply/destroy (specification sections 3, 6.3, and 8): a file target
+// declare apply/destroy: a file target
 // must be named iris-declare.yaml; a folder target resolves to its
 // iris-declare.yaml with no further search, so a folder with no top-level
 // declaration is a precise error rather than a sweep into nested ones.
 func TestResolveDeclarationFile(t *testing.T) {
-	// spec: S06.3/apply-single-file-resolution
-	t.Run("S06.3/apply-single-file-resolution", func(t *testing.T) {
+	t.Run("apply-single-file-resolution", func(t *testing.T) {
 		t.Run("file target named iris-declare.yaml resolves to itself", func(t *testing.T) {
 			dir := t.TempDir()
 			p := filepath.Join(dir, "iris-declare.yaml")
@@ -131,8 +130,7 @@ func TestResolveDeclarationFile(t *testing.T) {
 // ResolveDeclarationFile does and then parses the single resolved file,
 // propagating both resolution and parse failures untouched.
 func TestLoadDeclarationFile(t *testing.T) {
-	// spec: S03/apply-destroy-single-file
-	t.Run("S03/apply-destroy-single-file", func(t *testing.T) {
+	t.Run("apply-destroy-single-file", func(t *testing.T) {
 		t.Run("loads and parses the one resolved file", func(t *testing.T) {
 			dir := t.TempDir()
 			p := filepath.Join(dir, "iris-declare.yaml")

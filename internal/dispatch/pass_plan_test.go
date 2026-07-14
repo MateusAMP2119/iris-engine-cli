@@ -8,14 +8,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestPassFreshRunNoRetry proves each pass starts every open-gated pipeline as a FRESH
-// run on current data (cause=loop, no replayed_from), that the plan is a function of the
-// walk and the gate alone -- so it is stable pass to pass with no backoff state -- and
-// that a closed gate mints no run (specification sections 1 and 6.3). A failed run is
-// never retried here: the plan takes no prior-run outcome, and the run it starts is fresh
+// TestPassFreshRunNoRetry proves each pass starts every open-gated pipeline as a
+// FRESH run on current data (cause=loop, no replayed_from), that the plan is a
+// function of the walk and the gate alone -- so it is stable pass to pass with no
+// backoff state -- and that a closed gate mints no run. A failed run is never retried
+// here: the plan takes no prior-run outcome, and the run it starts is fresh
 // (cause=loop), never a re-dispatch of a specific earlier run.
 func TestPassFreshRunNoRetry(t *testing.T) {
-	t.Run("S06.3/pass-fresh-run-no-retry", func(t *testing.T) {
+	t.Run("pass-fresh-run-no-retry", func(t *testing.T) {
 		members := []string{"extract", "skipme", "transform"}
 		decide := map[string]dispatch.Decision{
 			"extract":   {Run: true},                      // ungated: runs every pass
@@ -61,12 +61,12 @@ func TestPassFreshRunNoRetry(t *testing.T) {
 }
 
 // TestNoAutoRetry proves the engine never automatically retries a failed run: a
-// dead-lettered upstream poisons the dependent's gate, so the pass plan starts no run for
-// it (failure propagates as post-pass bookkeeping, not a fresh loop run), and the plan
-// never emits a replay -- re-executing a dead-lettered run is only ever an explicit
-// operator replay (specification section 1).
+// dead-lettered upstream poisons the dependent's gate, so the pass plan starts no run
+// for it (failure propagates as post-pass bookkeeping, not a fresh loop run), and the
+// plan never emits a replay -- re-executing a dead-lettered run is only ever an
+// explicit operator replay.
 func TestNoAutoRetry(t *testing.T) {
-	t.Run("S01/no-auto-retry", func(t *testing.T) {
+	t.Run("no-auto-retry", func(t *testing.T) {
 		members := []string{"root", "dependent", "consumed"}
 		poisoned := dispatch.Decision{
 			Poisoned: true,

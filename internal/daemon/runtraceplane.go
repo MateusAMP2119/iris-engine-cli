@@ -14,11 +14,11 @@ import (
 
 // This file is the daemon's run-trace plane: the api.RunTraceHandler behind GET
 // /runs/{id}/trace?direction=up|down (and therefore `iris run show <run> --trace
-// [--down]` -- specification sections 7 and 14). It loads the meta lineage
-// (runs + summaries + run_inputs) from the reader pool, maps it to the pure
-// pg.Lineage, and walks it: up climbs the run's ancestry over run_inputs (one edge
-// per consumed upstream), down inverts it (who consumed this run) over the
-// upstream_run_id index. It is a read, served on any role, and mutates nothing.
+// [--down]`). It loads the meta lineage (runs + summaries + run_inputs) from the
+// reader pool, maps it to the pure pg.Lineage, and walks it: up climbs the run's
+// ancestry over run_inputs (one edge per consumed upstream), down inverts it (who
+// consumed this run) over the upstream_run_id index. It is a read, served on any
+// role, and mutates nothing.
 //
 // The walk is the full recursive ancestry (pg.FullAncestry) -- the same WITH
 // RECURSIVE the CLI surfaces -- resolving a pruned run's parents from its archival

@@ -20,15 +20,13 @@ func dbURLFromEnv(env []string) (string, bool) {
 }
 
 // TestManualRunScopedConnectionInjected proves the manual-run plane injects the
-// run-scoped data-database connection into the subprocess environment exactly as the
-// lane path does: the run id rides the base scoped DSN as the iris.run_id GUC
-// (pg.InjectRunID), so a manually-run pipeline's captured writes attribute to its own
-// run. The injection is a function of the base DSN plus the run id, identical whether
-// the run's cause is loop or manual (specification section 7).
-//
-// spec: S07/pipeline-scoped-connection-injected
+// run-scoped data-database connection into the subprocess environment exactly as
+// the lane path does: the run id rides the base scoped DSN as the iris.run_id GUC
+// (pg.InjectRunID), so a manually-run pipeline's captured writes attribute to its
+// own run. The injection is a function of the base DSN plus the run id, identical
+// whether the run's cause is loop or manual.
 func TestManualRunScopedConnectionInjected(t *testing.T) {
-	t.Run("S07/pipeline-scoped-connection-injected", func(t *testing.T) {
+	t.Run("pipeline-scoped-connection-injected", func(t *testing.T) {
 		const base = "postgres://writer:pw@localhost:5432/data?sslmode=disable" //nolint:gosec // G101: test-only fake DSN, not a real credential
 
 		t.Run("the run id rides the base scoped DSN", func(t *testing.T) {

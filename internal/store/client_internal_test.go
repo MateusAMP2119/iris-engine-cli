@@ -13,10 +13,8 @@ import (
 // DATABASE then loses a race (Postgres duplicate_database, 42P04), the outcome is
 // success -- the database exists, which is the goal -- rather than a fatal error. A
 // non-42P04 create error still propagates.
-//
-// spec: S02/one-leader-sole-dispatcher
 func TestEnsureMetaDatabaseRaceTolerant(t *testing.T) {
-	t.Run("S02/one-leader-sole-dispatcher", func(t *testing.T) {
+	t.Run("one-leader-sole-dispatcher", func(t *testing.T) {
 		absent := func(context.Context) (bool, error) { return false, nil }
 		present := func(context.Context) (bool, error) { return true, nil }
 

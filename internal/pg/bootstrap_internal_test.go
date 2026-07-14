@@ -16,10 +16,8 @@ import (
 // and a non-42P04 create error still propagates. This is the pure core of the
 // external-mode fix that lets apply (and its provisioning) run against an admin-owned
 // data database, proven with injected seams and no live Postgres.
-//
-// spec: S13/apply-repeat-noop
 func TestEnsureDataDatabaseRaceTolerant(t *testing.T) {
-	t.Run("S13/apply-repeat-noop", func(t *testing.T) {
+	t.Run("apply-repeat-noop", func(t *testing.T) {
 		absent := func(context.Context) (bool, error) { return false, nil }
 		present := func(context.Context) (bool, error) { return true, nil }
 

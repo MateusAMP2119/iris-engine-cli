@@ -80,7 +80,6 @@ func (p *lineageScriptPool) query(_ context.Context, sql string, args ...any) (p
 	return &lineageScriptRows{rows: rows}, nil
 }
 
-// spec: S07/runs-include-inputs
 func TestPgxRunLineagesNewestFirstWithInputs(t *testing.T) {
 	rf := int64(1)
 	pool := &lineageScriptPool{bySQL: map[string][][]any{
@@ -104,7 +103,6 @@ func TestPgxRunLineagesNewestFirstWithInputs(t *testing.T) {
 	}
 }
 
-// spec: S07/runs-include-inputs
 func TestPgxRunLineageByID(t *testing.T) {
 	pool := &lineageScriptPool{bySQL: map[string][][]any{
 		runLineageByIDSQL: {
@@ -128,7 +126,6 @@ func TestPgxRunLineageByID(t *testing.T) {
 	}
 }
 
-// spec: S07/runs-include-inputs
 func TestPgxRunLineageAbsent(t *testing.T) {
 	pool := &lineageScriptPool{bySQL: map[string][][]any{
 		runLineageByIDSQL: {}, // no rows: the id resolves to no run

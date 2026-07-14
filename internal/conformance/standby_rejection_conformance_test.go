@@ -29,8 +29,8 @@ func waitForStandby(t *testing.T, socket string) bool {
 
 // TestStandbyMutationRejection is the end-to-end proof, against a real Postgres
 // and the shipped binary, that mutations are the leader's alone and a standby
-// rejects them with leader guidance and exit 6 (specification sections 7, 8 and
-// 15). It stands up two real daemon candidates sharing one external meta: the
+// rejects them with leader guidance and exit 6. It stands up two real daemon
+// candidates sharing one external meta: the
 // first wins the advisory lock and leads; the second, blocked on that lock, stays
 // a standby. A mutation run through the shipped CLI against the standby's socket
 // must exit 6, and its message (and --json envelope) must carry the leader
@@ -107,16 +107,14 @@ func TestStandbyMutationRejection(t *testing.T) {
 		t.Fatalf("standby GET /leader named %q, want the live leader's advertised address %q", got, leaderAddr)
 	}
 
-	// spec: S15/standby-mutation-exit-6
-	t.Run("S15/standby-mutation-exit-6", func(t *testing.T) {
+	t.Run("standby-mutation-exit-6", func(t *testing.T) {
 		// A control mutation POSTed to the standby's socket is gated to the leader:
 		// the shipped CLI maps the not_leader rejection to exit 6.
 		res := bin.Run(t, RunOptions{Args: []string{"--socket", standbySock, "pipeline", "promote", "any_pipeline"}, Dir: standbyWS})
 		res.RequireExit(t, 6)
 	})
 
-	// spec: S07/standby-mutations-rejected-exit-6
-	t.Run("S07/standby-mutations-rejected-exit-6", func(t *testing.T) {
+	t.Run("standby-mutations-rejected-exit-6", func(t *testing.T) {
 		res := bin.Run(t, RunOptions{Args: []string{"--socket", standbySock, "pipeline", "promote", "any_pipeline"}, Dir: standbyWS})
 		res.RequireExit(t, 6)
 		// The rejection guides the operator to the leader (only the leader accepts
@@ -127,8 +125,7 @@ func TestStandbyMutationRejection(t *testing.T) {
 		}
 	})
 
-	// spec: S08/exit6-names-leader
-	t.Run("S08/exit6-names-leader", func(t *testing.T) {
+	t.Run("exit6-names-leader", func(t *testing.T) {
 		res := bin.Run(t, RunOptions{Args: []string{"--socket", standbySock, "--json", "pipeline", "promote", "any_pipeline"}, Dir: standbyWS})
 		res.RequireExit(t, 6)
 		// Under --json the single stdout document is the not_leader error envelope: its

@@ -1,14 +1,14 @@
 package store
 
-// This file is the local object store (specification sections 4, 9, and the
-// Naming block): the one home for heavy immutable payloads, a content-addressed
-// directory of plain files at objects_path (default .iris/objects/), keyed by
-// hash -- no daemon, no cloud client. The build path stores each produced
-// binary's bytes here under the binary's SHA-256 content hash; meta's artifacts
-// table holds only the hash and metadata (row = index, never payload), so no
-// binary blob ever lands in Postgres. Objects are immutable: written once,
-// deleted only by artifact retirement or engine uninstall. Sealed journal
-// partitions later share this home (E11), keyed by checkpoint digest.
+// This file is the local object store: the one home for heavy immutable payloads,
+// a content-addressed directory of plain files at objects_path
+// (default .iris/objects/), keyed by hash -- no daemon, no cloud client. The build
+// path stores each produced binary's bytes here under the binary's SHA-256
+// content hash; meta's artifacts table holds only the hash and metadata (row =
+// index, never payload), so no binary blob ever lands in Postgres. Objects are
+// immutable: written once, deleted only by artifact retirement or engine
+// uninstall. Sealed journal partitions later share this home (E11), keyed by
+// checkpoint digest.
 //
 // Ingestion is atomic and durable: bytes stream into a temp file in the store
 // root while the hash is computed, the temp file is fsynced, then one rename
@@ -121,8 +121,7 @@ func (s *ObjectStore) Put(r io.Reader) (hash string, size int64, err error) {
 // write-once: an existing key under the root is left untouched and its size
 // returned. The final file permissions are set to mode (0o555 for executables,
 // 0o444 for data archives). This satisfies object-store use for both artifact
-// bytes and sealed partitions (S10/objects-store-hash-keyed, S14/object-store-*,
-// S14/objects-immutable-write-once).
+// bytes and sealed partitions.
 func (s *ObjectStore) Publish(key string, r io.Reader, mode os.FileMode) (size int64, err error) {
 	if err := os.MkdirAll(s.root, 0o750); err != nil {
 		return 0, fmt.Errorf("store: object store: create root %s: %w", s.root, err)

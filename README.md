@@ -13,7 +13,6 @@
   <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=for-the-badge&logo=go" alt="Go 1.25+">
   <img src="https://img.shields.io/badge/Postgres-16%2B-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres 16+">
   <img src="https://img.shields.io/badge/cgo-free-brightgreen?style=for-the-badge" alt="cgo-free">
-  <img src="https://img.shields.io/badge/Contracts-517%20traced-blueviolet?style=for-the-badge" alt="517 contracts">
 </p>
 
 ----
@@ -200,24 +199,18 @@ cli ──► daemon/api ──► dispatch ──► store (meta db) / pg (data
 
 ---
 
-## Spec-first, test-driven
+## Tested
 
-This repo is built spec-first: [`docs/Iris Specification Inventory.md`](docs/Iris%20Specification%20Inventory.md) is the source of truth and the test suite is its executable form. Every behavior is a numbered contract in [`spec/contracts.yaml`](spec/contracts.yaml), **517 contracts** in all, and a traceability gate fails the build if any non-exempt contract lacks a claiming test. The implementation is regenerable; the spec and the suite are the durable assets.
-
-| Tier | Contracts | What it means |
-|---|---|---|
-| unit | 191 | pure logic, no I/O |
-| integration | 229 | fakes and local process I/O, no live Postgres |
-| conformance | 76 | the real shipped binary, a running daemon, real Postgres |
-| exempt | 21 | naming/rationale/doctrine; no test required |
+The suite runs in two tiers. The default tier is database-free: unit tests for pure logic and integration tests that use fakes and local process I/O — including the architecture tests that fail the build when a dependency points the wrong way. The conformance tier is the opposite end: it builds the real binary, starts a real daemon, talks to it over its socket, and runs against real Postgres, so the shipped artifact is what gets exercised. It sits behind the `conformance` build tag and is excluded from the default run.
 
 ```sh
 go test -race ./...                                                        # unit + integration (database-free)
-go test ./internal/trace/...                                               # traceability gate
 go test -race -tags conformance -timeout 20m ./internal/conformance/...   # real binary + real Postgres, ~11 min
 ```
 
-CI runs all of the above on Go 1.25 and 1.26, plus golangci-lint and the cross-compile matrix, with conformance against Postgres 17. Nothing merges red.
+Conformance wants `IRIS_PG_DSN` pointing at a Postgres 16+ cluster whose role has `CREATEDB` + `CREATEROLE`; without it, the suite provisions embedded Postgres where it can.
+
+CI runs both tiers on Go 1.25 and 1.26, plus golangci-lint and the cross-compile matrix, with conformance against Postgres 17. Nothing merges red.
 
 ---
 
@@ -225,11 +218,9 @@ CI runs all of the above on Go 1.25 and 1.26, plus golangci-lint and the cross-c
 
 | Document | What's covered |
 |---|---|
-| [Specification Inventory](docs/Iris%20Specification%20Inventory.md) | The full spec: every behavior, table, endpoint, and doctrine. Source of truth; on conflict, the spec wins |
 | [Epics](docs/Iris%20Epics.md) | The 15 capability epics (E00–E14) and their build-dependency order |
-| [Tasks](docs/Tasks) | Per-task briefs: contract lists, dependencies, Done-when checklists |
-| [CLAUDE.md](CLAUDE.md) | TDD doctrine, branching rules, and conventions |
-| (BUILD_STATE.md retired) | |
+| [CLAUDE.md](CLAUDE.md) | Build and test commands, branching rules, and conventions |
+| [Cloudflare install setup](docs/CLOUDFLARE_INSTALL_SETUP.md) | Wiring the short install URL to the release assets |
 
 ---
 
@@ -252,6 +243,6 @@ Merging a PR into `master` is now the **only** action required to produce a new 
 
 ## Status
 
-All 15 epics (E00–E14) are **complete on `development`**: full CI green, zero unclaimed contracts, full conformance suite passing under `-race`. Epic checkpoint merges to `master` are in progress.
+All 15 epics (E00–E14) are **complete on `development`**: full CI green, full conformance suite passing under `-race`. Epic checkpoint merges to `master` are in progress.
 
-Built spec-first and test-first, end to end, by AI coding agents working under the TDD doctrine in [CLAUDE.md](CLAUDE.md): every line of source written by a coder agent against failing contract tests, every merge gated by the traceability suite.
+Built test-first, end to end, by AI coding agents working under the conventions in [CLAUDE.md](CLAUDE.md): every line of source written against failing tests, nothing merged red.

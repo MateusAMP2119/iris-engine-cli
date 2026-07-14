@@ -15,14 +15,13 @@ import (
 )
 
 // This file is the daemon's leader-side build plane: the composition root that
-// turns POST /pipeline/build into the dispatch build op (specification sections 1,
-// 8, and 9). It sits at the top of the import graph (daemon composes api, dispatch,
-// exec, and store) and is the one place they are wired together for the explicit
-// build path: the pipeline's run target is read from meta (folder + run vector, the
-// recipe inference input), the pinned recipe's toolchain runs through the exec seam
-// in the pipeline's workspace folder, the produced binary's bytes land in the
-// content-addressed object store at objects_path, and the content hash rides the
-// single meta writer into artifacts.
+// turns POST /pipeline/build into the dispatch build op. It sits at the top of the
+// import graph (daemon composes api, dispatch, exec, and store) and is the one
+// place they are wired together for the explicit build path: the pipeline's run
+// target is read from meta (folder + run vector, the recipe inference input), the
+// pinned recipe's toolchain runs through the exec seam in the pipeline's workspace
+// folder, the produced binary's bytes land in the content-addressed object store at
+// objects_path, and the content hash rides the single meta writer into artifacts.
 //
 // Building is a mutation -- it writes meta and the object store and executes a
 // subprocess -- so it is leader-only, exactly like the manual-run plane: the

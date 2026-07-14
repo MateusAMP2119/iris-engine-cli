@@ -52,8 +52,7 @@ func mustCatalog(t *testing.T) *pipelineCatalog {
 func TestQuickstartCatalogBrowseRender(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-catalog-browse-render
-	t.Run("S08/quickstart-catalog-browse-render", func(t *testing.T) {
+	t.Run("quickstart-catalog-browse-render", func(t *testing.T) {
 		t.Run("the numbered shop paints names and pitches, then asks the pinned pick", func(t *testing.T) {
 			chdirWorkspace(t)
 			var out, errb bytes.Buffer
@@ -191,8 +190,7 @@ func TestQuickstartCatalogBrowseRender(t *testing.T) {
 func TestQuickstartCatalogPickMaterializeRun(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-catalog-pick-materialize-run
-	t.Run("S08/quickstart-catalog-pick-materialize-run", func(t *testing.T) {
+	t.Run("quickstart-catalog-pick-materialize-run", func(t *testing.T) {
 		t.Run("picking word_frequency runs word_frequency only", func(t *testing.T) {
 			dir := chdirWorkspace(t)
 			var out, errb bytes.Buffer
@@ -263,8 +261,7 @@ func TestQuickstartCatalogPickMaterializeRun(t *testing.T) {
 func TestQuickstartCatalogPipelineFlag(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-catalog-pipeline-flag
-	t.Run("S08/quickstart-catalog-pipeline-flag", func(t *testing.T) {
+	t.Run("quickstart-catalog-pipeline-flag", func(t *testing.T) {
 		t.Run("interactive: browse skipped, detail still prints, steps carry the pick", func(t *testing.T) {
 			chdirWorkspace(t)
 			var out, errb bytes.Buffer
@@ -362,8 +359,7 @@ func TestQuickstartCatalogPipelineFlag(t *testing.T) {
 func TestQuickstartCatalogInGuides(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-catalog-in-guides
-	t.Run("S08/quickstart-catalog-in-guides", func(t *testing.T) {
+	t.Run("quickstart-catalog-in-guides", func(t *testing.T) {
 		t.Run("the plain guide lists the catalog and the selected entry's steps", func(t *testing.T) {
 			scratch := t.TempDir()
 			t.Chdir(scratch)

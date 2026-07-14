@@ -1,16 +1,16 @@
 // Package buildcheck is the Iris integration-tier build harness: it proves the
-// two build-configuration contracts of specification section 9 by driving the Go
-// toolchain as a local subprocess (no Postgres, no daemon) and by reading the
-// module's own build wiring -- go.mod and the CI workflow.
+// engine's two build-configuration contracts by driving the Go toolchain as a
+// local subprocess (no Postgres, no daemon) and by reading the module's own build
+// wiring -- go.mod and the CI workflow.
 //
-//   - S09/cgo-free-static-binary: building ./cmd/iris with cgo disabled succeeds
+//   - Cgo-free static binary: building ./cmd/iris with cgo disabled succeeds
 //     and yields a portable, statically linked binary. Static linkage is asserted
 //     platform-conditionally: on linux the binary must have no dynamic
 //     dependencies (ldd reports "not a dynamic executable"); on darwin the Go
 //     runtime always links the system libSystem/libresolv dylibs even cgo-free, so
 //     a zero-dynamic-deps assertion cannot hold there and the honest proof is the
 //     recorded CGO_ENABLED=0 build setting plus a running binary.
-//   - S09/go-version-floor-and-target: the module compiles under the floor
+//   - Go version floor and target: the module compiles under the floor
 //     toolchain Go 1.25 and the target toolchain Go 1.26. The two-toolchain proof
 //     is CI's job matrix (pinned here by reading .github/workflows/ci.yml);
 //     locally the honest legs are go.mod's floor directive plus a real build under
@@ -29,8 +29,8 @@ import (
 )
 
 // floorGoVersion is the module's floor toolchain: the minimum Go the engine
-// compiles under and the lower end of the CI build matrix. The spec fixes it
-// (section 9: "Target Go 1.26, floor 1.25; CI builds both").
+// compiles under and the lower end of the CI build matrix. Floor 1.25, target
+// 1.26; CI builds both.
 const floorGoVersion = "1.25"
 
 // targetGoVersion is the module's target toolchain: the upper end of the CI
@@ -82,8 +82,7 @@ func goDirective(goMod []byte) string {
 
 // ciWorkflow is the slice of a GitHub Actions workflow this harness reads: each
 // job's env, its build-matrix Go versions, and its steps' env. It captures only
-// the fields the section-9 build contracts pin; everything else in the YAML is
-// ignored.
+// the fields the build contracts pin; everything else in the YAML is ignored.
 type ciWorkflow struct {
 	Jobs map[string]ciJob `yaml:"jobs"`
 }

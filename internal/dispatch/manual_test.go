@@ -17,10 +17,8 @@ import (
 // mechanism, no manual-only relaxation; (2) an open manual gate mints a run record
 // cause=manual whose consumed upstream ids are precisely the upstream runs the gate
 // resolved (Decision.Consume), 1:1. Ineligible and poisoned gates mint no run.
-//
-// spec: S08/manual-run-gate-consumption
 func TestManualRunAppliesGateLikeLoopPassAndConsumes(t *testing.T) {
-	t.Run("S08/manual-run-gate-consumption", func(t *testing.T) {
+	t.Run("manual-run-gate-consumption", func(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("open gate mints cause=manual consuming the resolved upstreams 1:1", func(t *testing.T) {
@@ -97,7 +95,7 @@ func TestManualRunAppliesGateLikeLoopPassAndConsumes(t *testing.T) {
 				t.Fatalf("disposition = %v, want ManualIneligible", mg.Disposition)
 			}
 			if mg.Reason == "" {
-				t.Error("ineligible manual run carried no reason (spec: exit 4 + reason)")
+				t.Error("ineligible manual run carried no reason (exit 4 must carry one)")
 			}
 			if mg.Record.Cause != "" || mg.Record.Pipeline != "" {
 				t.Errorf("ineligible manual run minted a record %+v, want none", mg.Record)

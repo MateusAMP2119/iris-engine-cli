@@ -11,9 +11,9 @@ import (
 
 // This file is the engine-owned access-ledger write surface: the meta writes that
 // register a Postgres role's owner, replace its field-level grants, and store its
-// engine-managed login credential (specification section 4). Truth lives in meta and
-// is reconciled onto the data database (the DDL rendering is internal/pg; the
-// reconcile execution is E04.3). Every write rides the single meta writer.
+// engine-managed login credential. Truth lives in meta and is reconciled onto the
+// data database (the DDL rendering is internal/pg; the reconcile execution is
+// E04.3). Every write rides the single meta writer.
 //
 // Three shapes, one ledger:
 //   - roles maps a pg_role to exactly one owner, a pipeline XOR a data PAT. The
@@ -28,8 +28,8 @@ import (
 // GrantAccess is a grant's access kind (grants.access): read or write.
 type GrantAccess string
 
-// The grant access kinds. reads declare read access, writes declare write access
-// (specification section 3), both recorded per field in the grants ledger.
+// The grant access kinds. reads declare read access, writes declare write access,
+// both recorded per field in the grants ledger.
 const (
 	// AccessRead is field-level read access (a declared reads entry).
 	AccessRead GrantAccess = "read"
@@ -68,9 +68,8 @@ const (
 )
 
 // RoleOwner identifies the single owner of an engine-managed Postgres role: a
-// pipeline or a data PAT, exactly one (specification section 4). Build one with
-// PipelineOwner or DataPATOwner; the zero value is invalid and RegisterRole
-// rejects it.
+// pipeline or a data PAT, exactly one. Build one with PipelineOwner or
+// DataPATOwner; the zero value is invalid and RegisterRole rejects it.
 type RoleOwner struct {
 	// Kind is which owner this is.
 	Kind RoleOwnerKind
@@ -99,8 +98,7 @@ func (o RoleOwner) IsLogin() bool { return o.Kind == OwnerPipeline }
 var ErrInvalidRoleOwner = errors.New("store: role owner must be exactly one of a named pipeline or a named data PAT")
 
 // ErrDataPATRoleNoCredential is returned by SetCredential for a data-PAT role: it
-// is NOLOGIN and holds no credential (specification sections 4 and 7). Callers test
-// it with errors.Is.
+// is NOLOGIN and holds no credential. Callers test it with errors.Is.
 var ErrDataPATRoleNoCredential = errors.New("store: a data-PAT role is NOLOGIN and holds no credential; credentials hold pipeline login roles only")
 
 // ErrEmptySecret is returned by SetCredential when the secret is the zero value: a
@@ -134,9 +132,9 @@ ON CONFLICT (pg_role) DO UPDATE SET secret = EXCLUDED.secret`
 
 // RegisterRole registers (or re-registers) a Postgres role's owner in the access
 // ledger: it upserts the roles row with exactly one owner column set -- pipeline
-// XOR pat (specification section 4). The owner is validated first, so an ownerless
-// or dual-owner write never reaches meta to trip the roles CHECK. It is a single
-// atomic statement and a leader-only meta write, riding the single Writer.
+// XOR pat. The owner is validated first, so an ownerless or dual-owner write
+// never reaches meta to trip the roles CHECK. It is a single atomic statement and
+// a leader-only meta write, riding the single Writer.
 func (w *Writer) RegisterRole(ctx context.Context, pgRole string, owner RoleOwner) error {
 	if pgRole == "" {
 		return fmt.Errorf("store: writer register role: %w", ErrInvalidRoleOwner)
@@ -171,10 +169,9 @@ func (o RoleOwner) columns() (pipeline, pat any, err error) {
 // ReplaceGrants rewrites a role's field-level grants as one atomic full-role
 // rewrite: it clears the role's existing grant rows and re-inserts the given set,
 // one row per grant carrying (pg_role, schema, table, field, access), in a single
-// meta transaction (specification section 4). An empty set clears the role's grants
-// and writes no row. The whole batch commits together or not at all, so the ledger
-// never reflects a partial grant set. It is a leader-only meta write, riding the
-// single Writer.
+// meta transaction. An empty set clears the role's grants and writes no row. The
+// whole batch commits together or not at all, so the ledger never reflects a
+// partial grant set. It is a leader-only meta write, riding the single Writer.
 func (w *Writer) ReplaceGrants(ctx context.Context, pgRole string, grants []Grant) error {
 	if pgRole == "" {
 		return fmt.Errorf("store: writer replace grants: empty pg_role")
@@ -190,11 +187,10 @@ func (w *Writer) ReplaceGrants(ctx context.Context, pgRole string, grants []Gran
 }
 
 // SetCredential stores the engine-managed secret for a pipeline LOGIN role,
-// upserting the credentials row (specification section 4). It is guarded to login
-// roles: a data-PAT owner is NOLOGIN and holds no credential, so it returns
-// ErrDataPATRoleNoCredential and writes nothing. The secret must be non-empty. It
-// is a single atomic statement and a leader-only meta write, riding the single
-// Writer.
+// upserting the credentials row. It is guarded to login roles: a data-PAT owner
+// is NOLOGIN and holds no credential, so it returns ErrDataPATRoleNoCredential
+// and writes nothing. The secret must be non-empty. It is a single atomic
+// statement and a leader-only meta write, riding the single Writer.
 func (w *Writer) SetCredential(ctx context.Context, pgRole string, owner RoleOwner, secret Secret) error {
 	if pgRole == "" {
 		return fmt.Errorf("store: writer set credential: empty pg_role")
@@ -211,15 +207,15 @@ func (w *Writer) SetCredential(ctx context.Context, pgRole string, owner RoleOwn
 	return nil
 }
 
-// RenderSetRolePassword renders the credential-bearing DDL that sets a pipeline login
-// role's password to the engine-minted secret: ALTER ROLE "role" WITH PASSWORD
-// '<secret>' (specification sections 4 and 7). It lives here -- beside Secret, the one
-// place a credential's raw value is revealed -- so the secret never leaves store
-// except through its deliberate exits; the live role provisioner (internal/pg)
-// executes the returned statement in order but never constructs or logs it. The role
-// name is a quoted identifier and the secret a quoted string literal, so neither can
-// break the statement. The secret is engine-minted (base64url, no metacharacters), but
-// it is quoted defensively regardless.
+// RenderSetRolePassword renders the credential-bearing DDL that sets a pipeline
+// login role's password to the engine-minted secret: ALTER ROLE "role" WITH
+// PASSWORD '<secret>'. It lives here -- beside Secret, the one place a
+// credential's raw value is revealed -- so the secret never leaves store except
+// through its deliberate exits; the live role provisioner (internal/pg) executes
+// the returned statement in order but never constructs or logs it. The role name
+// is a quoted identifier and the secret a quoted string literal, so neither can
+// break the statement. The secret is engine-minted (base64url, no
+// metacharacters), but it is quoted defensively regardless.
 func RenderSetRolePassword(role string, secret Secret) string {
 	// The role is engine-derived and quoted as an identifier; the secret is an
 	// engine-minted base64url credential quoted as a SQL string literal (single quotes
@@ -257,7 +253,7 @@ const secretBytes = 32
 // path: it has one unexported field, implements fmt.Formatter, fmt.Stringer, and
 // fmt.GoStringer to redact, and exposes the raw string only to the credentials
 // write bind (reveal, within this package). It is engine-managed: authors and
-// consumers never handle it (specification section 7).
+// consumers never handle it.
 type Secret struct {
 	// value is the raw secret. Unexported so no reflection-based encoder
 	// (encoding/json, etc.) can serialize it, keeping the secret memory-only until

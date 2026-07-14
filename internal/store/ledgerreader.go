@@ -5,12 +5,11 @@ import (
 	"fmt"
 )
 
-// This file is the applied-migration-head read path: the plain-MVCC read of the meta
-// migrations table that reconstructs each declared table's applied head, so
-// provisioning can diff the on-disk migration ledger against what is already applied
-// and stay idempotent (specification sections 4 and 5). Like every meta read it is a
-// plain pooled MVCC query, never serialized through the single writer and never
-// retried.
+// This file is the applied-migration-head read path: the plain-MVCC read of the
+// meta migrations table that reconstructs each declared table's applied head, so
+// provisioning can diff the on-disk migration ledger against what is already
+// applied and stay idempotent. Like every meta read it is a plain pooled MVCC
+// query, never serialized through the single writer and never retried.
 
 // AppliedHeadReader reads each declared table's greatest applied migration id from
 // the meta migrations ledger. A pgx-pool-backed implementation and a fake both

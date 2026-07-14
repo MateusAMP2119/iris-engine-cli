@@ -1,25 +1,23 @@
 package dispatch
 
-// This file is the promote op: the leader-side path behind `iris pipeline
-// promote <name>` (specification sections 1, 5, and 12). Promotion marks a
-// pipeline's data permanent, and it is gated on built: the flip is refused
-// whenever the pipeline is not in built state, so a source-only pipeline can
-// never hold permanent data (the same blocked matrix cell
+// This file is the promote op: the leader-side path behind `iris pipeline promote
+// <name>`. Promotion marks a pipeline's data permanent, and it is gated on built: the
+// flip is refused whenever the pipeline is not in built state, so a source-only
+// pipeline can never hold permanent data (the same blocked matrix cell
 // store.ValidateModeMatrix and pg.PermanentRequiresBuilt enforce at their own
-// boundaries -- the gate here reuses pg.PermanentRequiresBuilt so the rule can
-// never drift). An admitted promote has exactly two effects, in order: the
-// journal-side marker flip on the data database (open entries retired to
-// promoted; internal/pg's promote.go owns that model, reached through the
-// JournalPromoter seam), then the per-pipeline data_mode flip in meta through
-// the single writer -- the control truth wipe scope is decided from. Nothing is
-// copied, moved, or deleted; capture and provenance continue unchanged.
+// boundaries -- the gate here reuses pg.PermanentRequiresBuilt so the rule can never
+// drift). An admitted promote has exactly two effects, in order: the journal-side
+// marker flip on the data database (open entries retired to promoted; internal/pg's
+// promote.go owns that model, reached through the JournalPromoter seam), then the
+// per-pipeline data_mode flip in meta through the single writer -- the control truth
+// wipe scope is decided from. Nothing is copied, moved, or deleted; capture and
+// provenance continue unchanged.
 //
-// Promote also repeats the cross-mode read warning apply raised: while any
-// depends_on upstream is still in disposable data_mode, the outcome carries one
-// advisory warning per such upstream (specification section 5: legitimate
-// mid-promotion; warn, never refuse). The warnings are computed by the same
-// declare.CheckCrossModeReads rule apply uses, over the upstream data modes
-// read from meta, so apply and promote can never disagree on the warning.
+// Promote also repeats the cross-mode read warning apply raised: while any depends_on
+// upstream is still in disposable data_mode, the outcome carries one advisory warning
+// per such upstream (legitimate mid-promotion; warn, never refuse). The warnings are
+// computed by the same declare.CheckCrossModeReads rule apply uses, over the upstream
+// data modes read from meta, so apply and promote can never disagree on the warning.
 
 import (
 	"context"
@@ -95,17 +93,16 @@ func NewPromoter(state store.PromoteStateReader, submit Submitter, opts ...Promo
 	return p
 }
 
-// Promote marks the named pipeline's data permanent (specification sections 1
-// and 5). The gate runs first, against meta facts read through the plain-MVCC
-// seam: an unregistered pipeline is refused outright, and an un-built pipeline
-// is refused by the durability gate (pg.PermanentRequiresBuilt) -- promote is
-// gated on built, so a source-only pipeline can never hold permanent data. An
-// admitted promote flips the journal's open entries to promoted (the data
-// database), then flips the pipeline's data_mode in meta from disposable to
-// permanent through the single writer; a pipeline already permanent skips the
-// meta write (the flip is one-way and idempotent). The outcome repeats the
-// cross-mode read warning for every upstream still disposable, on every
-// invocation, until the upstream itself is promoted.
+// Promote marks the named pipeline's data permanent. The gate runs first, against
+// meta facts read through the plain-MVCC seam: an unregistered pipeline is refused
+// outright, and an un-built pipeline is refused by the durability gate
+// (pg.PermanentRequiresBuilt) -- promote is gated on built, so a source-only pipeline
+// can never hold permanent data. An admitted promote flips the journal's open entries
+// to promoted (the data database), then flips the pipeline's data_mode in meta from
+// disposable to permanent through the single writer; a pipeline already permanent
+// skips the meta write (the flip is one-way and idempotent). The outcome repeats the
+// cross-mode read warning for every upstream still disposable, on every invocation,
+// until the upstream itself is promoted.
 func (p *Promoter) Promote(ctx context.Context, name string) (PromoteOutcome, error) {
 	mode, found, err := p.state.PipelineDataMode(ctx, name)
 	if err != nil {

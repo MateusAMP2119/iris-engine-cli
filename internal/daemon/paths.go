@@ -11,12 +11,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 )
 
-// This file fixes the runtime paths under the workspace .iris tree that the
-// daemon owns (specification section 10): the log directory and its daemon.log,
-// the per-run run-<id>.log naming convention, and the pidfile a detached daemon
-// records so `iris engine stop` can address it. The socket, iris.toml, objects,
-// and managed-Postgres paths live in config and managedpg.go; these are the
-// remaining .iris leaves.
+// This file fixes the runtime paths under the workspace .iris tree that the daemon
+// owns: the log directory and its daemon.log, the per-run run-<id>.log naming
+// convention, and the pidfile a detached daemon records so `iris engine stop` can
+// address it. The socket, iris.toml, objects, and managed-Postgres paths live in
+// config and managedpg.go; these are the remaining .iris leaves.
 
 const (
 	// logsDirName is the log subdirectory under the workspace .iris tree.
@@ -40,16 +39,16 @@ func LogsDir(s config.Settings) string {
 	return filepath.Join(irisDir(s), logsDirName)
 }
 
-// LogPath returns the daemon log path, <workspace>/.iris/logs/daemon.log: where
-// the detached daemon's stdout/stderr are redirected (specification section 10).
+// LogPath returns the daemon log path, <workspace>/.iris/logs/daemon.log: where the
+// detached daemon's stdout/stderr are redirected.
 func LogPath(s config.Settings) string {
 	return filepath.Join(LogsDir(s), daemonLogName)
 }
 
 // RunLogPath returns a per-run log path, <workspace>/.iris/logs/run-<id>.log, the
-// run-id-keyed naming convention run output follows (specification section 11;
-// runs.log_ref). The run logs themselves are written by the dispatcher (E05);
-// this fixes the path convention the whole engine shares.
+// run-id-keyed naming convention run output follows (runs.log_ref). The run logs
+// themselves are written by the dispatcher (E05); this fixes the path convention
+// the whole engine shares.
 func RunLogPath(s config.Settings, runID string) string {
 	return filepath.Join(LogsDir(s), "run-"+runID+".log")
 }
@@ -121,7 +120,7 @@ func RemovePIDFile(s config.Settings) error {
 	return nil
 }
 
-// requireWorkspaceTree enforces the per-host prerequisite (S15/candidate-requires-workspace-tree):
+// requireWorkspaceTree enforces the per-host prerequisite:
 // a daemon candidate started on a host lacking the workspace tree the leader dispatches
 // from (pipeline folders, dev source, env_files) refuses to start. The check is performed
 // with the resolved CWD early in Run so no managed PG or listeners are started for an

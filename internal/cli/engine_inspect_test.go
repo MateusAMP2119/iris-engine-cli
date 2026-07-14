@@ -32,8 +32,8 @@ func startInspectDaemon(t *testing.T, sock string) {
 }
 
 // TestEngineInspectDumpsDDL proves `iris engine inspect` dumps the engine-table
-// DDL as a read-only operation (specification sections 4 and 11): the dump names
-// the meta control tables and the data journal as create-if-missing statements,
+// DDL as a read-only operation: the dump names the meta control tables and the
+// data journal as create-if-missing statements,
 // every statement is a CREATE (nothing that could mutate state), repeated reads
 // return the identical dump, and the route refuses any non-GET method.
 func TestEngineInspectDumpsDDL(t *testing.T) {
@@ -41,8 +41,7 @@ func TestEngineInspectDumpsDDL(t *testing.T) {
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	// spec: S11/inspect-dumps-engine-ddl
-	t.Run("S11/inspect-dumps-engine-ddl", func(t *testing.T) {
+	t.Run("inspect-dumps-engine-ddl", func(t *testing.T) {
 		sock := shortSocket(t)
 		startInspectDaemon(t, sock)
 
@@ -112,7 +111,6 @@ func TestEngineInspectDumpsDDL(t *testing.T) {
 	})
 
 	t.Run("no daemon reachable exits 3", func(t *testing.T) {
-		// spec: S11/inspect-dumps-engine-ddl
 		sock := shortSocket(t) // nothing listening
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"--socket", sock, "engine", "inspect"})

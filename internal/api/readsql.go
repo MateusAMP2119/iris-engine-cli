@@ -12,17 +12,17 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the SQL-safety layer of the read API (specification section 7):
-// the surface executes only engine-built statements with bound params, and caller
-// input never becomes SQL text. For /q the statement text is the endpoint's
-// compiled SQL, fixed at apply; for /data it is assembled here -- once per shape,
-// from validated bare identifiers only -- into the same fixed-text,
-// all-params-optional form the endpoint compiler emits, so request handling never
-// assembles SQL for either route: BindArgs turns a validated QueryPlan into the
-// positional argument vector the read pool binds against the prepared text.
-// Every identifier is a single bare name (no dots, no quotes), so a statement can
-// never carry a database-qualified reference: meta, a separate database, is
-// unaddressable from the data surface.
+// This file is the SQL-safety layer of the read API: the surface executes only
+// engine-built statements with bound params, and caller input never becomes SQL
+// text. For /q the statement text is the endpoint's compiled SQL, fixed at
+// apply; for /data it is assembled here -- once per shape, from validated bare
+// identifiers only -- into the same fixed-text, all-params-optional form the
+// endpoint compiler emits, so request handling never assembles SQL for either
+// route: BindArgs turns a validated QueryPlan into the positional argument
+// vector the read pool binds against the prepared text. Every identifier is a
+// single bare name (no dots, no quotes), so a statement can never carry a
+// database-qualified reference: meta, a separate database, is unaddressable
+// from the data surface.
 
 // bareIdentRe is the shape of every identifier the /data assembler accepts: one
 // bare lowercase Postgres name. No dot (no schema-, database-, or
@@ -60,16 +60,16 @@ func checkBareIdent(kind, name string) error {
 }
 
 // BuildDataStatement assembles the fixed statement for one /data shape from
-// validated identifiers only (specification section 7): schema, table, the
-// projected columns, the filterable columns with their Postgres types, and the
-// table's primary key. Every name must be a single bare identifier and every type
-// a plain type token; anything else is refused, so no caller-influenced byte ever
-// reaches statement text. The output is deterministic: each filter column binds
-// one equality slot plus an inclusive range pair (<col>_from / <col>_to, the
-// /data grammar's eq/range filters; a range param whose name collides with
-// another filter column is skipped, the declared column wins), in sorted column
-// order, then the keyset after cursor (single-column primary keys only), then
-// the limit, mirroring the endpoint compiler's optional-NULL-bound form. The
+// validated identifiers only: schema, table, the projected columns, the
+// filterable columns with their Postgres types, and the table's primary key.
+// Every name must be a single bare identifier and every type a plain type
+// token; anything else is refused, so no caller-influenced byte ever reaches
+// statement text. The output is deterministic: each filter column binds one
+// equality slot plus an inclusive range pair (<col>_from / <col>_to, the /data
+// grammar's eq/range filters; a range param whose name collides with another
+// filter column is skipped, the declared column wins), in sorted column order,
+// then the keyset after cursor (single-column primary keys only), then the
+// limit, mirroring the endpoint compiler's optional-NULL-bound form. The
 // statement references only the given columns -- callers pass the columns a
 // request actually addresses, so no unaddressed column's grant is ever dragged
 // into a read.

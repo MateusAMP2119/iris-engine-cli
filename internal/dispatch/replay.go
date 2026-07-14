@@ -2,13 +2,12 @@ package dispatch
 
 // This file is the pure dead-letter replay logic: the worklist-exit model, the
 // failed_upstream root walk, the self-supersession rule, and the dead-lettering
-// replay signal (specification sections 4 and 6.2). It is pure -- no I/O, no meta
-// access -- so replay's decisions are a function of the worklist alone: which entry
-// is a root cause, which propagated entry walks to which root, which propagated
-// entry has already superseded itself, and whether a replay batch re-dead-lettered
-// (the condition the replay command maps to exit 5). The write that mints the fresh
-// replacement run and removes the replaced entry is store.ReplayRun; this file owns
-// only the decision the dispatcher feeds it.
+// replay signal. It is pure -- no I/O, no meta access -- so replay's decisions are a
+// function of the worklist alone: which entry is a root cause, which propagated entry
+// walks to which root, which propagated entry has already superseded itself, and
+// whether a replay batch re-dead-lettered (the condition the replay command maps to
+// exit 5). The write that mints the fresh replacement run and removes the replaced
+// entry is store.ReplayRun; this file owns only the decision the dispatcher feeds it.
 
 import (
 	"fmt"
@@ -18,14 +17,14 @@ import (
 )
 
 // WorklistExit is one of the three -- and only three -- ways a dead_letters row
-// leaves the worklist (specification sections 4 and 6.2): a replay that mints a
-// replacement run, a supersession, or a drain. Every exit disposes of the parking
-// row while the run row stays in runs; the set is closed, so a fourth disposition is
-// a bug, never a default. Drain is delivered by E05.8; the model names it here so
-// the closed exit set is asserted whole.
+// leaves the worklist: a replay that mints a replacement run, a supersession, or a
+// drain. Every exit disposes of the parking row while the run row stays in runs; the
+// set is closed, so a fourth disposition is a bug, never a default. Drain is
+// delivered by E05.8; the model names it here so the closed exit set is asserted
+// whole.
 type WorklistExit int
 
-// The worklist exit paths (the closed set of specification section 6.2).
+// The worklist exit paths (a closed set).
 const (
 	// ExitReplay is a replay: a fresh run is minted on current data and the replaced
 	// entry is removed (the replacement mints, the worklist exits).
@@ -71,14 +70,14 @@ func (e WorklistExit) RemovesWorklistEntry() bool { return e.valid() }
 
 // RetainsRunRow reports that this exit path leaves the run row in runs. Every exit
 // path retains it: disposing of a worklist entry never deletes run history (the run
-// stays in runs, its summary outlives pruning -- specification section 4).
+// stays in runs, its summary outlives pruning).
 func (e WorklistExit) RetainsRunRow() bool { return e.valid() }
 
-// DeadLetterEntry is one worklist row as replay resolution sees it (specification
-// section 4): the dead-lettered run, its pipeline, its reason, and -- for a
-// propagated entry -- the immediate upstream dead-lettered run it propagated from
-// (derived from run_inputs; zero for a root cause). It carries only what the root
-// walk and the supersession rule need; the write path reads the full rows.
+// DeadLetterEntry is one worklist row as replay resolution sees it: the dead-lettered
+// run, its pipeline, its reason, and -- for a propagated entry -- the immediate
+// upstream dead-lettered run it propagated from (derived from run_inputs; zero for a
+// root cause). It carries only what the root walk and the supersession rule need; the
+// write path reads the full rows.
 type DeadLetterEntry struct {
 	// RunID is the dead-lettered run parked by this entry (dead_letters.run_id).
 	RunID int64
@@ -95,7 +94,7 @@ type DeadLetterEntry struct {
 
 // IsRootCause reports whether the entry is a root cause -- a run that failed or was
 // stopped on its own -- and so demands operator disposition. Only root causes are
-// replay targets; a propagated entry walks to one (specification section 6.2).
+// replay targets; a propagated entry walks to one.
 func (e DeadLetterEntry) IsRootCause() bool {
 	return e.Reason == store.ReasonFailed || e.Reason == store.ReasonStopped
 }
@@ -109,10 +108,10 @@ func (e DeadLetterEntry) IsPropagated() bool {
 
 // ResolveReplayTargets walks each selected worklist entry along its failed_upstream
 // chain to its root cause and returns the distinct root run ids to replay, ascending
-// (specification section 6.2: replay targets root causes; propagated entries walk
-// failed_upstream to the root; --pipeline/--all collapse to roots). selected is the
-// set of dead-lettered run ids the scope named: one for <run>, a pipeline's entries
-// for --pipeline, the whole worklist for --all. It is pure over the worklist.
+// (replay targets root causes; propagated entries walk failed_upstream to the root;
+// --pipeline/--all collapse to roots). selected is the set of dead-lettered run ids
+// the scope named: one for <run>, a pipeline's entries for --pipeline, the whole
+// worklist for --all. It is pure over the worklist.
 //
 // It fails loudly rather than replaying the wrong thing: a selected run absent from
 // the worklist, a propagated entry with no recorded upstream run, a chain pointing at
@@ -175,11 +174,10 @@ func walkToRoot(byRun map[int64]DeadLetterEntry, start int64) (int64, error) {
 // SupersededByLaterConsumption reports whether a propagated dead-letter entry has
 // superseded itself: its dependent has consumed an upstream run strictly later than
 // the poisoned upstream run the entry recorded, so the entry clears itself with no
-// replay and no human (specification section 6.2: "propagated entries clear
-// themselves: superseded once their dependent consumes a later upstream run; only
-// root causes demand a human"). A root cause (failed, stopped) never self-supersedes:
-// it always requires operator disposition, so this returns false for it regardless of
-// consumption.
+// replay and no human ("propagated entries clear themselves: superseded once their
+// dependent consumes a later upstream run; only root causes demand a human"). A root
+// cause (failed, stopped) never self-supersedes: it always requires operator
+// disposition, so this returns false for it regardless of consumption.
 func SupersededByLaterConsumption(entry DeadLetterEntry, consumedUpstreamRunID int64) bool {
 	if !entry.IsPropagated() {
 		return false
@@ -192,7 +190,7 @@ func SupersededByLaterConsumption(entry DeadLetterEntry, consumedUpstreamRunID i
 // data, the replacement's replayed_from (the replaced run -- replay lineage, never
 // parenthood), and whether the replacement itself dead-lettered again. A
 // dead-lettering replacement parks a fresh worklist entry on the replacement run,
-// still chained to the original through replayed_from (specification section 6.2).
+// still chained to the original through replayed_from.
 type ReplayResult struct {
 	// ReplacedRunID is the dead-lettered run this replay replaced (its worklist entry
 	// was removed when the replacement minted).
@@ -207,9 +205,9 @@ type ReplayResult struct {
 }
 
 // ReplayDeadLettered reports whether any replay in the batch re-dead-lettered: the
-// condition the replay command maps to exit 5 (specification sections 6.2 and 8: a
-// dead-lettering replay parks a fresh entry chained via replayed_from and exits 5).
-// A batch with no re-dead-letter is a clean replay (exit 0).
+// condition the replay command maps to exit 5 (a dead-lettering replay parks a fresh
+// entry chained via replayed_from and exits 5). A batch with no re-dead-letter is a
+// clean replay (exit 0).
 func ReplayDeadLettered(results []ReplayResult) bool {
 	for _, r := range results {
 		if r.DeadLettered {
@@ -220,7 +218,7 @@ func ReplayDeadLettered(results []ReplayResult) bool {
 }
 
 // BlastClass is a downstream's classification in the blast radius of a dead-lettered
-// run (for `iris deadletter show`; specification section 6.2). Closed set.
+// run (for `iris deadletter show`). Closed set.
 type BlastClass string
 
 const (
@@ -242,7 +240,7 @@ type BlastImpact struct {
 // upstreams, while the blast radius walks FORWARD from a root cause to its transitive
 // dependents, so it needs both endpoints named. Composer `order` is not a dependency
 // and mints no BlastEdge: a lane neighbor reachable only by composer order is
-// untouched (specification section 6.2).
+// untouched.
 type BlastEdge struct {
 	// Dependent is the pipeline that declares depends_on (dependencies.from_pipeline).
 	Dependent string
@@ -251,8 +249,8 @@ type BlastEdge struct {
 }
 
 // ClassifyBlastRadius classifies the blast radius of a dead-lettered run for `iris
-// deadletter show` (specification section 6.2: "one entry: reason, error,
-// failed_upstream, blast radius (root cause; poisoned_now / pending / shielded)").
+// deadletter show` ("one entry: reason, error, failed_upstream, blast radius (root
+// cause; poisoned_now / pending / shielded)").
 //
 // It walks the seed entry along failed_upstream to its ROOT cause, then walks FORWARD
 // over the depends_on edges to every transitive dependent of the root, and classifies

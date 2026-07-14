@@ -44,7 +44,6 @@ func newRemoteTourSession(answers ...string) *tourSession {
 // surface: 1 (and the empty default) stays local, 2 goes remote, and a decline
 // aborts clean.
 func TestTourEngineHomeFork(t *testing.T) {
-	// spec: S08/quickstart-remote-fork
 	cases := []struct {
 		name    string
 		choice  int
@@ -97,7 +96,6 @@ func TestTourEngineHomeFork(t *testing.T) {
 // live in-process engine: host and PAT asked, verified, the workspace question
 // answered, and the connection recorded in that workspace's .iris/iris.toml.
 func TestTourConnectRemote(t *testing.T) {
-	// spec: S08/quickstart-remote-connect-branch
 	clearTargetEnv(t)
 	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
@@ -140,7 +138,6 @@ func TestTourConnectRemote(t *testing.T) {
 // re-asks instead of ending the tour: a rejected PAT on the first attempt, the
 // corrected pair on the second, one recorded connection.
 func TestTourConnectRemoteRetries(t *testing.T) {
-	// spec: S08/quickstart-remote-connect-branch
 	clearTargetEnv(t)
 	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "right")
@@ -172,7 +169,6 @@ func TestTourConnectRemoteRetries(t *testing.T) {
 // tour's decline contract: an empty or q answer at the host or PAT question is
 // the clean abort, and nothing is recorded.
 func TestTourConnectRemoteAborts(t *testing.T) {
-	// spec: S08/quickstart-remote-connect-branch
 	cases := []struct {
 		name    string
 		answers []string

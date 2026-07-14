@@ -17,8 +17,8 @@ import (
 )
 
 // TestCaptureEmission is the end-to-end proof that the always-on write-capture
-// triggers actually capture (specification section 4). It stands up a real Postgres
-// cluster the engine has never touched, provisions the partitioned journal and the
+// triggers actually capture. It stands up a real Postgres cluster the engine has
+// never touched, provisions the partitioned journal and the
 // real iris.capture() function through the live pg path, declares a user table with
 // the three per-operation capture triggers, then connects AS a dedicated writer role
 // with a run id riding its session and drives multi-row INSERT / UPDATE / DELETE
@@ -39,10 +39,6 @@ import (
 // exact DDL the engine issues, enforced by a real Postgres. The managed
 // embedded-postgres runtime is cached after the first run; the leg reports its own
 // wall time.
-//
-// spec: S04/statement-triggers-one-insert
-// spec: S04/pipeline-role-reaches-capture
-// spec: S05/provision-ensures-capture
 func TestCaptureEmission(t *testing.T) {
 	start := time.Now()
 	t.Cleanup(func() { t.Logf("capture emission conformance leg: %s", time.Since(start).Round(time.Millisecond)) })
@@ -84,7 +80,7 @@ func TestCaptureEmission(t *testing.T) {
 
 	// Provision capture: the journal (parent, index, open tail partition, select
 	// grant) and the real iris.capture() function -- exactly what provisioning ends
-	// by ensuring (S05/provision-ensures-capture).
+	// by ensuring.
 	if err := pg.EnsureJournal(ctx, client); err != nil {
 		t.Fatalf("EnsureJournal: %v", err)
 	}

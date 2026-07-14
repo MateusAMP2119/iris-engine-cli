@@ -21,16 +21,14 @@ import (
 
 // TestApplyRepeatNoop drives the real iris binary end to end against a running daemon
 // and real Postgres, and proves iris declare apply is idempotent: repeating an apply
-// -- including its schema provisioning -- changes nothing (specification section 13,
-// definition of done). It installs the engine, starts a detached daemon over the
-// golden sample workspace, applies the ingest composer and its three pipelines
+// -- including its schema provisioning -- changes nothing. It installs the engine,
+// starts a detached daemon over the golden sample workspace, applies the ingest
+// composer and its three pipelines
 // (upstream-first), snapshots the persisted registry (meta) and the provisioned data
 // catalog, re-applies every declaration, and asserts both snapshots are byte-identical:
 // the registry upsert is a no-op and provisioning re-emits no schema change.
-//
-// spec: S13/apply-repeat-noop
 func TestApplyRepeatNoop(t *testing.T) {
-	t.Run("S13/apply-repeat-noop", func(t *testing.T) {
+	t.Run("apply-repeat-noop", func(t *testing.T) {
 		start := time.Now()
 		// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a
 		// prior test's lingering daemon sessions (including a still-held leader advisory
@@ -60,8 +58,8 @@ func TestApplyRepeatNoop(t *testing.T) {
 			t.Fatal("daemon never became leader; cannot apply against the single writer")
 		}
 
-		// The apply order registers the graph upstream-first (specification section 13,
-		// step 2): the ingest composer first, then extract_orders (no depends_on), then
+		// The apply order registers the graph upstream-first (acceptance step 2):
+		// the ingest composer first, then extract_orders (no depends_on), then
 		// reset_counters (composer-ordered only), then load_orders (depends_on
 		// extract_orders). Schema provisioning rides each apply.
 		targets := []string{
@@ -108,7 +106,7 @@ func TestApplyRepeatNoop(t *testing.T) {
 			t.Errorf("catalog snapshot does not carry the installed capture triggers; provisioning did not install them:\n%s", catalogBefore)
 		}
 
-		t.Logf("S13/apply-repeat-noop runtime: %s", time.Since(start).Round(time.Millisecond))
+		t.Logf("apply-repeat-noop runtime: %s", time.Since(start).Round(time.Millisecond))
 	})
 }
 

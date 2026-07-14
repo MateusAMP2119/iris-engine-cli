@@ -5,12 +5,12 @@ import (
 	"fmt"
 )
 
-// This file is the unified PAT store write surface (specification sections 4 and 7):
-// the meta writes that persist a minted PAT -- its token prefix (pats.id), argon2id
-// hash, label, and scope rows (pat_scopes) -- and, for a data-scope PAT, its
-// engine-managed read-only NOLOGIN Postgres role in the access ledger (roles and
-// grants), with no credentials row (data-PAT roles are NOLOGIN; credentials holds
-// pipeline login roles only). Every write rides the single meta writer.
+// This file is the unified PAT store write surface: the meta writes that persist
+// a minted PAT -- its token prefix (pats.id), argon2id hash, label, and scope
+// rows (pat_scopes) -- and, for a data-scope PAT, its engine-managed read-only
+// NOLOGIN Postgres role in the access ledger (roles and grants), with no
+// credentials row (data-PAT roles are NOLOGIN; credentials holds pipeline login
+// roles only). Every write rides the single meta writer.
 //
 // A PAT create is one atomic transaction: the pats row, its pat_scopes rows, and --
 // when the PAT carries the data scope -- the roles row and its field-level grants all
@@ -62,14 +62,14 @@ const (
 	revokePATSQL = `UPDATE pats SET revoked = true WHERE id = $1`
 )
 
-// CreatePAT persists a minted PAT as one atomic meta transaction: the pats row (its
-// prefix, argon2id hash, label, revoked=false) and one pat_scopes row per distinct
-// scope, plus -- when the PAT owns a data-scope read role -- the roles row (owner=data
-// PAT, NOLOGIN) and its field-level read grants (specification sections 4 and 7). No
-// credentials row is ever written (data-PAT roles hold none). The whole batch commits
-// together or not at all, so meta never reflects a PAT missing a scope row or a data
-// role recorded without its grants. It is a leader-only meta write, riding the single
-// Writer.
+// CreatePAT persists a minted PAT as one atomic meta transaction: the pats row
+// (its prefix, argon2id hash, label, revoked=false) and one pat_scopes row per
+// distinct scope, plus -- when the PAT owns a data-scope read role -- the roles
+// row (owner=data PAT, NOLOGIN) and its field-level read grants. No credentials
+// row is ever written (data-PAT roles hold none). The whole batch commits
+// together or not at all, so meta never reflects a PAT missing a scope row or a
+// data role recorded without its grants. It is a leader-only meta write, riding
+// the single Writer.
 func (w *Writer) CreatePAT(ctx context.Context, rec PATRecord) error {
 	if rec.ID == "" {
 		return fmt.Errorf("store: writer create PAT: empty token prefix")
@@ -102,11 +102,11 @@ func (w *Writer) CreatePAT(ctx context.Context, rec PATRecord) error {
 	return nil
 }
 
-// RevokePAT marks a PAT revoked by flipping its pats.revoked flag, keyed on the token
-// prefix (specification section 7: a lost token is revoked and re-minted). It is a
-// single guarded statement -- the id primary key bounds it to the one PAT -- and a
-// leader-only meta write, riding the single Writer. The role and grants a data PAT
-// owns are left in place; a revoked PAT simply fails authentication.
+// RevokePAT marks a PAT revoked by flipping its pats.revoked flag, keyed on the
+// token prefix (a lost token is revoked and re-minted). It is a single guarded
+// statement -- the id primary key bounds it to the one PAT -- and a leader-only
+// meta write, riding the single Writer. The role and grants a data PAT owns are
+// left in place; a revoked PAT simply fails authentication.
 func (w *Writer) RevokePAT(ctx context.Context, id string) error {
 	if id == "" {
 		return fmt.Errorf("store: writer revoke PAT: empty token prefix")

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// This file is the grant-intent leaf of specification sections 3, 4, and 7: the
+// This file is the grant-intent leaf: the
 // per-field access a declaration or a data-PAT mint asks for, expressed as pure
 // values with no database knowledge. It complements drift.go's grant-drift
 // classifier (which diffs Postgres grants against the ledger's bounds): here we
@@ -19,7 +19,7 @@ import (
 // per-field ledger cannot express -- a write on public, a CONNECT to meta.
 
 // metaSchema names the meta control database, the one surface no engine-managed
-// pipeline or data-PAT role may ever connect to (specification section 5). It is
+// pipeline or data-PAT role may ever connect to. It is
 // restated here rather than imported: declare is a leaf and must not depend on the
 // meta client (store), so the standing-bounds rule states the doctrine constant
 // itself, as drift.go does for the data journal.
@@ -27,7 +27,7 @@ const metaSchema = "meta"
 
 // AccessKind is a field grant's access kind: read (a declared reads entry, or a
 // data-PAT read) or write (a declared writes entry). It mirrors the meta grants
-// table's access column (specification sections 3 and 4).
+// table's access column.
 type AccessKind string
 
 // The field-grant access kinds. The string values match the meta grants ledger's
@@ -60,8 +60,8 @@ func (g FieldGrant) key() string {
 }
 
 // GrantsFromAccess expands a pipeline declaration's reads and writes into the exact
-// per-field grant set the meta access ledger records (specification sections 3 and
-// 4): one FieldGrant per (entry, field), reads tagged AccessRead and writes
+// per-field grant set the meta access ledger records: one FieldGrant per (entry,
+// field), reads tagged AccessRead and writes
 // AccessWrite. The order is deterministic -- reads before writes, entry order, then
 // field order -- and an exact-duplicate grant (same schema, table, field, access)
 // is recorded once. Each entry must name a dotted schema.table and a non-empty
@@ -100,8 +100,8 @@ func GrantsFromAccess(reads, writes []Access) ([]FieldGrant, error) {
 	return out, nil
 }
 
-// DataPATRead is one --read or --endpoint argument at data-PAT mint (specification
-// section 7). It is one of three shapes: a field-explicit read (Table dotted, Field
+// DataPATRead is one --read or --endpoint argument at data-PAT mint.
+// It is one of three shapes: a field-explicit read (Table dotted, Field
 // set), a bare schema.table read (Table dotted, Field empty -- every declared field
 // at mint time), or an --endpoint read (Endpoint set -- that endpoint's source
 // fields). Endpoint takes precedence when set.
@@ -118,7 +118,7 @@ type DataPATRead struct {
 }
 
 // EndpointSource is an endpoint's source table and projected fields, the set an
-// --endpoint data-PAT read expands to (specification section 7). Source is the
+// --endpoint data-PAT read expands to. Source is the
 // dotted schema.table the endpoint reads; Fields is its explicit field projection.
 type EndpointSource struct {
 	// Source is the endpoint's dotted schema.table source.
@@ -128,7 +128,7 @@ type EndpointSource struct {
 }
 
 // ExpandDataPATGrants resolves a data PAT's mint read specs into the fixed
-// per-field read grant set recorded at mint (specification section 7). A
+// per-field read grant set recorded at mint. A
 // field-explicit read grants that one field; a bare schema.table grants every field
 // the table declares at mint time (recorded per field, so a column added after mint
 // is never silently granted -- the recorded set is fixed here); an --endpoint read
@@ -193,7 +193,7 @@ func ExpandDataPATGrants(reads []DataPATRead, declaredFields map[string][]string
 }
 
 // ClassifyFieldGrantDrift classifies a role's live field grants against the meta
-// access ledger's fixed per-field set (specification section 5), reusing the
+// access ledger's fixed per-field set, reusing the
 // privilege-level ClassifyGrantDrift by mapping each FieldGrant to its column-level
 // privilege. A ledger field the role lacks is an additive gap (reconcile grants
 // it); a live field grant beyond the ledger is a stray -- non-additive, reported,
@@ -236,7 +236,7 @@ func fieldPrivilege(field string, access AccessKind) string {
 
 // ExceedsStandingBounds reports whether a live grant is beyond the standing bounds
 // every engine-managed pipeline or data-PAT role is held to regardless of the
-// per-field ledger (specification sections 4 and 5): on public a role may hold read
+// per-field ledger: on public a role may hold read
 // (SELECT) only, and no role may CONNECT to meta. A grant matching either rule is a
 // stray beyond bounds -- non-additive drift, reported, never silently fixed. The
 // reason is a human-readable explanation, empty when the grant is within bounds.

@@ -11,13 +11,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 )
 
-// This file proves the fault-recovery idempotency of the provisioning DDL
-// (specification section 5, "a failure between them is reconciled by
-// re-provisioning, which is idempotent"): re-applying a plan against a database a
+// This file proves the fault-recovery idempotency of the provisioning DDL: a
+// failure between the data ALTER and the meta head record is reconciled by
+// re-provisioning, which is idempotent. Re-applying a plan against a database a
 // partial prior run already touched must be a no-op, never an "already exists"
 // abort. It exercises the real rendered ADD COLUMN and capture-trigger DDL through
 // a stateful fake that models the Postgres object-existence errors the findings
-// turn on -- no live Postgres (S16/integration-fakes-interfaces).
+// turn on -- no live Postgres.
 
 // quotedIdent matches a double-quoted SQL identifier, so the fake can key an ADD
 // COLUMN or trigger statement by the objects it names.
@@ -103,8 +103,6 @@ func (f *fakePG) execOne(stmt string) error {
 // the head unrecorded. The next apply replays the same migration; without an
 // idempotent ADD COLUMN it fails "column already exists" and the state is
 // unrecoverable. The replay must instead be a no-op.
-//
-// spec: S05/provision-idempotent
 func TestProvisionReplayIdempotentAfterHeadRecordFailure(t *testing.T) {
 	ctx := context.Background()
 	alter, err := pg.RenderAddColumn("analytics", "orders", declare.MigrationColumn{Name: "status", Type: "text", Default: "'pending'"})
@@ -138,8 +136,6 @@ func TestProvisionReplayIdempotentAfterHeadRecordFailure(t *testing.T) {
 // triggers installed, so a plain CREATE TRIGGER re-apply fails "trigger already
 // exists". The rendered DDL must drop-if-exists then create so a re-apply always
 // makes progress.
-//
-// spec: S05/provision-idempotent
 func TestProvisionCaptureTriggersReapplyIdempotent(t *testing.T) {
 	ctx := context.Background()
 	plan := pg.ProvisionPlan{Tables: []pg.TableProvision{{

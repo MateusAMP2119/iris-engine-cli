@@ -18,15 +18,13 @@ func runs(pipeline string, ids ...int64) []dispatch.RetentionRun {
 	return out
 }
 
-// TestSelectPrunableCountBased proves retention is count-based and clockless
-// (specification section 6.2): SelectPrunable keeps the newest `retain` runs per
-// pipeline -- ordered by run id, meta's monotonic identity, never a clock -- and
-// prunes the rest, independently per pipeline. The decision is a function of run ids
-// and the retain count alone: SelectPrunable takes no timestamp and no consumer
-// watermark, so a run is prunable purely by count, never pinned by whether a
-// downstream consumed it (consumption and retention are unlinked).
-//
-// spec: S06.2/retention-count-based
+// TestSelectPrunableCountBased proves retention is count-based and clockless:
+// SelectPrunable keeps the newest `retain` runs per pipeline -- ordered by run id,
+// meta's monotonic identity, never a clock -- and prunes the rest, independently per
+// pipeline. The decision is a function of run ids and the retain count alone:
+// SelectPrunable takes no timestamp and no consumer watermark, so a run is prunable
+// purely by count, never pinned by whether a downstream consumed it (consumption and
+// retention are unlinked).
 func TestSelectPrunableCountBased(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -100,12 +98,9 @@ func TestSelectPrunableCountBased(t *testing.T) {
 	}
 }
 
-// TestSelectPrunableDefaultRetain proves the documented default retain of 1000
-// (specification section 6.2): with the config-resolved default, a pipeline keeps its
-// newest 1000 runs and prunes only what lies beyond, so a pipeline of 1001 runs
-// prunes exactly its oldest one.
-//
-// spec: S06.2/retention-count-based
+// TestSelectPrunableDefaultRetain proves the documented default retain of 1000: with
+// the config-resolved default, a pipeline keeps its newest 1000 runs and prunes only
+// what lies beyond, so a pipeline of 1001 runs prunes exactly its oldest one.
 func TestSelectPrunableDefaultRetain(t *testing.T) {
 	if config.DefaultRetain != 1000 {
 		t.Fatalf("config.DefaultRetain = %d, want the documented default 1000", config.DefaultRetain)
@@ -121,13 +116,11 @@ func TestSelectPrunableDefaultRetain(t *testing.T) {
 }
 
 // TestSelectPrunableSparesOutstandingDeadLetter proves the pruner never removes a
-// dead-lettered run while an outstanding dead_letters entry still holds it
-// (specification section 6.2): post-pass pruning spares such a run until replay,
-// supersession, or drain releases it. A run beyond retain but named in the
-// outstanding worklist is excluded from the prune set; once the entry is released
-// (gone from the outstanding set), the same run becomes prunable.
-//
-// spec: S06.2/prune-spares-outstanding-deadletter
+// dead-lettered run while an outstanding dead_letters entry still holds it: post-pass
+// pruning spares such a run until replay, supersession, or drain releases it. A run
+// beyond retain but named in the outstanding worklist is excluded from the prune set;
+// once the entry is released (gone from the outstanding set), the same run becomes
+// prunable.
 func TestSelectPrunableSparesOutstandingDeadLetter(t *testing.T) {
 	// Five runs, retain the newest two: ids 1, 2, 3 are beyond retain.
 	pipeline := runs("load", 1, 2, 3, 4, 5)

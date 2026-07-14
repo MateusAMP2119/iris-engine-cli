@@ -14,8 +14,8 @@ import (
 )
 
 // This file proves persisted read endpoints survive a daemon restart end to end
-// against the shipped binary, a running daemon, and real Postgres (specification
-// section 7: endpoints persist to meta; a restart or failover serves every applied
+// against the shipped binary, a running daemon, and real Postgres (endpoints
+// persist to meta; a restart or failover serves every applied
 // endpoint with no re-apply). It also proves the shared read-pool login credential is
 // stable across a restart -- the HA fix that stopped every start from minting a fresh
 // secret and resetting the shared login's password. The restart is a genuinely new
@@ -25,10 +25,8 @@ import (
 // TestEndpointsSurviveRestart applies an endpoint, restarts the daemon without
 // re-applying, and proves /q still serves the same data with the same data-PAT, and
 // that the read-pool credential in meta did not change across the restart.
-//
-// spec: S07/endpoints-reload-on-restart
 func TestEndpointsSurviveRestart(t *testing.T) {
-	t.Run("S07/endpoints-reload-on-restart", func(t *testing.T) {
+	t.Run("endpoints-reload-on-restart", func(t *testing.T) {
 		env := startOrdersEndpointEnv(t)
 		token := mintEndpointPAT(t, env, "orders_by_customer")
 

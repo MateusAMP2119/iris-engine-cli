@@ -7,15 +7,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/arch"
 )
 
-// TestImportGraphOneDirection proves the specification section 10 layering as
-// static analysis: the internal import graph is acyclic and flows one direction
+// TestImportGraphOneDirection proves the layering as static analysis: the
+// internal import graph is acyclic and flows one direction
 // (cli -> daemon/api -> dispatch -> store/pg/exec; archive beside dispatch;
 // declare/build/pat/buildinfo as leaves), and shipped code never reaches into the
 // test-support harness. It plants upward edges, same-rank crossings, cycles, and
 // harness dependencies in synthetic graphs, then runs the same three checks over
 // the real repo, which must be clean.
-//
-// spec: S10/import-graph-one-direction
 func TestImportGraphOneDirection(t *testing.T) {
 	t.Run("acyclic graph passes, a cycle is caught", func(t *testing.T) {
 		ok := synthGraph(
@@ -50,10 +48,10 @@ func TestImportGraphOneDirection(t *testing.T) {
 			pkg("buildinfo"),
 		)
 		if vs := g.CheckDirection(); len(vs) != 0 {
-			t.Errorf("CheckDirection on a spec-conformant graph = %v, want none", vs)
+			t.Errorf("CheckDirection on a conformant graph = %v, want none", vs)
 		}
 		if vs := g.CheckAcyclic(); len(vs) != 0 {
-			t.Errorf("CheckAcyclic on a spec-conformant graph = %v, want none", vs)
+			t.Errorf("CheckAcyclic on a conformant graph = %v, want none", vs)
 		}
 	})
 

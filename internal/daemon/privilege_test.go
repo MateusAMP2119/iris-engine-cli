@@ -22,12 +22,9 @@ func (s scriptedPrivileges) ReadPrivileges(context.Context) (daemon.AdminPrivile
 }
 
 // TestAdminDSNPrivilegeCheck proves startup validates the admin DSN holds
-// CREATEROLE, CREATEDB, and managed-schema ownership, failing fast when a
-// privilege is missing and never requiring superuser: a plain non-superuser role
-// with the three grants passes, and a superuser is accepted but never demanded
-// (specification section 2).
-//
-// spec: S02/admin-dsn-privilege-check
+// CREATEROLE, CREATEDB, and managed-schema ownership, failing fast when a privilege
+// is missing and never requiring superuser: a plain non-superuser role with the
+// three grants passes, and a superuser is accepted but never demanded.
 func TestAdminDSNPrivilegeCheck(t *testing.T) {
 	ctx := context.Background()
 

@@ -1,7 +1,7 @@
 // Package cli builds the Iris command-line surface: the cobra noun-verb command
-// tree, the global flags, and the exit-code and --json output contracts of
-// specification section 8. It sits at the top of the product import graph
-// (nothing imports it), and cmd/iris is a thin entrypoint over Execute.
+// tree, the global flags, and the exit-code and --json output contracts. It sits
+// at the top of the product import graph (nothing imports it), and cmd/iris is a
+// thin entrypoint over Execute.
 //
 // The command handlers are stubs during epic E01. What is real from day one is
 // the contract around those stubs: the categorical exit codes, the single-JSON
@@ -32,7 +32,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
 )
 
-// The exit codes are the categories of specification section 8. Detail rides the
+// The exit codes are the categories the CLI reports outcomes with. Detail rides the
 // message or the --json envelope; the CLI never emits a code outside this set,
 // and in particular overrides cobra's default exit 1.
 const (
@@ -45,7 +45,7 @@ const (
 )
 
 // Execute builds the command tree, runs it against args, and returns the process
-// exit code (a specification section 8 category). It writes command output to
+// exit code (one of the exit-code categories above). It writes command output to
 // stdout and human-readable errors to stderr, and never calls os.Exit, so it is
 // drivable from tests. cmd/iris is a thin wrapper that passes os.Args[1:] and the
 // process streams and exits with the returned code.
@@ -72,8 +72,8 @@ type app struct {
 	// test CA. A remote-control epic can promote it to a real --tls-ca flag.
 	daemonTLSConfig *tls.Config
 	// applyWarnings computes the advisory warnings `iris declare apply` surfaces for
-	// a parsed declaration -- cross-mode reads and the like (specification section 5).
-	// It is nil in production: the data-mode facts it needs live in meta, reachable
+	// a parsed declaration -- cross-mode reads and the like. It is nil in production:
+	// the data-mode facts it needs live in meta, reachable
 	// only once apply runs against the daemon (E03.9/E03.10), so pre-daemon apply
 	// computes no local warnings and proceeds unchanged. Tests inject it to drive the
 	// --json warning surface, proving the warning structure rides the envelope.
@@ -110,8 +110,8 @@ type app struct {
 	isTTY func() bool
 	// stdinIsTTY reports whether the command's stdin is an interactive terminal,
 	// the second half of the quickstart interactivity gate (stdin AND stdout both
-	// TTY, --json off; specification section 8). It is nil in production (the gate
-	// falls back to stdinIsTerminal, an os.Stdin char-device stat, the same check
+	// TTY, --json off). It is nil in production (the gate falls back to
+	// stdinIsTerminal, an os.Stdin char-device stat, the same check
 	// terminalConfirm uses); tests inject it to drive either rendering without a
 	// real terminal.
 	stdinIsTTY func() bool
@@ -137,8 +137,8 @@ type app struct {
 	// record the executed steps and script their exit codes.
 	runStep func(ctx context.Context, args []string) int
 	// waitForReady blocks until the workspace daemon reports a leadership role,
-	// closing the quickstart tour's ENGINE act (specification section 8). It is
-	// nil in production (the tour falls back to waitEngineReady, the bounded
+	// closing the quickstart tour's ENGINE act. It is nil in production (the tour
+	// falls back to waitEngineReady, the bounded
 	// context-aware poll of the /info readout); tests inject it to close the act
 	// instantly or exercise the real poll against a fake daemon.
 	waitForReady func(ctx context.Context, settings config.Settings) error
@@ -204,8 +204,8 @@ func (a *app) runContext(ctx context.Context, args []string) int {
 	return a.renderError(err)
 }
 
-// fault is a command outcome carrying a specification section 8 exit-code
-// category, a machine code for the --json error envelope, and a human message.
+// fault is a command outcome carrying an exit-code category, a machine code for
+// the --json error envelope, and a human message.
 type fault struct {
 	code    int
 	codeStr string
@@ -232,8 +232,8 @@ func (e *flagError) Unwrap() error { return e.err }
 // is reachable: exit 3, with guidance to start the engine folded into the
 // message so it rides both the human output and the --json envelope. It resolves
 // the dial target through the configuration precedence (flags > IRIS_* env >
-// iris.toml > defaults, specification section 8) so the socket/host it would have
-// dialed is real, and logs the diagnostic to stderr (never stdout) at debug
+// iris.toml > defaults) so the socket/host it would have dialed is real, and
+// logs the diagnostic to stderr (never stdout) at debug
 // level, off by default.
 func (a *app) noDaemon(cmd *cobra.Command, op string) error {
 	target := a.resolveTarget(cmd)
@@ -251,7 +251,7 @@ func (a *app) usage(msg string) error {
 	return &fault{code: exitUsage, codeStr: "usage", message: msg}
 }
 
-// parseRunRef parses a <run> token per S08/run-ref-grammar (unit contract):
+// parseRunRef parses a <run> token per the run-ref grammar:
 // a bare pipeline name stands for its latest run; <name>~n stands for the nth
 // prior run of that pipeline (n>=0; ~0 is latest). Git ^ and .. forms are
 // rejected as false cognates. The parse is pure; resolution of the (name, prior)
@@ -281,9 +281,9 @@ func parseRunRef(s string) (pipeline string, prior int, err error) {
 	return s, 0, nil
 }
 
-// errEnvelope is the --json error document: the read-API error envelope shape of
-// specification section 7, {"error":{"code":...,"message":...}}, plus any advisory
-// warnings that accompany the outcome (omitted when there are none). A warning
+// errEnvelope is the --json error document: the read-API error envelope shape,
+// {"error":{"code":...,"message":...}}, plus any advisory warnings that
+// accompany the outcome (omitted when there are none). A warning
 // never blocks a command; it rides the terminal envelope alongside the error.
 type errEnvelope struct {
 	Error    errBody           `json:"error"`
@@ -297,7 +297,7 @@ type errBody struct {
 }
 
 // dataEnvelope is the --json success document: the read-API success envelope
-// shape of specification section 7, {"data":...}.
+// shape, {"data":...}.
 type dataEnvelope struct {
 	Data any `json:"data"`
 }

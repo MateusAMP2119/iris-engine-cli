@@ -8,15 +8,13 @@ import (
 )
 
 // TestServiceInstallSweep proves the "on demand, never auto-shipped" half of the
-// service-unit contract (specification section 2): exactly one command installs a
-// service unit, and no other command installs a unit or a boot autostart. It
+// service-unit contract: exactly one command installs a service unit, and no
+// other command installs a unit or a boot autostart. It
 // mirrors the daemonless-roster sweep -- a structural scan over the tree rather
 // than a hand-maintained list -- by scanning the CLI source and asserting the
 // unit-installing entrypoint (daemon.InstallServiceUnit) is called only from the
 // engine service-install handler, never from install, start, uninstall, or any
 // other command.
-//
-// spec: S02/service-install-on-demand
 func TestServiceInstallSweep(t *testing.T) {
 	const installCall = "daemon.InstallServiceUnit("
 	const uninstallCall = "daemon.UninstallServiceUnit("

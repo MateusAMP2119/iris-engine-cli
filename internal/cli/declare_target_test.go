@@ -46,8 +46,7 @@ func declareVerbCmd(t *testing.T, verb string) *cobra.Command {
 // count validation rejects zero, two, or more positional targets (a
 // workspace-wide or multi-file invocation), and accepts exactly one.
 func TestDeclareSingleFileTarget(t *testing.T) {
-	// spec: S03/apply-destroy-single-file
-	t.Run("S03/apply-destroy-single-file", func(t *testing.T) {
+	t.Run("apply-destroy-single-file", func(t *testing.T) {
 		for _, verb := range []string{"apply", "destroy"} {
 			t.Run(verb, func(t *testing.T) {
 				cases := []struct {
@@ -74,16 +73,15 @@ func TestDeclareSingleFileTarget(t *testing.T) {
 	})
 }
 
-// TestApplySingleFileResolution proves iris declare apply's target resolution
-// (specification sections 6.3 and 8): a bare apply is a usage error (exit 2);
-// a resolvable target (file or folder) passes resolution and reaches the
+// TestApplySingleFileResolution proves iris declare apply's target resolution:
+// a bare apply is a usage error (exit 2); a resolvable target (file or folder)
+// passes resolution and reaches the
 // unchanged daemon-dial stub (exit 3, no daemon reachable, never auto-started
 // -- proof resolution succeeded rather than short-circuiting); a folder with
 // no iris-declare.yaml is a precise error (exit 4), never a sweep into a
 // nested declaration (no workspace sweep, no transitive chaining).
 func TestApplySingleFileResolution(t *testing.T) {
-	// spec: S06.3/apply-single-file-resolution
-	t.Run("S06.3/apply-single-file-resolution", func(t *testing.T) {
+	t.Run("apply-single-file-resolution", func(t *testing.T) {
 		t.Run("bare apply is a usage error (exit 2)", func(t *testing.T) {
 			var out, errb bytes.Buffer
 			code := newApp(&out, &errb).run([]string{"declare", "apply"})
@@ -150,11 +148,10 @@ func TestApplySingleFileResolution(t *testing.T) {
 
 // TestDeclareBareUsageError proves that a bare iris declare apply or iris
 // declare destroy is a usage error (exit 2), and that no --all flag is
-// registered anywhere under the declare noun (specification section 8: no
-// workspace sweep, so no flag that would request one).
+// registered anywhere under the declare noun (no workspace sweep, so no flag
+// that would request one).
 func TestDeclareBareUsageError(t *testing.T) {
-	// spec: S08/declare-bare-usage-error
-	t.Run("S08/declare-bare-usage-error", func(t *testing.T) {
+	t.Run("declare-bare-usage-error", func(t *testing.T) {
 		for _, verb := range []string{"apply", "destroy"} {
 			t.Run(verb, func(t *testing.T) {
 				var out, errb bytes.Buffer
@@ -186,8 +183,7 @@ func TestDeclareBareUsageError(t *testing.T) {
 // destroy per declaration (leaf-first ordering is enforced elsewhere, later
 // epics E03.10/E10).
 func TestDestroySingleDeclaration(t *testing.T) {
-	// spec: S12/destroy-single-declaration
-	t.Run("S12/destroy-single-declaration", func(t *testing.T) {
+	t.Run("destroy-single-declaration", func(t *testing.T) {
 		t.Run("exactly one declaration file per invocation", func(t *testing.T) {
 			cmd := declareVerbCmd(t, "destroy")
 			if err := cmd.Args(cmd, []string{"a/iris-declare.yaml", "b/iris-declare.yaml"}); err == nil {

@@ -9,15 +9,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 )
 
-// TestIrisDirDefaultPaths proves the .iris directory path defaults
-// (specification section 10): the unix socket defaults to
-// <workspace>/.iris/iris.sock, the optional iris.toml sits at
-// <workspace>/.iris/iris.toml and carries engine/connection settings only, and
-// the daemon log plus per-run logs live under <workspace>/.iris/logs as
-// daemon.log and run-<id>.log.
+// TestIrisDirDefaultPaths proves the .iris directory path defaults: the unix socket
+// defaults to <workspace>/.iris/iris.sock, the optional iris.toml sits at
+// <workspace>/.iris/iris.toml and carries engine/connection settings only, and the
+// daemon log plus per-run logs live under <workspace>/.iris/logs as daemon.log and
+// run-<id>.log.
 func TestIrisDirDefaultPaths(t *testing.T) {
-	// spec: S10/iris-dir-default-paths
-	t.Run("S10/iris-dir-default-paths", func(t *testing.T) {
+	t.Run("iris-dir-default-paths", func(t *testing.T) {
 		ws := t.TempDir()
 		settings := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
 
@@ -68,14 +66,11 @@ func TestIrisDirDefaultPaths(t *testing.T) {
 	})
 }
 
-// TestCandidateRequiresWorkspaceTree proves the per-host prerequisite
-// (specification section 15): a daemon candidate started on a host lacking
-// the workspace tree the leader dispatches from (pipeline folders, dev source,
-// env_files) refuses to start.
-//
-// spec: S15/candidate-requires-workspace-tree
+// TestCandidateRequiresWorkspaceTree proves the per-host prerequisite: a daemon
+// candidate started on a host lacking the workspace tree the leader dispatches from
+// (pipeline folders, dev source, env_files) refuses to start.
 func TestCandidateRequiresWorkspaceTree(t *testing.T) {
-	t.Run("S15/candidate-requires-workspace-tree", func(t *testing.T) {
+	t.Run("candidate-requires-workspace-tree", func(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "no-tree-here")
 		err := requireWorkspaceTree(missing)
 		if err == nil {

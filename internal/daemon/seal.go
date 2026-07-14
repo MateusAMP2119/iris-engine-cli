@@ -12,31 +12,29 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the leader-side journal seal step (specification section 14): the
-// opportunistic dispatcher action that runs after a terminal run and, when the
-// resident partition has crossed the journal_partition_rows threshold with no
-// in-flight run left writing into it, seals that partition -- compact, checkpoint,
-// archive. It replaces the E13.5 presence stub (a seal that fired on every terminal
-// run with a placeholder digest, a fixed key, and a hardcoded id range) with the
-// real, spec-backed flow over the E07.3 seal primitives and the E07.4 checkpoint
-// chain and engine key.
+// This file is the leader-side journal seal step: the opportunistic dispatcher
+// action that runs after a terminal run and, when the resident partition has
+// crossed the journal_partition_rows threshold with no in-flight run left writing
+// into it, seals that partition -- compact, checkpoint, archive. It replaces the
+// E13.5 presence stub (a seal that fired on every terminal run with a placeholder
+// digest, a fixed key, and a hardcoded id range) with the real flow over the E07.3
+// seal primitives and the E07.4 checkpoint chain and engine key.
 //
-// Seal timing is the spec's seal condition (S14/seal-condition): a partition seals
-// only when it is past the row threshold, every in-flight run writing into it has
-// finished, and it holds zero open entries. The threshold is journal_partition_rows,
-// a threshold and not an exact cap -- a run larger than the threshold, or a long dev
-// loop, delays its own seal rather than splitting a run's journal window. The
-// resident partition is sealed whole (its rows share one partition by construction,
-// since a seal waits for in-flight runs), so the in-flight guard is: seal only when
-// no run is currently running. The just-finished run that triggers this step has
-// already been recorded terminal before the step runs, so it never counts itself.
+// Seal timing is the seal condition: a partition seals only when it is past the row
+// threshold, every in-flight run writing into it has finished, and it holds zero
+// open entries. The threshold is journal_partition_rows, a threshold and not an
+// exact cap -- a run larger than the threshold, or a long dev loop, delays its own
+// seal rather than splitting a run's journal window. The resident partition is
+// sealed whole (its rows share one partition by construction, since a seal waits
+// for in-flight runs), so the in-flight guard is: seal only when no run is
+// currently running. The just-finished run that triggers this step has already been
+// recorded terminal before the step runs, so it never counts itself.
 
-// sealDue is the pure seal condition (specification section 14,
-// S14/seal-condition): a partition seals only when it is past the row threshold,
-// every in-flight run writing into it has finished (no run is running), and it holds
-// rows at all. A non-positive threshold disables sealing (the resident tail grows
-// unbounded, a deliberate opt-out); a below-threshold partition, an empty partition,
-// or any in-flight run all defer the seal.
+// sealDue is the pure seal condition: a partition seals only when it is past the
+// row threshold, every in-flight run writing into it has finished (no run is
+// running), and it holds rows at all. A non-positive threshold disables sealing
+// (the resident tail grows unbounded, a deliberate opt-out); a below-threshold
+// partition, an empty partition, or any in-flight run all defer the seal.
 func sealDue(residentRows, threshold, runningRuns int64) bool {
 	if threshold <= 0 {
 		return false
@@ -142,13 +140,13 @@ func (s *journalSealer) loadOrMintEngineKey(ctx context.Context) (EngineKey, err
 	return DecodeEngineKeyBytes(raw)
 }
 
-// sealAfterPass is the opportunistic dispatcher step (specification section 14,
-// S14/seal-dispatcher-step): after a run reaches terminal, seal the resident
-// partition if it is due -- compact, checkpoint, archive. Every step is
-// best-effort: a read error, a not-due partition, or a missing engine key leaves the
-// journal untouched and the tail resident (still fully answerable by provenance),
-// and the next terminal run retries. Errors are logged, never propagated to the run:
-// a run's success or failure never hinges on whether its post-pass seal fired.
+// sealAfterPass is the opportunistic dispatcher step: after a run reaches terminal,
+// seal the resident partition if it is due -- compact, checkpoint, archive. Every
+// step is best-effort: a read error, a not-due partition, or a missing engine key
+// leaves the journal untouched and the tail resident (still fully answerable by
+// provenance), and the next terminal run retries. Errors are logged, never
+// propagated to the run: a run's success or failure never hinges on whether its
+// post-pass seal fired.
 func (s *journalSealer) sealAfterPass(ctx context.Context) {
 	if s == nil || s.data == nil || s.meta == nil || s.submitter == nil || s.objects == nil {
 		return
@@ -164,8 +162,8 @@ func (s *journalSealer) sealAfterPass(ctx context.Context) {
 	}
 	// Only runs that actually wrote into the resident partition can split a window, so
 	// the in-flight guard counts running runs among the partition's writers -- an
-	// idle-lane no-op pass wrote nothing and never defers a seal (specification section
-	// 14: the unit is the run, never its lane).
+	// idle-lane no-op pass wrote nothing and never defers a seal (the unit is the run,
+	// never its lane).
 	writers, err := s.data.ResidentRunIDs(ctx)
 	if err != nil {
 		s.logger.Warn("seal: read resident run ids", "err", err)

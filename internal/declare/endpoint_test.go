@@ -15,7 +15,7 @@ import (
 // source resolves against: id is the unique primary key (a valid sort), the rest
 // are ordinary columns. It mirrors the golden workspace's
 // schemas/analytics/orders/table.yaml so the compiler's source-column checks run
-// against a real, spec-shaped table without touching disk.
+// against a real, declared table without touching disk.
 func ordersSource() *declare.Table {
 	return &declare.Table{
 		Schema: "analytics",
@@ -35,7 +35,7 @@ func ordersIndex() map[string]*declare.Table {
 }
 
 // goldenEndpoint parses the checked-in golden endpoint file, the canonical
-// orders_by_customer read surface of specification section 7.
+// orders_by_customer read surface.
 func goldenEndpoint(t *testing.T) *declare.Endpoint {
 	t.Helper()
 	path := filepath.Join(fixtures.WorkspaceGolden(), "endpoints", "orders_by_customer.yaml")
@@ -53,8 +53,6 @@ func goldenEndpoint(t *testing.T) *declare.Endpoint {
 // TestEndpointYAMLFileShape proves an endpoint is one flat file at
 // endpoints/<name>.yaml whose filename equals its endpoint: field, and that a
 // file whose basename disagrees with the field is rejected naming both.
-//
-// spec: S07/endpoint-yaml-file-shape
 func TestEndpointYAMLFileShape(t *testing.T) {
 	t.Run("filename-matches-field", func(t *testing.T) {
 		dir := t.TempDir()
@@ -101,8 +99,6 @@ func TestEndpointYAMLFileShape(t *testing.T) {
 // discovered as flat, shape-only YAML files at endpoints/<name>.yaml in the
 // workspace: the golden workspace yields exactly the orders_by_customer endpoint,
 // and a nested subfolder under endpoints/ is rejected (the flat-file exception).
-//
-// spec: S10/endpoint-files-canonical-location
 func TestEndpointFilesCanonicalLocation(t *testing.T) {
 	t.Run("golden-workspace-flat-file", func(t *testing.T) {
 		eps, err := declare.DiscoverEndpoints(fixtures.WorkspaceGolden())
@@ -151,8 +147,6 @@ func TestEndpointFilesCanonicalLocation(t *testing.T) {
 // TestEndpointSingleTableProjection proves an endpoint declares an explicit field
 // projection over one table only: a valid flat projection compiles, while a join,
 // an aggregation, and a computed (non-identifier) field are each rejected.
-//
-// spec: S07/endpoint-single-table-projection
 func TestEndpointSingleTableProjection(t *testing.T) {
 	t.Run("flat-projection-accepted", func(t *testing.T) {
 		ep, err := declare.ParseEndpoint([]byte("endpoint: e\nsource: analytics.orders\nfields: [id, amount]\nsort: id\n"))
@@ -192,8 +186,6 @@ func TestEndpointSingleTableProjection(t *testing.T) {
 // TestEndpointSourceValidation proves endpoint compile resolves the single
 // declared source table against the schemas/ set and refuses the journal (and the
 // reserved public schema) as a source, while an undeclared source is rejected.
-//
-// spec: S07/endpoint-source-validation
 func TestEndpointSourceValidation(t *testing.T) {
 	t.Run("declared-source-resolves", func(t *testing.T) {
 		if _, err := declare.CompileEndpoint(goldenEndpoint(t), ordersIndex()); err != nil {
@@ -240,8 +232,6 @@ func TestEndpointSourceValidation(t *testing.T) {
 // range as a filter kind and requires sort to be a unique source column: a bad
 // filter op is rejected at parse, and a non-unique or unknown sort column is
 // rejected at compile.
-//
-// spec: S07/endpoint-filter-sort-validation
 func TestEndpointFilterSortValidation(t *testing.T) {
 	t.Run("eq-and-range-accepted", func(t *testing.T) {
 		ep := goldenEndpoint(t) // customer_id: eq, created_at: range
@@ -299,8 +289,6 @@ func TestEndpointFilterSortValidation(t *testing.T) {
 // SQL text deterministically from an endpoint: the golden orders_by_customer
 // endpoint yields the checked-in golden SQL byte-for-byte, and two independent
 // compiles of the same input yield byte-identical SQL.
-//
-// spec: S07/endpoint-sql-deterministic
 func TestEndpointSQLDeterministic(t *testing.T) {
 	ep := goldenEndpoint(t)
 

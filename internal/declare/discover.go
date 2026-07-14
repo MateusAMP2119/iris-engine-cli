@@ -47,7 +47,7 @@ type Workspace struct {
 }
 
 // DiscoverWorkspace walks a workspace root and returns its declared world from
-// the canonical locations (specification section 10): lane composers at
+// the canonical locations: lane composers at
 // pipelines/<lane>/iris-declare.yaml, pipeline declarations with their single
 // script at pipelines/<lane>/<pipeline>/, and table schemas at
 // schemas/<schema>/<table>/. An absent pipelines/ or schemas/ tree yields an

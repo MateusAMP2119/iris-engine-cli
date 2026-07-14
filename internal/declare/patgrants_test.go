@@ -6,7 +6,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file proves data-PAT grant resolution at mint (specification section 7): the
+// This file proves data-PAT grant resolution at mint: the
 // three --read/--endpoint shapes a data PAT's read grants resolve from, each recorded
 // per field so a column added after mint is never silently granted. It reuses the
 // declare leaf's ExpandDataPATGrants (E04.3), the pure resolver the leader drives at
@@ -32,10 +32,8 @@ func grantKeys(gs []declare.FieldGrant) map[string]bool {
 // field declared at that moment (recorded per field), and --endpoint expands to the
 // endpoint's source fields. Every grant is read-only, and a column added after mint is
 // never silently granted (the recorded set is fixed to the fields declared at mint).
-//
-// spec: S07/data-pat-grant-resolution
 func TestDataPATGrantResolution(t *testing.T) {
-	t.Run("S07/data-pat-grant-resolution", func(t *testing.T) {
+	t.Run("data-pat-grant-resolution", func(t *testing.T) {
 		// The declared world at mint time: analytics.orders declares three fields.
 		declaredFields := map[string][]string{
 			"analytics.orders": {"id", "amount", "customer"},

@@ -74,11 +74,8 @@ func decodeRowsFromTest(b []byte) ([][]byte, error) {
 
 // TestObjectStoreHashKeyed proves the object store root holds hash-keyed plain
 // files for both artifact bytes and (via export) archived partitions.
-//
-// spec: S10/objects-store-hash-keyed
 func TestObjectStoreHashKeyed(t *testing.T) {
-	// spec: S10/objects-store-hash-keyed
-	t.Run("S10/objects-store-hash-keyed", func(t *testing.T) {
+	t.Run("objects-store-hash-keyed", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), ".iris", "objects")
 		s := store.NewObjectStore(root)
 
@@ -109,11 +106,8 @@ func TestObjectStoreHashKeyed(t *testing.T) {
 // TestObjectStoreContentAddressed proves objects/ is content-addressed: keys
 // are hashes (for artifacts) or checkpoint digests (for partitions), plain
 // files, meta never holds bytes.
-//
-// spec: S14/object-store-content-addressed
 func TestObjectStoreContentAddressed(t *testing.T) {
-	// spec: S14/object-store-content-addressed
-	t.Run("S14/object-store-content-addressed", func(t *testing.T) {
+	t.Run("object-store-content-addressed", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "objects")
 		_ = store.NewObjectStore(root)
 		// Presence of the constructor and Path under a digest-like key is
@@ -129,11 +123,8 @@ func TestObjectStoreContentAddressed(t *testing.T) {
 
 // TestObjectsImmutableWriteOnce proves objects are written once under their
 // key and subsequent identical Puts are no-ops (never rewrite the file).
-//
-// spec: S14/objects-immutable-write-once
 func TestObjectsImmutableWriteOnce(t *testing.T) {
-	// spec: S14/objects-immutable-write-once
-	t.Run("S14/objects-immutable-write-once", func(t *testing.T) {
+	t.Run("objects-immutable-write-once", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "objects")
 		s := store.NewObjectStore(root)
 
@@ -168,14 +159,11 @@ func TestObjectsImmutableWriteOnce(t *testing.T) {
 // TestArchiveFileFormatRoundtrip proves a sealed partition exports as one
 // checksummed engine-owned file (header: id range, digest, signature; rows in
 // id order) that round-trips exactly through real temp files.
-//
-// spec: S14/archive-file-format-roundtrip
 func TestArchiveFileFormatRoundtrip(t *testing.T) {
-	// spec: S14/archive-file-format-roundtrip
-	t.Run("S14/archive-file-format-roundtrip", func(t *testing.T) {
-		// Use the roundtrip harness exactly as prescribed by building a
-		// Format from the real archive via its test helpers (the production
-		// archive package must not import the harness).
+	t.Run("archive-file-format-roundtrip", func(t *testing.T) {
+		// Use the roundtrip harness by building a Format from the real
+		// archive via its test helpers (the production archive package must
+		// not import the harness).
 		f := harnessFormat()
 		// A small representative "compacted rows" payload.
 		payload := []byte("row1-payload|row2-payload|id-ordered")
@@ -186,11 +174,8 @@ func TestArchiveFileFormatRoundtrip(t *testing.T) {
 // TestArchiveWriteReadRoundtrip exercises the concrete Write/Read over real
 // temp files (not just the Format harness) with id range, digest, signature,
 // and multiple rows in order; recovered header and rows must be exact.
-//
-// spec: S14/archive-file-format-roundtrip
 func TestArchiveWriteReadRoundtrip(t *testing.T) {
-	// spec: S14/archive-file-format-roundtrip
-	t.Run("S14/archive-file-format-roundtrip", func(t *testing.T) {
+	t.Run("archive-file-format-roundtrip", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "partition.archive")
 
@@ -271,11 +256,8 @@ func (f *fakeFlipper) Archive(digest []byte) error {
 // (under digest key), re-validate file digest, detach+drop partition, flip
 // checkpoint location to archived. Uses real FS for the objects side and
 // fakes for meta/pg seams.
-//
-// spec: S14/archive-then-drop-flow
 func TestArchiveThenDropFlow(t *testing.T) {
-	// spec: S14/archive-then-drop-flow
-	t.Run("S14/archive-then-drop-flow", func(t *testing.T) {
+	t.Run("archive-then-drop-flow", func(t *testing.T) {
 		objsRoot := filepath.Join(t.TempDir(), "objects")
 		pub := newFakePublisher(objsRoot)
 		drop := &fakeDropper{}
@@ -321,13 +303,8 @@ func TestArchiveThenDropFlow(t *testing.T) {
 // TestExportUsesRealObjectStorePublisher exercises Export with a real
 // *store.ObjectStore (which satisfies Publisher) to prove the content-
 // addressed publish under digest key for partitions works on real FS.
-//
-// spec: S14/archive-then-drop-flow
-// spec: S14/object-store-content-addressed
 func TestExportUsesRealObjectStorePublisher(t *testing.T) {
-	// spec: S14/archive-then-drop-flow
-	// spec: S14/object-store-content-addressed
-	t.Run("S14/archive-then-drop-flow", func(t *testing.T) {
+	t.Run("archive-then-drop-flow", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "objects")
 		realStore := store.NewObjectStore(root)
 
@@ -354,11 +331,8 @@ func TestExportUsesRealObjectStorePublisher(t *testing.T) {
 // We exercise this structurally via the recorder (no INSERT of bytea for
 // objects) and by schema shape already asserted elsewhere; here we ensure the
 // checkpoint insert path (used by export flow) carries only the digest.
-//
-// spec: S14/meta-holds-no-payload-bytes
 func TestMetaHoldsNoPayloadBytes(t *testing.T) {
-	// spec: S14/meta-holds-no-payload-bytes
-	t.Run("S14/meta-holds-no-payload-bytes", func(t *testing.T) {
+	t.Run("meta-holds-no-payload-bytes", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		cp := store.CheckpointRow{
@@ -393,11 +367,9 @@ func (r *recordingMetaFlipper) Archive(d []byte) error {
 
 // TestOfflineChainValidation proves an auditor with only the archive files and the
 // engine public key can validate the full checkpoint chain with no Iris binary and
-// no database (S14/offline-chain-validation).
-//
-// spec: S14/offline-chain-validation
+// no database.
 func TestOfflineChainValidation(t *testing.T) {
-	t.Run("S14/offline-chain-validation", func(t *testing.T) {
+	t.Run("offline-chain-validation", func(t *testing.T) {
 		// Generate an engine keypair; only the public half is given to the auditor.
 		pub, priv, err := ed25519.GenerateKey(nil)
 		if err != nil {
@@ -433,10 +405,8 @@ func TestOfflineChainValidation(t *testing.T) {
 // TestMissingObjectNamedFailure proves that a missing object-store archive file
 // causes the archived read to fail with an error naming the missing hash (the
 // checkpoint digest), while the chain metadata itself may still validate.
-//
-// spec: S14/missing-object-named-failure
 func TestMissingObjectNamedFailure(t *testing.T) {
-	t.Run("S14/missing-object-named-failure", func(t *testing.T) {
+	t.Run("missing-object-named-failure", func(t *testing.T) {
 		missingDigest := "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef01"
 		// Construct a conventional object path under a temp objects root.
 		root := t.TempDir()

@@ -44,7 +44,7 @@ const validPipelineYAML = "name: %s\nrun: [python, main.py]\n"
 // folder named for the pipeline holding iris-declare.yaml plus exactly one
 // script, with no internal stage structure.
 func TestPipelineFolderShape(t *testing.T) {
-	t.Run("S01/pipeline-folder-shape", func(t *testing.T) {
+	t.Run("pipeline-folder-shape", func(t *testing.T) {
 		// Accept: the golden extract_orders folder (iris-declare.yaml + main.py).
 		pf, err := declare.ValidatePipelineFolder(
 			filepath.Join(fixtures.WorkspaceGolden(), "pipelines", "ingest", "extract_orders"))
@@ -118,7 +118,7 @@ func TestPipelineFolderShape(t *testing.T) {
 // TestNameMatchesFolder proves that a pipeline folder whose declaration name
 // does not match its folder name is rejected.
 func TestNameMatchesFolder(t *testing.T) {
-	t.Run("S03/name-matches-folder", func(t *testing.T) {
+	t.Run("name-matches-folder", func(t *testing.T) {
 		// Reject: the name_folder_mismatch fixture (name != folder).
 		if _, err := declare.ValidatePipelineFolder(fixtures.InvalidDeclaration("name_folder_mismatch")); err == nil {
 			t.Error("name_folder_mismatch fixture accepted; expected rejection")

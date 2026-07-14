@@ -2,12 +2,11 @@ package dispatch
 
 // This file is failure propagation along depends_on edges: the pure step that turns
 // the gate's poisoned verdict into a write plan the dispatcher hands to the single
-// writer (specification sections 1, 4 and 6.2). Propagation flows ONLY along
-// depends_on edges and is computed lazily at the dependent's consumption time -- a
-// rejected promise. When an upstream fails, nothing is written eagerly; the rejection
-// materializes only when the dependent's gate evaluates the edge at its own turn and
-// resolves it poisoned (gate.go). This file consumes that poisoned decision; it never
-// reads or writes meta itself.
+// writer. Propagation flows ONLY along depends_on edges and is computed lazily at the
+// dependent's consumption time -- a rejected promise. When an upstream fails, nothing
+// is written eagerly; the rejection materializes only when the dependent's gate
+// evaluates the edge at its own turn and resolves it poisoned (gate.go). This file
+// consumes that poisoned decision; it never reads or writes meta itself.
 //
 // The gate (Decide) produces the poisoned verdict: for an awaited dead-lettered
 // upstream run it flags Decision.Poisoned and records the poisoned edge in the

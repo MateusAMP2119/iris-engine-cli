@@ -38,7 +38,6 @@ func (f fakeRunLineageReader) RunLineage(_ context.Context, id int64) (store.Run
 	return rl, ok, nil
 }
 
-// spec: S07/runs-include-inputs
 func TestRunsPlaneListRunsIncludeInputs(t *testing.T) {
 	rf := int64(10)
 	reader := fakeRunLineageReader{all: []store.RunLineage{
@@ -81,7 +80,6 @@ func TestRunsPlaneListRunsIncludeInputs(t *testing.T) {
 	}
 }
 
-// spec: S07/runs-include-inputs
 func TestRunsPlaneListRunsError(t *testing.T) {
 	p := newRunsPlane(fakeRunLineageReader{err: errors.New("boom")}, nil)
 	if _, err := p.ListRuns(context.Background(), true); err == nil {
@@ -89,7 +87,6 @@ func TestRunsPlaneListRunsError(t *testing.T) {
 	}
 }
 
-// spec: S07/runs-include-inputs
 func TestRunsPlaneGetRun(t *testing.T) {
 	reader := fakeRunLineageReader{byID: map[int64]store.RunLineage{
 		7: {ID: 7, Pipeline: "transform", State: store.RunRunning, Inputs: []int64{5}},
@@ -143,7 +140,6 @@ func seedTraceLineage() store.ProvenanceLineage {
 	return lin
 }
 
-// spec: S07/trace-gate-impact-routes
 func TestRunTracePlaneUpAndDown(t *testing.T) {
 	fake := storetest.New()
 	fake.SetProvenanceLineage(seedTraceLineage())
@@ -180,7 +176,6 @@ func TestRunTracePlaneUpAndDown(t *testing.T) {
 	}
 }
 
-// spec: S07/trace-gate-impact-routes
 func TestRunTracePlaneNotFoundAndBadID(t *testing.T) {
 	fake := storetest.New()
 	fake.SetProvenanceLineage(seedTraceLineage())
@@ -194,7 +189,6 @@ func TestRunTracePlaneNotFoundAndBadID(t *testing.T) {
 	}
 }
 
-// spec: S07/trace-gate-impact-routes
 func TestPipelineGatePlaneLedger(t *testing.T) {
 	// load depends_on extract; extract's latest run is an unconsumed success -> the
 	// gate is open for that edge.
@@ -222,7 +216,6 @@ func TestPipelineGatePlaneLedger(t *testing.T) {
 	}
 }
 
-// spec: S07/trace-gate-impact-routes
 func TestPipelineGatePlaneUnregistered(t *testing.T) {
 	p := newPipelineGatePlane(storetest.NewShow(), nil)
 	if _, err := p.Gate(context.Background(), "ghost"); err == nil {

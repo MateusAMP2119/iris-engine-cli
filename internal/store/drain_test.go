@@ -11,16 +11,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// TestDrainDeadLettersPureDiscard proves the drain write is a PURE DISCARD
-// (specification sections 6.2 and 12): it removes exactly the scoped dead_letters
-// worklist rows in one atomic statement, re-runs nothing (no INSERT INTO runs), and
-// alters no downstream (no INSERT INTO run_inputs): the ONLY statement issued is the
-// dead_letters delete, scoped to exactly the given run ids and no others. The runs
-// rows themselves are never named in the write, so a drained run's row is left
-// exactly as it was in runs -- untouched, never deleted, never re-minted -- the
-// disposition retention (E05.9) later reads as prunable.
-//
-// spec: S06.2/drain-pure-discard
+// TestDrainDeadLettersPureDiscard proves the drain write is a PURE DISCARD: it
+// removes exactly the scoped dead_letters worklist rows in one atomic statement,
+// re-runs nothing (no INSERT INTO runs), and alters no downstream (no INSERT INTO
+// run_inputs): the ONLY statement issued is the dead_letters delete, scoped to
+// exactly the given run ids and no others. The runs rows themselves are never
+// named in the write, so a drained run's row is left exactly as it was in runs --
+// untouched, never deleted, never re-minted -- the disposition retention (E05.9)
+// later reads as prunable.
 func TestDrainDeadLettersPureDiscard(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -67,8 +65,6 @@ func TestDrainDeadLettersPureDiscard(t *testing.T) {
 // injected meta failure rolls the delete back, so a failed drain leaves no worklist
 // row half-removed. The single writer fails loudly rather than leaving the worklist
 // in an inconsistent state.
-//
-// spec: S06.2/drain-pure-discard
 func TestDrainDeadLettersAtomicRollback(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	sentinel := errors.New("meta write failed")
@@ -90,8 +86,6 @@ func TestDrainDeadLettersAtomicRollback(t *testing.T) {
 // TestDrainDeadLettersEmptyIsNoOp proves draining an empty scope issues no
 // statement at all: nothing to discard writes nothing, rather than an empty-array
 // DELETE that would still be a spurious meta write.
-//
-// spec: S06.2/drain-pure-discard
 func TestDrainDeadLettersEmptyIsNoOp(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

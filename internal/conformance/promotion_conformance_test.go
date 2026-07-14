@@ -16,13 +16,11 @@ import (
 )
 
 // TestPostPromotionWritesStillCaptured is the end-to-end proof of promotion's
-// half of the one-store doctrine against a real Postgres (specification
-// sections 1, 5 and 12): after a pipeline's data is promoted, new writes to its
+// half of the one-store doctrine against a real Postgres: after a pipeline's data
+// is promoted, new writes to its
 // tables are permanent -- born undo='promoted', outside wipe scope -- yet still
 // captured in the journal at stamp cost (slim: no pre-image, no row copy).
 // Promotion never stops capture; it only changes what the stamps are born as.
-//
-// spec: S05/post-promotion-writes-still-captured  (conformance; also claimed here)
 //
 // The leg stands up one real cluster, provisions the partitioned journal and
 // the real iris.capture() function through the live pg path, declares a user
@@ -38,8 +36,6 @@ import (
 //     iris.wipe_eligible setting off, exactly what the engine injects once
 //     data_mode is permanent) and asserts every write is still captured, each
 //     stamp born promoted with a NULL pre_image -- permanent, at stamp cost.
-//
-// spec: S05/post-promotion-writes-still-captured
 func TestPostPromotionWritesStillCaptured(t *testing.T) {
 	start := time.Now()
 	t.Cleanup(func() {

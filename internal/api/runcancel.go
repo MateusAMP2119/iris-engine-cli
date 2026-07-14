@@ -8,12 +8,12 @@ import (
 )
 
 // This file is the daemon's run-control surface for `iris run cancel <run>`
-// (specification section 6.3: only an operator cancel frees a hung run). POST
-// /run/cancel is a mutation, so the mux's leader gate rejects it on a standby with
-// not_leader guidance (exit 6); its scope is control. api stays a leaf: it defines the
-// RunCancelHandler seam and the plain request/result shapes but reaches nothing up the
-// stack. The daemon supplies the handler that kills the run's process group and
-// dead-letters it as stopped through the single meta writer.
+// (only an operator cancel frees a hung run). POST /run/cancel is a mutation,
+// so the mux's leader gate rejects it on a standby with not_leader guidance
+// (exit 6); its scope is control. api stays a leaf: it defines the
+// RunCancelHandler seam and the plain request/result shapes but reaches nothing
+// up the stack. The daemon supplies the handler that kills the run's process
+// group and dead-letters it as stopped through the single meta writer.
 
 // RunCancelRequest is the body of POST /run/cancel: the run id to cancel.
 type RunCancelRequest struct {

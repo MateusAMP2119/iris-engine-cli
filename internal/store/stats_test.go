@@ -10,8 +10,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// These tests prove the stats rollup composition of specification section 11
-// against the meta-store fake: the engine-wide, per-lane, and per-pipeline
+// These tests prove the stats rollup composition against the meta-store fake:
+// the engine-wide, per-lane, and per-pipeline
 // rollups BuildStats derives from plain meta reads plus the leader-held pass
 // counts. Everything is a current count or a last-value -- the composition takes
 // no clock and stores no history.
@@ -39,9 +39,9 @@ func mustCreate(t *testing.T, f *storetest.StatsFake, pipeline, lane string) sto
 // and counts by reason, running runs, capture counters, the wipe-eligible slice,
 // total journal size, and the lifecycle readout (hot rows, sealed and archived
 // partition counts, checkpoint chain head) -- all current counts and last-values
-// sourced from the meta reads (specification sections 11 and 14).
+// sourced from the meta reads.
 func TestStatsEngineRollup(t *testing.T) {
-	t.Run("S11/stats-engine-rollup", func(t *testing.T) {
+	t.Run("stats-engine-rollup", func(t *testing.T) {
 		f := storetest.NewStats()
 		f.RegisterPipeline("extract")
 		f.AddLaneMember("ingest", "extract")
@@ -105,7 +105,6 @@ func TestStatsEngineRollup(t *testing.T) {
 	})
 
 	t.Run("empty engine rolls up to zeros and an absent chain head", func(t *testing.T) {
-		// spec: S11/stats-engine-rollup
 		rollup, err := store.BuildStats(context.Background(), storetest.NewStats(), nil)
 		if err != nil {
 			t.Fatalf("BuildStats over empty state: %v", err)
@@ -125,9 +124,9 @@ func TestStatsEngineRollup(t *testing.T) {
 
 // TestStatsLaneRollup proves the per-lane rollup: pipeline count, queued/running
 // count, and loop passes completed since daemon start -- the leader-held runtime
-// count handed in, never a clock (specification section 11).
+// count handed in, never a clock.
 func TestStatsLaneRollup(t *testing.T) {
-	t.Run("S11/stats-lane-rollup", func(t *testing.T) {
+	t.Run("stats-lane-rollup", func(t *testing.T) {
 		f := storetest.NewStats()
 		for _, p := range []string{"extract", "reset", "load", "solo"} {
 			f.RegisterPipeline(p)
@@ -176,9 +175,9 @@ func TestStatsLaneRollup(t *testing.T) {
 
 // TestStatsPipelineRollup proves the per-pipeline rollup: latest run state, run
 // counts by state, last exit code, and last run id -- last-values from the run
-// history's ordering identity, never a clock (specification section 11).
+// history's ordering identity, never a clock.
 func TestStatsPipelineRollup(t *testing.T) {
-	t.Run("S11/stats-pipeline-rollup", func(t *testing.T) {
+	t.Run("stats-pipeline-rollup", func(t *testing.T) {
 		f := storetest.NewStats()
 		f.RegisterPipeline("extract")
 		f.RegisterPipeline("idle")
@@ -232,13 +231,10 @@ func TestStatsPipelineRollup(t *testing.T) {
 	})
 }
 
-// TestCheckpointsNeverPruned proves the unit contract that journal_checkpoints
-// rows are never pruned by any retention policy.
-//
-// spec: S14/checkpoints-never-pruned
+// TestCheckpointsNeverPruned proves journal_checkpoints rows are never pruned by
+// any retention policy.
 func TestCheckpointsNeverPruned(t *testing.T) {
-	t.Run("S14/checkpoints-never-pruned", func(t *testing.T) {
-		// spec: S14/checkpoints-never-pruned
+	t.Run("checkpoints-never-pruned", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		_ = w.EnsureSchema(context.Background())

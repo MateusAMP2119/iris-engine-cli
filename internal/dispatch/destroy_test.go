@@ -11,13 +11,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the dispatch-level destroy op (specification section 12,
-// destructive ops item 1): a scoped single-unit teardown that reverts the target's
-// un-promoted disposable data, retires all of its meta rows in one transaction with
-// the pipelines row deleted last, and honors the composer destroy interlock. Every
-// write rides a real Dispatcher over a recording fake -- no live Postgres -- so a
-// test asserts the exact retirement write set, its transaction grouping and order,
-// and that the data-revert seam runs before the teardown and gates it.
+// This file proves the dispatch-level destroy op: a scoped single-unit teardown that
+// reverts the target's un-promoted disposable data, retires all of its meta rows in
+// one transaction with the pipelines row deleted last, and honors the composer
+// destroy interlock. Every write rides a real Dispatcher over a recording fake -- no
+// live Postgres -- so a test asserts the exact retirement write set, its transaction
+// grouping and order, and that the data-revert seam runs before the teardown and
+// gates it.
 
 // recordingReverter is a dispatch.DataReverter that records the pipelines it was
 // asked to revert (the un-promoted disposable data seam E06 fills with real
@@ -87,7 +87,7 @@ func newDestroyHarness(t *testing.T, opts ...dispatch.DestroyerOption) destroyHa
 }
 
 // newDestroyHarnessWithLister constructs a harness and wires the given RunLister
-// (used for S12/destroy-summaries-before-delete tests that need to surface runs).
+// (used for destroy-summaries-before-delete tests that need to surface runs).
 func newDestroyHarnessWithLister(t *testing.T, lister dispatch.RunLister) destroyHarness {
 	t.Helper()
 	rec := storetest.NewWriteRecorder()
@@ -126,10 +126,8 @@ func firstIndexOf(stmts []storetest.RecordedStatement, sub string) int {
 // lane has at most one registered member, mirroring apply's 2+ invariant: a lane
 // with two or more registered members refuses the composer destroy (naming the
 // lane), while zero or one registered member permits it.
-//
-// spec: S12/composer-destroy-interlock
 func TestComposerDestroyInterlock(t *testing.T) {
-	t.Run("S12/composer-destroy-interlock", func(t *testing.T) {
+	t.Run("composer-destroy-interlock", func(t *testing.T) {
 		cases := []struct {
 			name              string
 			registeredMembers int
@@ -154,10 +152,8 @@ func TestComposerDestroyInterlock(t *testing.T) {
 // with two of a lane's members registered, DestroyComposer refuses (naming the lane)
 // and writes nothing; drop one member and the composer destroy proceeds, clearing the
 // lane's rows atomically.
-//
-// spec: S12/composer-destroy-interlock
 func TestComposerDestroyInterlockOnDestroyer(t *testing.T) {
-	t.Run("S12/composer-destroy-interlock", func(t *testing.T) {
+	t.Run("composer-destroy-interlock", func(t *testing.T) {
 		// Two registered members: the composer destroy is refused, nothing written.
 		blocked := newDestroyHarness(t)
 		blocked.reg.Register("extract_orders").Register("load_orders")
@@ -188,10 +184,8 @@ func TestComposerDestroyInterlockOnDestroyer(t *testing.T) {
 // inputs, dead-letter entries, artifacts, dependency edges, lane rows, and
 // role/grants/credentials in one meta transaction with the pipelines row deleted
 // last, so no reference dangles and the teardown is all-or-nothing.
-//
-// spec: S12/destroy-retires-rows-one-txn
 func TestDestroyRetiresRowsOneTxn(t *testing.T) {
-	t.Run("S12/destroy-retires-rows-one-txn", func(t *testing.T) {
+	t.Run("destroy-retires-rows-one-txn", func(t *testing.T) {
 		h := newDestroyHarness(t)
 		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
 			t.Fatalf("DestroyPipeline: %v", err)
@@ -206,7 +200,7 @@ func TestDestroyRetiresRowsOneTxn(t *testing.T) {
 			t.Errorf("destroy wrote %d statements but only %d rode the one transaction", len(h.rec.Statements()), len(batch))
 		}
 
-		// Every table named in the spec's retirement set is deleted.
+		// Every table in the retirement set is deleted.
 		for _, table := range []string{
 			"run_inputs", "dead_letters", "runs", "artifacts",
 			"dependencies", "lanes", "grants", "credentials", "roles", "pipelines",
@@ -252,10 +246,8 @@ func TestDestroyRetiresRowsOneTxn(t *testing.T) {
 // target's un-promoted disposable data before it retires the pipeline's registration,
 // role, and grants: the DataReverter seam is invoked for the target, and a failing
 // revert gates the teardown so no meta row is retired without the data first reverted.
-//
-// spec: S12/destroy-reverts-unpromoted-data
 func TestDestroyRevertsUnpromotedData(t *testing.T) {
-	t.Run("S12/destroy-reverts-unpromoted-data", func(t *testing.T) {
+	t.Run("destroy-reverts-unpromoted-data", func(t *testing.T) {
 		// The revert seam is invoked exactly once, for the target, and the teardown
 		// retires the registration, role, and grants alongside it.
 		h := newDestroyHarness(t)
@@ -291,10 +283,8 @@ func TestDestroyRevertsUnpromotedData(t *testing.T) {
 // deletes exactly that one pipelines row, issues only scoped DELETEs (never a CREATE,
 // DROP TABLE, DROP SCHEMA, or any data_journal / schema DDL), so no engine table and
 // no declared schema is touched.
-//
-// spec: S04/declare-destroy-scoped-teardown
 func TestDestroyScopedTeardown(t *testing.T) {
-	t.Run("S04/declare-destroy-scoped-teardown", func(t *testing.T) {
+	t.Run("declare-destroy-scoped-teardown", func(t *testing.T) {
 		h := newDestroyHarness(t)
 		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
 			t.Fatalf("DestroyPipeline: %v", err)
@@ -331,10 +321,8 @@ func TestDestroyScopedTeardown(t *testing.T) {
 // predicates) gates the teardown: a blocked pipeline refuses destroy with the
 // blocker's reason and writes nothing, and the default (unwired) blocker is open so a
 // plain destroy proceeds.
-//
-// spec: S04/declare-destroy-scoped-teardown
 func TestDestroyBlockerGatesTeardown(t *testing.T) {
-	t.Run("S04/declare-destroy-scoped-teardown", func(t *testing.T) {
+	t.Run("declare-destroy-scoped-teardown", func(t *testing.T) {
 		h := newDestroyHarness(t, dispatch.WithDestroyBlocker(blockingBlocker{reason: "downstream load_orders depends_on it"}))
 		err := h.destroyer.DestroyPipeline(context.Background(), "extract_orders")
 		if err == nil {
@@ -365,11 +353,9 @@ func (r *recordingRunLister) ListPrunableRuns(_ context.Context, pipeline string
 // TestDestroySummariesBeforeDelete proves declare destroy writes each remaining
 // run's archival summary into run_summaries BEFORE deleting the run rows, inside
 // the same meta transaction, so journal stamps continue to resolve after the
-// pipeline and its runs are gone (S12/destroy-summaries-before-delete).
-//
-// spec: S12/destroy-summaries-before-delete
+// pipeline and its runs are gone.
 func TestDestroySummariesBeforeDelete(t *testing.T) {
-	t.Run("S12/destroy-summaries-before-delete", func(t *testing.T) {
+	t.Run("destroy-summaries-before-delete", func(t *testing.T) {
 		// Seed two runs for the pipeline via the lister seam.
 		lister := &recordingRunLister{runs: map[string][]store.PrunableRun{
 			"load_orders": {
@@ -425,10 +411,8 @@ func TestDestroySummariesBeforeDelete(t *testing.T) {
 // the schemas/ tree, endpoints, and journal history all remain intact: the
 // retirement issues only scoped meta DELETEs for the pipeline's own rows and never
 // touches endpoints, journal, or any engine DDL.
-//
-// spec: S12/destroy-preserves-engine-journal
 func TestDestroyPreservesEngineJournal(t *testing.T) {
-	t.Run("S12/destroy-preserves-engine-journal", func(t *testing.T) {
+	t.Run("destroy-preserves-engine-journal", func(t *testing.T) {
 		h := newDestroyHarness(t)
 		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
 			t.Fatalf("DestroyPipeline: %v", err)

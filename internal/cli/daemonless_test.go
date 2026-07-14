@@ -25,10 +25,10 @@ func isLeafCommand(c *cobra.Command) bool {
 	return true
 }
 
-// TestDaemonlessLifecycleCommands proves the daemonless roster (specification
-// section 2): exactly `iris engine install`, `engine start`, `engine service
-// install`, `engine service uninstall`, `engine uninstall`, the root lifecycle
-// verbs `iris update` (self-replace of the binary) and `iris uninstall`
+// TestDaemonlessLifecycleCommands proves the daemonless roster: exactly `iris
+// engine install`, `engine start`, `engine service install`, `engine service
+// uninstall`, `engine uninstall`, the root lifecycle verbs `iris update`
+// (self-replace of the binary) and `iris uninstall`
 // (self-removal of the binary), and the onboarding root verb `iris quickstart`
 // (the tour runs before any engine exists) are classified runnable
 // without a daemon; every other leaf command is
@@ -38,8 +38,7 @@ func isLeafCommand(c *cobra.Command) bool {
 // list: every leaf must carry exactly one, and the daemonless set must match the
 // roster exactly.
 func TestDaemonlessLifecycleCommands(t *testing.T) {
-	// spec: S02/daemonless-lifecycle-commands
-	t.Run("S02/daemonless-lifecycle-commands", func(t *testing.T) {
+	t.Run("daemonless-lifecycle-commands", func(t *testing.T) {
 		root := testRoot()
 
 		wantDaemonless := map[string]bool{
@@ -73,15 +72,15 @@ func TestDaemonlessLifecycleCommands(t *testing.T) {
 			}
 		})
 
-		// The daemonless set matches the spec roster exactly: no missing, no extra.
+		// The daemonless set matches the expected roster exactly: no missing, no extra.
 		for path := range wantDaemonless {
 			if !gotDaemonless[path] {
-				t.Errorf("command %q is not classified daemonless but must be (spec section 2 roster)", path)
+				t.Errorf("command %q is not classified daemonless but must be (daemonless roster)", path)
 			}
 		}
 		for path := range gotDaemonless {
 			if !wantDaemonless[path] {
-				t.Errorf("command %q is classified daemonless but is not in the spec section 2 roster", path)
+				t.Errorf("command %q is classified daemonless but is not in the daemonless roster", path)
 			}
 		}
 	})

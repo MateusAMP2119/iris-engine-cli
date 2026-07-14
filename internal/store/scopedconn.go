@@ -7,14 +7,14 @@ import (
 	"strconv"
 )
 
-// This file is the pipeline-scoped connection the engine injects into a run at spawn
-// (specification section 7): the least-privilege Postgres connection string that
-// authenticates as a pipeline's engine-managed role, with the engine-minted
-// credential, and targets the data database. It is built here -- beside Secret, the
-// one place a credential's raw value is revealed -- so the secret never leaves store
-// except through the two deliberate exits it already has (the credentials write bind)
-// plus this one (the run-environment injection). Authors and consumers never handle
-// it; the engine mints, holds, and injects it (specification section 7).
+// This file is the pipeline-scoped connection the engine injects into a run at
+// spawn: the least-privilege Postgres connection string that authenticates as a
+// pipeline's engine-managed role, with the engine-minted credential, and targets
+// the data database. It is built here -- beside Secret, the one place a
+// credential's raw value is revealed -- so the secret never leaves store except
+// through the two deliberate exits it already has (the credentials write bind)
+// plus this one (the run-environment injection). Authors and consumers never
+// handle it; the engine mints, holds, and injects it.
 
 // redactedScopedConn is what every formatting path renders in place of a scoped
 // connection string, so a stray %v, %s, %#v, or String() in a log line can never leak
@@ -38,13 +38,14 @@ type ScopedConnParams struct {
 	Options string
 }
 
-// ScopedConn is the least-privilege Postgres connection string the engine injects into
-// a pipeline run at spawn: it authenticates as the pipeline's engine-managed role with
-// the engine-minted credential and targets the data database (specification section
-// 7). Its raw value never leaves the process through a formatting or encoding path: it
-// has one unexported field, implements fmt.Formatter, fmt.Stringer, and fmt.GoStringer
-// to redact, and exposes the raw DSN only through EnvValue -- the deliberate exit that
-// injects it into the run's IRIS_DB_URL. Authors and consumers never handle it.
+// ScopedConn is the least-privilege Postgres connection string the engine injects
+// into a pipeline run at spawn: it authenticates as the pipeline's engine-managed
+// role with the engine-minted credential and targets the data database. Its raw
+// value never leaves the process through a formatting or encoding path: it has
+// one unexported field, implements fmt.Formatter, fmt.Stringer, and
+// fmt.GoStringer to redact, and exposes the raw DSN only through EnvValue -- the
+// deliberate exit that injects it into the run's IRIS_DB_URL. Authors and
+// consumers never handle it.
 type ScopedConn struct {
 	// dsn is the raw scoped connection string. Unexported so no reflection-based
 	// encoder (encoding/json, etc.) can serialize it, keeping the credential-bearing
@@ -52,14 +53,14 @@ type ScopedConn struct {
 	dsn string
 }
 
-// BuildScopedConn assembles the scoped connection for a pipeline's login role from the
-// data-database coordinates, the role name, and the engine-minted credential
-// (specification section 7). The role must be non-empty and the secret non-zero (a
-// login role always carries a credential); an empty role yields ErrInvalidRoleOwner
-// and a zero secret yields ErrEmptySecret. The userinfo is URL-encoded, so a
-// credential containing a URL metacharacter still yields a valid DSN, and the raw
-// secret is read exactly once here (through the package-private reveal) and sealed
-// inside the returned ScopedConn.
+// BuildScopedConn assembles the scoped connection for a pipeline's login role
+// from the data-database coordinates, the role name, and the engine-minted
+// credential. The role must be non-empty and the secret non-zero (a login role
+// always carries a credential); an empty role yields ErrInvalidRoleOwner and a
+// zero secret yields ErrEmptySecret. The userinfo is URL-encoded, so a credential
+// containing a URL metacharacter still yields a valid DSN, and the raw secret is
+// read exactly once here (through the package-private reveal) and sealed inside
+// the returned ScopedConn.
 func BuildScopedConn(params ScopedConnParams, role string, secret Secret) (ScopedConn, error) {
 	if role == "" {
 		return ScopedConn{}, fmt.Errorf("store: build scoped connection: %w", ErrInvalidRoleOwner)

@@ -10,7 +10,7 @@ import (
 )
 
 // TestDaemonServiceReady drives the real iris binary and proves the detached
-// daemon is service-ready (specification section 2): it runs without a controlling
+// daemon is service-ready: it runs without a controlling
 // TTY and exits with sane exit codes, so a systemd/launchd unit can wrap
 // `iris engine start --detach` directly. The daemon is started detached from a
 // TTY-less environment (the go-test process has no controlling terminal and the
@@ -24,8 +24,7 @@ import (
 func TestDaemonServiceReady(t *testing.T) {
 	bin := Build(t)
 
-	// spec: S02/daemon-service-ready
-	t.Run("S02/daemon-service-ready", func(t *testing.T) {
+	t.Run("daemon-service-ready", func(t *testing.T) {
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")
 

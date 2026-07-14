@@ -7,14 +7,13 @@ import (
 	"strings"
 )
 
-// publicSchema is the engine-reserved schema name (specification section 3):
-// apply rejects a public schema folder under schemas/ and any reads/writes
-// entry targeting public.*.
+// publicSchema is the engine-reserved schema name: apply rejects a public schema
+// folder under schemas/ and any reads/writes entry targeting public.*.
 const publicSchema = "public"
 
 // ValidateAccess checks the shape and reservation rules of one pipeline
-// declaration's reads/writes entries (specification section 3). Reads/writes
-// are access-only: they grant schema+table+field access on the pipeline's
+// declaration's reads/writes entries. Reads/writes are access-only: they grant
+// schema+table+field access on the pipeline's
 // Postgres role and are recorded in meta, but they are never exclusive and
 // never create a dependency edge or run order of their own -- ordering derives
 // only from lanes and depends_on (see ValidateDependencies, whose acyclicity
@@ -27,7 +26,7 @@ const publicSchema = "public"
 // non-empty) and carry a non-empty fields list; an entry violating either rule
 // is rejected, and there is no implicit all-columns fallback for an omitted
 // fields list. An entry whose schema is exactly "public" is rejected: public is
-// engine-reserved (specification section 3).
+// engine-reserved.
 //
 // All violations across both lists are reported together (errors.Join), in a
 // deterministic order: reads before writes, entry order preserved within each
@@ -80,9 +79,9 @@ func splitDottedTable(table string) (schema, name string, ok bool) {
 }
 
 // ValidateSchemaTreeReserved reads the top level of a schemas/ directory and
-// rejects a folder named "public" directly under it: public is engine-reserved
-// (specification section 3), so it may never be declared as a schema folder,
-// independent of ValidateSchemaTree's per-table folder-agreement checks.
+// rejects a folder named "public" directly under it: public is engine-reserved,
+// so it may never be declared as a schema folder, independent of
+// ValidateSchemaTree's per-table folder-agreement checks.
 func ValidateSchemaTreeReserved(schemasDir string) error {
 	entries, err := os.ReadDir(schemasDir)
 	if err != nil {

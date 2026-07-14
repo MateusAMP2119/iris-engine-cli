@@ -9,15 +9,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// These tests pin the response-side half of the read-API wire contract
-// (specification section 7): the data/page success envelope, the shared error
-// envelope with its closed code set, and the per-column-type JSON serialization
-// rules. They are byte-exact where the spec pins the shape: the envelope key
-// order, the row column order (rows mirror source columns), and each type's
-// JSON form are asserted against literal JSON bytes, not canonicalized values.
+// These tests pin the response-side half of the read-API wire contract: the
+// data/page success envelope, the shared error envelope with its closed code
+// set, and the per-column-type JSON serialization rules. They are byte-exact
+// where the wire shape is pinned: the envelope key order, the row column order
+// (rows mirror source columns), and each type's JSON form are asserted against
+// literal JSON bytes, not canonicalized values.
 
-// ordersColumns is the response shape of the specification's worked example
-// endpoint (orders_by_customer over analytics.orders), in projection order.
+// ordersColumns is the response shape of the worked-example endpoint
+// (orders_by_customer over analytics.orders), in projection order.
 func ordersColumns() []ResponseColumn {
 	return []ResponseColumn{
 		{Name: "id", PgType: "bigint"},
@@ -42,14 +42,11 @@ func ordersTable() *declare.Table {
 	}
 }
 
-// TestResponseEnvelope pins the success envelope (specification section 7):
-// { "data": [ ... ], "page": { "next_after": <key|null>, "limit": <n> } },
-// with rows mirroring the source columns in projection order, data always a
-// JSON array (never null), next_after the last served row's key when the page
-// filled to its limit and null otherwise, and a composite key rendered as the
-// ordered key tuple.
-//
-// spec: S07/response-envelope
+// TestResponseEnvelope pins the success envelope: { "data": [ ... ], "page": {
+// "next_after": <key|null>, "limit": <n> } }, with rows mirroring the source
+// columns in projection order, data always a JSON array (never null),
+// next_after the last served row's key when the page filled to its limit and
+// null otherwise, and a composite key rendered as the ordered key tuple.
 func TestResponseEnvelope(t *testing.T) {
 	cols := ordersColumns()
 	row1 := map[string]any{
@@ -186,14 +183,12 @@ func TestResponseEnvelope(t *testing.T) {
 	})
 }
 
-// TestColumnTypeSerialization pins the per-column-type JSON forms (specification
-// section 7): int/bigint/smallint/double as JSON numbers, numeric as a string
-// (no float loss), bool as a JSON boolean, text/varchar/uuid as strings,
+// TestColumnTypeSerialization pins the per-column-type JSON forms:
+// int/bigint/smallint/double as JSON numbers, numeric as a string (no float
+// loss), bool as a JSON boolean, text/varchar/uuid as strings,
 // timestamptz/timestamp/date/time as RFC 3339 strings, json/jsonb inline, bytea
 // as base64, SQL NULL as JSON null, and recorded_at audit strings opaque:
 // emitted verbatim, never parsed or interpreted for ordering.
-//
-// spec: S07/column-type-serialization
 func TestColumnTypeSerialization(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -289,13 +284,11 @@ func TestColumnTypeSerialization(t *testing.T) {
 	})
 }
 
-// TestErrorEnvelopeClosedCodes pins the error envelope (specification section
-// 7): errors reuse the envelope with an error object carrying a code from the
-// closed set {bad_param, unauthorized, forbidden, not_found, method_not_allowed,
-// internal} and a human-readable message; a code outside the set is refused,
-// never emitted; and each code maps to its fixed HTTP status.
-//
-// spec: S07/error-envelope-closed-codes
+// TestErrorEnvelopeClosedCodes pins the error envelope: errors reuse the
+// envelope with an error object carrying a code from the closed set {bad_param,
+// unauthorized, forbidden, not_found, method_not_allowed, internal} and a
+// human-readable message; a code outside the set is refused, never emitted; and
+// each code maps to its fixed HTTP status.
 func TestErrorEnvelopeClosedCodes(t *testing.T) {
 	t.Run("envelope-shape", func(t *testing.T) {
 		got, err := RenderError(CodeBadParam, `param "limit": exceeds the maximum of 1000`)

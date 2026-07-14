@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-// fakeWorkload implements WorkloadShowHandler for the S07/workload-route integration test.
+// fakeWorkload implements WorkloadShowHandler for the workload-route test.
 type fakeWorkload struct {
 	pipeline string
 }
 
 func (f *fakeWorkload) ShowWorkload(_ context.Context, pipeline string) (WorkloadShowResult, error) {
 	f.pipeline = pipeline
-	// Return a minimal wiring payload matching the contract description:
+	// Return a minimal wiring payload matching the wiring panel shape:
 	// lanes, composer order, pipelines with modes and run tips (latest run), depends_on edges with gate state.
 	return WorkloadShowResult{
 		Lanes: []LaneWiring{
@@ -30,7 +30,7 @@ func (f *fakeWorkload) ShowWorkload(_ context.Context, pipeline string) (Workloa
 	}, nil
 }
 
-// fakeRuns implements RunsHandler for tests claiming S07/runs-include-inputs.
+// fakeRuns implements RunsHandler for the runs-include-inputs tests.
 type fakeRuns struct {
 	include bool
 }
@@ -69,11 +69,10 @@ func (fakeImpact) Impact(_ context.Context, runID string) (any, error) {
 	return map[string]any{"run": runID, "impact": []any{}}, nil
 }
 
-// TestS07ReadRoutes claims the S07 integration contracts for the read routes:
-// workload (already wired), runs with inputs, trace/gate/impact.
+// TestS07ReadRoutes covers the read routes at the mux tier: workload (already
+// wired), runs with inputs, trace/gate/impact.
 func TestS07ReadRoutes(t *testing.T) {
-	// spec: S07/runs-include-inputs
-	t.Run("S07/runs-include-inputs", func(t *testing.T) {
+	t.Run("runs-include-inputs", func(t *testing.T) {
 		fr := &fakeRuns{}
 		mux := NewMux(WithRuns(fr))
 		req := httptest.NewRequest(http.MethodGet, "/runs?include=inputs", nil)
@@ -85,7 +84,7 @@ func TestS07ReadRoutes(t *testing.T) {
 		if !fr.include {
 			t.Errorf("include=inputs was not passed to handler")
 		}
-		// Response should embed consumed upstream ids and replayed_from as plain row attributes (parents-per-row, never a separate edge array), per contract.
+		// Response should embed consumed upstream ids and replayed_from as plain row attributes (parents-per-row, never a separate edge array).
 		body := rec.Body.String()
 		if !strings.Contains(body, `"inputs"`) || !strings.Contains(body, `"replayed_from"`) {
 			t.Errorf("runs response missing inputs/replayed_from attrs: %s", body)
@@ -113,8 +112,7 @@ func TestS07ReadRoutes(t *testing.T) {
 		}
 	})
 
-	// spec: S07/trace-gate-impact-routes
-	t.Run("S07/trace-gate-impact-routes", func(t *testing.T) {
+	t.Run("trace-gate-impact-routes", func(t *testing.T) {
 		mux := NewMux(WithRunTrace(fakeTrace{}), WithPipelineGate(fakeGate{}), WithDeadImpact(fakeImpact{}))
 
 		for _, path := range []string{"/runs/99/trace?direction=up", "/pipelines/load/gate", "/dead_letters/99/impact"} {
@@ -127,8 +125,7 @@ func TestS07ReadRoutes(t *testing.T) {
 		}
 	})
 
-	// spec: S07/workload-route
-	t.Run("S07/workload-route", func(t *testing.T) {
+	t.Run("workload-route", func(t *testing.T) {
 		fw := &fakeWorkload{}
 		mux := NewMux(WithWorkloadShow(fw))
 
@@ -143,7 +140,7 @@ func TestS07ReadRoutes(t *testing.T) {
 		if !strings.Contains(body, `"lanes"`) || !strings.Contains(body, `"ingest"`) {
 			t.Errorf("workload payload missing lanes structure: %s", body)
 		}
-		// payload must have lanes + pipelines with modes + run tips + gate edges per contract
+		// payload must have lanes + pipelines with modes + run tips + gate edges
 		if !strings.Contains(body, "extract_orders") || !strings.Contains(body, "source") || !strings.Contains(body, "disposable") || !strings.Contains(body, "up_to_date") {
 			t.Errorf("workload payload missing pipelines/modes/run_tip/gate state: %s", body)
 		}

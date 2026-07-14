@@ -72,8 +72,8 @@ func mapKeys(m map[string][]string) []string {
 	return out
 }
 
-// wantTree is the documented iris <noun> <verb> tree (specification section 8,
-// with the E14 additions). engine.service is the one documented sub-noun.
+// wantTree is the documented iris <noun> <verb> tree (with the E14 additions).
+// engine.service is the one documented sub-noun.
 var wantTree = map[string][]string{
 	"declare":    {"apply", "destroy"},
 	"pipeline":   {"build", "promote", "run", "list", "show"},
@@ -88,8 +88,7 @@ var wantTree = map[string][]string{
 
 // TestCommandTree pins the shape of the whole tree.
 func TestCommandTree(t *testing.T) {
-	// spec: S08/resource-first-command-tree
-	t.Run("S08/resource-first-command-tree", func(t *testing.T) {
+	t.Run("resource-first-command-tree", func(t *testing.T) {
 		root := testRoot()
 
 		// Top-level commands are exactly the nine resource nouns plus the three
@@ -147,8 +146,7 @@ func TestCommandTree(t *testing.T) {
 
 // TestSoleAlias proves dl is the one and only alias in the tree.
 func TestSoleAlias(t *testing.T) {
-	// spec: S08/dl-sole-alias
-	t.Run("S08/dl-sole-alias", func(t *testing.T) {
+	t.Run("dl-sole-alias", func(t *testing.T) {
 		root := testRoot()
 		var aliased []*cobra.Command
 		walk(root, func(c *cobra.Command) {
@@ -172,8 +170,7 @@ func TestSoleAlias(t *testing.T) {
 
 // TestDryRunScope proves --dry-run is registered only on declare apply/destroy.
 func TestDryRunScope(t *testing.T) {
-	// spec: S08/dry-run-only-on-declare
-	t.Run("S08/dry-run-only-on-declare", func(t *testing.T) {
+	t.Run("dry-run-only-on-declare", func(t *testing.T) {
 		root := testRoot()
 		walk(root, func(c *cobra.Command) {
 			hasDryRun := c.Flags().Lookup("dry-run") != nil
@@ -187,8 +184,7 @@ func TestDryRunScope(t *testing.T) {
 
 // TestGlobalFlags proves every command accepts the four global flags.
 func TestGlobalFlags(t *testing.T) {
-	// spec: S08/global-flags-on-all-commands
-	t.Run("S08/global-flags-on-all-commands", func(t *testing.T) {
+	t.Run("global-flags-on-all-commands", func(t *testing.T) {
 		root := testRoot()
 		globals := []string{"json", "socket", "host", "token"}
 		walk(root, func(c *cobra.Command) {
@@ -203,8 +199,7 @@ func TestGlobalFlags(t *testing.T) {
 
 // TestNoRunShapingFlags proves the run-shaping flags are registered nowhere.
 func TestNoRunShapingFlags(t *testing.T) {
-	// spec: S08/no-run-shaping-flags
-	t.Run("S08/no-run-shaping-flags", func(t *testing.T) {
+	t.Run("no-run-shaping-flags", func(t *testing.T) {
 		root := testRoot()
 		banned := []string{"param", "timeout", "retry"}
 		walk(root, func(c *cobra.Command) {
@@ -238,8 +233,6 @@ func parentName(c *cobra.Command) string {
 // TestRunRefGrammar proves the <run> grammar: bare pipeline name means latest
 // run of it; <name>~n means nth prior run (0=latest); git ^ and .. are rejected
 // as false cognates. Pure unit logic; resolution to id is I/O later.
-//
-// spec: S08/run-ref-grammar
 func TestRunRefGrammar(t *testing.T) {
 	tests := []struct {
 		ref          string

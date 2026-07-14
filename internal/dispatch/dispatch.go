@@ -1,10 +1,10 @@
-// Package dispatch owns the leader's single-writer meta path: one goroutine, the
-// sole meta writer (specification section 6.1). Every meta write is submitted to
-// the one Dispatcher and executed serially by its one goroutine, so meta has
-// exactly one writer and writes never overlap. The dispatcher is a leader-owned
-// component: only the elected leader starts one (the daemon does so on winning the
-// leader lock), and it holds the one store.Writer -- which it alone constructs, so
-// no other package can open a second write path to meta.
+// Package dispatch owns the leader's single-writer meta path: one goroutine, the sole
+// meta writer. Every meta write is submitted to the one Dispatcher and executed
+// serially by its one goroutine, so meta has exactly one writer and writes never
+// overlap. The dispatcher is a leader-owned component: only the elected leader starts
+// one (the daemon does so on winning the leader lock), and it holds the one
+// store.Writer -- which it alone constructs, so no other package can open a second
+// write path to meta.
 //
 // E02.6 lands the write-serialization mechanism and the leader-only schema
 // re-check it carries; the run-record, dead-letter, replay, and journal-lifecycle
@@ -104,18 +104,16 @@ func (d *Dispatcher) Submit(ctx context.Context, fn func(*store.Writer) error) e
 }
 
 // EnsureSchema submits the leader's meta schema re-check through the single-writer
-// path: the create-if-missing control-table DDL the leader issues at election
-// (specification section 4). It is a leader-only meta write, so it runs on the
-// dispatcher goroutine like every other.
+// path: the create-if-missing control-table DDL the leader issues at election. It is
+// a leader-only meta write, so it runs on the dispatcher goroutine like every other.
 func (d *Dispatcher) EnsureSchema(ctx context.Context) error {
 	return d.Submit(ctx, func(w *store.Writer) error { return w.EnsureSchema(ctx) })
 }
 
 // AdvertiseLeader submits the leader-address advertisement through the single-writer
-// path: the upsert of this leader's advertised address into the single-row
-// leadership table the leader issues on winning the advisory lock (specification
-// sections 4 and 15). It is a leader-only meta write, so it runs on the dispatcher
-// goroutine like every other.
+// path: the upsert of this leader's advertised address into the single-row leadership
+// table the leader issues on winning the advisory lock. It is a leader-only meta
+// write, so it runs on the dispatcher goroutine like every other.
 func (d *Dispatcher) AdvertiseLeader(ctx context.Context, addr string) error {
 	return d.Submit(ctx, func(w *store.Writer) error { return w.AdvertiseLeader(ctx, addr) })
 }

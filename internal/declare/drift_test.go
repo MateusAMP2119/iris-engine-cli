@@ -47,14 +47,14 @@ func findDrift(ds []declare.Drift, subject declare.DriftSubject, name string) (d
 }
 
 // TestDriftAdditiveOnlyAutofix proves the additive-only doctrine holds across all
-// three drift comparisons at once (specification section 5): every additive gap
+// three drift comparisons at once: every additive gap
 // carries the autofix action (the engine auto-resolves it), and every
 // non-additive discrepancy carries no automatic action -- it is refused or
 // reported, never autofixed. The invariant is checked over a mixed report drawn
 // from schema, ledger, and grant drift together, so no single domain can satisfy
 // it vacuously.
 func TestDriftAdditiveOnlyAutofix(t *testing.T) {
-	t.Run("S05/drift-additive-only-autofix", func(t *testing.T) {
+	t.Run("drift-additive-only-autofix", func(t *testing.T) {
 		// Schema drift: one missing column (additive) and one extra column
 		// (non-additive) on the same table, capture trigger present.
 		schemaRep, err := declare.ClassifySchemaDrift(
@@ -135,10 +135,9 @@ func TestDriftAdditiveOnlyAutofix(t *testing.T) {
 
 // TestLedgerDriftRemovalRefused proves a column removed from table.yaml relative
 // to the migrations-ledger head is classified non-additive and refused, never
-// dropped (specification section 5). The ledger records amount; table.yaml no
-// longer declares it.
+// dropped. The ledger records amount; table.yaml no longer declares it.
 func TestLedgerDriftRemovalRefused(t *testing.T) {
-	t.Run("S05/ledger-drift-removal-refused", func(t *testing.T) {
+	t.Run("ledger-drift-removal-refused", func(t *testing.T) {
 		rep, err := declare.ClassifyLedgerDrift(
 			tbl("analytics", "orders", [2]string{"id", "uuid"}, [2]string{"customer_id", "uuid"}),
 			declare.LedgerState{Columns: []declare.LedgerColumn{
@@ -181,13 +180,12 @@ func TestLedgerDriftRemovalRefused(t *testing.T) {
 }
 
 // TestSchemaDriftExcludesEngineOwned proves engine-owned surfaces are outside the
-// schema-drift comparison (specification section 5): the journal table is never
+// schema-drift comparison: the journal table is never
 // flagged even when present in the live view, a present capture trigger is never
 // flagged, and a missing capture trigger is classified additive/autofix -- the
-// classification vocabulary the engine's trigger-emission step (a separate
-// contract) later executes.
+// classification vocabulary the engine's trigger-emission step later executes.
 func TestSchemaDriftExcludesEngineOwned(t *testing.T) {
-	t.Run("S05/schema-drift-excludes-engine-owned", func(t *testing.T) {
+	t.Run("schema-drift-excludes-engine-owned", func(t *testing.T) {
 		// The journal is engine-owned; a declared user table is not.
 		if !declare.IsEngineOwnedTable("public", "data_journal") {
 			t.Error("IsEngineOwnedTable(public, data_journal) = false, want true (the journal is engine-owned)")
@@ -242,11 +240,11 @@ func TestSchemaDriftExcludesEngineOwned(t *testing.T) {
 }
 
 // TestSchemaDriftNonAdditiveRefused proves schema drift flags an extra, renamed,
-// or retyped live column as non-additive and refuses apply, never auto-dropping
-// (specification section 5). A rename manifests in a pure name diff as an extra
+// or retyped live column as non-additive and refuses apply, never auto-dropping.
+// A rename manifests in a pure name diff as an extra
 // (old-name) live column, which is the refusing discrepancy.
 func TestSchemaDriftNonAdditiveRefused(t *testing.T) {
-	t.Run("S05/schema-drift-nonadditive-refused", func(t *testing.T) {
+	t.Run("schema-drift-nonadditive-refused", func(t *testing.T) {
 		// A nil declared head is a sentinel error, consistent with ClassifyLedgerDrift.
 		if _, err := declare.ClassifySchemaDrift(nil, declare.LiveTable{}); !errors.Is(err, declare.ErrNilDeclaredTable) {
 			t.Errorf("ClassifySchemaDrift(nil) err = %v, want ErrNilDeclaredTable", err)
@@ -308,13 +306,13 @@ func TestSchemaDriftNonAdditiveRefused(t *testing.T) {
 }
 
 // TestNonAdditiveRefusedOutright proves non-additive schema changes are refused
-// outright with no confirmation gate ever offered (specification section 12). The
+// outright with no confirmation gate ever offered. The
 // no-gate guarantee is asserted structurally: neither the Drift value nor the
 // DriftReport result carries any confirmation/gate field, so no code path can
 // offer one. The behavioral half asserts a non-additive schema drift resolves to
 // the refuse action.
 func TestNonAdditiveRefusedOutright(t *testing.T) {
-	t.Run("S12/non-additive-refused-outright", func(t *testing.T) {
+	t.Run("non-additive-refused-outright", func(t *testing.T) {
 		// Structural: no gate hook exists on the result types.
 		forbidden := []string{"confirm", "gate", "prompt", "approve"}
 		for _, typ := range []reflect.Type{reflect.TypeOf(declare.Drift{}), reflect.TypeOf(declare.DriftReport{})} {
@@ -349,13 +347,13 @@ func TestNonAdditiveRefusedOutright(t *testing.T) {
 }
 
 // TestEngineColumnRefusedAsDrift proves an engine-added column on a user table is
-// classified as non-additive drift and refused, keeping table.yaml authoritative
-// (specification sections 5 and 14). The exclusion of engine-owned surfaces is at
+// classified as non-additive drift and refused, keeping table.yaml authoritative.
+// The exclusion of engine-owned surfaces is at
 // the object level (the journal table, the capture trigger) -- never at the column
 // level: an extra live column is refused regardless of an engine-ish name, while
 // the capture trigger on the same table stays excluded.
 func TestEngineColumnRefusedAsDrift(t *testing.T) {
-	t.Run("S14/engine-column-refused-as-drift", func(t *testing.T) {
+	t.Run("engine-column-refused-as-drift", func(t *testing.T) {
 		rep, err := declare.ClassifySchemaDrift(
 			tbl("analytics", "orders", [2]string{"id", "uuid"}, [2]string{"name", "text"}),
 			// An engine-ish extra column plus an installed capture trigger.
@@ -385,12 +383,12 @@ func TestEngineColumnRefusedAsDrift(t *testing.T) {
 }
 
 // TestCrossModeReadWarns proves apply warns but never refuses when a
-// permanent-data pipeline declares reads on a disposable-mode pipeline's table
-// (specification section 5): the legitimate mid-promotion state. The check returns
+// permanent-data pipeline declares reads on a disposable-mode pipeline's table:
+// the legitimate mid-promotion state. The check returns
 // warnings only -- there is no error path -- and stays silent when the reader is
 // disposable or every upstream is already permanent.
 func TestCrossModeReadWarns(t *testing.T) {
-	t.Run("S05/cross-mode-read-warns", func(t *testing.T) {
+	t.Run("cross-mode-read-warns", func(t *testing.T) {
 		// Permanent reader over a disposable upstream: exactly one warning, no refusal.
 		warns := declare.CheckCrossModeReads(declare.DataPermanent, []declare.UpstreamRead{
 			{Table: "raw.orders_staging", Mode: declare.DataDisposable},

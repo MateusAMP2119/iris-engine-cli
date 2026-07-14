@@ -21,12 +21,10 @@ func (h errBuildHandler) BuildPipeline(context.Context, api.PipelineBuildRequest
 }
 
 // TestBuildRouteDistinguishesCancellation proves POST /pipeline/build tells a
-// request-context cancellation apart from a genuine build failure (specification
-// sections 7, 8, and 9): a real failure is operation_failed (422), while a caller
-// that cancels or times out mid-build gets a distinct status and error code, so a
-// client or proxy never mistakes an aborted request for an engine-side build error.
-//
-// spec: S01/build-single-binary-content-hash
+// request-context cancellation apart from a genuine build failure: a real
+// failure is operation_failed (422), while a caller that cancels or times out
+// mid-build gets a distinct status and error code, so a client or proxy never
+// mistakes an aborted request for an engine-side build error.
 func TestBuildRouteDistinguishesCancellation(t *testing.T) {
 	do := func(h api.BuildHandler) (int, api.ErrorBody) {
 		t.Helper()

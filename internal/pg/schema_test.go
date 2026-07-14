@@ -27,8 +27,6 @@ func journalColumn(t *testing.T, name string) pg.Column {
 // TestDataJournalShape proves data_journal is created in the data database's
 // public schema as a partitioned capture table with exactly two indexes -- its
 // primary key and the (schema, table, row_pk, run_id) provenance key.
-//
-// spec: S04/state-split-meta-vs-data
 func TestDataJournalShape(t *testing.T) {
 	ctx := context.Background()
 	jt := pg.JournalTable()
@@ -75,8 +73,6 @@ func TestDataJournalShape(t *testing.T) {
 // TestDataJournalOrderingIdentity proves the journal ordering key is a monotonic
 // bigint identity column, recorded_at is an opaque text audit string, and the
 // table carries a nullable pre_image but no post-image or clock column.
-//
-// spec: S04/ordering-identity-never-clock
 func TestDataJournalOrderingIdentity(t *testing.T) {
 	jt := pg.JournalTable()
 
@@ -109,8 +105,6 @@ func TestDataJournalOrderingIdentity(t *testing.T) {
 // TestDataJournalNoForeignKeys proves data_journal carries no foreign keys: its
 // run_id links to runs logically only, never FK-enforced across the meta/data
 // database boundary.
-//
-// spec: S04/fk-graph-matches-spec
 func TestDataJournalNoForeignKeys(t *testing.T) {
 	ctx := context.Background()
 

@@ -3,9 +3,9 @@
 //
 // This entrypoint is deliberately thin. It builds nothing itself: the whole
 // command surface -- the cobra noun-verb tree, the global flags, and the
-// exit-code and --json output contracts of specification section 8 -- lives in
-// internal/cli. main passes the process arguments and streams to cli.Execute and
-// exits with the specification-section-8 exit-code category it returns.
+// exit-code and --json output contracts -- lives in internal/cli. main passes
+// the process arguments and streams to cli.Execute and exits with the exit-code
+// category it returns.
 package main
 
 import (

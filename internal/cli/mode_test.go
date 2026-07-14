@@ -33,8 +33,6 @@ func looksJSON(b []byte) bool {
 // under --json: a bare noun or sub-noun under --json is a single JSON error
 // envelope (exit 2), and the bare root under --json is a single JSON data
 // document (exit 0). Human bare root stays help/exit 0.
-//
-// spec: S08/json-single-envelope-stdout
 func TestJSONNeverLeavesNonJSONOnStdout(t *testing.T) {
 	groups := [][]string{
 		{"declare"}, {"pipeline"}, {"run"}, {"data"}, {"workload"},
@@ -89,8 +87,6 @@ func TestJSONNeverLeavesNonJSONOnStdout(t *testing.T) {
 // (global --token, or the per-command --after) is not JSON mode, so stdout stays
 // clean and the error is human on stderr; a real --json is JSON mode, including
 // when it follows a flag-parse error and is resolved by the pflag probe.
-//
-// spec: S08/json-single-envelope-stdout
 func TestJSONModeMatchesPflagConsumption(t *testing.T) {
 	cases := []struct {
 		name     string

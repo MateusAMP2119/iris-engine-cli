@@ -22,8 +22,7 @@ var pinnedManagedPGMajor = strconv.Itoa(daemon.PinnedMajorVersion)
 // managedServerBinary is the base name of the standalone Postgres server executable
 // the managed build must place somewhere under <workspace>/.iris/pg. Its presence as
 // a separate on-disk file is the proof the managed Postgres is a fetched child-
-// subprocess build, never linked into the single iris binary (specification section
-// 9).
+// subprocess build, never linked into the single iris binary.
 func managedServerBinary() string {
 	if runtime.GOOS == "windows" {
 		return "postgres.exe"
@@ -34,7 +33,7 @@ func managedServerBinary() string {
 // findExecutable walks root and returns the path of the first non-directory entry
 // named name (the Postgres extraction layout under BinariesPath is deterministic
 // today, but walking the subtree keeps the assertion honest and layout-agnostic:
-// finding the binary anywhere under .iris/pg still proves S10's "under .iris/pg").
+// finding the binary anywhere under .iris/pg still proves it is under .iris/pg).
 func findExecutable(t *testing.T, root, name string) string {
 	t.Helper()
 	var found string
@@ -60,12 +59,11 @@ func findExecutable(t *testing.T, root, name string) string {
 //
 //   - the pinned, checksum-verified Postgres is downloaded and placed under
 //     <workspace>/.iris/pg, with its data directory's PG_VERSION recording the
-//     pinned major (S02/managed-pg-install, S10/managed-pg-under-iris-dir);
+//     pinned major;
 //   - a standalone Postgres server executable lands under .iris/pg, proving the
-//     build is a fetched child subprocess and not linked into the iris binary
-//     (S09/managed-postgres-subprocess);
+//     build is a fetched child subprocess and not linked into the iris binary;
 //   - the engine-minted superuser credential never appears on stdout or stderr:
-//     the CLI never sees it (S02/managed-pg-install);
+//     the CLI never sees it;
 //   - a second install is idempotent: it re-downloads nothing and exits 0.
 //
 // The first run downloads a Postgres distribution from the pinned binary
@@ -73,10 +71,6 @@ func findExecutable(t *testing.T, root, name string) string {
 // instant once embedded-postgres's runtime cache is warm), so this test carries a
 // generous timeout and runs only under the conformance build tag in the
 // network-enabled conformance job.
-//
-// spec: S02/managed-pg-install
-// spec: S09/managed-postgres-subprocess
-// spec: S10/managed-pg-under-iris-dir
 func TestManagedPGInstall(t *testing.T) {
 	bin := Build(t)
 	ws := t.TempDir()
@@ -96,7 +90,7 @@ func TestManagedPGInstall(t *testing.T) {
 
 	pgDir := filepath.Join(ws, ".iris", "pg")
 
-	// S10 + S09: a standalone Postgres server executable is placed somewhere under
+	// A standalone Postgres server executable is placed somewhere under
 	// <workspace>/.iris/pg -- a fetched child-subprocess build, not linked into iris.
 	serverBin := findExecutable(t, pgDir, managedServerBinary())
 	if serverBin == "" {
@@ -109,7 +103,7 @@ func TestManagedPGInstall(t *testing.T) {
 		t.Errorf("managed Postgres server binary %s is not executable (mode %v)", serverBin, info.Mode())
 	}
 
-	// S02: the data directory exists under .iris/pg and records the pinned major.
+	// The data directory exists under .iris/pg and records the pinned major.
 	dataDir := filepath.Join(pgDir, "data")
 	if info, err := os.Stat(dataDir); err != nil || !info.IsDir() {
 		t.Fatalf("managed data directory missing under .iris/pg/data: %v", err)
@@ -123,7 +117,7 @@ func TestManagedPGInstall(t *testing.T) {
 		t.Errorf("PG_VERSION = %q, want the pinned major %q", recorded, pinnedManagedPGMajor)
 	}
 
-	// S02: the engine-minted superuser credential is never surfaced to the CLI.
+	// The engine-minted superuser credential is never surfaced to the CLI.
 	// The install output carries no connection string bearing the managed
 	// superuser and no printed password.
 	combined := string(res.Stdout) + "\n" + string(res.Stderr)

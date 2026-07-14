@@ -28,14 +28,11 @@ func writePipelineDecl(t *testing.T, ws, name, decl string) {
 }
 
 // TestManualPipelineRun drives the real iris binary end to end against a live daemon and
-// managed Postgres to prove the two manual-run failure contracts (specification section
-// 8): a manual run whose depends_on gate is not satisfied exits 4 with a reason, and a
+// managed Postgres to prove the two manual-run failure contracts: a manual run whose
+// depends_on gate is not satisfied exits 4 with a reason, and a
 // manual run that dead-letters exits 5 with the dead-lettered run recording cause=manual.
 // One daemon and workspace serve both legs; three pipelines are registered upstream-first
 // (a gated pair and an own-lane failing pipeline).
-//
-// spec: S08/manual-run-ineligible-exit4
-// spec: S08/manual-run-deadletter-exit5-cause-manual
 func TestManualPipelineRun(t *testing.T) {
 	// Shared-cluster isolation: on the CI lane every conformance test shares one external
 	// Postgres with fixed-name meta/data databases. A prior test (or a prior back-to-back
@@ -81,7 +78,7 @@ func TestManualPipelineRun(t *testing.T) {
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", name)}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 	}
 
-	t.Run("S08/manual-run-ineligible-exit4", func(t *testing.T) {
+	t.Run("manual-run-ineligible-exit4", func(t *testing.T) {
 		// gate_up has produced no success, so gate_down's depends_on gate is not
 		// satisfied: a manual run of it is ineligible and exits 4 with a reason.
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "gate_down"}, Dir: ws, Timeout: time.Minute})
@@ -91,7 +88,7 @@ func TestManualPipelineRun(t *testing.T) {
 		}
 	})
 
-	t.Run("S08/manual-run-deadletter-exit5-cause-manual", func(t *testing.T) {
+	t.Run("manual-run-deadletter-exit5-cause-manual", func(t *testing.T) {
 		// boom's script exits non-zero, so a manual run of it dead-letters and exits 5.
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "boom"}, Dir: ws, Timeout: time.Minute})
 		res.RequireExit(t, 5)

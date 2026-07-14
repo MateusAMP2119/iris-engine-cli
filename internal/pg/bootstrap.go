@@ -10,9 +10,9 @@ import (
 
 // This file bootstraps the dedicated data database, mirroring how store bootstraps
 // meta (store/bootstrap.go, store.Client.ensureMetaDatabase). The engine runs on one
-// cluster behind one admin DSN (specification section 2), and it owns two databases
-// in that cluster: the meta control database and the data database, where the declared
-// schemas and the public.data_journal live (specification section 4).
+// cluster behind one admin DSN, and it owns two databases in that cluster: the meta
+// control database and the data database, where the declared schemas and the
+// public.data_journal live.
 //
 // Why a dedicated, engine-created data database rather than the admin DSN's own
 // database: in external mode the DSN typically points at a database the cluster
@@ -22,8 +22,8 @@ import (
 // ("permission denied for database postgres"). The engine therefore creates its own
 // data database with a plain CREATE DATABASE (the admin's CREATEDB right makes the
 // admin its owner), exactly as it creates meta, and points the data pool at it. This
-// is the surface the spec names "the data database"; managed mode uses the same name,
-// so the two modes are one code path.
+// is "the data database"; managed mode uses the same name, so the two modes are one
+// code path.
 
 // DataDatabase is the fixed name of the dedicated data database in the cluster: where
 // the declared schemas and the data journal live, distinct from the meta control
@@ -51,10 +51,10 @@ func CreateDataDatabaseDDL() string {
 const DataExistsQuery = "SELECT 1 FROM pg_database WHERE datname = $1"
 
 // DropDataDatabaseDDL is the statement that drops the dedicated data database in full:
-// the engine-uninstall teardown of the data plane (specification sections 4 and 12),
-// which takes the journal and every provisioned schema with it. Like CREATE DATABASE
-// it runs on the admin/maintenance connection, never on a connection to data. IF
-// EXISTS keeps the teardown idempotent when data was already dropped or never created.
+// the engine-uninstall teardown of the data plane, which takes the journal and every
+// provisioned schema with it. Like CREATE DATABASE it runs on the admin/maintenance
+// connection, never on a connection to data. IF EXISTS keeps the teardown idempotent
+// when data was already dropped or never created.
 func DropDataDatabaseDDL() string {
 	return "DROP DATABASE IF EXISTS " + DataDatabase + ";"
 }

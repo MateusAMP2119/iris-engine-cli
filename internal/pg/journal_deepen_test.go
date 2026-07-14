@@ -17,8 +17,6 @@ import (
 // to (insert, update, delete), undo to (open, promoted, wiped, skipped), and
 // exactly two indexes -- the primary key on id and the (schema, table, row_pk,
 // run_id) provenance key.
-//
-// spec: S04/journal-table-shape
 func TestJournalTableShape(t *testing.T) {
 	ctx := context.Background()
 	jt := pg.JournalTable()
@@ -96,8 +94,6 @@ func TestJournalTableShape(t *testing.T) {
 // TestJournalRunIDNotFK proves data_journal.run_id references runs logically only:
 // a plain bigint attribution column, never a foreign key. The journal and runs
 // live in different databases, so no FK constraint can span them.
-//
-// spec: S04/journal-run-id-not-fk
 func TestJournalRunIDNotFK(t *testing.T) {
 	ctx := context.Background()
 
@@ -132,8 +128,6 @@ func TestJournalRunIDNotFK(t *testing.T) {
 // public.data_journal in the data database -- the surface capture triggers write
 // inside the data transaction -- and never in the meta control database where all
 // other engine state lives.
-//
-// spec: S02/journal-lives-in-data-db
 func TestJournalLivesInDataDB(t *testing.T) {
 	ctx := context.Background()
 

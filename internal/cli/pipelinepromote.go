@@ -12,8 +12,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of iris pipeline promote (specification sections 1, 5,
-// and 8): the command that marks a pipeline's data permanent, gated on built.
+// This file is the CLI side of iris pipeline promote: the command that marks a
+// pipeline's data permanent, gated on built.
 // promote is a control mutation POSTed to the leader-gated /pipeline/promote route;
 // a successful promote reports the flipped data mode and exits 0, printing any
 // repeated cross-mode read warning to stderr (or carrying it in the --json data

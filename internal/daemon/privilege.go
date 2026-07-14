@@ -8,13 +8,12 @@ import (
 )
 
 // This file holds the startup privilege check for the admin DSN. Before any lane
-// runs, the daemon validates that the admin role the DSN authenticates as holds
-// the privileges the engine needs (specification section 2): CREATEROLE (to mint
-// pipeline and data-PAT roles), CREATEDB (to create the meta database), and
-// ownership of every managed schema. Superuser is never required — a plain role
-// with those grants passes — and a superuser is accepted, not demanded. A missing
-// privilege fails fast, naming what is missing, so a misconfigured DSN is caught
-// at startup rather than mid-run.
+// runs, the daemon validates that the admin role the DSN authenticates as holds the
+// privileges the engine needs: CREATEROLE (to mint pipeline and data-PAT roles),
+// CREATEDB (to create the meta database), and ownership of every managed schema.
+// Superuser is never required — a plain role with those grants passes — and a
+// superuser is accepted, not demanded. A missing privilege fails fast, naming what
+// is missing, so a misconfigured DSN is caught at startup rather than mid-run.
 
 // PrivilegeQuery is the catalog query the real reader runs to snapshot the admin
 // role's cluster privileges: the current session role's CREATEROLE, CREATEDB, and
@@ -60,11 +59,11 @@ type PrivilegeReader interface {
 }
 
 // CheckPrivileges reads the admin role's privileges through r and validates the
-// engine's requirements (specification section 2): CREATEROLE, CREATEDB, and
-// ownership of every managed schema. Superuser is never required and never
-// rejected — a non-superuser role with the three grants passes, a superuser is
-// accepted. A missing privilege fails fast with ErrInsufficientPrivilege, naming
-// every missing privilege so the operator sees exactly what the admin DSN needs.
+// engine's requirements: CREATEROLE, CREATEDB, and ownership of every managed
+// schema. Superuser is never required and never rejected — a non-superuser role
+// with the three grants passes, a superuser is accepted. A missing privilege fails
+// fast with ErrInsufficientPrivilege, naming every missing privilege so the
+// operator sees exactly what the admin DSN needs.
 func CheckPrivileges(ctx context.Context, r PrivilegeReader) error {
 	p, err := r.ReadPrivileges(ctx)
 	if err != nil {

@@ -17,13 +17,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the serving half of the endpoint apply lifecycle
-// (specification section 7) over a running HTTP server and fakes -- no live
-// Postgres: an applied endpoint takes effect on commit and serves /q requests
-// without a daemon restart, and a re-apply swaps the shape at a request
-// boundary while in-flight requests finish with their starting shape. The
-// endpoint read executor is a fake that echoes the shape it was handed, so a
-// response proves exactly which compiled shape served it.
+// This file proves the serving half of the endpoint apply lifecycle over a
+// running HTTP server and fakes -- no live Postgres: an applied endpoint takes
+// effect on commit and serves /q requests without a daemon restart, and a
+// re-apply swaps the shape at a request boundary while in-flight requests
+// finish with their starting shape. The endpoint read executor is a fake that
+// echoes the shape it was handed, so a response proves exactly which compiled
+// shape served it.
 
 // qTables is the declared source the /q test endpoints compile against.
 func qTables() map[string]*declare.Table {
@@ -144,13 +144,10 @@ func getQ(t *testing.T, baseURL, path string) (int, qEnvelope) {
 }
 
 // TestEndpointApplyLiveOnCommit proves an applied endpoint takes effect on
-// commit and serves requests without a daemon restart (specification section
-// 7): against one running HTTP server, /q/{name} is a 404 not_found before the
-// apply, and the moment Apply commits, the very same server -- same mux, same
-// listener, nothing rebuilt or restarted -- serves the endpoint's rows in the
-// data+page envelope.
-//
-// spec: S07/endpoint-apply-live-on-commit
+// commit and serves requests without a daemon restart: against one running HTTP
+// server, /q/{name} is a 404 not_found before the apply, and the moment Apply
+// commits, the very same server -- same mux, same listener, nothing rebuilt or
+// restarted -- serves the endpoint's rows in the data+page envelope.
 func TestEndpointApplyLiveOnCommit(t *testing.T) {
 	ctx := context.Background()
 	h := newQHarness(t, &shapeEchoReader{})
@@ -190,13 +187,11 @@ sort: id
 }
 
 // TestEndpointReapplyBoundarySwap proves re-applying an endpoint swaps its
-// shape at a request boundary and in-flight requests finish with their
-// starting shape (specification section 7): a request checked out on the old
-// shape is held mid-flight while the re-apply commits; a new request on the
-// same running server immediately serves the new shape, and the held request
-// then completes with the shape it started with.
-//
-// spec: S07/endpoint-reapply-boundary-swap
+// shape at a request boundary and in-flight requests finish with their starting
+// shape: a request checked out on the old shape is held mid-flight while the
+// re-apply commits; a new request on the same running server immediately serves
+// the new shape, and the held request then completes with the shape it started
+// with.
 func TestEndpointReapplyBoundarySwap(t *testing.T) {
 	ctx := context.Background()
 	reader := &shapeEchoReader{
@@ -313,10 +308,8 @@ func (r *ndjsonRowsReader) ReadEndpoint(_ context.Context, _ *declare.CompiledEn
 // representative wired collection) with Accept: application/x-ndjson streams
 // one JSON row per line with no envelope to the end of the result, on the same
 // route and auth.
-//
-// spec: S07/ndjson-streaming
 func TestNDJSONStreaming(t *testing.T) {
-	t.Run("S07/ndjson-streaming", func(t *testing.T) {
+	t.Run("ndjson-streaming", func(t *testing.T) {
 		shape := compileQEndpoint(t, `endpoint: orders_by_customer
 source: analytics.orders
 fields: [id, customer_id, amount]
@@ -377,10 +370,8 @@ sort: id
 // TestNDJSONResumeByCursor proves a dropped NDJSON stream resumes from its last
 // received row by passing that row's key as the cursor (after=) on the same
 // route.
-//
-// spec: S07/ndjson-resume-by-cursor
 func TestNDJSONResumeByCursor(t *testing.T) {
-	t.Run("S07/ndjson-resume-by-cursor", func(t *testing.T) {
+	t.Run("ndjson-resume-by-cursor", func(t *testing.T) {
 		shape := compileQEndpoint(t, `endpoint: orders_by_customer
 source: analytics.orders
 fields: [id, customer_id, amount]

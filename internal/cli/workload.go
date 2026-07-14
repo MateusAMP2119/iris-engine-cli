@@ -12,15 +12,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris workload wipe [<pipeline>]` (specification
-// sections 5, 12, 13). wipe is a control mutation POSTed to the leader-gated
+// This file is the CLI side of `iris workload wipe [<pipeline>]`. wipe is a
+// control mutation POSTed to the leader-gated
 // /workload/wipe route. It is a dev-loop op (y/N or --yes/--force); --yes honors
 // soft-blocks, --force overrides. A successful wipe exits 0 (counts may be
 // emitted under --json); refusals are operation-failed (4) or other categories.
 
 // workloadWipe is the handler for `iris workload wipe [pipeline]`: it is a gated
-// dev-loop destructive operation (specification section 12). It first enforces
-// the confirmation surface (--yes/--force or interactive y/N via the confirm
+// dev-loop destructive operation. It first enforces the confirmation surface
+// (--yes/--force or interactive y/N via the confirm
 // seam) and only then POSTs the request to the leader-gated /workload/wipe route,
 // mapping the outcome.
 func (a *app) workloadWipe() runE {

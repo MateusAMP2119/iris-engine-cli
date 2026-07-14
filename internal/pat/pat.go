@@ -1,9 +1,8 @@
-// Package pat is the PAT (personal access token) leaf of specification sections 2
-// and 7: minting, argon2id hashing and constant-time verification, and the scope
-// algebra over {control, read, data}. It is a leaf package -- it depends on no
-// other engine package -- so the store persists what Mint produces, the leader
-// prints the show-once token, and the read path checks scopes, each without pulling
-// in the others.
+// Package pat is the PAT (personal access token) leaf: minting, argon2id hashing and
+// constant-time verification, and the scope algebra over {control, read, data}. It is
+// a leaf package -- it depends on no other engine package -- so the store persists
+// what Mint produces, the leader prints the show-once token, and the read path checks
+// scopes, each without pulling in the others.
 //
 // The raw token is a show-once secret: Mint returns it exactly once, it redacts on
 // every formatting path (so a stray log line can never print it), and only its
@@ -27,7 +26,7 @@ import (
 // string value matches the pat_scopes CHECK set.
 type Scope string
 
-// The closed PAT scope set (specification section 7), in canonical order.
+// The closed PAT scope set, in canonical order.
 const (
 	// ScopeControl authorizes the remote control plane (mutations via the leader).
 	ScopeControl Scope = "control"
@@ -52,15 +51,14 @@ func isKnownScope(s Scope) bool {
 }
 
 // ErrEmptyScopeSet is returned by ValidateScopes for an empty scope set: a PAT needs
-// a non-empty subset of {control, read, data} (specification section 7). Callers
-// test it with errors.Is.
+// a non-empty subset of {control, read, data}. Callers test it with errors.Is.
 var ErrEmptyScopeSet = errors.New("pat: empty scope set; a PAT needs a non-empty subset of {control, read, data}")
 
 // ValidateScopes reports whether scopes is a valid PAT scope set: a non-empty subset
-// of the closed set {control, read, data} (specification section 7). An empty set
-// yields ErrEmptyScopeSet; a set naming a scope outside the closed set yields an
-// error naming that scope. Duplicates are tolerated (a scope set is a union;
-// EffectiveAuthority and the pat_scopes primary key collapse them).
+// of the closed set {control, read, data}. An empty set yields ErrEmptyScopeSet; a
+// set naming a scope outside the closed set yields an error naming that scope.
+// Duplicates are tolerated (a scope set is a union; EffectiveAuthority and the
+// pat_scopes primary key collapse them).
 func ValidateScopes(scopes []Scope) error {
 	if len(scopes) == 0 {
 		return ErrEmptyScopeSet
@@ -99,10 +97,10 @@ func ParseScopes(raw []string) ([]Scope, error) {
 }
 
 // EffectiveAuthority returns a PAT's effective authority: the union of its
-// pat_scopes rows (specification section 7). Every distinct scope present is
-// included exactly once, in canonical scope order, regardless of the order or
-// multiplicity the rows arrive in. An unknown scope value in the rows is ignored (it
-// is not part of the closed authority set); the empty union is the empty slice.
+// pat_scopes rows. Every distinct scope present is included exactly once, in
+// canonical scope order, regardless of the order or multiplicity the rows arrive in.
+// An unknown scope value in the rows is ignored (it is not part of the closed
+// authority set); the empty union is the empty slice.
 func EffectiveAuthority(scopes []Scope) []Scope {
 	present := make(map[Scope]bool, len(scopes))
 	for _, s := range scopes {
@@ -214,9 +212,8 @@ func ParseToken(raw string) (Token, error) {
 	return Token{id: id, secret: secret}, nil
 }
 
-// argon2id parameters (specification section 9: argon2id for PAT hashing). They are
-// the encoded cost recorded in every hash, so Verify recomputes with the same cost
-// even if these defaults change later.
+// argon2id parameters for PAT hashing. They are the encoded cost recorded in every
+// hash, so Verify recomputes with the same cost even if these defaults change later.
 const (
 	argonTime    = 1         // passes
 	argonMemory  = 64 * 1024 // 64 MiB
@@ -312,6 +309,5 @@ const dataRolePrefix = "iris_pat_"
 
 // DataRoleName derives the cluster-unique Postgres role name for a data PAT from its
 // token id: the engine-managed read-only NOLOGIN role the PAT owns in the access
-// ledger (specification section 7). The id is a hex lookup key, so the derived name
-// is a safe bare identifier.
+// ledger. The id is a hex lookup key, so the derived name is a safe bare identifier.
 func DataRoleName(tokenID string) string { return dataRolePrefix + tokenID }

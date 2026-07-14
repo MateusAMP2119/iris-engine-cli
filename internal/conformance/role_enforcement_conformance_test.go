@@ -32,12 +32,12 @@ const insufficientPrivilege = "42501"
 // and then connects to the cluster AS that role -- the exact credential the engine
 // minted -- to prove two enforcement contracts against the live database:
 //
-//   - S02/meta-hidden-from-pipeline: the pipeline role cannot connect to the meta
-//     control database (Postgres refuses at CONNECT), while it can reach the data
-//     database -- so meta is hidden, not the role broken.
-//   - S13/grants-postgres-enforced: reading a declared column (amount) succeeds, and
-//     reading a column the pipeline did not declare (customer_id) fails at the
-//     database with insufficient_privilege -- Postgres physically bounds the read.
+//   - The pipeline role cannot connect to the meta control database (Postgres
+//     refuses at CONNECT), while it can reach the data database -- so meta is
+//     hidden, not the role broken.
+//   - Reading a declared column (amount) succeeds, and reading a column the
+//     pipeline did not declare (customer_id) fails at the database with
+//     insufficient_privilege -- Postgres physically bounds the read.
 //
 // It shares one cluster and one provisioned role across both legs (both are properties
 // of the same real role), and drives the pg provisioning code directly against the
@@ -154,8 +154,7 @@ func TestPipelineRolePostgresEnforcement(t *testing.T) {
 		t.Fatalf("BuildScopedConn (meta): %v", err)
 	}
 
-	// spec: S02/meta-hidden-from-pipeline
-	t.Run("S02/meta-hidden-from-pipeline", func(t *testing.T) {
+	t.Run("meta-hidden-from-pipeline", func(t *testing.T) {
 		// The pipeline role connects to the data database it was granted -- proof the
 		// role and its engine-minted credential work.
 		dataConn, err := pgx.Connect(ctx, scopedData.EnvValue())
@@ -165,7 +164,7 @@ func TestPipelineRolePostgresEnforcement(t *testing.T) {
 		_ = dataConn.Close(ctx)
 
 		// The same role connecting to the meta control database is refused by Postgres
-		// at CONNECT: meta is hidden from the pipeline (specification section 2).
+		// at CONNECT: meta is hidden from the pipeline.
 		metaConn, err := pgx.Connect(ctx, scopedMeta.EnvValue())
 		if err == nil {
 			_ = metaConn.Close(ctx)
@@ -182,8 +181,7 @@ func TestPipelineRolePostgresEnforcement(t *testing.T) {
 		}
 	})
 
-	// spec: S13/grants-postgres-enforced
-	t.Run("S13/grants-postgres-enforced", func(t *testing.T) {
+	t.Run("grants-postgres-enforced", func(t *testing.T) {
 		conn, err := pgx.Connect(ctx, scopedData.EnvValue())
 		if err != nil {
 			t.Fatalf("connect as pipeline role: %v", err)

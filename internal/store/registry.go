@@ -8,12 +8,12 @@ import (
 )
 
 // This file is the registry write surface: the meta writes that persist the
-// declared world -- the pipelines registry, its depends_on graph, and the composed
-// lanes (specification sections 3, 4, and 6.3). Every change rides the single meta
-// writer, and each apply is one atomic meta transaction: a pipeline apply upserts
-// the pipelines row and rewrites its dependency edges together; a composer apply
-// rewrites a whole lane's rows together. All-or-nothing, so a validation-passing
-// apply that fails mid-write leaves meta as it was, never half-registered.
+// declared world -- the pipelines registry, its depends_on graph, and the
+// composed lanes. Every change rides the single meta writer, and each apply is
+// one atomic meta transaction: a pipeline apply upserts the pipelines row and
+// rewrites its dependency edges together; a composer apply rewrites a whole
+// lane's rows together. All-or-nothing, so a validation-passing apply that fails
+// mid-write leaves meta as it was, never half-registered.
 
 // Artifact is a pipeline's artifact mode (pipelines.artifact): source (dev, the
 // script run through its language runtime) or built (a content-addressed binary).
@@ -42,10 +42,9 @@ const (
 )
 
 // PipelineRow is the pipelines-table registry row for one pipeline: exactly the
-// columns of the pipelines table (specification section 4) and nothing else. The
-// declaration's env and env_file are deliberately absent: they resolve at run time
-// and are never stored in meta (specification section 3), so a secret value has no
-// column to land in.
+// columns of the pipelines table and nothing else. The declaration's env and
+// env_file are deliberately absent: they resolve at run time and are never stored
+// in meta, so a secret value has no column to land in.
 type PipelineRow struct {
 	// Name is the pipeline name, the pipelines primary key.
 	Name string
@@ -62,7 +61,7 @@ type PipelineRow struct {
 }
 
 // DependencyEdge is one persisted depends_on edge: From (the dependent) depends on
-// To (the upstream) -- "from depends_on to", specification section 4.
+// To (the upstream) -- "from depends_on to".
 type DependencyEdge struct {
 	// From is the dependent pipeline (dependencies.from_pipeline).
 	From string
@@ -150,12 +149,12 @@ ON CONFLICT (name) DO UPDATE SET folder = EXCLUDED.folder, run = EXCLUDED.run`
 	selectLaneMembersSQL = `SELECT pipeline FROM lanes WHERE lane = $1 ORDER BY pos`
 )
 
-// RegisterPipeline persists a pipeline declaration as one atomic meta transaction:
-// it upserts the pipelines row and replaces the pipeline's depends_on edges (a
-// clearing delete plus one insert per current upstream). Both changes commit
-// together or not at all. It never writes the lanes table -- a pipeline's lane
-// position comes only from the composer's own apply (specification sections 3 and
-// 6.3). It is a leader-only meta write, riding the single Writer.
+// RegisterPipeline persists a pipeline declaration as one atomic meta
+// transaction: it upserts the pipelines row and replaces the pipeline's
+// depends_on edges (a clearing delete plus one insert per current upstream). Both
+// changes commit together or not at all. It never writes the lanes table -- a
+// pipeline's lane position comes only from the composer's own apply. It is a
+// leader-only meta write, riding the single Writer.
 func (w *Writer) RegisterPipeline(ctx context.Context, row PipelineRow, dependsOn []string) error {
 	runJSON, err := json.Marshal(row.Run)
 	if err != nil {
@@ -175,13 +174,13 @@ func (w *Writer) RegisterPipeline(ctx context.Context, row PipelineRow, dependsO
 }
 
 // RewriteLane rewrites a lane's membership as one atomic full-lane rewrite: it
-// clears the lane's existing rows and re-inserts the given order, one name-keyed row
-// per member at its walk position, in a single transaction (specification sections 3
-// and 6.3). The members need not be registered -- lanes holds names, not foreign
-// keys, and the runner skips unregistered ones. A lane needs two or more members to
-// persist rows; an order of fewer than two clears the lane and writes no member row,
-// since a single-member lane is nominal (specification section 3). It is a
-// leader-only meta write, riding the single Writer.
+// clears the lane's existing rows and re-inserts the given order, one name-keyed
+// row per member at its walk position, in a single transaction. The members need
+// not be registered -- lanes holds names, not foreign keys, and the runner skips
+// unregistered ones. A lane needs two or more members to persist rows; an order
+// of fewer than two clears the lane and writes no member row, since a
+// single-member lane is nominal. It is a leader-only meta write, riding the
+// single Writer.
 func (w *Writer) RewriteLane(ctx context.Context, lane string, order []string) error {
 	stmts := []Statement{{SQL: deleteLaneSQL, Args: []any{lane}}}
 	if len(order) >= 2 {

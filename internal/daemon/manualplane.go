@@ -18,10 +18,10 @@ import (
 )
 
 // This file is the daemon's leader-side manual-run plane: the composition root that
-// turns POST /pipeline/run and GET /pipeline/list into the E05.5 depends_on gate, the
-// single-writer run-record mints, and the direct subprocess exec (specification section
-// 8). It sits at the top of the import graph (daemon composes api, dispatch, exec, and
-// store) and is the one place they are wired together.
+// turns POST /pipeline/run and GET /pipeline/list into the E05.5 depends_on gate,
+// the single-writer run-record mints, and the direct subprocess exec. It sits at
+// the top of the import graph (daemon composes api, dispatch, exec, and store) and
+// is the one place they are wired together.
 //
 // The listing is a plain-MVCC read, so it is served on any node (standby included) from
 // the reader pool. The manual run is a mutation -- it mints runs through the single meta
@@ -376,8 +376,8 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	}
 
 	// Track the live process group so a self-demotion (lost meta session) kills it at
-	// once (specification section 15); untrack after it is reaped so a completed run
-	// is never a kill target. A nil registry (the shape tests) skips tracking.
+	// once; untrack after it is reaped so a completed run is never a kill target. A
+	// nil registry (the shape tests) skips tracking.
 	if m.inflight != nil {
 		m.inflight.track(runID, h)
 		defer m.inflight.untrack(runID)
@@ -413,10 +413,10 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	return dispatch.RunSucceeded, nil
 }
 
-// sealAfterPass runs the opportunistic post-terminal seal step (specification
-// section 14): it is invoked once the run is recorded terminal and its journal
-// ceiling stamped, so the just-finished run never counts itself as in-flight. A nil
-// sealer (the shape tests) or a not-due partition leaves the journal untouched.
+// sealAfterPass runs the opportunistic post-terminal seal step: it is invoked once
+// the run is recorded terminal and its journal ceiling stamped, so the
+// just-finished run never counts itself as in-flight. A nil sealer (the shape
+// tests) or a not-due partition leaves the journal untouched.
 func (m *manualExec) sealAfterPass(ctx context.Context) {
 	if m.sealer == nil {
 		return

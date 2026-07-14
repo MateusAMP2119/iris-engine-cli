@@ -5,12 +5,12 @@ import (
 	"fmt"
 )
 
-// This file is the pipeline-list read surface (specification section 8: iris pipeline
-// list shows pipelines with a queued or running run, --all every registered pipeline).
-// It is a plain-MVCC read like the runs reader: one query joins the pipelines registry
-// to whether each pipeline has an active (queued or running) run, and the default and
-// --all views are two filters over that one result. It never rides the single writer and
-// is never busy-retried (specification section 2).
+// This file is the pipeline-list read surface (iris pipeline list shows pipelines
+// with a queued or running run, --all every registered pipeline). It is a
+// plain-MVCC read like the runs reader: one query joins the pipelines registry to
+// whether each pipeline has an active (queued or running) run, and the default
+// and --all views are two filters over that one result. It never rides the single
+// writer and is never busy-retried.
 
 // PipelineListing is one row of iris pipeline list: a registered pipeline's name and
 // whether it currently has a queued or running run (the active predicate the default
@@ -34,10 +34,10 @@ type PipelineLister interface {
 	AllPipelines(ctx context.Context) ([]PipelineListing, error)
 }
 
-// selectPipelineListingSQL reads every registered pipeline with an EXISTS predicate over
-// runs for whether it has a queued or running run. It is one plain SELECT: no locking
-// clause, an MVCC snapshot, ordered by name (the pipelines collection key, specification
-// section 7).
+// selectPipelineListingSQL reads every registered pipeline with an EXISTS
+// predicate over runs for whether it has a queued or running run. It is one plain
+// SELECT: no locking clause, an MVCC snapshot, ordered by name (the pipelines
+// collection key).
 const selectPipelineListingSQL = `SELECT p.name,
     EXISTS (SELECT 1 FROM runs r WHERE r.pipeline = p.name AND r.state IN ('queued', 'running')) AS active
 FROM pipelines p

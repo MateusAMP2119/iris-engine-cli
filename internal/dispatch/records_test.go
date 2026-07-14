@@ -55,8 +55,6 @@ func dispatchRecord() store.RunRecord {
 // TestStampDispatchRecordsSnapshotLSN proves dispatch records the data-database LSN
 // into the run's snapshot_lsn at dispatch time: StampDispatch reads the current LSN
 // and passes it into the run-create write path, so the created runs row carries it.
-//
-// spec: S04/run-snapshot-lsn
 func TestStampDispatchRecordsSnapshotLSN(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -81,8 +79,6 @@ func TestStampDispatchRecordsSnapshotLSN(t *testing.T) {
 // journal_ceiling is the journal high id read again at the terminal transition. A
 // scripted watermark hands out 81 then 95, so the floor stamped at create and the
 // ceiling stamped at terminal come from distinct, ordered reads.
-//
-// spec: S04/run-journal-window
 func TestStampJournalWindow(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -136,10 +132,8 @@ func findCeilingStmt(t *testing.T, rec *storetest.WriteRecorder) storetest.Recor
 // The test uses fakes for the data-database reads (LSN and journal watermark)
 // and a recording meta writer, exercising the dispatch/store seam with no live
 // Postgres: the integration tier for the snapshot pin contract.
-//
-// spec: S14/pin-recorded-dispatch-terminal
 func TestPinRecordedDispatchTerminal(t *testing.T) {
-	t.Run("S14/pin-recorded-dispatch-terminal", func(t *testing.T) {
+	t.Run("pin-recorded-dispatch-terminal", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		lsn := fakeLSNReader{lsn: "0/DEAD BEEF"}

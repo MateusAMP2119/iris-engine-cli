@@ -9,10 +9,10 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the access-ledger record path apply and data-PAT mint drive
-// (specification sections 3, 4, 7): the declared reads/writes and a data PAT's
-// per-field grants are recorded in meta as one atomic full-role rewrite over the
-// single writer, with no live Postgres.
+// This file proves the access-ledger record path apply and data-PAT mint drive:
+// the declared reads/writes and a data PAT's per-field grants are recorded in
+// meta as one atomic full-role rewrite over the single writer, with no live
+// Postgres.
 
 // grantRow is a recorded grants insert reduced to its bound (schema, table, field,
 // access) tuple, for order-independent set assertions.
@@ -46,10 +46,8 @@ func recordedGrantRows(t *testing.T, rec *storetest.WriteRecorder, pgRole string
 // reads/writes: exactly one per-field grant row per declared (table, field),
 // tagged read for a reads entry and write for a writes entry, written as one
 // atomic full-role rewrite. Nothing beyond the declared entries is recorded.
-//
-// spec: S03/apply-records-access-meta
 func TestApplyRecordsAccessMeta(t *testing.T) {
-	t.Run("S03/apply-records-access-meta", func(t *testing.T) {
+	t.Run("apply-records-access-meta", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 
@@ -79,13 +77,10 @@ func TestApplyRecordsAccessMeta(t *testing.T) {
 }
 
 // TestDataPATGrantsRecordedPerField proves a data PAT's grants are recorded per
-// field in the access ledger at mint (specification section 7), whether minted
-// field-explicit, via a bare schema.table (which expands to every field declared
-// at mint time), or via --endpoint (which expands to the endpoint's source
-// fields). Every recorded grant is a read grant (a data PAT is read-only), one row
-// per field.
-//
-// spec: S07/data-pat-grants-recorded-per-field
+// field in the access ledger at mint, whether minted field-explicit, via a bare
+// schema.table (which expands to every field declared at mint time), or via
+// --endpoint (which expands to the endpoint's source fields). Every recorded
+// grant is a read grant (a data PAT is read-only), one row per field.
 func TestDataPATGrantsRecordedPerField(t *testing.T) {
 	declared := map[string][]string{"analytics.orders": {"id", "customer_id", "amount"}}
 	endpoints := map[string]declare.EndpointSource{
@@ -122,7 +117,7 @@ func TestDataPATGrantsRecordedPerField(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run("S07/data-pat-grants-recorded-per-field", func(t *testing.T) {
+		t.Run("data-pat-grants-recorded-per-field", func(t *testing.T) {
 			grants, err := declare.ExpandDataPATGrants(tc.reads, declared, endpoints)
 			if err != nil {
 				t.Fatalf("ExpandDataPATGrants: %v", err)

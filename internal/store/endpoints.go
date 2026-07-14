@@ -6,16 +6,15 @@ import (
 	"fmt"
 )
 
-// This file is the persistence half of the endpoint apply lifecycle
-// (specification section 7): the meta writes that publish and retire declared
-// read endpoints in the endpoints and endpoint_filters tables (shape locked by
-// S04/endpoints-table-shape). Like every registry write it rides the single
-// meta writer, and each operation is one atomic transaction: an apply persists
-// every endpoint's shape row and filter rows together or not at all
-// (all-or-nothing, effective on commit), and a remove retires the filter rows
-// and the shape row together. The derived SQL is deliberately not persisted:
-// it is a pure function of the shape (S07/endpoint-sql-deterministic), so the
-// daemon recompiles it from these rows rather than trusting a stored text.
+// This file is the persistence half of the endpoint apply lifecycle: the meta
+// writes that publish and retire declared read endpoints in the endpoints and
+// endpoint_filters tables. Like every registry write it rides the single meta
+// writer, and each operation is one atomic transaction: an apply persists every
+// endpoint's shape row and filter rows together or not at all (all-or-nothing,
+// effective on commit), and a remove retires the filter rows and the shape row
+// together. The derived SQL is deliberately not persisted: it is a pure function
+// of the shape, so the daemon recompiles it from these rows rather than trusting a
+// stored text.
 
 // EndpointFilterRow is one persisted endpoint filter param: its query-param
 // name (the source column it filters) and its kind, drawn from the closed set
@@ -67,16 +66,15 @@ ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source, fields = EXCLUDED.fie
 )
 
 // ApplyEndpoints persists a set of compiled endpoints as one atomic meta
-// transaction (specification section 7: iris endpoint apply is atomic,
-// all-or-nothing, effective on commit): for each endpoint, an upsert of its
-// endpoints row, a clearing delete of its endpoint_filters rows, and one
-// insert per filter in declaration order. Every endpoint in the set commits
-// together or none does, so a multi-endpoint apply never publishes half a
-// folder. Re-apply rides the same path: the upsert replaces the shape columns
-// and the delete+insert replaces the filter grammar wholesale. It touches no
-// workload table (pipelines, dependencies, lanes): the endpoint lifecycle is
-// independent of declare apply. It is a leader-only meta write, riding the
-// single Writer.
+// transaction (iris endpoint apply is atomic, all-or-nothing, effective on
+// commit): for each endpoint, an upsert of its endpoints row, a clearing delete
+// of its endpoint_filters rows, and one insert per filter in declaration order.
+// Every endpoint in the set commits together or none does, so a multi-endpoint
+// apply never publishes half a folder. Re-apply rides the same path: the upsert
+// replaces the shape columns and the delete+insert replaces the filter grammar
+// wholesale. It touches no workload table (pipelines, dependencies, lanes): the
+// endpoint lifecycle is independent of declare apply. It is a leader-only meta
+// write, riding the single Writer.
 func (w *Writer) ApplyEndpoints(ctx context.Context, rows []EndpointRow) error {
 	var stmts []Statement
 	for _, row := range rows {
@@ -99,11 +97,10 @@ func (w *Writer) ApplyEndpoints(ctx context.Context, rows []EndpointRow) error {
 }
 
 // RemoveEndpoint retires one endpoint's persisted shape as one atomic meta
-// transaction: its filter rows first (the foreign-key child), then its
-// endpoints row. It deletes shape only -- no declared table, no data, no
-// workload row is touched (specification section 7: remove retires a read
-// surface, independent of declare destroy). It is a leader-only meta write,
-// riding the single Writer.
+// transaction: its filter rows first (the foreign-key child), then its endpoints
+// row. It deletes shape only -- no declared table, no data, no workload row is
+// touched (remove retires a read surface, independent of declare destroy). It is
+// a leader-only meta write, riding the single Writer.
 func (w *Writer) RemoveEndpoint(ctx context.Context, name string) error {
 	stmts := []Statement{
 		{SQL: deleteEndpointFiltersSQL, Args: []any{name}},

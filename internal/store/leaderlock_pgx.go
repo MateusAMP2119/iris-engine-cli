@@ -10,10 +10,10 @@ import (
 )
 
 // This file is the pgx-backed leader lock. The lock is held on a session-pinned
-// connection: one dedicated *pgx.Conn, never a pooled connection whose return to a
-// pool would silently release the advisory lock (specification section 9). The
-// connection is obtained once (pgx.Connect, not a pool checkout), held for the
-// whole leadership lifetime, and closed only on Release or session loss.
+// connection: one dedicated *pgx.Conn, never a pooled connection whose return to
+// a pool would silently release the advisory lock. The connection is obtained
+// once (pgx.Connect, not a pool checkout), held for the whole leadership
+// lifetime, and closed only on Release or session loss.
 
 // pinnedConn is the session-pinned connection the leader lock holds. It is the
 // minimal surface the advisory lock needs -- issue the acquire/release statements
@@ -96,8 +96,7 @@ func (l *PgxLeaderLock) Acquire(ctx context.Context) error {
 // Held reports whether this session currently holds the leader lock: true from a
 // successful Acquire until Release ends the session. It is the gate the
 // lock-guarded write connection consults before every meta write, so a write is
-// never issued over a session that has not (re-)acquired the lock (specification
-// section 15).
+// never issued over a session that has not (re-)acquired the lock.
 func (l *PgxLeaderLock) Held() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()

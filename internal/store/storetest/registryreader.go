@@ -1,8 +1,8 @@
 // This file adds an in-memory fake of the registry read seam
-// (store.RegistryReader): the pipelines and dependencies view the apply op rebuilds
-// its dependency graph from. A test seeds the registered pipelines and their
-// depends_on edges, then drives an apply against that view with no live Postgres
-// (S16/integration-fakes-interfaces).
+// (store.RegistryReader): the pipelines and dependencies view the apply op
+// rebuilds its dependency graph from. A test seeds the registered pipelines and
+// their depends_on edges, then drives an apply against that view with no live
+// Postgres.
 package storetest
 
 import (

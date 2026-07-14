@@ -34,10 +34,9 @@ columns:
 
 // TestMigrationFileFormat proves a generated migration file records id, parent,
 // op, the column definition, and a checksum of table.yaml at that revision,
-// marshaling to the specification section 5 example (golden) and round-tripping
-// back losslessly.
+// marshaling to the golden example and round-tripping back losslessly.
 func TestMigrationFileFormat(t *testing.T) {
-	t.Run("S05/migration-file-format", func(t *testing.T) {
+	t.Run("migration-file-format", func(t *testing.T) {
 		raw := []byte(ordersWithStatus)
 
 		// The checksum is the SHA-256 of the raw table.yaml bytes, hex-encoded:
@@ -51,7 +50,7 @@ func TestMigrationFileFormat(t *testing.T) {
 		}
 
 		// The migration file records id, parent, op, the column definition, and the
-		// checksum, and marshals to the section 5 example shape byte-for-byte.
+		// checksum, and marshals to the golden example shape byte-for-byte.
 		m := declare.MigrationFile{
 			ID:       "0002",
 			Parent:   "0001",

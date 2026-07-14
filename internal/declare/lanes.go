@@ -20,8 +20,8 @@ type Membership struct {
 
 // RegistryView is the already-registered lane state a single `iris declare apply`
 // validates against: which lane each registered pipeline belongs to, and which
-// lanes have had their composer applied. Apply is single-file and upstream-first
-// (specification section 6.3), so validation is pure over this snapshot; the
+// lanes have had their composer applied. Apply is single-file and upstream-first,
+// so validation is pure over this snapshot; the
 // persistence layer (a later task) fills it from meta. Both maps are read-only
 // here and a nil map reads as empty.
 type RegistryView struct {
@@ -40,8 +40,7 @@ func (v RegistryView) composerApplied(lane string) bool {
 // PipelineApply is the lane-relevant shape of a single pipeline `declare apply`:
 // the pipeline's name, its inline lane declaration, and the lane folder that
 // physically contains it. A pipeline joins a lane inline (InlineLane), by
-// containment (FolderLane), or both; an empty field means that signal is absent
-// (specification section 3).
+// containment (FolderLane), or both; an empty field means that signal is absent.
 type PipelineApply struct {
 	// Pipeline is the applying pipeline's name.
 	Pipeline string
@@ -55,8 +54,7 @@ type PipelineApply struct {
 
 // ComposerApply is the lane-relevant shape of a single composer `declare apply`.
 // The composer file sits in the lane folder, one level above the pipeline folders
-// it sequences; MemberFolders are those immediate pipeline subfolders
-// (specification section 3).
+// it sequences; MemberFolders are those immediate pipeline subfolders.
 type ComposerApply struct {
 	// Lane is the composer's declared lane (its lane field).
 	Lane string
@@ -69,8 +67,8 @@ type ComposerApply struct {
 }
 
 // LaneRewrite is the whole-lane order a composer apply writes to the lanes roster,
-// replacing that lane's prior order atomically (specification section 6.3: written
-// whole only by the composer's own apply).
+// replacing that lane's prior order atomically (written whole only by the
+// composer's own apply).
 type LaneRewrite struct {
 	// Lane is the lane whose order is rewritten.
 	Lane string
@@ -82,8 +80,7 @@ type LaneRewrite struct {
 // the apply resolves its subject to (informational, not itself a write).
 // LaneRewrite is set only for a composer apply, which rewrites its lane's whole
 // order; a member (pipeline) apply leaves it nil, because a pipeline's lane
-// position always comes from the composer's apply, never a member apply
-// (specification section 6.3).
+// position always comes from the composer's apply, never a member apply.
 type Effects struct {
 	// Lane is the lane the applied subject resolves to.
 	Lane string
@@ -93,14 +90,14 @@ type Effects struct {
 
 // WritesLanes reports whether these effects write the lanes roster. It is true
 // exactly for a composer apply's full-lane rewrite; a member apply never writes
-// lanes (specification section 6.3).
+// lanes.
 func (e Effects) WritesLanes() bool {
 	return e.LaneRewrite != nil
 }
 
 // ValidatePipelineApply validates a single pipeline `declare apply` against the
 // registry view and returns its lane effects. It enforces the pipeline-side lane
-// rules of specification sections 3 and 6.3: inline and containment lanes must
+// rules: inline and containment lanes must
 // agree; a pipeline belongs to exactly one lane; an inline lane joined without
 // containment is valid only while single-member; a lane reaching 2+ members needs
 // its composer applied (the 2+ interlock). A pipeline (member) apply never writes
@@ -116,7 +113,7 @@ func ValidatePipelineApply(view RegistryView, apply PipelineApply) (Effects, err
 	}
 
 	// A pipeline belongs to exactly one lane: a re-apply may not move it, and no
-	// two lanes may claim it (specification section 3).
+	// two lanes may claim it.
 	if existing, ok := view.Members[apply.Pipeline]; ok && existing.Lane != lane {
 		return Effects{}, fmt.Errorf("declare: pipeline %q is already registered in lane %q; it cannot also join lane %q; a pipeline belongs to exactly one lane", apply.Pipeline, existing.Lane, lane)
 	}
@@ -140,13 +137,13 @@ func ValidatePipelineApply(view RegistryView, apply PipelineApply) (Effects, err
 
 	if count >= 2 {
 		// A 2+ lane may hold no member outside its folder: the inline-without-
-		// containment placement is nominal only while single-member (section 3).
+		// containment placement is nominal only while single-member.
 		if len(outside) > 0 {
 			sort.Strings(outside)
 			return Effects{}, fmt.Errorf("declare: applying pipeline %q would grow lane %q to %d members while %v sit outside the lane folder; move each into the %q folder so containment matches the lane", apply.Pipeline, lane, count, outside, lane)
 		}
 		// The 2+ interlock: a lane of 2+ registered members needs its composer
-		// applied first (specification section 6.3).
+		// applied first.
 		if !view.composerApplied(lane) {
 			return Effects{}, fmt.Errorf("declare: applying pipeline %q would leave lane %q with %d registered members; apply the lane %q composer before its second member", apply.Pipeline, lane, count, lane)
 		}
@@ -161,7 +158,7 @@ func ValidatePipelineApply(view RegistryView, apply PipelineApply) (Effects, err
 // contained is honest to Membership.Contained: true only when the pipeline folder
 // sits inside the lane folder. A pipeline that omits lane and has no containing
 // lane folder is placed in its own implicit lane, named for itself and parallel
-// with everything (specification section 3); it has no lane folder to sit inside,
+// with everything; it has no lane folder to sit inside,
 // so contained is false. Because that implicit lane is named for the pipeline, its
 // membership stays a single pipeline unless the name collides with an already
 // populated lane, in which case the 2+ rules below reject the collision rather
@@ -188,8 +185,8 @@ func resolveLane(apply PipelineApply) (lane string, contained bool, err error) {
 }
 
 // ValidateComposerApply validates a single composer `declare apply` against the
-// registry view and returns its lane effects. It enforces the composer-side rules
-// of specification sections 3 and 6.3: the composer's lane must match its folder
+// registry view and returns its lane effects. It enforces the composer-side rules:
+// the composer's lane must match its folder
 // name; every order entry must name a pipeline folder inside the lane folder; and
 // no ordered pipeline may already belong to another lane. A composer apply rewrites
 // the lane's whole order, so the returned effects carry the full-lane rewrite.
@@ -203,7 +200,7 @@ func ValidateComposerApply(view RegistryView, apply ComposerApply) (Effects, err
 	if apply.Folder == "" {
 		return Effects{}, fmt.Errorf("declare: composer apply has no folder name")
 	}
-	// The composer's lane must match its folder name (specification section 3).
+	// The composer's lane must match its folder name.
 	if apply.Lane != apply.Folder {
 		return Effects{}, fmt.Errorf("declare: composer declares lane %q but sits in folder %q; a composer's lane must match its folder name", apply.Lane, apply.Folder)
 	}
@@ -215,17 +212,17 @@ func ValidateComposerApply(view RegistryView, apply ComposerApply) (Effects, err
 	seen := make(map[string]bool, len(apply.Order))
 	for _, name := range apply.Order {
 		// Membership by containment: every order entry names a pipeline folder
-		// inside the lane folder (specification section 3).
+		// inside the lane folder.
 		if !folders[name] {
 			return Effects{}, fmt.Errorf("declare: composer for lane %q orders %q, which is not a pipeline folder inside the lane folder; every order entry must name a folder contained in the lane", apply.Lane, name)
 		}
 		// The order is a serial walk with no repeats: a pipeline listed twice would
-		// run twice per pass (specification section 6.3, one goroutine per lane).
+		// run twice per pass (one goroutine per lane).
 		if seen[name] {
 			return Effects{}, fmt.Errorf("declare: composer for lane %q orders pipeline %q more than once; a pipeline appears in the lane order at most once", apply.Lane, name)
 		}
 		seen[name] = true
-		// Each pipeline belongs to exactly one lane (specification section 3).
+		// Each pipeline belongs to exactly one lane.
 		if existing, ok := view.Members[name]; ok && existing.Lane != apply.Lane {
 			return Effects{}, fmt.Errorf("declare: composer for lane %q orders pipeline %q, which is already registered in lane %q; a pipeline belongs to exactly one lane", apply.Lane, name, existing.Lane)
 		}

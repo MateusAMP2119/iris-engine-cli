@@ -1,16 +1,15 @@
-// Package config resolves the Iris engine/connection configuration with the
-// strict precedence of specification section 8: command flags override IRIS_*
-// environment variables, which override an optional thin iris.toml, which
-// override built-in defaults. It is pure resolution logic layered over the flag
-// surface of the cobra tree: a caller assembles one Layer per source and folds
-// them with Resolve.
+// Package config resolves the Iris engine/connection configuration under strict
+// precedence: command flags override IRIS_* environment variables, which
+// override an optional thin iris.toml, which override built-in defaults. It is
+// pure resolution logic layered over the flag surface of the cobra tree: a
+// caller assembles one Layer per source and folds them with Resolve.
 //
 // The scope is deliberately narrow. iris.toml carries engine/connection settings
 // only and is never a project manifest (the workload graph lives in
 // iris-declare.yaml); project-level keys in an iris.toml are not honored (see
 // ParseTOML). With nothing configured the resolution yields the local socket
 // under the workspace .iris directory and an empty admin DSN, which selects the
-// engine's managed Postgres (specification section 2).
+// engine's managed Postgres.
 package config
 
 import (
@@ -19,9 +18,8 @@ import (
 	"strconv"
 )
 
-// The documented IRIS_* environment variable names (specification section 8).
-// These seven are the complete recognized set; no other IRIS_* variable feeds
-// configuration.
+// The documented IRIS_* environment variable names. These seven are the complete
+// recognized set; no other IRIS_* variable feeds configuration.
 const (
 	EnvSocket               = "IRIS_SOCKET"
 	EnvHost                 = "IRIS_HOST"
@@ -32,16 +30,15 @@ const (
 	EnvObjectsPath          = "IRIS_OBJECTS_PATH"
 )
 
-// The built-in default numeric settings: run-history retention (specification
-// section 6.2, keep newest 1000 runs per pipeline) and the journal partition
-// size that seals a partition (specification section 4).
+// The built-in default numeric settings: run-history retention (keep the newest
+// 1000 runs per pipeline) and the journal partition size that seals a partition.
 const (
 	DefaultRetain               int64 = 1000
 	DefaultJournalPartitionRows int64 = 10_000_000
 )
 
-// The workspace .iris tree layout (specification section 10): the default socket
-// file and object-store directory both live under <workspace>/.iris.
+// The workspace .iris tree layout: the default socket file and object-store
+// directory both live under <workspace>/.iris.
 const (
 	// DirName is the per-workspace Iris state directory.
 	DirName = ".iris"
@@ -64,7 +61,7 @@ type Settings struct {
 	// Token is the PAT presented to a remote engine over TCP.
 	Token string
 	// PgDSN is the daemon-owned admin DSN. Empty selects the managed Postgres
-	// (specification section 2: default engine-managed; any DSN is external mode).
+	// (default engine-managed; any DSN is external mode).
 	PgDSN string
 	// Retain is the run-history retention count.
 	Retain int64
@@ -84,8 +81,8 @@ type Settings struct {
 
 // Managed reports whether the engine runs its own managed Postgres. That is the
 // default whenever no admin DSN is configured; supplying any DSN (via --pg-dsn,
-// IRIS_PG_DSN, or iris.toml pg_dsn) selects external mode instead (specification
-// section 2: two modes, one code path).
+// IRIS_PG_DSN, or iris.toml pg_dsn) selects external mode instead: two modes,
+// one code path.
 func (s Settings) Managed() bool { return s.PgDSN == "" }
 
 // Layer is one configuration source's contribution to the resolution. Each field
@@ -107,12 +104,12 @@ type Layer struct {
 	TLSKey               *string
 }
 
-// Resolve folds the four configuration sources into resolved Settings under the
-// strict precedence of specification section 8. The layers are given
-// lowest-precedence first -- defaults, then iris.toml, then IRIS_* env, then
-// command flags -- and each layer's explicitly-set fields override the value
-// accumulated so far, so the highest layer that set a field wins. A layer that
-// leaves a field unset contributes nothing to it.
+// Resolve folds the four configuration sources into resolved Settings under
+// strict precedence. The layers are given lowest-precedence first -- defaults,
+// then iris.toml, then IRIS_* env, then command flags -- and each layer's
+// explicitly-set fields override the value accumulated so far, so the highest
+// layer that set a field wins. A layer that leaves a field unset contributes
+// nothing to it.
 func Resolve(defaults, file, env, flags Layer) Settings {
 	var s Settings
 	for _, l := range []Layer{defaults, file, env, flags} {
@@ -152,10 +149,10 @@ func Resolve(defaults, file, env, flags Layer) Settings {
 
 // Defaults returns the built-in default layer, the lowest-precedence source. The
 // socket defaults to <workspace>/.iris/iris.sock and the object store to
-// <workspace>/.iris/objects (specification section 10); retention and journal
-// partition size take their documented defaults; and the admin DSN is left unset,
-// which selects the managed Postgres (specification section 2). workspace is the
-// root of the workspace tree; an empty workspace yields .iris-relative paths.
+// <workspace>/.iris/objects; retention and journal partition size take their
+// documented defaults; and the admin DSN is left unset, which selects the managed
+// Postgres. workspace is the root of the workspace tree; an empty workspace
+// yields .iris-relative paths.
 func Defaults(workspace string) Layer {
 	socket := filepath.Join(workspace, DirName, SocketName)
 	objects := filepath.Join(workspace, DirName, ObjectsDir)

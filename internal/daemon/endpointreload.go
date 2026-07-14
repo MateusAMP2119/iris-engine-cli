@@ -12,16 +12,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's startup endpoint reload (specification section 7):
-// endpoints applied via `iris endpoint apply` persist to the endpoints and
-// endpoint_filters meta tables, but the LIVE serving registry is in-memory and empty
-// each process start, so a restart or failover leader would 500 every /q request
-// until a re-apply. Reload closes that gap: it reads the persisted shape rows from
-// meta (any node, over the reader pool), recompiles each against the leader's own
-// schemas/ tree -- the SQL is never stored, it is a pure function of the shape
-// (S07/endpoint-sql-deterministic) -- and swaps the compiled set into the one live
-// registry the serving mux checks against. It runs on every node before serving, so
-// a restart serves every applied endpoint with no re-apply.
+// This file is the daemon's startup endpoint reload: endpoints applied via `iris
+// endpoint apply` persist to the endpoints and endpoint_filters meta tables, but
+// the LIVE serving registry is in-memory and empty each process start, so a restart
+// or failover leader would 500 every /q request until a re-apply. Reload closes
+// that gap: it reads the persisted shape rows from meta (any node, over the reader
+// pool), recompiles each against the leader's own schemas/ tree -- the SQL is never
+// stored, it is a pure function of the shape -- and swaps the compiled set into the
+// one live registry the serving mux checks against. It runs on every node before
+// serving, so a restart serves every applied endpoint with no re-apply.
 //
 // The recompile is deliberately from the PERSISTED rows, not a fresh workspace
 // discovery: meta is the truth of what was applied, and the schemas/ tree only

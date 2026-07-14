@@ -18,7 +18,7 @@ import (
 // TestRunAttribution is the end-to-end proof that every captured write is attributed
 // to its run, that attribution rides the injected connection, and that the journal
 // layers concurrent and partial writes exactly as the provenance and undo consumers
-// require (specification sections 4, 6.3 and 14). It stands up one real Postgres
+// require. It stands up one real Postgres
 // cluster the engine has never touched, provisions the partitioned journal and the
 // real iris.capture() function through the live pg path, declares a user table with
 // the three per-operation capture triggers, and mints a dedicated pipeline writer
@@ -27,7 +27,7 @@ import (
 // per-session iris.run_id setting onto the DSN, never a hand-issued SET -- and asserts
 // the live journal.
 //
-// The six legs, one per contract:
+// The six legs, one per subtest:
 //
 //   - run-attribution-via-connection: a write on a connection carrying iris.run_id is
 //     stamped with that run; a write on a connection carrying no run id is rejected and
@@ -147,8 +147,7 @@ func TestRunAttribution(t *testing.T) {
 		return conn
 	}
 
-	// spec: S04/run-attribution-via-connection
-	t.Run("S04/run-attribution-via-connection", func(t *testing.T) {
+	t.Run("run-attribution-via-connection", func(t *testing.T) {
 		// Positive: the run id rides the connection; the trigger reads it in-transaction
 		// and stamps the write with it -- no hand-issued SET anywhere.
 		const attributedRun int64 = 71001
@@ -188,8 +187,7 @@ func TestRunAttribution(t *testing.T) {
 			manualRun, writer)
 	})
 
-	// spec: S04/capture-in-data-transaction
-	t.Run("S04/capture-in-data-transaction", func(t *testing.T) {
+	t.Run("capture-in-data-transaction", func(t *testing.T) {
 		const run int64 = 71002
 		wc := connWithRun(t, run)
 
@@ -224,8 +222,7 @@ func TestRunAttribution(t *testing.T) {
 			"SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND row_pk='300' AND op='insert'", run)
 	})
 
-	// spec: S14/write-attributed-same-txn
-	t.Run("S14/write-attributed-same-txn", func(t *testing.T) {
+	t.Run("write-attributed-same-txn", func(t *testing.T) {
 		const run int64 = 71003
 		wc := connWithRun(t, run)
 
@@ -254,8 +251,7 @@ func TestRunAttribution(t *testing.T) {
 			run, writer)
 	})
 
-	// spec: S04/capture-row-per-write
-	t.Run("S04/capture-row-per-write", func(t *testing.T) {
+	t.Run("capture-row-per-write", func(t *testing.T) {
 		const run int64 = 71004
 		wc := connWithRun(t, run)
 
@@ -281,8 +277,7 @@ func TestRunAttribution(t *testing.T) {
 			"SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND row_pk='501' AND op='delete'", run)
 	})
 
-	// spec: S06.3/journal-row-commit-ordered
-	t.Run("S06.3/journal-row-commit-ordered", func(t *testing.T) {
+	t.Run("journal-row-commit-ordered", func(t *testing.T) {
 		const (
 			runA int64 = 71005
 			runB int64 = 71006
@@ -346,8 +341,7 @@ func TestRunAttribution(t *testing.T) {
 		}
 	})
 
-	// spec: S06.3/partial-writes-attributed-revertible
-	t.Run("S06.3/partial-writes-attributed-revertible", func(t *testing.T) {
+	t.Run("partial-writes-attributed-revertible", func(t *testing.T) {
 		const run int64 = 71007
 
 		// journal_floor: the journal high id at dispatch, before the run writes anything.

@@ -36,7 +36,7 @@ type connectResult struct {
 // PAT are distinct faults, and nothing is recorded on either -- then records
 // host and token in the invoking directory's .iris/iris.toml (0600), the
 // configuration layer every subsequent command in this workspace resolves
-// through (specification section 8).
+// through.
 func (a *app) engineConnect() runE {
 	return func(cmd *cobra.Command, args []string) error {
 		settings := a.resolveTarget(cmd)

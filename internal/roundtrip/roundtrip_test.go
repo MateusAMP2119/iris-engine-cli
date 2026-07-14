@@ -43,8 +43,6 @@ func gzipFormat() Format {
 // harness against real temp files: the identity and gzip formats over the
 // whole golden-workspace fixture inventory plus empty and binary payloads,
 // proving byte-exact and checksum-verified preservation through a real file.
-//
-// spec: S16/archive-roundtrip-temp-files
 func TestArchiveRoundTripTempFiles(t *testing.T) {
 	formats := []Format{Identity(), gzipFormat()}
 	payloads := fixturePayloads(t)
@@ -63,8 +61,6 @@ func TestArchiveRoundTripTempFiles(t *testing.T) {
 
 // TestRoundTripDetectsCorruption proves the harness is not vacuous: a codec
 // that corrupts the payload, or fails to encode, fails the round trip.
-//
-// spec: S16/archive-roundtrip-temp-files
 func TestRoundTripDetectsCorruption(t *testing.T) {
 	corrupting := Format{
 		Name:   "corrupting",

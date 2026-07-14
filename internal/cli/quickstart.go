@@ -23,9 +23,9 @@ type quickstartStep struct {
 	Act         string   `json:"act"`
 }
 
-// The stable act ids of the chaptered tour (specification section 8): every
-// step carries its act in the --json envelope, and the interactive sequencer
-// keys its chapter marks and openers on them.
+// The stable act ids of the chaptered tour: every step carries its act in the
+// --json envelope, and the interactive sequencer keys its chapter marks and
+// openers on them.
 const (
 	tourActEngine   = "engine"
 	tourActPipeline = "pipeline"
@@ -71,8 +71,8 @@ func quickstartPipelineSteps(e catalogEntry) []quickstartStep {
 }
 
 // quickstartActsFor returns the canonical chaptered step table of the guided
-// first session (specification section 8, quickstart surface) for one catalog
-// entry: THE ENGINE (install, start -d, info) then THE PIPELINE (apply, run,
+// first session for one catalog entry: THE ENGINE (install, start -d, info) then
+// THE PIPELINE (apply, run,
 // provenance on the entry's showcase). Every rendering -- the interactive
 // tour, the plain act-headed guide, and the --json envelope -- shares this one
 // table. It is built fresh per call (no mutable package state); openers are
@@ -137,8 +137,8 @@ func quickstartSteps() ([]quickstartStep, error) {
 }
 
 // quickstartCmd builds `iris quickstart`: the third root verb beside the
-// lifecycle pair (specification section 8), the installer's continuation --
-// the guided tour of the first session. It is daemonless: the tour runs before
+// lifecycle pair, the installer's continuation -- the guided tour of the first
+// session. It is daemonless: the tour runs before
 // any engine exists (it bootstraps one). Interactivity requires stdin AND
 // stdout to both be interactive terminals with --json off; --yes runs the
 // whole tour unattended (piped or not) with the invoking directory as the

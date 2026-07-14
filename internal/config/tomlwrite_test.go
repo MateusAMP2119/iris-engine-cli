@@ -10,7 +10,6 @@ import (
 // TestUpsertTOMLFileCreates proves the upsert creates the file and its directory
 // when absent, writes 0600, and the parser reads the values back.
 func TestUpsertTOMLFileCreates(t *testing.T) {
-	// spec: S08/iris-toml-upsert-preserves
 	path := filepath.Join(t.TempDir(), DirName, FileName)
 	if err := UpsertTOMLFile(path, map[string]string{"host": "db.example:8443", "token": "s3cret"}); err != nil {
 		t.Fatalf("UpsertTOMLFile: %v", err)
@@ -41,7 +40,6 @@ func TestUpsertTOMLFileCreates(t *testing.T) {
 // place, and a duplicate of an owned key is dropped so the rewrite cannot be
 // overridden by a later line (the parser is last-one-wins).
 func TestUpsertTOMLFilePreserves(t *testing.T) {
-	// spec: S08/iris-toml-upsert-preserves
 	path := filepath.Join(t.TempDir(), FileName)
 	prior := strings.Join([]string{
 		"# workspace engine settings",
@@ -105,7 +103,6 @@ func TestUpsertTOMLFilePreserves(t *testing.T) {
 // TestUpsertTOMLFileEscapes proves a value carrying the parser's two escapes
 // (backslash, double quote) round-trips through the writer.
 func TestUpsertTOMLFileEscapes(t *testing.T) {
-	// spec: S08/iris-toml-upsert-preserves
 	path := filepath.Join(t.TempDir(), FileName)
 	value := `to"ken\with escapes`
 	if err := UpsertTOMLFile(path, map[string]string{"token": value}); err != nil {
@@ -123,7 +120,6 @@ func TestUpsertTOMLFileEscapes(t *testing.T) {
 // TestUpsertTOMLFileRejectsBadKey proves a non-flat key is refused before
 // anything is written.
 func TestUpsertTOMLFileRejectsBadKey(t *testing.T) {
-	// spec: S08/iris-toml-upsert-preserves
 	path := filepath.Join(t.TempDir(), FileName)
 	if err := UpsertTOMLFile(path, map[string]string{"a.b": "x"}); err == nil {
 		t.Fatal("UpsertTOMLFile accepted a dotted key")

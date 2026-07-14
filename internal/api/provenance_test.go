@@ -30,10 +30,7 @@ var _ api.ProvenanceHandler = fixedProvenance{}
 // TestProvenanceRoute proves the /provenance route serves the handler payload
 // in the data envelope on GET, rejects bad methods, and 500s when unwired.
 // It also asserts the payload shape carries lineage (stamps list) and no image
-// fields (S07/provenance-route-lineage-only).
-//
-// spec: S07/provenance-route-lineage-only
-// spec: S14/provenance-http-endpoint
+// fields.
 func TestProvenanceRoute(t *testing.T) {
 	sample := api.ProvenanceResult{
 		Schema: "analytics",
@@ -51,7 +48,7 @@ func TestProvenanceRoute(t *testing.T) {
 		Ancestry:            []api.ProvenanceEdge{{RunID: 42, UpstreamRunID: 39, Depth: 1}},
 	}
 
-	t.Run("S07/provenance-route-lineage-only", func(t *testing.T) {
+	t.Run("provenance-route-lineage-only", func(t *testing.T) {
 		mux := api.NewMux(api.WithProvenance(fixedProvenance{result: sample}))
 
 		rec := httptest.NewRecorder()
@@ -79,7 +76,7 @@ func TestProvenanceRoute(t *testing.T) {
 		}
 	})
 
-	t.Run("S14/provenance-http-endpoint", func(t *testing.T) {
+	t.Run("provenance-http-endpoint", func(t *testing.T) {
 		mux := api.NewMux(api.WithProvenance(fixedProvenance{result: sample}))
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/provenance/analytics/orders/9f3c..", nil))

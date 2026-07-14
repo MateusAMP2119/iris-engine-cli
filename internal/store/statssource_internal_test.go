@@ -78,10 +78,6 @@ func (p *scriptPool) query(_ context.Context, sql string, _ ...any) (poolRows, e
 // chain head come straight off the meta snapshot; the per-lane membership and
 // per-pipeline last-values follow. It exercises the production source (pgxStatsSource)
 // over a scripted pool, no live Postgres.
-//
-// spec: S11/stats-engine-rollup
-// spec: S11/stats-lane-rollup
-// spec: S11/stats-pipeline-rollup
 func TestPgxStatsSourceRollup(t *testing.T) {
 	pool := &scriptPool{bySQL: map[string][][]any{
 		statsRunsSQL: {
@@ -111,8 +107,7 @@ func TestPgxStatsSourceRollup(t *testing.T) {
 		t.Fatalf("BuildStats over pgxStatsSource: %v", err)
 	}
 
-	// spec: S11/stats-engine-rollup
-	t.Run("S11/stats-engine-rollup", func(t *testing.T) {
+	t.Run("stats-engine-rollup", func(t *testing.T) {
 		if rollup.Engine.DeadLetterDepth != 1 {
 			t.Errorf("dead-letter depth = %d, want 1", rollup.Engine.DeadLetterDepth)
 		}
@@ -134,8 +129,7 @@ func TestPgxStatsSourceRollup(t *testing.T) {
 		}
 	})
 
-	// spec: S11/stats-lane-rollup
-	t.Run("S11/stats-lane-rollup", func(t *testing.T) {
+	t.Run("stats-lane-rollup", func(t *testing.T) {
 		if len(rollup.Lanes) != 1 {
 			t.Fatalf("lanes = %d, want 1", len(rollup.Lanes))
 		}
@@ -151,8 +145,7 @@ func TestPgxStatsSourceRollup(t *testing.T) {
 		}
 	})
 
-	// spec: S11/stats-pipeline-rollup
-	t.Run("S11/stats-pipeline-rollup", func(t *testing.T) {
+	t.Run("stats-pipeline-rollup", func(t *testing.T) {
 		byName := map[string]PipelineRollup{}
 		for _, p := range rollup.Pipelines {
 			byName[p.Pipeline] = p

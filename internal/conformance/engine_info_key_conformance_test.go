@@ -19,16 +19,14 @@ import (
 // TestEngineInfoShowsEngineKeyPublic drives the shipped binary and proves that
 // `iris engine info` reads the engine key back from the engine_key meta table and
 // exposes its PUBLIC half -- never the private half -- through both the --json data
-// envelope and the human readout (specification sections 4 and 11). The production
+// envelope and the human readout. The production
 // reader reaches meta the mode-appropriate way: the configured admin DSN in
 // external mode, or the running managed instance's engine-owned runtime files
 // (superuser credential + postmaster.pid port) in managed mode, never by starting a
 // second postmaster. This pins the live wiring end to end against a real binary, a
 // real daemon, and real Postgres, where the earlier tiers stop at fakes.
-//
-// spec: S04/engine-key-public-via-info
 func TestEngineInfoShowsEngineKeyPublic(t *testing.T) {
-	t.Run("S04/engine-key-public-via-info", func(t *testing.T) {
+	t.Run("engine-key-public-via-info", func(t *testing.T) {
 		bin := Build(t)
 		ws := shortWorkspace(t)
 		socket := filepath.Join(ws, ".iris", "iris.sock")
@@ -67,7 +65,7 @@ func TestEngineInfoShowsEngineKeyPublic(t *testing.T) {
 		// from meta; it never carries private material. The daemon-held runtime fields
 		// merge in through GET /info -- now that the info plane is wired into Run(), the
 		// merged document also reports the elected leadership role and the display-only
-		// uptime (specification section 15), so this asserts them here too.
+		// uptime, so this asserts them here too.
 		jres := bin.Run(t, RunOptions{Args: []string{"--json", "engine", "info"}, Dir: ws, Timeout: time.Minute})
 		jres.RequireExit(t, 0)
 		var doc struct {

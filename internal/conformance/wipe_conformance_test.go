@@ -16,9 +16,9 @@ import (
 )
 
 // This file is E06.7 Live wipe closure: the epic's final conformance leg, proving
-// `iris workload wipe [<pipeline>]` against a REAL database (specification
-// sections 5, 12 and 14). It exercises the live wipe executor (pg.ExecuteWipe)
-// the way E06.6's promotion leg exercises pg.ExecutePromotionFlip: it stands up a
+// `iris workload wipe [<pipeline>]` against a REAL database. It exercises the live
+// wipe executor (pg.ExecuteWipe) the way E06.6's promotion leg exercises
+// pg.ExecutePromotionFlip: it stands up a
 // bare Postgres cluster, provisions the partitioned journal, the real
 // iris.capture() function, a user table with the three per-operation capture
 // triggers, and a pipeline writer role through the live pg path, drives real
@@ -27,12 +27,6 @@ import (
 // rides E13's acceptance scenario; this leg proves what only a live database can:
 // wipe is one atomic transaction, exactly reverts in-scope disposable rows,
 // never clobbers permanent writes, and retains every journal row.
-//
-// Contracts covered here:
-//   - S12/wipe-reverts-unpromoted-keeps-journal
-//   - S05/wipe-never-clobbers-permanent
-//   - S05/wipe-atomic-transaction
-//   - S14/capture-overhead-budget
 
 const (
 	wipeWriter   = "iris_wipe_writer"
@@ -171,12 +165,10 @@ func (wc *wipeCluster) writerConn(t *testing.T, runID int64, wipeEligible bool) 
 
 // TestWipeRevertsUnpromotedKeepsJournal proves the epic's headline safety property
 // against a real database: `iris workload wipe` reverts un-promoted disposable data
-// while retaining every journal row (specification section 12). A single disposable
+// while retaining every journal row. A single disposable
 // run inserts, updates, and deletes rows; the live wipe rolls all of it back to the
 // pre-run state, yet not one journal row is deleted -- every visited entry survives,
 // only its undo marker flips to wiped.
-//
-// spec: S12/wipe-reverts-unpromoted-keeps-journal
 func TestWipeRevertsUnpromotedKeepsJournal(t *testing.T) {
 	wc := newWipeCluster(t)
 	wc.provisionTable(t, "analytics", "orders",
@@ -212,15 +204,13 @@ func TestWipeRevertsUnpromotedKeepsJournal(t *testing.T) {
 }
 
 // TestWipeNeverClobbersPermanent proves the never-clobbers rule against a real
-// database (specification section 5): a bare wipe exactly reverts the disposable
+// database: a bare wipe exactly reverts the disposable
 // rows nothing permanent sits on, while every permanent write is preserved. A
 // disposable run inserts rows 1..3; a permanent run then updates row 1 (born
 // promoted) and inserts a permanent row 4. The wipe reverts rows 2 and 3, but the
 // open insert of row 1 is conflict-skipped because the later promoted update is
 // still in the row's value -- so the permanent write is never clobbered -- and the
 // promoted entries and their row survive untouched.
-//
-// spec: S05/wipe-never-clobbers-permanent
 func TestWipeNeverClobbersPermanent(t *testing.T) {
 	wc := newWipeCluster(t)
 	wc.provisionTable(t, "analytics", "orders",
@@ -277,15 +267,13 @@ func TestWipeNeverClobbersPermanent(t *testing.T) {
 }
 
 // TestWipeAtomicTransaction proves the wipe runs in a single data-database
-// transaction (specification section 5): a mid-wipe failure leaves NO partial wipe
+// transaction: a mid-wipe failure leaves NO partial wipe
 // applied. A disposable run's writes are captured normally, then one captured
 // update entry's pre-image is tampered so restoring it violates the table's CHECK
 // constraint. Reverse replay deletes the later insert first, then hits the poisoned
 // restore and aborts; because journal and tables co-reside in one transaction, the
 // abort rolls the whole wipe back -- the already-deleted row is restored and every
 // journal entry is still undo='open'.
-//
-// spec: S05/wipe-atomic-transaction
 func TestWipeAtomicTransaction(t *testing.T) {
 	wc := newWipeCluster(t)
 	wc.provisionTable(t, "analytics", "orders",
@@ -330,14 +318,12 @@ func TestWipeAtomicTransaction(t *testing.T) {
 }
 
 // TestCaptureOverheadBudget carries the data-durability overhead gate against a
-// real database (specification section 14): a 10M-row promoted bulk insert
-// completes within 1.25x of the capture-less baseline, gated by the acceptance
-// scenario. The 1.25x wall-clock bound is, by the contract's own terms, enforced
-// at acceptance scale -- the 10M-row scenario run that lands in E13 -- because
-// only there is the baseline write genuinely I/O-bound; this task owns the
-// contract row and proves against a live database the structural properties that
-// price capture within that budget (spec section 14, "price: a stamp, never a
-// copy"):
+// real database: a 10M-row promoted bulk insert completes within 1.25x of the
+// capture-less baseline, gated by the acceptance scenario. The 1.25x wall-clock
+// bound is enforced at acceptance scale -- the 10M-row scenario run that lands in
+// E13 -- because only there is the baseline write genuinely I/O-bound; this leg
+// proves against a live database the structural properties that price capture
+// within that budget ("price: a stamp, never a copy"):
 //
 //   - Slim stamp: a promoted bulk insert emits exactly one born-promoted journal
 //     stamp per row and not one pre-image (a copy would be the 2-3x write
@@ -366,8 +352,6 @@ func TestWipeAtomicTransaction(t *testing.T) {
 // the payload inline uncompressed, exactly the write physics of the real-world
 // incompressible wide rows the budget prices (incompressible data cannot be
 // squeezed either; it merely toasts at larger widths).
-//
-// spec: S14/capture-overhead-budget
 func TestCaptureOverheadBudget(t *testing.T) {
 	wc := newWipeCluster(t)
 	// Identical wide-row tables; only the capture triggers differ.

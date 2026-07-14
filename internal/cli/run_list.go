@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file is the CLI side of `iris run list [--graph] [--ascii]` (specification
-// section 8 CLI contract). The flat read prints run history a row at a time; the
+// This file is the CLI side of `iris run list [--graph] [--ascii]` and its CLI
+// output contract. The flat read prints run history a row at a time; the
 // --graph rendering draws the lineage rails, presentation only: the same rows the
 // flat read returns, drawn as rails, with --json never carrying drawing.
 //
@@ -24,13 +24,13 @@ import (
 // renumber). Past a rail cap the weave refuses and prints the --lane/--pipeline
 // filter hint; --ascii swaps to git's own glyph vocabulary and is the render the
 // golden files pin. Wiring and lineage are two graphs that never share a
-// rendering (specification section 11): this file draws lineage only.
+// rendering: this file draws lineage only.
 
 // runRow models a run record served by GET /runs?include=inputs. It carries only
 // the attributes the lineage rail renderer needs: Inputs are the consumed
 // upstream run ids (each a solid edge), and ReplayedFrom is the replaced run
 // (annotation only, never an edge). The wire carries these as plain attributes,
-// the lineage payload an external renderer draws (specification section 7).
+// the lineage payload an external renderer draws.
 type runRow struct {
 	ID           string   `json:"id"`
 	Pipeline     string   `json:"pipeline"`
@@ -41,8 +41,7 @@ type runRow struct {
 
 // railCap bounds how many runs the weave renders before it refuses: past it the
 // rail view degrades into an unreadable tangle, so the renderer prints the
-// filter hint instead of weaving (specification section 8: "past a rail cap the
-// weave refuses").
+// filter hint instead of weaving: past a rail cap the weave refuses.
 const railCap = 10
 
 // railGlyphs is one rendering's glyph vocabulary: the node marker, the solid
@@ -64,8 +63,8 @@ var (
 // [--before R]`. It GETs /runs with include=inputs (the consumption edges the
 // rail view needs) plus any paging cursors, then renders flat or graph per the
 // flags. --graph is presentation only: under --json the same rows are returned
-// with no drawing (specification section 8). Transport failure is no-daemon (exit
-// 3) with start guidance; any other failure is operation-failed (exit 4).
+// with no drawing. Transport failure is no-daemon (exit 3) with start guidance;
+// any other failure is operation-failed (exit 4).
 func (a *app) runList() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		graph, _ := cmd.Flags().GetBool("graph")
@@ -138,7 +137,7 @@ func (a *app) runList() runE {
 
 // flatRunLine is the flat read's one-row rendering: id, pipeline, state. The
 // graph rendering presents exactly these fields, drawn as rails, so --graph is
-// presentation only (specification section 8).
+// presentation only.
 func flatRunLine(r runRow) string {
 	return r.ID + " " + r.Pipeline + " " + r.State
 }

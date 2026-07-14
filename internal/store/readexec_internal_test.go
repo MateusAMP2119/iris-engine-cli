@@ -10,15 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// This file proves the map-shaped execution surface the data routes ride
-// (specification section 7) with the recording read-pool fakes -- integration
-// tier, no live Postgres: ExecuteRead preserves the full SET ROLE / read-only
-// transaction / RESET ROLE checkout cycle around the fixed prepared statement
-// while scanning the served rows into column-keyed maps, ExecuteReadSelf runs
-// the same cycle assuming no role (the ambient socket caller is the engine
-// itself), and a Postgres privilege refusal (SQLSTATE 42501) surfaces as
-// ErrReadForbidden so the route layer can answer 403 without ever parsing
-// Postgres error text.
+// This file proves the map-shaped execution surface the data routes ride with the
+// recording read-pool fakes -- integration tier, no live Postgres: ExecuteRead
+// preserves the full SET ROLE / read-only transaction / RESET ROLE checkout cycle
+// around the fixed prepared statement while scanning the served rows into
+// column-keyed maps, ExecuteReadSelf runs the same cycle assuming no role (the
+// ambient socket caller is the engine itself), and a Postgres privilege refusal
+// (SQLSTATE 42501) surfaces as ErrReadForbidden so the route layer can answer 403
+// without ever parsing Postgres error text.
 
 // sliceRows is a poolRows fake serving scripted row values.
 type sliceRows struct {
@@ -73,10 +72,8 @@ func (a *rowsAcquirer) acquire(context.Context) (readSession, error) { return a.
 // role-cycle read the pool always runs -- SET ROLE, one read-only statement,
 // RESET ROLE on release -- returning the rows as column-keyed maps in served
 // order (the /data and /q serving form).
-//
-// spec: S07/read-pool-set-role-cycle
 func TestExecuteReadMapsRowsUnderRoleCycle(t *testing.T) {
-	t.Run("S07/read-pool-set-role-cycle", func(t *testing.T) {
+	t.Run("read-pool-set-role-cycle", func(t *testing.T) {
 		t.Run("runs the role cycle and scans rows into column maps", func(t *testing.T) {
 			var script []string
 			sess := &rowsSession{

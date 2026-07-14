@@ -17,12 +17,10 @@ func deadLettered(upstream string, runID int64) dispatch.Edge {
 
 // TestPropagationThroughDependsOn proves an upstream failure propagates through a
 // depends_on edge to the downstream: B's gate resolves poisoned on an awaited
-// dead-lettered upstream run, and the plan derived from that decision propagates
-// the rejection to B, naming the depends_on upstream and recording its dead-lettered
-// run. The dead-lettering this drives is the upstream_dead_lettered reason on the
-// single non-success terminal state (specification sections 1 and 6.2).
-//
-// spec: S01/depends-on-failure-propagation
+// dead-lettered upstream run, and the plan derived from that decision propagates the
+// rejection to B, naming the depends_on upstream and recording its dead-lettered run.
+// The dead-lettering this drives is the upstream_dead_lettered reason on the single
+// non-success terminal state.
 func TestPropagationThroughDependsOn(t *testing.T) {
 	// B depends_on extract_orders; extract_orders' most recent run (7) is
 	// dead-lettered and awaited.
@@ -63,8 +61,6 @@ func TestPropagationThroughDependsOn(t *testing.T) {
 // declares depends_on A, is propagated to; C, composer-ordered after A but with no
 // depends_on edge, and D, wholly independent, both carry no gate edge and are
 // untouched (composer order is not a gate input, so it can carry no propagation).
-//
-// spec: S06.2/propagation-depends-edges-only
 func TestPropagationDependsEdgesOnly(t *testing.T) {
 	// B depends_on A; A's most recent run (7) is dead-lettered and awaited: the gate
 	// poisons and the rejection propagates along the depends_on edge.
@@ -108,8 +104,6 @@ func TestPropagationDependsEdgesOnly(t *testing.T) {
 // itself dead-lettered by propagation from A), so C's gate poisons on the B edge and
 // the plan names B, the immediate upstream, recording B's run. The gate only ever sees
 // the immediate upstream, so the root A never enters C's attribution.
-//
-// spec: S06.2/transitive-propagation-immediate
 func TestTransitivePropagationImmediate(t *testing.T) {
 	// A -> B -> C. B's most recent run (20) is dead-lettered (it was itself a
 	// propagated rejection from A). C depends_on B and awaits run 20.

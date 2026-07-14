@@ -46,7 +46,7 @@ func tableIndex(tables []declare.DiscoveredTable) map[string]declare.DiscoveredT
 // folder per schema and per table, each table folder holding table.yaml plus an
 // optional engine-written migrations/ ledger.
 func TestSchemasTreeShape(t *testing.T) {
-	t.Run("S03/schemas-tree-shape", func(t *testing.T) {
+	t.Run("schemas-tree-shape", func(t *testing.T) {
 		// Accept: the golden schemas/ tree resolves to its two tables, and the
 		// table.yaml column shape (name, type, the four modifiers) parses.
 		tables, err := declare.ValidateSchemaTree(filepath.Join(fixtures.WorkspaceGolden(), "schemas"))
@@ -124,7 +124,7 @@ func TestSchemasTreeShape(t *testing.T) {
 // authoritative: the schema:/table: keys in table.yaml are validated against
 // them and a mismatch is rejected.
 func TestTableKeysMatchFolders(t *testing.T) {
-	t.Run("S03/table-keys-match-folders", func(t *testing.T) {
+	t.Run("table-keys-match-folders", func(t *testing.T) {
 		// Accept: golden tables agree with their folders.
 		if _, err := declare.ValidateSchemaTree(filepath.Join(fixtures.WorkspaceGolden(), "schemas")); err != nil {
 			t.Fatalf("golden schemas tree rejected: %v", err)

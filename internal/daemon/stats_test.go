@@ -34,14 +34,14 @@ func (statsRunnerFake) StartFresh(context.Context, store.RunRecord) (dispatch.Ru
 }
 
 // TestLanePassCounterLeaderTerm proves the per-lane loop pass counter is a
-// leader-held runtime counter (specification section 11): during a leadership
-// term the loop's pass hook drives it up (a count of completed passes, no clock),
-// and a new term -- the same daemon re-winning after a leader change -- starts
-// from zero because the candidate resets the counter when it wins the lock.
-// Restart-reset needs no wiring: the counter is process memory, so a restarted
-// daemon constructs a fresh, empty one (proven in internal/dispatch).
+// leader-held runtime counter: during a leadership term the loop's pass hook drives
+// it up (a count of completed passes, no clock), and a new term -- the same daemon
+// re-winning after a leader change -- starts from zero because the candidate resets
+// the counter when it wins the lock. Restart-reset needs no wiring: the counter is
+// process memory, so a restarted daemon constructs a fresh, empty one (proven in
+// internal/dispatch).
 func TestLanePassCounterLeaderTerm(t *testing.T) {
-	t.Run("S11/lane-pass-counter-reset", func(t *testing.T) {
+	t.Run("lane-pass-counter-reset", func(t *testing.T) {
 		pc := dispatch.NewPassCounter()
 		role := api.NewRoleState()
 		set := storetest.NewLockSet()
@@ -101,14 +101,9 @@ func TestLanePassCounterLeaderTerm(t *testing.T) {
 }
 
 // TestStatsPlane proves the daemon's stats handler serves the store rollup as the
-// one read-only api payload (specification sections 11 and 14): the engine,
-// lane, and pipeline rollups map field-for-field, the pass counts come from the
-// leader-held counter, and an absent checkpoint chain stays an explicit null
-// field, never a dropped one.
-//
-// spec: S11/stats-engine-rollup
-// spec: S11/stats-lane-rollup
-// spec: S11/stats-pipeline-rollup
+// one read-only api payload: the engine, lane, and pipeline rollups map
+// field-for-field, the pass counts come from the leader-held counter, and an absent
+// checkpoint chain stays an explicit null field, never a dropped one.
 func TestStatsPlane(t *testing.T) {
 	f := storetest.NewStats()
 	f.RegisterPipeline("extract")
@@ -158,8 +153,8 @@ func TestStatsPlane(t *testing.T) {
 		t.Errorf("pipeline rollup = %+v, want extract succeeded run %s exit 0", p, run.ID)
 	}
 
-	// An empty engine keeps the chain-head field explicit and null (E07.4's chain
-	// is not built yet; the payload field is present per the spec regardless).
+	// An empty engine keeps the chain-head field explicit and null (E07.4's chain is
+	// not built yet; the payload field is present regardless).
 	empty, err := daemon.NewStatsPlane(storetest.NewStats(), nil, nil).Stats(context.Background())
 	if err != nil {
 		t.Fatalf("stats plane over empty state: %v", err)

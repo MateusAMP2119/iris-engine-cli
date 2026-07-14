@@ -7,17 +7,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/arch"
 )
 
-// TestDependencyAllowlist proves the specification section 9 dependency
-// discipline as static analysis over go.mod and go.sum: the direct-dependency
-// allowlist (an upper bound: pgx, cobra plus its flag-set library pflag,
-// goccy/go-yaml, an argon2id provider,
+// TestDependencyAllowlist proves the dependency discipline as static analysis
+// over go.mod and go.sum: the direct-dependency allowlist (an upper bound: pgx,
+// cobra plus its flag-set library pflag, goccy/go-yaml, an argon2id provider,
 // embedded-postgres) and the forbidden-anywhere ban on ORMs, migration
 // frameworks, schedulers, parquet libraries, cloud object-store clients, and
 // SQLite drivers, anywhere in the module graph. It runs on synthetic go.mod
 // snippets that plant violations, and then over the repo's real go.mod + go.sum,
 // which must be clean.
-//
-// spec: S09/dependency-allowlist
 func TestDependencyAllowlist(t *testing.T) {
 	t.Run("allowlist membership", func(t *testing.T) {
 		allowed := []string{

@@ -7,17 +7,17 @@ import (
 	"net/http"
 )
 
-// This file is the control-plane mutation surface of the daemon (specification
-// sections 2, 8, and 12): POST /apply and POST /destroy, the two routes iris declare
-// apply and iris declare destroy drive. They are mutations, so the mux's existing
-// leader gate already rejects them on a standby with not_leader guidance (exit 6);
-// on the leader they run the injected ControlHandler, which the daemon wires to the
-// registry apply, schema provisioning, and the scoped teardown.
+// This file is the control-plane mutation surface of the daemon: POST /apply
+// and POST /destroy, the two routes iris declare apply and iris declare destroy
+// drive. They are mutations, so the mux's existing leader gate already rejects
+// them on a standby with not_leader guidance (exit 6); on the leader they run
+// the injected ControlHandler, which the daemon wires to the registry apply,
+// schema provisioning, and the scoped teardown.
 //
-// api stays a leaf: it defines the ControlHandler seam and the plain request/result
-// shapes but reaches nothing up the stack. The daemon supplies the handler that
-// composes dispatch, pg, and store; the mux only routes to it and renders its
-// outcome as the section-7 envelope.
+// api stays a leaf: it defines the ControlHandler seam and the plain
+// request/result shapes but reaches nothing up the stack. The daemon supplies
+// the handler that composes dispatch, pg, and store; the mux only routes to it
+// and renders its outcome as the data envelope.
 
 // ControlRequest is the body of a POST /apply or POST /destroy: the workspace-relative
 // declaration target the leader resolves from its own workspace tree, plus the
@@ -28,19 +28,19 @@ type ControlRequest struct {
 	// Path is the workspace-relative (or absolute) declaration target: a file named
 	// iris-declare.yaml or a folder resolving to one.
 	Path string `json:"path"`
-	// DryRun previews the change without writing (specification section 12).
+	// DryRun previews the change without writing.
 	DryRun bool `json:"dry_run,omitempty"`
 	// Confirm is the explicit confirmation a destructive op requires over the API
-	// (specification section 12: control PAT plus an explicit confirm field).
+	// (control PAT plus an explicit confirm field).
 	Confirm bool `json:"confirm,omitempty"`
 	// Force requests that soft-blocks be overridden (in-flight runs on scope are
 	// cancelled and dead-lettered stopped).
 	Force bool `json:"force,omitempty"`
 }
 
-// ControlResult is the success payload of a control mutation: what the leader did,
-// carried in the section-7 data envelope. Warnings are advisory (cross-mode reads and
-// the like); they accompany the outcome, never replace it.
+// ControlResult is the success payload of a control mutation: what the leader
+// did, carried in the data envelope. Warnings are advisory (cross-mode reads
+// and the like); they accompany the outcome, never replace it.
 type ControlResult struct {
 	// Kind is the declaration kind acted on: "pipeline" or "composer".
 	Kind string `json:"kind"`
@@ -64,9 +64,9 @@ type ControlHandler interface {
 	Destroy(ctx context.Context, req ControlRequest) (ControlResult, error)
 }
 
-// The control-plane error codes and statuses. Like not_leader they are distinct from
-// the read-API closed set, so a client can tell a control failure apart from a read
-// error and map it to the operation-failed exit category (specification section 8).
+// The control-plane error codes and statuses. Like not_leader they are distinct
+// from the read-API closed set, so a client can tell a control failure apart
+// from a read error and map it to the operation-failed exit category.
 const (
 	// CodeOpFailed is the machine code for a control mutation that failed (a
 	// validation, interlock, blocker, or provisioning failure). The CLI maps it to
@@ -106,9 +106,10 @@ func (noControl) Destroy(context.Context, ControlRequest) (ControlResult, error)
 	return ControlResult{}, ErrControlUnavailable
 }
 
-// serveApply handles POST /apply: decode the request, run the leader's apply, and
-// render the section-7 envelope. Method enforcement mirrors the read routes (only the
-// declared verb is allowed); the leader gate ran already in ServeHTTP.
+// serveApply handles POST /apply: decode the request, run the leader's apply,
+// and render the data envelope. Method enforcement mirrors the read routes
+// (only the declared verb is allowed); the leader gate ran already in
+// ServeHTTP.
 func (m *mux) serveApply(w http.ResponseWriter, r *http.Request) {
 	m.serveControl(w, r, m.control.Apply)
 }
@@ -135,10 +136,9 @@ func (m *mux) serveControl(w http.ResponseWriter, r *http.Request, op func(conte
 		return
 	}
 	// Destructive ops over the API (here: /destroy) require a control PAT
-	// (enforced by scope) plus an explicit confirm body field (specification
-	// section 12). The confirm gate runs after decode but before the handler,
-	// so a !Confirm destroy never reaches the control plane and is rejected
-	// as an operation failure.
+	// (enforced by scope) plus an explicit confirm body field. The confirm gate
+	// runs after decode but before the handler, so a !Confirm destroy never
+	// reaches the control plane and is rejected as an operation failure.
 	if r.URL.Path == "/destroy" {
 		if !req.Confirm {
 			WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "confirm required for destructive operation")
@@ -160,7 +160,7 @@ func (m *mux) serveControl(w http.ResponseWriter, r *http.Request, op func(conte
 }
 
 // drainReq is the body for POST /deadletter/drain; Confirm is required for the
-// destructive op over the API (specification section 12).
+// destructive op over the API.
 type drainReq struct {
 	Run      string `json:"run,omitempty"`
 	Pipeline string `json:"pipeline,omitempty"`

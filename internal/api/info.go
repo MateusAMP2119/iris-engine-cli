@@ -7,19 +7,19 @@ import (
 )
 
 // This file is the daemon's engine-info surface: GET /info, the daemon-held
-// runtime readout `iris engine info` merges with the CLI's local configuration
-// (specification sections 11 and 15). It is a read, served on any role -- reads
-// work anywhere -- so a standby answers with its own role and its own (zero) pass
-// counts. Like the stats and pipeline surfaces, api stays a leaf: it defines the
-// InfoHandler seam and the payload shape but reaches nothing up the stack; the
-// daemon supplies the handler that composes the leadership role, the leader-held
-// pass counter, the resolved listeners and targets, and the display-only uptime.
+// runtime readout `iris engine info` merges with the CLI's local configuration.
+// It is a read, served on any role -- reads work anywhere -- so a standby
+// answers with its own role and its own (zero) pass counts. Like the stats and
+// pipeline surfaces, api stays a leaf: it defines the InfoHandler seam and the
+// payload shape but reaches nothing up the stack; the daemon supplies the
+// handler that composes the leadership role, the leader-held pass counter, the
+// resolved listeners and targets, and the display-only uptime.
 //
-// The payload's one wall-clock is Uptime, and it is a rendered display STRING, not
-// a duration or timestamp a caller could compute on: it is the engine's sole,
-// display-only wall-clock readout (specification sections 6.1 and 11). Connection
-// state is the only liveness signal, so the payload carries no last-heartbeat or
-// last-seen field -- absence of any such field is the contract.
+// The payload's one wall-clock is Uptime, and it is a rendered display STRING,
+// not a duration or timestamp a caller could compute on: it is the engine's
+// sole, display-only wall-clock readout. Connection state is the only liveness
+// signal, so the payload carries no last-heartbeat or last-seen field --
+// absence of any such field is the contract.
 
 // InfoPayload is the GET /info document: the daemon-held runtime readout of
 // `iris engine info` -- the leadership role (and the leader's address when known),
@@ -46,8 +46,8 @@ type InfoPayload struct {
 	// present, possibly empty.
 	LanePasses []LanePasses `json:"lane_passes"`
 	// Uptime is the engine's sole wall-clock readout, a rendered display string,
-	// display-only (specification section 11). It is a string, never a duration or
-	// timestamp, so it can never be mistaken for a value work is gated or ordered on.
+	// display-only. It is a string, never a duration or timestamp, so it can never
+	// be mistaken for a value work is gated or ordered on.
 	Uptime string `json:"uptime"`
 }
 
@@ -93,8 +93,8 @@ func (noInfo) Info(context.Context) (InfoPayload, error) {
 	return InfoPayload{}, ErrInfoUnavailable
 }
 
-// serveInfo handles GET /info: run the wired info handler and render the section-7
-// data envelope. It is a read, served on any role. An unwired handler is 500
+// serveInfo handles GET /info: run the wired info handler and render the data
+// envelope. It is a read, served on any role. An unwired handler is 500
 // internal; any read error is 500 internal too -- an info read has no
 // operation-failure category of its own.
 func (m *mux) serveInfo(w http.ResponseWriter, r *http.Request) {

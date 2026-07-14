@@ -1,10 +1,10 @@
 package api
 
-// This file is the wire-shape half of the E14 read routes (specification section
-// 7): the JSON payloads the daemon's runs, trace, and gate planes return and the
-// mux renders, and the CLI (the one client) decodes. Like every wire type here api
-// stays a leaf -- these are plain structs, reaching nothing up the stack -- so the
-// daemon maps its store/dispatch models onto them and the mux emits them verbatim.
+// This file is the wire-shape half of the E14 read routes: the JSON payloads
+// the daemon's runs, trace, and gate planes return and the mux renders, and the
+// CLI (the one client) decodes. Like every wire type here api stays a leaf --
+// these are plain structs, reaching nothing up the stack -- so the daemon maps
+// its store/dispatch models onto them and the mux emits them verbatim.
 //
 // The runs collection is an object with a runs array ({ "data": { "runs": [...] } }),
 // the same shape `iris run list` decodes and the rail renderer draws; each row
@@ -14,11 +14,11 @@ package api
 // the daemon before it reaches the wire.
 
 // RunRow is one run of the /runs collection: the lineage attributes an external
-// renderer draws (specification section 7). Inputs and ReplayedFrom are present
-// only under include=inputs (omitted otherwise): Inputs is the consumed upstream
-// run ids (each a solid edge), ReplayedFrom the replaced run (an annotation, never
-// an edge). An upstream id may name a run since pruned -- run_inputs is FK-free --
-// so it is carried verbatim, the renderer's gap to draw, never resolved away.
+// renderer draws. Inputs and ReplayedFrom are present only under include=inputs
+// (omitted otherwise): Inputs is the consumed upstream run ids (each a solid
+// edge), ReplayedFrom the replaced run (an annotation, never an edge). An
+// upstream id may name a run since pruned -- run_inputs is FK-free -- so it is
+// carried verbatim, the renderer's gap to draw, never resolved away.
 type RunRow struct {
 	// ID is the run's meta id.
 	ID string `json:"id"`
@@ -70,9 +70,9 @@ type RunTracePayload struct {
 }
 
 // PipelineGatePayload is the body of GET /pipelines/{name}/gate: the pipeline's
-// per-edge depends_on gate ledger, the same ledger `iris pipeline show` prints
-// (specification section 6.2). Each row's verdict is from the closed set (open,
-// up_to_date, pending, poisoned), closed by the daemon before it reaches the wire.
+// per-edge depends_on gate ledger, the same ledger `iris pipeline show` prints.
+// Each row's verdict is from the closed set (open, up_to_date, pending,
+// poisoned), closed by the daemon before it reaches the wire.
 type PipelineGatePayload struct {
 	// Pipeline is the queried pipeline name.
 	Pipeline string `json:"pipeline"`

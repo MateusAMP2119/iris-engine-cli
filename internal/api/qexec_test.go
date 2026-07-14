@@ -14,13 +14,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file proves the /q execution contracts of specification sections 4 and 7
-// at the mux tier with a recording executor fake (integration, no live
-// Postgres): the route authorizes with the data scope and executes the compiled
-// endpoint statement as the calling PAT's role -- never a role of the endpoint's
-// own, because endpoints own no roles and mint no credentials -- and a Postgres
-// grant refusal surfaces as 403 forbidden naming the endpoint, never the missing
-// fields.
+// This file proves the /q execution contracts at the mux tier with a recording
+// executor fake (integration, no live Postgres): the route authorizes with the
+// data scope and executes the compiled endpoint statement as the calling PAT's
+// role -- never a role of the endpoint's own, because endpoints own no roles
+// and mint no credentials -- and a Postgres grant refusal surfaces as 403
+// forbidden naming the endpoint, never the missing fields.
 
 // mapEndpointSource is a fake api.EndpointSource over a fixed compiled set.
 type mapEndpointSource map[string]*declare.CompiledEndpoint
@@ -39,12 +38,10 @@ func qExecMux(ce *declare.CompiledEndpoint, exec *fakeExecutor) http.Handler {
 	)
 }
 
-// TestQCallerRoleExecution proves S07: /q/{endpoint} authorizes with the data
-// scope and executes as the caller PAT's role, never an endpoint-owned role.
-//
-// spec: S07/q-caller-role-execution
+// TestQCallerRoleExecution proves /q/{endpoint} authorizes with the data scope
+// and executes as the caller PAT's role, never an endpoint-owned role.
 func TestQCallerRoleExecution(t *testing.T) {
-	t.Run("S07/q-caller-role-execution", func(t *testing.T) {
+	t.Run("q-caller-role-execution", func(t *testing.T) {
 		const doc = `endpoint: orders_by_customer
 source: analytics.orders
 fields: [id, customer_id, amount]
@@ -146,10 +143,8 @@ sort: id
 // forbidden naming the endpoint and never the missing fields or the Postgres
 // error text. (The conformance tier proves the refusal originates in a real
 // Postgres.)
-//
-// spec: S07/q-caller-role-execution
 func TestQForbiddenNamesEndpointMapping(t *testing.T) {
-	t.Run("S07/q-caller-role-execution", func(t *testing.T) {
+	t.Run("q-caller-role-execution", func(t *testing.T) {
 		t.Run("a grant refusal is 403 naming the endpoint, never the fields", func(t *testing.T) {
 			ce := compileQEndpoint(t, `endpoint: orders_by_customer
 source: analytics.orders
@@ -177,13 +172,11 @@ sort: id
 	})
 }
 
-// TestEndpointAuthorityCallingPAT proves S04: endpoints own no roles or
+// TestEndpointAuthorityCallingPAT proves endpoints own no roles or
 // credentials -- structurally, the compiled shape carries none, and
 // behaviorally, a read request executes under the calling PAT's role.
-//
-// spec: S04/endpoint-authority-calling-pat
 func TestEndpointAuthorityCallingPAT(t *testing.T) {
-	t.Run("S04/endpoint-authority-calling-pat", func(t *testing.T) {
+	t.Run("endpoint-authority-calling-pat", func(t *testing.T) {
 		t.Run("a compiled endpoint carries no role or credential", func(t *testing.T) {
 			credential := regexp.MustCompile(`(?i)role|credential|password|secret|token`)
 			ty := reflect.TypeOf(declare.CompiledEndpoint{})

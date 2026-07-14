@@ -14,24 +14,18 @@ import (
 // TestDataProvenanceLineage drives the real iris binary end-to-end with a running
 // daemon and real Postgres over the golden sample workspace, produces a row
 // attributed to a writing run with upstream consumption, and proves the three
-// S13 lineage contracts:
+// lineage properties:
 //
-//   - S13/data-provenance-full-lineage: iris data provenance answers the writing
-//     run, pipeline, artifact/declaration hashes, and consumed upstream in one
-//     query while the history is live.
-//   - S13/data-provenance-after-prune: after the writing run is pruned (its run
-//     row and run_inputs gone), provenance still answers from the archival
-//     summary.
-//   - S13/archived-partition-provenance-answers: provenance still answers
-//     stamps whose partition has been sealed, exported, and dropped (location
-//     archived).
+//   - iris data provenance answers the writing run, pipeline,
+//     artifact/declaration hashes, and consumed upstream in one query while the
+//     history is live.
+//   - After the writing run is pruned (its run row and run_inputs gone),
+//     provenance still answers from the archival summary.
+//   - Provenance still answers stamps whose partition has been sealed, exported,
+//     and dropped (location archived).
 //
 // The tests are red until the provenance readout wires the full three-lookup
 // walk (live + summary fallback + archived span) and the CLI surfaces it.
-//
-// spec: S13/data-provenance-full-lineage
-// spec: S13/data-provenance-after-prune
-// spec: S13/archived-partition-provenance-answers
 func TestDataProvenanceLineage(t *testing.T) {
 	// Shared-cluster isolation: this test provisions the golden analytics.orders
 	// (id uuid, customer_id uuid, amount, ...) and inserts customer_id. On the CI lane a
@@ -148,8 +142,7 @@ func TestDataProvenanceLineage(t *testing.T) {
 		ON CONFLICT DO NOTHING
 	`, authorRunID, upstreamRunID)
 
-	// spec: S13/data-provenance-full-lineage
-	t.Run("S13/data-provenance-full-lineage", func(t *testing.T) {
+	t.Run("data-provenance-full-lineage", func(t *testing.T) {
 		res := bin.Run(t, RunOptions{
 			Args: []string{"--json", "data", "provenance", "analytics.orders", pk},
 			Dir:  ws,
@@ -190,8 +183,7 @@ func TestDataProvenanceLineage(t *testing.T) {
 		}
 	})
 
-	// spec: S13/data-provenance-after-prune
-	t.Run("S13/data-provenance-after-prune", func(t *testing.T) {
+	t.Run("data-provenance-after-prune", func(t *testing.T) {
 		// Prune the author run: remove its run row and run_inputs; leave only the
 		// archival summary. Provenance must still answer the same row.
 		_, _ = metaConn.Exec(context.Background(), `DELETE FROM run_inputs WHERE run_id = $1`, authorRunID)
@@ -236,8 +228,7 @@ func TestDataProvenanceLineage(t *testing.T) {
 		}
 	})
 
-	// spec: S13/archived-partition-provenance-answers
-	t.Run("S13/archived-partition-provenance-answers", func(t *testing.T) {
+	t.Run("archived-partition-provenance-answers", func(t *testing.T) {
 		// Simulate the partition containing the stamp having been sealed, exported,
 		// and dropped: mark a checkpoint covering the journal id as archived.
 		// Provenance must still return the stamp (spans archive boundary).
@@ -248,8 +239,8 @@ func TestDataProvenanceLineage(t *testing.T) {
 		`)
 
 		// In a full archival world the rows would be dropped from the live journal
-		// partition and served from the object-store file. For the contract we
-		// assert the readout still succeeds and names the same authoring facts.
+		// partition and served from the object-store file. Here we assert the
+		// readout still succeeds and names the same authoring facts.
 		res := bin.Run(t, RunOptions{
 			Args: []string{"--json", "data", "provenance", "analytics.orders", pk},
 			Dir:  ws,

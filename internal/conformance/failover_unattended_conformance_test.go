@@ -19,12 +19,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
 )
 
-// This file is the golden-sample acceptance spine of specification section 13
-// (E13.8, the final epic task): the three scenario contracts that prove the whole
+// This file is the golden-sample acceptance spine (E13.8, the final epic task):
+// the three scenario contracts that prove the whole
 // engine end to end, unattended, against the shipped binary, a running daemon, and
 // real Postgres. It reuses the two-daemon-on-one-meta pattern the failover legs
 // established (E11.2 standby rejection, E11.4 leader kill) but drives the GOLDEN
-// workspace through the spec's numbered acceptance steps and adds the properties
+// workspace through the numbered acceptance steps and adds the properties
 // those legs do not: reconciliation of the orphaned in-flight run to stopped, lanes
 // resuming on the new leader, and the whole scenario running with zero human
 // intervention.
@@ -172,16 +172,14 @@ func scStartStandby(t *testing.T, bin *Binary, ws string) string {
 }
 
 // TestGoldenFailoverStandbyTakeover is the golden-sample failover leg of acceptance
-// step 9 (specification sections 13 and 15). Two candidates share one meta over the
+// step 9. Two candidates share one meta over the
 // golden workspace; a hanging golden pipeline leaves a real in-flight run on the
 // leader. Killing the leader abruptly (host-loss simulation) drops its meta session
 // and releases the advisory lock: the standby acquires it, runs startup
 // reconciliation (the orphaned running run is dead-lettered stopped), reports itself
 // leader, and resumes lanes (a fresh succeeded run lands on the new leader). This is
-// the golden version -- richer than E11.4's bare takeover (S15/failover-standby-takes-over)
+// the golden version -- richer than E11.4's bare takeover
 // by proving reconciliation AND lane resumption over the sample graph.
-//
-// spec: S13/failover-standby-takeover
 func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("golden failover needs two candidates on one shared meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared lock to contend for)")
@@ -256,14 +254,12 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 }
 
 // TestGoldenStandbyMutationExit6 is the golden-sample standby-rejection leg of
-// acceptance step 9 (specification sections 8, 13 and 15). Two candidates share one
+// acceptance step 9. Two candidates share one
 // meta over the golden workspace with the ingest graph applied; a golden mutation
 // posted to the standby is rejected before it reaches a route, exit 6, with the
 // not_leader envelope naming the leader for retargeting. This is the golden version
 // (real registered golden pipelines, the sample's own mutations), distinct from
-// E11.2's S15/S07/S08 rejection of an unregistered "any_pipeline".
-//
-// spec: S13/standby-mutation-exit-6
+// E11.2's rejection of an unregistered "any_pipeline".
 func TestGoldenStandbyMutationExit6(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("golden standby rejection needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")
@@ -331,7 +327,7 @@ func TestGoldenStandbyMutationExit6(t *testing.T) {
 }
 
 // TestGoldenScenarioPassesUnattended is the final gate of E13: the golden sample
-// passes the acceptance scenario (specification section 13) end to end with zero
+// passes the acceptance scenario end to end with zero
 // human intervention. One continuous run of the shipped binary walks the numbered
 // steps in order -- install + start (one code path), the four single-file applies
 // (and the bare invocation that exits 2), the perpetual dev lane landing journaled
@@ -340,10 +336,9 @@ func TestGoldenStandbyMutationExit6(t *testing.T) {
 // to a data PAT, provenance answering for a landed row, and the HA leg (standby
 // rejects a mutation with exit 6, the killed leader's lock frees, the standby takes
 // over and resumes lanes). Every command is issued non-interactively and asserted;
-// nothing waits on a human. The per-step invariants are owned by their own S13
-// contracts -- this is the integrative proof that the whole scenario runs unattended.
-//
-// spec: S13/scenario-passes-unattended
+// nothing waits on a human. The per-step invariants are proven by their own
+// dedicated legs -- this is the integrative proof that the whole scenario runs
+// unattended.
 func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("the full acceptance scenario includes the HA leg (two candidates on one shared meta); set IRIS_PG_DSN (external mode) to run it")
@@ -417,10 +412,9 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 
 	// Step 4: the operator's wipe mutations run non-interactively and succeed against
 	// the live sample -- scoped wipe of one pipeline, then the bare wipe of the rest.
-	// (The exact revert invariants are owned by S13/scoped-wipe-single-pipeline and
-	// S13/wipe-reverts-dev-run; here they must simply pass unattended.) The build+promote
-	// half of step 5 and its wipe-immunity invariant are owned by
-	// S13/promoted-writes-wipe-immune over a compile-in-CI pipeline -- the golden sample's
+	// (The exact revert invariants are proven by their own legs; here they must simply
+	// pass unattended.) The build+promote half of step 5 and its wipe-immunity invariant
+	// are proven over a compile-in-CI pipeline -- the golden sample's
 	// Python pipelines build via pyinstaller, which the conformance runner does not carry.
 	for _, mut := range [][]string{
 		{"workload", "wipe", "extract_orders", "--yes"},

@@ -18,13 +18,13 @@ const (
 	CodeCanceled = "canceled"
 )
 
-// This file is the daemon's build surface for the explicit `iris pipeline build`
-// control mutation (specification sections 1, 8, and 9). POST /pipeline/build is a
-// mutation, so the mux's leader gate already rejects it on a standby with
-// not_leader guidance (exit 6). Like the control plane, api stays a leaf: it
-// defines the BuildHandler seam and the plain request/result shapes but reaches
-// nothing up the stack -- the daemon supplies the handler that composes the
-// dispatcher's build op, the meta run-target read, the object store, and exec.
+// This file is the daemon's build surface for the explicit `iris pipeline
+// build` control mutation. POST /pipeline/build is a mutation, so the mux's
+// leader gate already rejects it on a standby with not_leader guidance (exit
+// 6). Like the control plane, api stays a leaf: it defines the BuildHandler
+// seam and the plain request/result shapes but reaches nothing up the stack --
+// the daemon supplies the handler that composes the dispatcher's build op, the
+// meta run-target read, the object store, and exec.
 //
 // Building is never implicit (apply never builds); this route is the one wire
 // entry point that compiles anything. A successful build returns 200 carrying the
@@ -79,10 +79,10 @@ func (noBuild) BuildPipeline(context.Context, PipelineBuildRequest) (PipelineBui
 }
 
 // servePipelineBuild handles POST /pipeline/build: decode the request, run the
-// build op, and render the section-7 envelope. The leader gate ran already in
+// build op, and render the data envelope. The leader gate ran already in
 // ServeHTTP. A malformed body is 400 bad_request; a build failure is 422
-// operation_failed; an internal fault (no handler) is 500 internal. A successful
-// build is 200 carrying the recorded content hash.
+// operation_failed; an internal fault (no handler) is 500 internal. A
+// successful build is 200 carrying the recorded content hash.
 func (m *mux) servePipelineBuild(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST "+r.URL.Path+" only")

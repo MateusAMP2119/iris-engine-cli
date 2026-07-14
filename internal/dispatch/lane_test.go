@@ -13,12 +13,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestLanesTableShape pins the persisted lanes-table shape the walk reads from:
-// rows keyed by (lane, pipeline), UNIQUE(pipeline) and UNIQUE(lane, pos), and
-// pipeline referenced by name with no foreign key so an order may name
-// unregistered folders (specification section 4).
+// TestLanesTableShape pins the persisted lanes-table shape the walk reads from: rows
+// keyed by (lane, pipeline), UNIQUE(pipeline) and UNIQUE(lane, pos), and pipeline
+// referenced by name with no foreign key so an order may name unregistered folders.
 func TestLanesTableShape(t *testing.T) {
-	t.Run("S04/lanes-table-shape", func(t *testing.T) {
+	t.Run("lanes-table-shape", func(t *testing.T) {
 		schema := store.MetaSchema()
 		var lanes *store.Table
 		for i := range schema.Tables {
@@ -65,10 +64,10 @@ func TestLanesTableShape(t *testing.T) {
 	})
 }
 
-// TestBuildWalkSkipsUnregistered proves the walk of a lane orders its rows by
-// pos and drops any name with no registered pipeline (specification section 4).
+// TestBuildWalkSkipsUnregistered proves the walk of a lane orders its rows by pos and
+// drops any name with no registered pipeline.
 func TestBuildWalkSkipsUnregistered(t *testing.T) {
-	t.Run("S04/lane-walk-skips-unregistered", func(t *testing.T) {
+	t.Run("lane-walk-skips-unregistered", func(t *testing.T) {
 		// Rows deliberately out of pos order to prove ORDER BY pos, with an
 		// unregistered "ghost" between two registered members.
 		rows := []dispatch.LaneRow{
@@ -87,10 +86,10 @@ func TestBuildWalkSkipsUnregistered(t *testing.T) {
 }
 
 // TestBuildWalkRunnerSkipsUnregisteredNames proves lane-walk construction drops
-// lane-order names that have no registered pipeline, so a lane whose members are
-// all unregistered contributes nothing to run (specification section 6.3).
+// lane-order names that have no registered pipeline, so a lane whose members are all
+// unregistered contributes nothing to run.
 func TestBuildWalkRunnerSkipsUnregisteredNames(t *testing.T) {
-	t.Run("S06.3/runner-skips-unregistered-names", func(t *testing.T) {
+	t.Run("runner-skips-unregistered-names", func(t *testing.T) {
 		rows := []dispatch.LaneRow{
 			{Lane: "dead", Pipeline: "ghostA", Pos: 0},
 			{Lane: "dead", Pipeline: "ghostB", Pos: 1},
@@ -103,11 +102,10 @@ func TestBuildWalkRunnerSkipsUnregisteredNames(t *testing.T) {
 	})
 }
 
-// TestBuildWalkAbsentPipelineAnonymousLane proves a registered pipeline named in
-// no lane is scheduled as its own anonymous lane, named for itself
-// (specification section 4).
+// TestBuildWalkAbsentPipelineAnonymousLane proves a registered pipeline named in no
+// lane is scheduled as its own anonymous lane, named for itself.
 func TestBuildWalkAbsentPipelineAnonymousLane(t *testing.T) {
-	t.Run("S04/absent-pipeline-anonymous-lane", func(t *testing.T) {
+	t.Run("absent-pipeline-anonymous-lane", func(t *testing.T) {
 		rows := []dispatch.LaneRow{
 			{Lane: "etl", Pipeline: "a", Pos: 0},
 			{Lane: "etl", Pipeline: "b", Pos: 1},
@@ -126,11 +124,11 @@ func TestBuildWalkAbsentPipelineAnonymousLane(t *testing.T) {
 	})
 }
 
-// TestBuildWalkNoDeclarationOrderTiebreak proves composer-unordered pipelines
-// get no implicit declaration-order tiebreak: each stays in its own lane rather
-// than being merged into one ordered walk (specification section 6.1).
+// TestBuildWalkNoDeclarationOrderTiebreak proves composer-unordered pipelines get no
+// implicit declaration-order tiebreak: each stays in its own lane rather than being
+// merged into one ordered walk.
 func TestBuildWalkNoDeclarationOrderTiebreak(t *testing.T) {
-	t.Run("S06.1/no-declaration-order-tiebreak", func(t *testing.T) {
+	t.Run("no-declaration-order-tiebreak", func(t *testing.T) {
 		// Three registered pipelines, none placed by a composer (no lane rows).
 		registered := map[string]bool{"alpha": true, "beta": true, "gamma": true}
 
@@ -149,9 +147,9 @@ func TestBuildWalkNoDeclarationOrderTiebreak(t *testing.T) {
 // TestLaneRunnerSerialWithinLane proves composer order sequences members within
 // a lane serially -- member N+1 starts only after member N reaches a terminal
 // state -- with no data threaded between them (the RunStarter seam carries only
-// a pipeline name, no data link): specification section 1.
+// a pipeline name, no data link).
 func TestLaneRunnerSerialWithinLane(t *testing.T) {
-	t.Run("S01/composer-order-no-data-link", func(t *testing.T) {
+	t.Run("composer-order-no-data-link", func(t *testing.T) {
 		f := &serialStarter{
 			entered: make(chan string, 8),
 			release: map[string]chan struct{}{
@@ -192,10 +190,10 @@ func TestLaneRunnerSerialWithinLane(t *testing.T) {
 }
 
 // TestLaneRunnerOrderNeverGates proves composer order affects ordering only: a
-// composer-ordered pipeline with no depends_on edge still runs when an earlier
-// lane member's run dead-letters (specification section 6.1).
+// composer-ordered pipeline with no depends_on edge still runs when an earlier lane
+// member's run dead-letters.
 func TestLaneRunnerOrderNeverGates(t *testing.T) {
-	t.Run("S06.1/order-never-gates", func(t *testing.T) {
+	t.Run("order-never-gates", func(t *testing.T) {
 		f := &outcomeStarter{outcomes: map[string]dispatch.RunOutcome{
 			"a": dispatch.RunDeadLettered,
 			"b": dispatch.RunSucceeded,
@@ -211,11 +209,11 @@ func TestLaneRunnerOrderNeverGates(t *testing.T) {
 	})
 }
 
-// TestRunLanesParallelNoCap proves distinct lanes run concurrently with no
-// engine cap and no cross-lane serialization: N lanes must all be in flight at
-// once, which composer-unordered pipelines require (specification section 6.1).
+// TestRunLanesParallelNoCap proves distinct lanes run concurrently with no engine cap
+// and no cross-lane serialization: N lanes must all be in flight at once, which
+// composer-unordered pipelines require.
 func TestRunLanesParallelNoCap(t *testing.T) {
-	t.Run("S06.1/no-declaration-order-tiebreak", func(t *testing.T) {
+	t.Run("no-declaration-order-tiebreak", func(t *testing.T) {
 		const n = 5
 		var lanes []dispatch.Lane
 		for i := 0; i < n; i++ {

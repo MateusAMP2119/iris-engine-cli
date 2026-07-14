@@ -52,10 +52,8 @@ columns:
 // after a reload, the registry serves the endpoint's compiled shape (its derived SQL
 // recompiled from the persisted rows, never a stored text) with no re-apply, so a
 // restart or failover keeps serving /q.
-//
-// spec: S07/endpoints-reload-from-meta
 func TestReloadEndpointsRepublishesFromMeta(t *testing.T) {
-	t.Run("S07/endpoints-reload-from-meta", func(t *testing.T) {
+	t.Run("endpoints-reload-from-meta", func(t *testing.T) {
 		ws := t.TempDir()
 		writeOrdersSchema(t, ws)
 
@@ -103,8 +101,6 @@ func TestReloadEndpointsRepublishesFromMeta(t *testing.T) {
 
 // TestReloadEndpointsEmptyIsNoOp proves an engine with nothing applied reloads to an
 // empty registry and no error (the common first-boot case).
-//
-// spec: S07/endpoints-reload-from-meta
 func TestReloadEndpointsEmptyIsNoOp(t *testing.T) {
 	ws := t.TempDir()
 	reg := dispatch.NewEndpointRegistry()
@@ -120,8 +116,6 @@ func TestReloadEndpointsEmptyIsNoOp(t *testing.T) {
 // longer compiles is skipped (logged, not fatal) while every other endpoint still
 // reloads, so one drifted contract never blocks the whole read surface -- and the
 // reload itself never fails the daemon.
-//
-// spec: S07/endpoints-reload-from-meta
 func TestReloadEndpointsSkipsDriftedSource(t *testing.T) {
 	ws := t.TempDir()
 	writeOrdersSchema(t, ws)
@@ -145,8 +139,6 @@ func TestReloadEndpointsSkipsDriftedSource(t *testing.T) {
 
 // TestReloadEndpointsReadError proves a meta read failure is surfaced (the caller
 // logs it and keeps serving), never swallowed.
-//
-// spec: S07/endpoints-reload-from-meta
 func TestReloadEndpointsReadError(t *testing.T) {
 	ws := t.TempDir()
 	reg := dispatch.NewEndpointRegistry()

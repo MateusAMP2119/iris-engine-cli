@@ -1,18 +1,17 @@
 package dispatch
 
-// This file is the explicit pipeline build op: the leader-side path behind
-// `iris pipeline build <name>` (specification sections 1, 4, and 9). Building is
-// never implicit -- declare apply registers state and nothing else ("Build never
-// folds into apply"); only this op compiles anything. It executes the recipe
-// decision internal/build owns: infer the pipeline's runtime from its declared
-// run vector, take that runtime's one pinned recipe, and drive the recipe's
-// toolchain through the exec seam to compile the source into ONE self-contained
-// binary. A successful build then records the binary twice, and exactly twice:
-// its bytes go into the content-addressed object store under their SHA-256
-// content hash, and that hash goes into the artifacts table as an immutable
-// index row through the single meta writer. A failed compile (non-zero exit, or
-// a toolchain that produced no binary) records neither, so meta and the object
-// store never name bytes that do not exist.
+// This file is the explicit pipeline build op: the leader-side path behind `iris
+// pipeline build <name>`. Building is never implicit -- declare apply registers state
+// and nothing else ("Build never folds into apply"); only this op compiles anything.
+// It executes the recipe decision internal/build owns: infer the pipeline's runtime
+// from its declared run vector, take that runtime's one pinned recipe, and drive the
+// recipe's toolchain through the exec seam to compile the source into ONE
+// self-contained binary. A successful build then records the binary twice, and
+// exactly twice: its bytes go into the content-addressed object store under their
+// SHA-256 content hash, and that hash goes into the artifacts table as an immutable
+// index row through the single meta writer. A failed compile (non-zero exit, or a
+// toolchain that produced no binary) records neither, so meta and the object store
+// never name bytes that do not exist.
 //
 // The toolchain runs as a direct exec in the pipeline's folder -- never a shell
 // -- via the same exec.Runner seam every subprocess rides, so integration tests
@@ -34,10 +33,10 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// BuildTarget is one registered pipeline's build input: its name (the artifacts
-// row owner), the folder its source lives in (the toolchain's working
-// directory), and its declared run vector -- the only input the recipe decision
-// consults (specification section 3: no language or build field exists).
+// BuildTarget is one registered pipeline's build input: its name (the artifacts row
+// owner), the folder its source lives in (the toolchain's working directory), and its
+// declared run vector -- the only input the recipe decision consults (no language or
+// build field exists).
 type BuildTarget struct {
 	// Pipeline is the registered pipeline's name.
 	Pipeline string
@@ -72,13 +71,12 @@ func NewBuilder(submit Submitter, objects ObjectPutter, runner exec.Runner) *Bui
 	return &Builder{submit: submit, objects: objects, runner: runner}
 }
 
-// Build compiles target's source into one self-contained binary and records it:
-// bytes into the object store under their content hash, the hash into artifacts
-// as a new immutable row through the single meta writer (specification section
-// 9). The recipe is the engine's choice, inferred from the run vector alone; a
-// runtime with no pinned recipe fails with the "unsupported runtime" error
-// before anything runs. The returned row is the pipeline's newest -- and
-// therefore current -- artifact.
+// Build compiles target's source into one self-contained binary and records it: bytes
+// into the object store under their content hash, the hash into artifacts as a new
+// immutable row through the single meta writer. The recipe is the engine's choice,
+// inferred from the run vector alone; a runtime with no pinned recipe fails with the
+// "unsupported runtime" error before anything runs. The returned row is the
+// pipeline's newest -- and therefore current -- artifact.
 func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.ArtifactRow, error) {
 	recipe, err := build.InferRecipe(target.Run)
 	if err != nil {
@@ -156,9 +154,8 @@ func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.Artifact
 		return store.ArtifactRow{}, fmt.Errorf("dispatch: build %q: store binary bytes: %w", target.Pipeline, err)
 	}
 
-	// The index row rides the single writer: hash, owner, size; recorded_at is
-	// stamped database-side. Insert-only -- a rebuild is a new row, never a
-	// rewrite (specification section 4).
+	// The index row rides the single writer: hash, owner, size; recorded_at is stamped
+	// database-side. Insert-only -- a rebuild is a new row, never a rewrite.
 	row := store.ArtifactRow{Hash: hash, Pipeline: target.Pipeline, SizeBytes: size}
 	if err := b.submit.Submit(ctx, func(w *store.Writer) error {
 		return w.InsertArtifact(ctx, row)
@@ -168,14 +165,14 @@ func (b *Builder) Build(ctx context.Context, target BuildTarget) (store.Artifact
 	return row, nil
 }
 
-// toolchainArgv composes the pinned recipe's direct-exec argv and the staged path
-// the self-contained binary lands at. The mapping is closed, one invocation shape
-// per pinned toolchain (specification section 9): Go native go build, Python via
-// PyInstaller one-file, Node via pkg. src is the validated build source
-// (sourceTarget): the Go package the run vector names, or the interpreted entry
-// script. dist/work/spec are staged scratch dirs under the build staging root, so
-// the toolchain never writes into the pipeline's source folder; the staged binary
-// is always named after the pipeline, so every recipe yields exactly one output.
+// toolchainArgv composes the pinned recipe's direct-exec argv and the staged path the
+// self-contained binary lands at. The mapping is closed, one invocation shape per
+// pinned toolchain: Go native go build, Python via PyInstaller one-file, Node via
+// pkg. src is the validated build source (sourceTarget): the Go package the run
+// vector names, or the interpreted entry script. dist/work/spec are staged scratch
+// dirs under the build staging root, so the toolchain never writes into the
+// pipeline's source folder; the staged binary is always named after the pipeline, so
+// every recipe yields exactly one output.
 func toolchainArgv(r build.Recipe, target BuildTarget, src, dist, work, spec string) (argv []string, binPath string) {
 	binPath = filepath.Join(dist, target.Pipeline)
 	switch r.Toolchain {
@@ -200,9 +197,9 @@ func toolchainArgv(r build.Recipe, target BuildTarget, src, dist, work, spec str
 }
 
 // sourceTarget validates target.Run's shape for recipe's runtime and returns the
-// single source the toolchain compiles, or an error for an unbuildable vector
-// (specification sections 1, 3, and 9). It is the guard that keeps a flag or module
-// name from ever reaching the toolchain as if it were the entry source.
+// single source the toolchain compiles, or an error for an unbuildable vector. It is
+// the guard that keeps a flag or module name from ever reaching the toolchain as if
+// it were the entry source.
 func sourceTarget(r build.Recipe, run []string) (string, error) {
 	switch r.Runtime {
 	case build.RuntimeGo:

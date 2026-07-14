@@ -9,23 +9,20 @@ import (
 
 // TestEighteenTableRoster proves the bootstrap DDL creates exactly twenty-one engine
 // tables: the twenty meta control tables plus public.data_journal in the data
-// database. The eighteenth meta table is engine_key (devdebt 2026-07-10 spec delta,
-// moving the engine signing key from a per-database GUC into an engine-owned
-// single-row meta table); the nineteenth is read_pool_credential (the E13.7 follow-up
-// spec delta persisting the shared read-pool login secret create-once so a restart or
-// HA standby reuses one stable credential); the twentieth is leadership (the devdebt
-// leader-advertisement spec delta: the leader's advertised address a standby reads to
-// name the leader). The contract id keeps its stable slug though the count grew (spec
-// section 4 roster Q/A).
-//
-// spec: S04/eighteen-table-roster
+// database. The eighteenth meta table is engine_key (moving the engine signing key
+// from a per-database GUC into an engine-owned single-row meta table); the
+// nineteenth is read_pool_credential (the E13.7 follow-up persisting the shared
+// read-pool login secret create-once so a restart or HA standby reuses one stable
+// credential); the twentieth is leadership (the leader's advertised address a
+// standby reads to name the leader). The test name keeps its original count though
+// the roster grew.
 func TestEighteenTableRoster(t *testing.T) {
 	meta := store.MetaSchema()
 
 	if got := len(meta.Tables); got != len(metaRoster) {
 		t.Fatalf("meta schema has %d tables, want %d", got, len(metaRoster))
 	}
-	// The twenty meta tables are exactly the spec roster, in order.
+	// The twenty meta tables are exactly the roster, in order.
 	for i, want := range metaRoster {
 		if meta.Tables[i].Name != want {
 			t.Errorf("meta table %d = %q, want %q", i, meta.Tables[i].Name, want)
@@ -55,8 +52,6 @@ func TestEighteenTableRoster(t *testing.T) {
 // TestStateSplitMetaVsData proves the engine control tables are created in the
 // dedicated meta database while data_journal is created in the data database's
 // public schema.
-//
-// spec: S04/state-split-meta-vs-data
 func TestStateSplitMetaVsData(t *testing.T) {
 	meta := store.MetaSchema()
 

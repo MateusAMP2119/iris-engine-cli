@@ -14,12 +14,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file wires the full `iris engine uninstall` teardown (specification
-// sections 4 and 12): drop the meta database (all captured provenance, endpoints,
-// and access ledger with it), drop the data journal and its dependent triggers on
-// the data connection, delete the object store under objects_path (artifact bytes
-// and archived partitions), and remove the control socket and the service unit --
-// leaving nothing behind. It is a daemonless, local-machine-only teardown.
+// This file wires the full `iris engine uninstall` teardown: drop the meta database
+// (all captured provenance, endpoints, and access ledger with it), drop the data
+// journal and its dependent triggers on the data connection, delete the object
+// store under objects_path (artifact bytes and archived partitions), and remove the
+// control socket and the service unit -- leaving nothing behind. It is a
+// daemonless, local-machine-only teardown.
 //
 // The database drops go through the same connection seams install uses (store.Execer,
 // pg.DB); the filesystem teardown is real. UninstallEngine composes both. The CLI
@@ -36,15 +36,14 @@ const ServiceUnitName = "iris.service"
 
 // ErrLiveCandidate is returned when uninstall refuses because a daemon candidate
 // still holds a meta connection: the shared meta database is never dropped under a
-// live candidate (specification section 12). The predicate that detects this is a
-// seam a later task fills; the default predicate proceeds.
+// live candidate. The predicate that detects this is a seam a later task fills; the
+// default predicate proceeds.
 var ErrLiveCandidate = errors.New("daemon: refusing engine uninstall while a daemon candidate holds a meta connection")
 
 // LiveCandidatePredicate reports whether any daemon candidate currently holds a
 // meta connection, so uninstall can refuse rather than drop meta out from under a
-// live candidate (specification section 12). The real predicate lands with the
-// leadership/liveness wiring (E02.5+); ProceedWithoutLiveCheck is the default until
-// then.
+// live candidate. The real predicate lands with the leadership/liveness wiring
+// (E02.5+); ProceedWithoutLiveCheck is the default until then.
 type LiveCandidatePredicate interface {
 	// LiveCandidateHoldsMeta reports whether a daemon candidate holds a meta
 	// connection right now.
@@ -89,11 +88,11 @@ type UninstallReport struct {
 	Removed []string
 }
 
-// UninstallEngine performs the full `iris engine uninstall` teardown over deps
-// (specification sections 4 and 12): refuse if a daemon candidate holds meta, then
-// drop the meta database, drop the journal on the data connection, and delete the
-// object store, socket, and service unit on disk. It returns ErrLiveCandidate
-// unchanged when the guard refuses, so the caller can surface its guidance.
+// UninstallEngine performs the full `iris engine uninstall` teardown over deps:
+// refuse if a daemon candidate holds meta, then drop the meta database, drop the
+// journal on the data connection, and delete the object store, socket, and service
+// unit on disk. It returns ErrLiveCandidate unchanged when the guard refuses, so
+// the caller can surface its guidance.
 func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, error) {
 	log := deps.Logger
 	if log == nil {

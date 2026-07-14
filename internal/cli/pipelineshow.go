@@ -13,9 +13,9 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris pipeline show <name>` (specification
-// sections 6.2, 8 and 11): the single-pipeline readout. The CLI GETs the daemon's
-// /pipeline/show route and prints exactly the payload the route serves -- the
+// This file is the CLI side of `iris pipeline show <name>`: the single-pipeline
+// readout. The CLI GETs the daemon's /pipeline/show route and prints exactly the
+// payload the route serves -- the
 // resolved declaration, the role and its field-level grants, the recent runs, and
 // the gate ledger with the per-edge verdict from the closed set -- under --json
 // the same data envelope any HTTP consumer reads. It is a read, served on any

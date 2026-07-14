@@ -7,18 +7,17 @@ import (
 	"sync"
 )
 
-// This file is the daemon log's size-based rotator (specification section 2:
-// "Size-based rotation only, never time-based: daemon log 10 MB, 5 generations").
-// It is a hand-rolled io.WriteCloser -- no rotation dependency is on the Iris
-// allowlist -- that checks the active file's size before each write and, when a
-// write would cross the threshold, rolls the current file to <name>.1, shifting
-// the older generations up and dropping the oldest. Rotation is decided solely by
-// size: there is deliberately no timer, ticker, or clock read anywhere here, so a
-// time-based rotation cannot creep in.
+// This file is the daemon log's size-based rotator (size-based rotation only, never
+// time-based: daemon log 10 MB, 5 generations). It is a hand-rolled io.WriteCloser
+// -- no rotation dependency is on the Iris allowlist -- that checks the active
+// file's size before each write and, when a write would cross the threshold, rolls
+// the current file to <name>.1, shifting the older generations up and dropping the
+// oldest. Rotation is decided solely by size: there is deliberately no timer,
+// ticker, or clock read anywhere here, so a time-based rotation cannot creep in.
 
-// The production daemon-log rotation constants (specification section 2). The
-// rotator itself is parameterized so tests can force many rotations with a tiny
-// threshold; these are the values the daemon wires in.
+// The production daemon-log rotation constants. The rotator itself is parameterized
+// so tests can force many rotations with a tiny threshold; these are the values the
+// daemon wires in.
 const (
 	// DaemonLogMaxBytes is the size the daemon log rotates at: 10 MB.
 	DaemonLogMaxBytes int64 = 10 * 1024 * 1024

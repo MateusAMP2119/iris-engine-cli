@@ -9,12 +9,12 @@ import (
 	"sort"
 )
 
-// This file is the stats rollup composition (specification sections 11 and 14):
-// the engine-wide, per-lane, and per-pipeline read-only rollups `iris engine
-// stats` and GET /stats serve identically. It defines the StatsSource read seam
-// -- the plain-MVCC meta reads the rollup draws from -- and BuildStats, the pure
-// composition over one snapshot of those reads plus the leader-held per-lane
-// pass counts (a runtime count handed in by the daemon, never read from meta).
+// This file is the stats rollup composition: the engine-wide, per-lane, and
+// per-pipeline read-only rollups `iris engine stats` and GET /stats serve
+// identically. It defines the StatsSource read seam -- the plain-MVCC meta reads
+// the rollup draws from -- and BuildStats, the pure composition over one snapshot
+// of those reads plus the leader-held per-lane pass counts (a runtime count
+// handed in by the daemon, never read from meta).
 //
 // Clock-free by construction: every rollup value is a current count over the
 // snapshot or a last-value picked by ordering identity (the run and checkpoint
@@ -45,10 +45,10 @@ type LaneMember struct {
 	Pipeline string
 }
 
-// JournalStats are the data journal's current counters: the capture counter,
-// the wipe-eligible slice, total size, and the hot slice -- all row counts
-// (count-based like the partition threshold, specification section 14), never
-// bytes-per-anything. E07's journal readers fill it; until then only fakes do.
+// JournalStats are the data journal's current counters: the capture counter, the
+// wipe-eligible slice, total size, and the hot slice -- all row counts
+// (count-based like the partition threshold), never bytes-per-anything. E07's
+// journal readers fill it; until then only fakes do.
 type JournalStats struct {
 	// CapturedWrites is the capture counter: journal entries recorded.
 	CapturedWrites int64
@@ -93,11 +93,10 @@ type StatsSource interface {
 	Checkpoints(ctx context.Context) ([]Checkpoint, error)
 }
 
-// EngineRollup is the engine-wide stats rollup (specification sections 11 and
-// 14): the dead-letter worklist depth and per-reason counts, running runs, the
-// capture counters, the wipe-eligible slice, total journal size, and the
-// lifecycle readout (hot rows, sealed and archived partition counts, checkpoint
-// chain head).
+// EngineRollup is the engine-wide stats rollup: the dead-letter worklist depth
+// and per-reason counts, running runs, the capture counters, the wipe-eligible
+// slice, total journal size, and the lifecycle readout (hot rows, sealed and
+// archived partition counts, checkpoint chain head).
 type EngineRollup struct {
 	// DeadLetterDepth is the outstanding worklist depth.
 	DeadLetterDepth int64
@@ -163,12 +162,12 @@ type StatsRollup struct {
 	Pipelines []PipelineRollup
 }
 
-// BuildStats composes the stats rollup from one snapshot of the source reads
-// plus the leader-held per-lane pass counts (specification section 11). passes
-// maps lane name to loop passes completed since daemon start; a lane absent
-// from the map (or a nil map, on a standby that never dispatched) reads zero.
-// The composition is pure over its inputs: no clock, no history, no rate --
-// counts over the snapshot and last-values by ordering identity only.
+// BuildStats composes the stats rollup from one snapshot of the source reads plus
+// the leader-held per-lane pass counts. passes maps lane name to loop passes
+// completed since daemon start; a lane absent from the map (or a nil map, on a
+// standby that never dispatched) reads zero. The composition is pure over its
+// inputs: no clock, no history, no rate -- counts over the snapshot and
+// last-values by ordering identity only.
 func BuildStats(ctx context.Context, src StatsSource, passes map[string]int64) (StatsRollup, error) {
 	runs, err := src.Runs(ctx, RunFilter{})
 	if err != nil {
@@ -326,8 +325,7 @@ func pipelineRollups(runs []Run, pipelines []string) []PipelineRollup {
 }
 
 // CheckpointRow is the full row model for journal_checkpoints used by chain
-// logic, sealing, and insert (specification sections 4 and 14). The slim
-// Checkpoint is the stats projection only.
+// logic, sealing, and insert. The slim Checkpoint is the stats projection only.
 type CheckpointRow struct {
 	Seq          int64
 	IDFrom       int64
@@ -341,7 +339,7 @@ type CheckpointRow struct {
 
 // ComputeDigest is the pure unit hash over compacted rows (or their byte
 // representations) in id order. Uses stdlib sha256. This is the digest stored
-// in a checkpoint (S14/checkpoint-digest-chain, S04/checkpoint-per-sealed-partition).
+// in a checkpoint.
 func ComputeDigest(compacted [][]byte) []byte {
 	h := sha256.New()
 	for _, p := range compacted {
@@ -364,9 +362,8 @@ func ParentFor(prev *CheckpointRow) []byte {
 	return d
 }
 
-// ValidateChain checks the parent_digest links (and signatures if pub != nil).
-// A break (tamper, loss, bad sig) returns error visibly. Pure unit logic
-// (S14/chain-detects-tamper, S04/checkpoint-parent-chain).
+// ValidateChain checks the parent_digest links (and signatures if pub != nil). A
+// break (tamper, loss, bad sig) returns error visibly. Pure unit logic.
 func ValidateChain(cps []CheckpointRow, pub ed25519.PublicKey) error {
 	for i := 1; i < len(cps); i++ {
 		if !bytesEqual(cps[i].ParentDigest, cps[i-1].Digest) {
@@ -387,7 +384,6 @@ func ValidateChain(cps []CheckpointRow, pub ed25519.PublicKey) error {
 // partition: id_from/id_to, digest = ComputeDigest over the compacted rows in id
 // order, parent_digest chained via ParentFor. Signature is left for the engine
 // key signer. Initial location "resident". Pure unit logic.
-// (S04/checkpoint-per-sealed-partition, S14/checkpoint-digest-chain)
 func CheckpointForSealed(idFrom, idTo int64, compacted [][]byte, prev *CheckpointRow) CheckpointRow {
 	return CheckpointRow{
 		IDFrom:       idFrom,

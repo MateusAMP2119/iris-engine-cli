@@ -12,15 +12,14 @@ import (
 )
 
 // TestDaemonLogRotation proves the daemon log rotates by SIZE only, at a bounded
-// threshold, keeping a fixed number of generations and dropping the oldest, with
-// no time-based rotation anywhere (specification section 2: "Size-based rotation
-// only, never time-based: daemon log 10 MB, 5 generations"). The rotator takes
-// the threshold and generation count as parameters so the test can force many
-// rotations with a tiny threshold; the production constants (DaemonLogMaxBytes,
-// DaemonLogGenerations) are asserted separately to be 10 MB and 5.
+// threshold, keeping a fixed number of generations and dropping the oldest, with no
+// time-based rotation anywhere (size-based rotation only, never time-based: daemon
+// log 10 MB, 5 generations). The rotator takes the threshold and generation count
+// as parameters so the test can force many rotations with a tiny threshold; the
+// production constants (DaemonLogMaxBytes, DaemonLogGenerations) are asserted
+// separately to be 10 MB and 5.
 func TestDaemonLogRotation(t *testing.T) {
-	// spec: S02/daemon-log-rotation
-	t.Run("S02/daemon-log-rotation", func(t *testing.T) {
+	t.Run("daemon-log-rotation", func(t *testing.T) {
 		t.Run("rotates by size keeping exactly N generations, oldest dropped", func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "daemon.log")

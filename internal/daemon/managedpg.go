@@ -17,14 +17,13 @@ import (
 
 // This file holds the managed-Postgres supervisor: the daemon-side machinery that,
 // in managed mode, brings up a pinned Postgres build as a supervised child
-// subprocess before any lane dispatch and stops it on shutdown (specification
-// section 2, managed-vs-external Q/A). It is deliberately split into a pure seam
-// (this file: the version pin + guard, the Supervisor interface, the mode-selecting
-// Manager) and a real implementation (embeddedpg.go, backed by
-// fergusstrange/embedded-postgres). Integration tests drive a fake Supervisor
-// through the same seam, so lifecycle ordering and socket-vs-TCP configuration are
-// proven with no download and no live Postgres; the real subprocess path is proven
-// by the conformance tier.
+// subprocess before any lane dispatch and stops it on shutdown. It is deliberately
+// split into a pure seam (this file: the version pin + guard, the Supervisor
+// interface, the mode-selecting Manager) and a real implementation (embeddedpg.go,
+// backed by fergusstrange/embedded-postgres). Integration tests drive a fake
+// Supervisor through the same seam, so lifecycle ordering and socket-vs-TCP
+// configuration are proven with no download and no live Postgres; the real
+// subprocess path is proven by the conformance tier.
 //
 // # Two modes, one code path
 //
@@ -37,23 +36,22 @@ import (
 // admin DSN came from and whether a subprocess was supervised.
 
 // PinnedMajorVersion is the PostgreSQL major version this engine release pins for
-// managed mode (specification section 2: "major version pinned per engine
-// release"). It matches the version the embedded-postgres supervisor fetches
-// (embeddedpg.go) and is the value the data-directory version guard enforces. It is
-// deliberately a single, documented constant: bumping the managed Postgres is a
-// deliberate release decision, changed here and in the embedded-postgres version in
-// embeddedpg.go together.
+// managed mode (major version pinned per engine release). It matches the version
+// the embedded-postgres supervisor fetches (embeddedpg.go) and is the value the
+// data-directory version guard enforces. It is deliberately a single, documented
+// constant: bumping the managed Postgres is a deliberate release decision, changed
+// here and in the embedded-postgres version in embeddedpg.go together.
 const PinnedMajorVersion = 18
 
 // ManagedSuperuser is the fixed role name of the engine-minted managed-Postgres
 // superuser. The engine mints a fresh random password for it (mintPassword) and
 // holds the pair only in memory, like the admin DSN; the CLI never sees it
-// (specification section 2: "engine-minted superuser CLI never sees").
+// (engine-minted superuser CLI never sees).
 const ManagedSuperuser = "iris_engine"
 
 // pgDirName is the managed-Postgres subdirectory of the workspace .iris tree: the
 // engine-managed cluster, hosting both the data and meta databases, lives under
-// <workspace>/.iris/pg (specification section 10).
+// <workspace>/.iris/pg.
 const pgDirName = "pg"
 
 // dataDirName is the Postgres data directory under the managed-Postgres directory;
@@ -66,10 +64,9 @@ const dataDirName = "data"
 // so a managed cluster initialized by `iris engine install` can only be reopened by
 // a later `iris engine start` if both use the same password. The credential is
 // persisted here, engine-owned and 0600, so the daemon (never the CLI) can reopen
-// its own cluster; it is a point flagged for spec review alongside the engine-key
-// storage decision (the spec says the managed superuser is memory-held and the CLI
-// never sees it -- this keeps "the CLI never sees it" true while giving the daemon
-// continuity across restarts).
+// its own cluster; the managed superuser is otherwise memory-held, and keeping it
+// engine-owned keeps "the CLI never sees it" true while giving the daemon
+// continuity across restarts.
 const superuserPasswordFile = "superuser.pw"
 
 // superuserPasswordPerm is the mode the persisted superuser password file is
@@ -79,16 +76,16 @@ const superuserPasswordPerm os.FileMode = 0o600
 // ErrPGVersionMismatch is the sentinel returned when a managed data directory
 // records a Postgres major version different from PinnedMajorVersion. Startup and
 // install fail fast on it rather than letting a version-mismatched data directory
-// be silently reinitialized or upgraded (specification section 2: "mismatch fails
-// fast, never silent auto-upgrade"). Callers test it with errors.Is; the wrapped
-// message names both the recorded and the pinned major.
+// be silently reinitialized or upgraded (mismatch fails fast, never silent
+// auto-upgrade). Callers test it with errors.Is; the wrapped message names both the
+// recorded and the pinned major.
 var ErrPGVersionMismatch = errors.New("daemon: managed Postgres data directory version mismatch")
 
 // ManagedPGDir returns the managed-Postgres directory for the given settings:
 // <workspace>/.iris/pg, derived from the workspace .iris tree the control socket
-// lives in (specification section 10: the socket and the managed Postgres both sit
-// under <workspace>/.iris). It is the directory the pinned build's binaries and
-// data directory are placed under.
+// lives in (the socket and the managed Postgres both sit under <workspace>/.iris).
+// It is the directory the pinned build's binaries and data directory are placed
+// under.
 func ManagedPGDir(s config.Settings) string {
 	return filepath.Join(irisDir(s), pgDirName)
 }
@@ -131,10 +128,10 @@ func ReadDataDirMajorVersion(dataDir string) (int, error) {
 }
 
 // CheckDataDirVersion fails fast when a managed data directory records a Postgres
-// major version different from want (specification section 2: mismatch fails fast,
-// never silent auto-upgrade). It is read-only: it never touches the data directory,
-// so a mismatch is surfaced, never repaired by a silent reinitialize or upgrade. A
-// data directory with no recorded version yet (a fresh dir) is not a mismatch. An
+// major version different from want (mismatch fails fast, never silent
+// auto-upgrade). It is read-only: it never touches the data directory, so a
+// mismatch is surfaced, never repaired by a silent reinitialize or upgrade. A data
+// directory with no recorded version yet (a fresh dir) is not a mismatch. An
 // unreadable or malformed PG_VERSION is a fail-fast error, not a silent match.
 func CheckDataDirVersion(dataDir string, want int) error {
 	recorded, err := ReadDataDirMajorVersion(dataDir)
@@ -169,10 +166,9 @@ type SupervisorConfig struct {
 	Password string
 	// Port is the TCP port the managed instance is reached on locally.
 	Port uint32
-	// TCP reports whether the managed instance exposes a TCP listener beyond the
-	// local host. False (the default) keeps it local; true is set only when a
-	// standby / remote topology needs it (specification section 2: "TCP when
-	// standbys need it").
+	// TCP reports whether the managed instance exposes a TCP listener beyond the local
+	// host. False (the default) keeps it local; true is set only when a standby /
+	// remote topology needs it (TCP when standbys need it).
 	TCP bool
 }
 
@@ -250,10 +246,10 @@ func (m *Manager) Install(ctx context.Context) error {
 
 // Startup resolves the admin DSN for the configured mode and, in managed mode,
 // starts the managed-Postgres subprocess so it is accepting connections before the
-// caller dispatches any lane (specification section 2). External mode starts no
-// local instance and resolves the admin DSN straight through the E02.2 chain. The
-// returned AdminDSN is what the caller Connects meta and data from -- one code path
-// for both modes. Call Shutdown to stop a managed instance.
+// caller dispatches any lane. External mode starts no local instance and resolves
+// the admin DSN straight through the E02.2 chain. The returned AdminDSN is what the
+// caller Connects meta and data from -- one code path for both modes. Call Shutdown
+// to stop a managed instance.
 //
 // Managed Startup mints a fresh superuser credential each call; re-opening an
 // already-initialized managed cluster with a matching credential (so a restarted

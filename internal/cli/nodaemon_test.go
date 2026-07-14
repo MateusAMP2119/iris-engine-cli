@@ -26,14 +26,13 @@ func shortSocket(t *testing.T) string {
 }
 
 // TestNoDaemonFailFast proves a daemon-touching command with no reachable daemon
-// fails fast and never auto-starts one (specification section 2): the command
-// actually dials the resolved socket; a refused/absent socket is exit 3 with
+// fails fast and never auto-starts one: the command actually dials the resolved
+// socket; a refused/absent socket is exit 3 with
 // start guidance and no side effect (no socket created, no daemon spawned), while
 // a reachable daemon lets the command past the reachability gate (it no longer
 // reports no-daemon).
 func TestNoDaemonFailFast(t *testing.T) {
-	// spec: S02/no-daemon-fail-fast
-	t.Run("S02/no-daemon-fail-fast", func(t *testing.T) {
+	t.Run("no-daemon-fail-fast", func(t *testing.T) {
 		// Unreachable: point --socket at a path with nothing listening.
 		sock := shortSocket(t)
 		var out, errb bytes.Buffer

@@ -54,10 +54,8 @@ func (r *recordingImmediate) RunNow(_ context.Context, rec store.RunRecord) (dis
 // boundary (same-lane serialization preserved -- the lane runner starts it in turn, the
 // manual path never starts it out of band), while an own-lane pipeline (its own
 // anonymous lane, no same-lane member to serialize against) runs immediately.
-//
-// spec: S08/lane-member-manual-run-queued
 func TestManualRunRoutesByLaneMembership(t *testing.T) {
-	t.Run("S08/lane-member-manual-run-queued", func(t *testing.T) {
+	t.Run("lane-member-manual-run-queued", func(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("lane member is queued as the lane's next run, not run immediately", func(t *testing.T) {

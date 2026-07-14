@@ -44,14 +44,12 @@ sort: id
 // ever splices a request value into statement text, this string surfaces it.
 const hostileValue = "x'; DROP TABLE meta.pats; --"
 
-// TestNoCallerSQL proves the SQL-safety contract of specification section 7: the
-// read surface executes only engine-built statements with bound params -- the
-// compiled text for /q and text assembled from validated identifiers for /data --
-// and caller input never becomes SQL text.
-//
-// spec: S07/no-caller-sql
+// TestNoCallerSQL proves the SQL-safety contract: the read surface executes
+// only engine-built statements with bound params -- the compiled text for /q
+// and text assembled from validated identifiers for /data -- and caller input
+// never becomes SQL text.
 func TestNoCallerSQL(t *testing.T) {
-	t.Run("S07/no-caller-sql", func(t *testing.T) {
+	t.Run("no-caller-sql", func(t *testing.T) {
 		t.Run("/q binds caller values into the compiled text, never splices them", func(t *testing.T) {
 			ce := compileStatusEndpoint(t)
 			compiled := ce.SQL
@@ -111,8 +109,8 @@ func TestNoCallerSQL(t *testing.T) {
 				}
 			}
 			// Slots in deterministic order, one eq plus one inclusive range pair per
-			// filter column (the /data grammar is eq/range, specification section 7):
-			// id eq, id_from, id_to, status eq, status_from, status_to, after, limit.
+			// filter column (the /data grammar is eq/range): id eq, id_from, id_to,
+			// status eq, status_from, status_to, after, limit.
 			if len(args) != 8 {
 				t.Fatalf("BindArgs returned %d args, want 8", len(args))
 			}
@@ -210,14 +208,12 @@ func TestNoCallerSQL(t *testing.T) {
 	})
 }
 
-// TestDataSurfaceCannotAddressMeta proves the database-split half of specification
-// section 7 at the statement layer: every identifier the /data assembler accepts is
-// a single bare name, so no statement can carry a database-qualified reference --
-// meta, a separate database, is unaddressable from the data surface.
-//
-// spec: S07/engine-storage-unreachable
+// TestDataSurfaceCannotAddressMeta proves the database-split half at the
+// statement layer: every identifier the /data assembler accepts is a single
+// bare name, so no statement can carry a database-qualified reference -- meta,
+// a separate database, is unaddressable from the data surface.
 func TestDataSurfaceCannotAddressMeta(t *testing.T) {
-	t.Run("S07/engine-storage-unreachable", func(t *testing.T) {
+	t.Run("engine-storage-unreachable", func(t *testing.T) {
 		ok := map[string]string{"id": "bigint"}
 		cases := []struct {
 			name          string

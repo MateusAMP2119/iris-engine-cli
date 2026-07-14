@@ -5,20 +5,21 @@ import (
 	"fmt"
 )
 
-// This file is the failure-propagation write: the single-writer path that dead-letters
-// a downstream whose awaited upstream run was itself dead-lettered (specification
-// sections 4 and 6.2). Unlike DeadLetterRun (writer.go), which transitions an existing
-// run that failed or was stopped, propagation MINTS the downstream a fresh run it never
-// executed: the rejection along a depends_on edge is recorded as a dead-lettered run of
+// This file is the failure-propagation write: the single-writer path that
+// dead-letters a downstream whose awaited upstream run was itself dead-lettered.
+// Unlike DeadLetterRun (writer.go), which transitions an existing run that failed
+// or was stopped, propagation MINTS the downstream a fresh run it never executed:
+// the rejection along a depends_on edge is recorded as a dead-lettered run of
 // cause=propagated. The dispatcher computes the plan lazily at the downstream's
-// consumption time (internal/dispatch, PlanPropagation) and hands it here to write.
+// consumption time (internal/dispatch, PlanPropagation) and hands it here to
+// write.
 
-// PropagatedRun is the input to DeadLetterPropagated: everything the write path stamps
-// onto a downstream's never-executed, propagation-dead-lettered run and its worklist
-// and lineage rows (specification sections 4 and 6.2). The run's id is assigned by
-// meta's identity generator, never carried here; its state (dead_lettered), cause
-// (propagated), and dead-letter reason (upstream_dead_lettered) are fixed by the write,
-// not the caller.
+// PropagatedRun is the input to DeadLetterPropagated: everything the write path
+// stamps onto a downstream's never-executed, propagation-dead-lettered run and
+// its worklist and lineage rows. The run's id is assigned by meta's identity
+// generator, never carried here; its state (dead_lettered), cause (propagated),
+// and dead-letter reason (upstream_dead_lettered) are fixed by the write, not the
+// caller.
 type PropagatedRun struct {
 	// Pipeline is the downstream pipeline being dead-lettered by propagation
 	// (runs.pipeline).
@@ -65,15 +66,16 @@ INSERT INTO run_inputs (run_id, upstream_run_id)
 SELECT new_run.id, upstream
 FROM new_run, unnest($8::bigint[]) AS upstream`
 
-// DeadLetterPropagated mints a downstream a never-executed dead-lettered run and its
-// dead_letters and run_inputs rows in one atomic meta transaction (specification
-// sections 4 and 6.2): the run records cause propagated and state dead_lettered with no
-// exit code (it never ran); the dead_letters row records reason upstream_dead_lettered
-// and the immediate failed_upstream; and run_inputs records the poisoned upstream
-// run(s) for complete lineage. All three commit together or not at all, so the
-// propagated dead-letter is never left half-recorded. It is a leader-only meta write,
-// riding the single Writer through the atomic ExecTx path (a connection without it
-// fails loudly rather than splitting the write across un-atomic Execs).
+// DeadLetterPropagated mints a downstream a never-executed dead-lettered run and
+// its dead_letters and run_inputs rows in one atomic meta transaction: the run
+// records cause propagated and state dead_lettered with no exit code (it never
+// ran); the dead_letters row records reason upstream_dead_lettered and the
+// immediate failed_upstream; and run_inputs records the poisoned upstream run(s)
+// for complete lineage. All three commit together or not at all, so the
+// propagated dead-letter is never left half-recorded. It is a leader-only meta
+// write, riding the single Writer through the atomic ExecTx path (a connection
+// without it fails loudly rather than splitting the write across un-atomic
+// Execs).
 func (w *Writer) DeadLetterPropagated(ctx context.Context, rec PropagatedRun) error {
 	var errDetail any // nil -> SQL NULL when no human detail is supplied.
 	if rec.Detail != "" {

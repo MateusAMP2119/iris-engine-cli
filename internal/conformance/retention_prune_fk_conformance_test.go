@@ -14,8 +14,8 @@ import (
 )
 
 // TestRetentionPruneUpstreamSurvivorNoViolation drives the real iris binary end-to-end
-// with a running daemon and real Postgres and proves the run_inputs FK doctrine
-// (specification sections 4 and 6.2): count-based retention prunes an upstream run
+// with a running daemon and real Postgres and proves the run_inputs FK doctrine:
+// count-based retention prunes an upstream run
 // while a cross-pipeline downstream still holds a run_inputs row naming it, and the
 // prune must not raise a foreign-key violation. run_inputs.upstream_run_id is FK-free
 // (the precedent is data_journal.run_id), so the pruned upstream's run row is deleted
@@ -27,8 +27,6 @@ import (
 // rows (none here), then deletes the upstream run row -- against the real meta schema
 // the engine created at install. On the old schema (a hard upstream_run_id FK) the
 // final DELETE would raise SQLSTATE 23503; on the FK-free schema it commits.
-//
-// spec: S06.2/prune-upstream-survivor-no-violation
 func TestRetentionPruneUpstreamSurvivorNoViolation(t *testing.T) {
 	// Freshen the shared external cluster first: FORCE-dropping the meta/data databases
 	// evicts a prior test's lingering daemon sessions -- including a still-held leader

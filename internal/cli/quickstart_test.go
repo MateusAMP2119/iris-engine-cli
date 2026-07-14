@@ -56,8 +56,7 @@ func requireEmptyDir(t *testing.T, dir string) {
 // verb is a runnable daemonless leaf (a bare invocation is valid, never a group
 // stub's usage error).
 func TestQuickstartRootVerb(t *testing.T) {
-	// spec: S08/quickstart-root-verb
-	t.Run("S08/quickstart-root-verb", func(t *testing.T) {
+	t.Run("quickstart-root-verb", func(t *testing.T) {
 		root := testRoot()
 
 		// Top level: the nine nouns plus exactly the three root verbs.
@@ -92,8 +91,7 @@ func TestQuickstartRootVerb(t *testing.T) {
 // envelope). Every rendering exits 0.
 func TestQuickstartTTYGating(t *testing.T) {
 	unsetNoColor(t)
-	// spec: S08/quickstart-tty-gating
-	t.Run("S08/quickstart-tty-gating", func(t *testing.T) {
+	t.Run("quickstart-tty-gating", func(t *testing.T) {
 		cases := []struct {
 			name            string
 			stdoutTTY       bool
@@ -140,8 +138,7 @@ func TestQuickstartTTYGating(t *testing.T) {
 // interactive tour but leaves it interactive, and piped or --json output never
 // carries an escape.
 func TestQuickstartCeremonyColorGating(t *testing.T) {
-	// spec: S08/quickstart-ceremony-color-gating
-	t.Run("S08/quickstart-ceremony-color-gating", func(t *testing.T) {
+	t.Run("quickstart-ceremony-color-gating", func(t *testing.T) {
 		t.Run("NO_COLOR strips paint, keeps interactivity", func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")
 			out, _, code := runQuickstart(t, true, true)
@@ -188,8 +185,7 @@ func TestQuickstartCeremonyColorGating(t *testing.T) {
 func TestQuickstartPlainGuideWhenPiped(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-plain-guide-when-piped
-	t.Run("S08/quickstart-plain-guide-when-piped", func(t *testing.T) {
+	t.Run("quickstart-plain-guide-when-piped", func(t *testing.T) {
 		// Resolve the golden path before leaving the package directory.
 		pkgDir, err := os.Getwd()
 		if err != nil {
@@ -246,8 +242,7 @@ type quickstartEnvelope struct {
 func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-json-guide-envelope
-	t.Run("S08/quickstart-json-guide-envelope", func(t *testing.T) {
+	t.Run("quickstart-json-guide-envelope", func(t *testing.T) {
 		scratch := t.TempDir()
 		t.Chdir(scratch)
 
@@ -297,7 +292,6 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 // --- clack widget unit tests (pure rendering + fallback paths) ---
 
 func TestClackWrapLine(t *testing.T) {
-	// spec: S08/quickstart-clack-widgets
 	cases := []struct {
 		name  string
 		in    string
@@ -321,7 +315,6 @@ func TestClackWrapLine(t *testing.T) {
 }
 
 func TestClackNoteRendering(t *testing.T) {
-	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	p := painter{} // disabled -> no ANSI, stable text
 	clackNote(&buf, p, "Heads-up", "Iris is in active development.\nExpect sharp edges.\n\nStop with iris engine stop")
@@ -343,7 +336,6 @@ func TestClackNoteRendering(t *testing.T) {
 }
 
 func TestClackEngineBanner(t *testing.T) {
-	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	pDisabled := painter{}
 	engineBanner(&buf, pDisabled)
@@ -360,7 +352,6 @@ func TestClackEngineBanner(t *testing.T) {
 }
 
 func TestClackSpinnerStub(t *testing.T) {
-	// spec: S08/quickstart-clack-widgets
 	var buf bytes.Buffer
 	p := painter{}
 	stop := startSpinner(&buf, p, "Waiting for leadership")
@@ -375,7 +366,6 @@ func TestClackSpinnerStub(t *testing.T) {
 }
 
 func TestClackRawFallback(t *testing.T) {
-	// spec: S08/quickstart-clack-widgets
 	// Force openRawTTY to report non-TTY so clack widgets take ok=false path.
 	orig := isTerminalForTest
 	isTerminalForTest = func(int) bool { return false }

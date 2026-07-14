@@ -37,7 +37,7 @@ func invalidDecl(t *testing.T, name string) []byte {
 // TestEightFieldWhitelist proves that pipeline-declaration parsing admits
 // exactly the eight allowed fields and rejects every other key, naming it.
 func TestEightFieldWhitelist(t *testing.T) {
-	t.Run("S03/eight-field-whitelist", func(t *testing.T) {
+	t.Run("eight-field-whitelist", func(t *testing.T) {
 		// Accept: the golden load_orders declaration exercises seven of the eight
 		// fields (name, run, env, env_file, lane, reads, writes, depends_on).
 		good := goldenDecl(t, "pipelines", "ingest", "load_orders", "iris-declare.yaml")
@@ -59,7 +59,7 @@ func TestEightFieldWhitelist(t *testing.T) {
 			t.Error("unknown_field fixture accepted; expected rejection")
 		}
 
-		// Reject: every forbidden key the spec calls out, each named in the error.
+		// Reject: every forbidden key, each named in the error.
 		forbidden := []string{
 			"language", "build", "param", "retry", "schedule",
 			"triggers", "executor", "deadline", "timeout", "state",
@@ -115,7 +115,7 @@ func TestEightFieldWhitelist(t *testing.T) {
 // TestNameRequired proves that a pipeline declaration missing the required
 // string field name is rejected.
 func TestNameRequired(t *testing.T) {
-	t.Run("S03/name-required", func(t *testing.T) {
+	t.Run("name-required", func(t *testing.T) {
 		// Reject: the missing_name fixture (run + lane, no name).
 		if _, err := declare.ParseDeclaration(invalidDecl(t, "missing_name")); err == nil {
 			t.Error("missing_name fixture accepted; expected rejection")
@@ -152,7 +152,7 @@ func TestNameRequired(t *testing.T) {
 // TestRunRequiredArgvList proves that run is required and must parse as a plain
 // string list (an argv vector); a missing or non-list run is rejected.
 func TestRunRequiredArgvList(t *testing.T) {
-	t.Run("S03/run-required-argv-list", func(t *testing.T) {
+	t.Run("run-required-argv-list", func(t *testing.T) {
 		// Reject: the missing_run fixture (name only).
 		if _, err := declare.ParseDeclaration(invalidDecl(t, "missing_run")); err == nil {
 			t.Error("missing_run fixture accepted; expected rejection")
@@ -191,10 +191,8 @@ func TestRunRequiredArgvList(t *testing.T) {
 // (data gate) separately from composer order (walk position source). load_orders
 // declares depends_on, reset_counters declares none; the lane walk order is
 // still the composer's, proving independence.
-//
-// spec: S13/sample-dependency-split
 func TestSampleDependencySplit(t *testing.T) {
-	t.Run("S13/sample-dependency-split", func(t *testing.T) {
+	t.Run("sample-dependency-split", func(t *testing.T) {
 		// load_orders declares depends_on: [extract_orders]
 		loadSrc := goldenDecl(t, "pipelines", "ingest", "load_orders", "iris-declare.yaml")
 		loadDecl, err := declare.ParseDeclaration(loadSrc)

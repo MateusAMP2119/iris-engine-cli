@@ -9,7 +9,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// compileOrdersEndpoint compiles the specification's worked example endpoint
+// compileOrdersEndpoint compiles the worked-example endpoint
 // (orders_by_customer over analytics.orders) so the /q-route grammar tests run
 // against an authentic E09.2 CompiledEndpoint, not a hand-built binding plan.
 func compileOrdersEndpoint(t *testing.T) *declare.CompiledEndpoint {
@@ -64,8 +64,6 @@ func asParamError(t *testing.T, err error) *ParamError {
 // monotonic id for runs, dead_letters, and the journal; name for pipelines; the
 // (lane, pos) pair for lanes; the table PK for /data; and the endpoint sort field
 // for /q. Only the id-keyed collections are marked id-keyed (the before= exception).
-//
-// spec: S07/collection-key-roster
 func TestCollectionKeyRoster(t *testing.T) {
 	cases := []struct {
 		name string
@@ -117,8 +115,6 @@ func TestCollectionKeyRoster(t *testing.T) {
 // TestEqRangeGrammar pins the /q filter grammar: an eq filter binds <param>= as
 // an exact equality predicate, and a range filter binds <param>_from/<param>_to as
 // inclusive lower/upper bounds, either side omittable.
-//
-// spec: S07/eq-range-grammar
 func TestEqRangeGrammar(t *testing.T) {
 	ce := compileOrdersEndpoint(t)
 	uuid := "11111111-1111-1111-1111-111111111111"
@@ -190,8 +186,6 @@ func TestEqRangeGrammar(t *testing.T) {
 // TestExactFieldFiltering pins that a collection route filters on exact field
 // equality only: each param names a source field and binds an equality predicate;
 // there are no operators, no range suffixes, and no LIKE.
-//
-// spec: S07/exact-field-filtering
 func TestExactFieldFiltering(t *testing.T) {
 	fields := map[string]string{"id": "bigint", "pipeline": "text", "state": "text"}
 
@@ -237,8 +231,6 @@ func TestExactFieldFiltering(t *testing.T) {
 // collection key with WHERE key > after; the id-keyed before= reverse cursor with
 // WHERE key < before descending; page.next_after read from the last row's key;
 // and the absence of offset or since-timestamp paging (both rejected as unknown).
-//
-// spec: S07/keyset-cursor-paging
 func TestKeysetCursorPaging(t *testing.T) {
 	fields := map[string]string{"id": "bigint", "pipeline": "text", "state": "text"}
 
@@ -350,8 +342,6 @@ func TestKeysetCursorPaging(t *testing.T) {
 
 // TestLimitDefaultCap pins the limit rule: it defaults to 100, caps at 1000, and
 // an over-cap value is a 400 naming limit, never a silent clamp.
-//
-// spec: S07/limit-default-cap
 func TestLimitDefaultCap(t *testing.T) {
 	fields := map[string]string{"id": "bigint"}
 
@@ -410,8 +400,6 @@ func TestLimitDefaultCap(t *testing.T) {
 // TestParamTypeParse400 pins that a param value failing to parse per its
 // source-column type yields a ParamError naming the param, across the closed type
 // set (integer, uuid, timestamptz, bool, numeric, json, bytea, ...).
-//
-// spec: S07/param-type-parse-400
 func TestParamTypeParse400(t *testing.T) {
 	t.Run("endpoint-bad-uuid-eq", func(t *testing.T) {
 		ce := compileOrdersEndpoint(t)
@@ -504,8 +492,6 @@ func TestParamTypeParse400(t *testing.T) {
 
 // TestUnknownRepeatedParam400 pins that an unknown param or a repeated param is a
 // 400 naming it, never silently ignored, on both collection and /q routes.
-//
-// spec: S07/unknown-repeated-param-400
 func TestUnknownRepeatedParam400(t *testing.T) {
 	fields := map[string]string{"id": "bigint", "pipeline": "text"}
 

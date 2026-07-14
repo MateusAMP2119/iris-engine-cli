@@ -14,8 +14,7 @@ import (
 
 // TestScopedConnectionInjectedAtSpawn proves that each pipeline run receives an
 // engine-injected scoped connection for its least-privilege Postgres role at spawn,
-// and that database credentials never reach author or consumer hands (specification
-// section 7):
+// and that database credentials never reach author or consumer hands:
 //
 //   - the engine mints the credential (store.GenerateSecret); the author supplies
 //     none;
@@ -28,8 +27,6 @@ import (
 //     connection of their own;
 //   - the credential-bearing DSN never lands in a meta write (an author-reachable
 //     place); it reaches only the subprocess environment.
-//
-// spec: S07/pipeline-scoped-connection-injected
 func TestScopedConnectionInjectedAtSpawn(t *testing.T) {
 	// The engine mints the credential; the author never supplies it.
 	secret, err := store.GenerateSecret()

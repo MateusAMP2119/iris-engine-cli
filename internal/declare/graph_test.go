@@ -40,7 +40,7 @@ func mustAccept(t *testing.T, reg declare.Graph, decl *declare.Pipeline) {
 // error, and that the chain is deterministic (neighbours are walked in a stable
 // order so the reported chain does not flake).
 func TestDependencyCycleRejected(t *testing.T) {
-	t.Run("S03/depends-on-cycle-rejected", func(t *testing.T) {
+	t.Run("depends-on-cycle-rejected", func(t *testing.T) {
 		cases := []struct {
 			name  string
 			reg   *declare.Registry
@@ -103,7 +103,7 @@ func TestDependencyCycleRejected(t *testing.T) {
 // never deferred for later resolution, and that the error names the missing
 // pipeline.
 func TestUnregisteredRefRejected(t *testing.T) {
-	t.Run("S03/unregistered-ref-rejected", func(t *testing.T) {
+	t.Run("unregistered-ref-rejected", func(t *testing.T) {
 		// A reference to a wholly unregistered pipeline is rejected, naming it.
 		mustReject(t, declare.NewRegistry(), newDecl("b", "a"), "a")
 
@@ -129,7 +129,7 @@ func TestUnregisteredRefRejected(t *testing.T) {
 // check at all (depends_on is a data gate, not lane order), so a cross-lane edge
 // and a same-lane edge get the identical verdict.
 func TestDependenciesCrossLaneOK(t *testing.T) {
-	t.Run("S04/dependencies-cross-lane-ok", func(t *testing.T) {
+	t.Run("dependencies-cross-lane-ok", func(t *testing.T) {
 		// extract sits in the ingest lane; load sits in a different lane and depends
 		// on it. The edge crosses lanes and is accepted.
 		reg := declare.NewRegistry().Add("extract")
@@ -154,9 +154,9 @@ func TestDependenciesCrossLaneOK(t *testing.T) {
 // the canonical scenario is a and b registered acyclically, then a re-applied to
 // depend on b.
 func TestApplyRejectsCycles(t *testing.T) {
-	t.Run("S06.3/apply-rejects-cycles", func(t *testing.T) {
-		// The re-apply scenario from the spec: a registered with no deps, b depends
-		// on a; re-applying a with depends_on b closes the cycle a -> b -> a.
+	t.Run("apply-rejects-cycles", func(t *testing.T) {
+		// The re-apply scenario: a registered with no deps, b depends on a;
+		// re-applying a with depends_on b closes the cycle a -> b -> a.
 		reg := declare.NewRegistry().Add("a").Add("b", "a")
 		mustReject(t, reg, newDecl("a", "b"), "a -> b -> a")
 
@@ -177,7 +177,7 @@ func TestApplyRejectsCycles(t *testing.T) {
 // upstream is registered the same declaration applies -- the graph builds
 // upstream first, apply by apply.
 func TestApplyUpstreamFirst(t *testing.T) {
-	t.Run("S06.3/apply-upstream-first", func(t *testing.T) {
+	t.Run("apply-upstream-first", func(t *testing.T) {
 		// A first registration cannot reference forward: b depends on a with nothing
 		// registered yet is rejected, and the rejection names the missing pipeline a.
 		mustReject(t, declare.NewRegistry(), newDecl("b", "a"), "a")
@@ -196,10 +196,8 @@ func TestApplyUpstreamFirst(t *testing.T) {
 // also satisfy): registered names report registered and unknown names do not --
 // the Registered() lookup upstream-first depends on -- while DependsOn returns a
 // node's recorded upstreams as an isolated copy, the edge view acyclicity walks.
-// It is anchored to the upstream-first contract because that rule is exactly the
-// Registered() lookup these assertions exercise.
 func TestRegistryGraphView(t *testing.T) {
-	t.Run("S06.3/apply-upstream-first", func(t *testing.T) {
+	t.Run("apply-upstream-first", func(t *testing.T) {
 		var g declare.Graph = declare.NewRegistry().Add("a").Add("b", "a")
 		if !g.Registered("a") || !g.Registered("b") {
 			t.Error("registered pipelines a and b not reported as registered")

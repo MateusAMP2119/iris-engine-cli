@@ -10,15 +10,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's engine-info plane: the api.InfoHandler behind GET
-// /info (and therefore behind `iris engine info` -- one route, one payload,
-// specification sections 11 and 15). It composes the daemon-held runtime facts --
-// the leadership role (naming the leader when known), the resolved listeners, the
-// data and meta targets, the leader-held per-lane pass counts, and uptime -- while
-// the CLI merges in the local configuration (engine and Go version, Postgres mode,
-// objects path) and the engine key's public half. It is a read, served on any
-// role: a standby answers with its own role, the leader it knows, and its own
-// (zero) pass counts.
+// This file is the daemon's engine-info plane: the api.InfoHandler behind GET /info
+// (and therefore behind `iris engine info` -- one route, one payload). It composes
+// the daemon-held runtime facts -- the leadership role (naming the leader when
+// known), the resolved listeners, the data and meta targets, the leader-held
+// per-lane pass counts, and uptime -- while the CLI merges in the local
+// configuration (engine and Go version, Postgres mode, objects path) and the engine
+// key's public half. It is a read, served on any role: a standby answers with its
+// own role, the leader it knows, and its own (zero) pass counts.
 //
 // Uptime is the engine's sole wall-clock readout and it is display-only: the plane
 // renders it to a string here, so no computable time value ever reaches the wire.
@@ -109,10 +108,9 @@ func lanePasses(passes PassCountReader) []api.LanePasses {
 	return out
 }
 
-// renderUptime renders the daemon's age as the display-only uptime string
-// (specification section 11: the one wall-clock readout, display only). Rendering
-// happens here, second-truncated, so the wire never carries a computable duration
-// or timestamp.
+// renderUptime renders the daemon's age as the display-only uptime string (the one
+// wall-clock readout, display only). Rendering happens here, second-truncated, so
+// the wire never carries a computable duration or timestamp.
 func renderUptime(d time.Duration) string {
 	if d < 0 {
 		d = 0

@@ -17,7 +17,7 @@ import (
 // catalogDataDir is the embed root of the pipeline catalog. Beneath it live
 // the ordered catalog.yaml index and one folder per entry: an entry.yaml
 // (metadata) beside a workspace/ subtree mirroring exactly what materializes
-// into the workspace (specification section 8, quickstart pipeline catalog).
+// into the workspace (the quickstart pipeline catalog).
 const catalogDataDir = "catalogdata"
 
 // catalogData embeds the pipeline catalog: curated starter pipelines shipped

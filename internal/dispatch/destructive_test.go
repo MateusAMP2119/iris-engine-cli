@@ -16,12 +16,10 @@ func gateRun(id, pipeline string, state store.RunState) store.Run {
 }
 
 // TestYesHonorsSoftBlocks proves --yes satisfies the confirmation prompt but never
-// overrides a soft-block (specification sections 8 and 12): with no soft-blocks the
-// decision proceeds (confirmation was the only gate and --yes supplied it); with any
-// soft-block outstanding the decision refuses, carries every refusal so the caller
-// can print its guidance, and cancels nothing -- refusing is not cancelling.
-//
-// spec: S08/yes-honors-soft-blocks
+// overrides a soft-block: with no soft-blocks the decision proceeds (confirmation was
+// the only gate and --yes supplied it); with any soft-block outstanding the decision
+// refuses, carries every refusal so the caller can print its guidance, and cancels
+// nothing -- refusing is not cancelling.
 func TestYesHonorsSoftBlocks(t *testing.T) {
 	t.Run("no soft-blocks: --yes proceeds", func(t *testing.T) {
 		got := dispatch.DecideDestructive(dispatch.ConfirmYes, nil)
@@ -57,12 +55,9 @@ func TestYesHonorsSoftBlocks(t *testing.T) {
 }
 
 // TestForceOverridesSoftBlocks proves --force overrides soft-blocks and lets the
-// operation proceed (specification sections 8 and 12): the very same soft-blocks
-// that make --yes refuse are overridden by --force, and the decision names each
-// in-flight run the override must cancel (dead-lettered stopped) before the
-// operation runs.
-//
-// spec: S08/force-overrides-soft-blocks
+// operation proceed: the very same soft-blocks that make --yes refuse are overridden
+// by --force, and the decision names each in-flight run the override must cancel
+// (dead-lettered stopped) before the operation runs.
 func TestForceOverridesSoftBlocks(t *testing.T) {
 	runs := []store.Run{
 		gateRun("7", "extract", store.RunRunning),
@@ -96,13 +91,11 @@ func TestForceOverridesSoftBlocks(t *testing.T) {
 	}
 }
 
-// TestYesSoftBlockInFlightRun proves the in-flight-run soft-block scopes exactly
-// (specification section 12): non-interactive --yes confirms the gate but still
-// refuses with guidance while a run is queued or running on the affected scope. A
-// run in flight on ANOTHER pipeline never blocks a scoped op; an engine-wide scope
-// (uninstall, bare wipe) blocks on any in-flight run; terminal runs never block.
-//
-// spec: S12/yes-soft-block-inflight-run
+// TestYesSoftBlockInFlightRun proves the in-flight-run soft-block scopes exactly:
+// non-interactive --yes confirms the gate but still refuses with guidance while a run
+// is queued or running on the affected scope. A run in flight on ANOTHER pipeline
+// never blocks a scoped op; an engine-wide scope (uninstall, bare wipe) blocks on any
+// in-flight run; terminal runs never block.
 func TestYesSoftBlockInFlightRun(t *testing.T) {
 	runs := []store.Run{
 		gateRun("1", "extract", store.RunSucceeded),
@@ -164,13 +157,10 @@ func TestYesSoftBlockInFlightRun(t *testing.T) {
 }
 
 // TestYesSoftBlockUnpromotedData proves the un-promoted-data soft-block is a
-// teardown-only refusal (specification section 12): non-interactive --yes on
-// engine uninstall or declare destroy refuses with guidance while un-promoted
-// disposable data exists (a non-empty wipe scope), while workload wipe and
-// deadletter drain -- the dev-loop ops -- never raise it (wiping that data is the
-// point of the op), and a clean scope raises nothing.
-//
-// spec: S12/yes-soft-block-unpromoted-data
+// teardown-only refusal: non-interactive --yes on engine uninstall or declare destroy
+// refuses with guidance while un-promoted disposable data exists (a non-empty wipe
+// scope), while workload wipe and deadletter drain -- the dev-loop ops -- never raise
+// it (wiping that data is the point of the op), and a clean scope raises nothing.
 func TestYesSoftBlockUnpromotedData(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -217,14 +207,12 @@ func TestYesSoftBlockUnpromotedData(t *testing.T) {
 }
 
 // TestDestroyDownstreamBlockers proves the declare-destroy downstream-blocker
-// predicates (specification section 12): destroy refuses and NAMES the blockers --
-// drop or drain first -- while any registered pipeline declares depends_on on the
-// target, any downstream run_inputs row names the target's runs, or any outstanding
-// dead-letter entry names the target as failed_upstream. A target with none of the
-// three is destroyable; the target's own rows (its self-inputs, its own worklist
-// entries) never block, since the destroy retires them itself.
-//
-// spec: S12/destroy-downstream-blockers
+// predicates: destroy refuses and NAMES the blockers -- drop or drain first -- while
+// any registered pipeline declares depends_on on the target, any downstream
+// run_inputs row names the target's runs, or any outstanding dead-letter entry names
+// the target as failed_upstream. A target with none of the three is destroyable; the
+// target's own rows (its self-inputs, its own worklist entries) never block, since
+// the destroy retires them itself.
 func TestDestroyDownstreamBlockers(t *testing.T) {
 	runPipeline := map[int64]string{
 		10: "extract", 11: "extract",

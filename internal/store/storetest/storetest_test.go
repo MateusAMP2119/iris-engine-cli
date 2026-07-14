@@ -10,13 +10,10 @@ import (
 )
 
 // TestRunStateWireValues pins the run-state constants to the exact tokens the
-// spec's runs DDL and wire grammar use (specification sections 4 and 7:
-// `state in (queued, running, succeeded, dead_lettered)` and
-// `state=dead_lettered`). E02's Postgres CHECK constraint and every --json
-// golden depend on the underscore form; a faithful meta-store fake must speak
-// the same tokens.
-//
-// spec: S16/integration-fakes-interfaces
+// runs DDL and wire grammar use (`state in (queued, running, succeeded,
+// dead_lettered)` and `state=dead_lettered`). E02's Postgres CHECK constraint and
+// every --json golden depend on the underscore form; a faithful meta-store fake
+// must speak the same tokens.
 func TestRunStateWireValues(t *testing.T) {
 	for _, tc := range []struct {
 		got  store.RunState
@@ -28,7 +25,7 @@ func TestRunStateWireValues(t *testing.T) {
 		{store.RunDeadLettered, "dead_lettered"},
 	} {
 		if string(tc.got) != tc.want {
-			t.Errorf("run-state wire value = %q, want %q (spec sections 4 and 7)", tc.got, tc.want)
+			t.Errorf("run-state wire value = %q, want %q", tc.got, tc.want)
 		}
 	}
 }
@@ -36,8 +33,6 @@ func TestRunStateWireValues(t *testing.T) {
 // TestFakeSatisfiesStore proves the meta-store fake stands in for meta: it
 // implements the store.Store interface, so any code written against the seam
 // runs against the fake with no live meta database.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeSatisfiesStore(t *testing.T) {
 	// The fake is assignable to the meta seam, and works when driven through it.
 	var s store.Store = storetest.New()
@@ -55,8 +50,6 @@ func TestFakeSatisfiesStore(t *testing.T) {
 // running (with its process-group handle) to a terminal state, dead-letter
 // another with a reason, and read them back by id and by filter in creation
 // order.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeRunLifecycle(t *testing.T) {
 	ctx := context.Background()
 	s := storetest.New()
@@ -106,9 +99,8 @@ func TestFakeRunLifecycle(t *testing.T) {
 	}
 
 	// reset: queued -> dead-lettered with a reason (single non-success terminal).
-	// The reason is the spec's closed dead_letters.reason enum token; a cancelled
-	// run maps to "stopped" (specification sections 4 and 8), never the prose
-	// "cancelled".
+	// The reason is the closed dead_letters.reason enum token; a cancelled
+	// run maps to "stopped", never the prose "cancelled".
 	rc := created[1].ID
 	dl, err := s.SetRunState(ctx, rc, store.RunDeadLettered, store.WithReason("stopped"))
 	if err != nil {
@@ -162,8 +154,6 @@ func TestFakeRunLifecycle(t *testing.T) {
 // caller mutating a returned run (including its exit-code pointer) cannot corrupt
 // the store's own state. A fake standing in for a database must have database-like
 // value semantics.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeIsolatesState(t *testing.T) {
 	ctx := context.Background()
 	s := storetest.New()
@@ -200,8 +190,6 @@ func TestFakeIsolatesState(t *testing.T) {
 
 // TestFakeUnknownRun proves the fake reports a missing run with the seam's
 // sentinel error rather than a zero value, on every id-addressed method.
-//
-// spec: S16/integration-fakes-interfaces
 func TestFakeUnknownRun(t *testing.T) {
 	ctx := context.Background()
 	s := storetest.New()

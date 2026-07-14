@@ -7,25 +7,25 @@ import (
 )
 
 // This file is the daemon's stats surface: GET /stats, the read-only rollup
-// payload `iris engine stats` prints identically (specification section 11).
-// One handler feeds one route, and the CLI reads that route, so the two
-// surfaces cannot drift: parity is structural, not maintained.
+// payload `iris engine stats` prints identically. One handler feeds one route,
+// and the CLI reads that route, so the two surfaces cannot drift: parity is
+// structural, not maintained.
 //
 // The payload's doctrine is clock-free purity: every value is a current count
 // or a last-value. No time-series, no clock-derived metric, no timestamp -- the
 // per-lane pass counter is a count of completed loop passes, never a duration,
 // and the checkpoint chain head is a last-value (the newest sealed partition's
-// digest, specification section 14). Core exposes no /metrics endpoint: a
-// request to /metrics falls through the mux's roster to the not_found envelope
-// (a monitor consumes GET /stats with a read PAT instead), which the stats
-// tests pin so the refusal is a contract, not an accident.
+// digest). Core exposes no /metrics endpoint: a request to /metrics falls
+// through the mux's roster to the not_found envelope (a monitor consumes GET
+// /stats with a read PAT instead), which the stats tests pin so the refusal is
+// a contract, not an accident.
 //
 // Like the control and pipeline surfaces, api stays a leaf: it defines the
 // StatsHandler seam and the payload shape but reaches nothing up the stack. The
 // daemon supplies the handler that composes the meta rollup reads and the
-// leader-held pass counter; the mux only routes to it and renders the
-// section-7 data envelope. Stats is a read, so it is served on any role --
-// reads work anywhere (specification section 15).
+// leader-held pass counter; the mux only routes to it and renders the data
+// envelope. Stats is a read, so it is served on any role -- reads work
+// anywhere.
 
 // StatsPayload is the one read-only rollup document GET /stats serves and
 // `iris engine stats` prints: the engine-wide rollup plus the per-lane and
@@ -39,10 +39,10 @@ type StatsPayload struct {
 	Pipelines []PipelineStats `json:"pipelines"`
 }
 
-// EngineStats is the engine-wide rollup (specification sections 11 and 14):
-// the dead-letter worklist, running runs, the capture counters, the
-// wipe-eligible slice, total journal size, and the journal lifecycle readout
-// (hot rows, sealed and archived partition counts, checkpoint chain head).
+// EngineStats is the engine-wide rollup: the dead-letter worklist, running
+// runs, the capture counters, the wipe-eligible slice, total journal size, and
+// the journal lifecycle readout (hot rows, sealed and archived partition
+// counts, checkpoint chain head).
 type EngineStats struct {
 	// DeadLetterDepth is the outstanding dead-letter worklist depth.
 	DeadLetterDepth int64 `json:"dead_letter_depth"`
@@ -69,10 +69,9 @@ type EngineStats struct {
 	// ArchivedPartitions counts the sealed partitions exported to the object
 	// store and dropped from Postgres.
 	ArchivedPartitions int64 `json:"archived_partitions"`
-	// CheckpointChainHead is the current head of the checkpoint chain
-	// (specification section 14: iris engine stats reports the head). The field
-	// is always present and is explicitly null while no partition has ever
-	// sealed (no checkpoint row exists yet).
+	// CheckpointChainHead is the current head of the checkpoint chain (iris engine
+	// stats reports the head). The field is always present and is explicitly null
+	// while no partition has ever sealed (no checkpoint row exists yet).
 	CheckpointChainHead *ChainHead `json:"checkpoint_chain_head"`
 }
 
@@ -87,8 +86,8 @@ type ChainHead struct {
 	Location string `json:"location"`
 }
 
-// LaneStats is one lane's rollup (specification section 11): pipeline count,
-// queued/running count, and loop passes completed since daemon start.
+// LaneStats is one lane's rollup: pipeline count, queued/running count, and
+// loop passes completed since daemon start.
 type LaneStats struct {
 	// Lane is the lane's name.
 	Lane string `json:"lane"`
@@ -104,9 +103,9 @@ type LaneStats struct {
 	Passes int64 `json:"passes"`
 }
 
-// PipelineStats is one pipeline's rollup (specification section 11): latest run
-// state, run counts by state, last exit code, last run id -- last-values from
-// the run history's ordering identity, never a clock.
+// PipelineStats is one pipeline's rollup: latest run state, run counts by
+// state, last exit code, last run id -- last-values from the run history's
+// ordering identity, never a clock.
 type PipelineStats struct {
 	// Pipeline is the registered pipeline's name.
 	Pipeline string `json:"pipeline"`
@@ -155,9 +154,9 @@ func (noStats) Stats(context.Context) (StatsPayload, error) {
 }
 
 // serveStats handles GET /stats: run the wired rollup handler and render the
-// section-7 data envelope. It is a read, served on any role. An unwired
-// handler is 500 internal; any rollup read error is 500 internal too -- a
-// stats read has no operation-failure category of its own.
+// data envelope. It is a read, served on any role. An unwired handler is 500
+// internal; any rollup read error is 500 internal too -- a stats read has no
+// operation-failure category of its own.
 func (m *mux) serveStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")

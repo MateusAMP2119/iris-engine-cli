@@ -13,11 +13,10 @@ import (
 )
 
 // This file proves the leader-side control orchestrator's schema-provisioning and
-// composer-destroy interlock paths (specification sections 3, 5, and 12) with fakes
-// and a temp workspace -- no live Postgres. It drives the unexported provision and
-// laneMembers directly (internal test), so the reserved-schema guard, the
-// unconditional capture-function repair, and the DB-sourced member count are each
-// pinned.
+// composer-destroy interlock paths with fakes and a temp workspace -- no live
+// Postgres. It drives the unexported provision and laneMembers directly (internal
+// test), so the reserved-schema guard, the unconditional capture-function repair,
+// and the DB-sourced member count are each pinned.
 
 // controlDataFake is a dataPlane: it records EnsureCaptureFunction calls and serves a
 // fixed live view, so a test can assert what provisioning did without a database.
@@ -78,10 +77,8 @@ func idOnlyTable(schema, table string) string {
 // folder: public is engine-reserved, so a declared public schema must be rejected
 // before any DDL, not silently merged with the engine's own public objects. Even a
 // dry run (which otherwise plans then writes nothing) must reject.
-//
-// spec: S03/public-schema-folder-rejected
 func TestProvisionRejectsPublicSchemaFolder(t *testing.T) {
-	t.Run("S03/public-schema-folder-rejected", func(t *testing.T) {
+	t.Run("public-schema-folder-rejected", func(t *testing.T) {
 		ws := t.TempDir()
 		writeSchemaTable(t, ws, "public", "orders", idOnlyTable("public", "orders"))
 
@@ -104,10 +101,8 @@ func TestProvisionRejectsPublicSchemaFolder(t *testing.T) {
 // (all tables and triggers already present) must be re-created so the triggers keep
 // binding, rather than staying silently broken until something else makes the plan
 // non-empty.
-//
-// spec: S05/provision-ensures-capture
 func TestProvisionEnsuresCaptureOnEmptyPlan(t *testing.T) {
-	t.Run("S05/provision-ensures-capture", func(t *testing.T) {
+	t.Run("provision-ensures-capture", func(t *testing.T) {
 		ws := t.TempDir()
 		writeSchemaTable(t, ws, "sales", "orders", idOnlyTable("sales", "orders"))
 
@@ -136,10 +131,8 @@ func TestProvisionEnsuresCaptureOnEmptyPlan(t *testing.T) {
 // disk: a member still registered but whose declaration file was deleted from disk
 // must still be counted, so the composer is not destroyed while registered members
 // remain. The DB-sourced count then drives the interlock to block the destroy.
-//
-// spec: S12/composer-destroy-interlock
 func TestComposerInterlockCountsRegisteredFromDB(t *testing.T) {
-	t.Run("S12/composer-destroy-interlock", func(t *testing.T) {
+	t.Run("composer-destroy-interlock", func(t *testing.T) {
 		ctx := context.Background()
 		ws := t.TempDir() // no pipeline declaration files on disk (all deleted).
 

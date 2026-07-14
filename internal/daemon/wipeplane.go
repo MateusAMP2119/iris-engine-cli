@@ -16,7 +16,7 @@ import (
 // This file is the daemon's leader-side workload wipe plane: the composition root
 // that turns POST /workload/wipe into the destructive gate check (over soft
 // blocks), attribution of runs to pipelines (for scoped wipe), and the live
-// ExecuteWipe on the data database (specification sections 5, 12, 13).
+// ExecuteWipe on the data database.
 //
 // Wipe touches only the data database (journal markers + user tables); no meta
 // write. It is leader-only (mutation), installed on leadership like the manual

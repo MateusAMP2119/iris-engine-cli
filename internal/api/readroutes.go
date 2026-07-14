@@ -7,12 +7,12 @@ import (
 	"net/http"
 )
 
-// This file is the E14 read-route surface (specification section 7): the runs
-// collection with its ?include=inputs lineage attributes and the trace, gate,
-// and impact triage walks an IDE-style renderer consumes. Each route is GET-only
-// and served on any role (reads work anywhere). Like the other read surfaces api
-// stays a leaf: it defines the seam and the wire shape but reaches nothing up the
-// stack -- the daemon composes the real walk (the same one the CLI prints) behind
+// This file is the E14 read-route surface: the runs collection with its
+// ?include=inputs lineage attributes and the trace, gate, and impact triage
+// walks an IDE-style renderer consumes. Each route is GET-only and served on
+// any role (reads work anywhere). Like the other read surfaces api stays a
+// leaf: it defines the seam and the wire shape but reaches nothing up the stack
+// -- the daemon composes the real walk (the same one the CLI prints) behind
 // each handler, and the mux renders exactly what it returns.
 //
 // GET /runs[?include=inputs] serves the run history. With include=inputs each row
@@ -27,9 +27,9 @@ import (
 
 // RunsHandler serves the runs collection (GET /runs and GET /runs/{id}).
 // includeInputs requests embedding each run's consumed upstream ids and
-// replayed_from as plain row attributes (S07/runs-include-inputs). The daemon
-// implements it over the meta run reads and the run_inputs consumption ledger;
-// the mux depends only on this interface.
+// replayed_from as plain row attributes. The daemon implements it over the meta
+// run reads and the run_inputs consumption ledger; the mux depends only on this
+// interface.
 type RunsHandler interface {
 	// ListRuns returns the run history as a collection payload. When includeInputs
 	// is set each row carries its consumed upstream ids and replayed_from.
@@ -139,10 +139,10 @@ func WithDeadImpact(h DeadImpactHandler) MuxOption {
 	}
 }
 
-// serveRuns handles GET /runs[?include=inputs]. It renders the collection as the
-// section-7 data envelope, or -- when the client asks for NDJSON -- one JSON row
-// per line with no envelope, like any collection route. An unwired reader is a
-// 500 internal fault.
+// serveRuns handles GET /runs[?include=inputs]. It renders the collection as
+// the data envelope, or -- when the client asks for NDJSON -- one JSON row per
+// line with no envelope, like any collection route. An unwired reader is a 500
+// internal fault.
 func (m *mux) serveRuns(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
@@ -248,10 +248,10 @@ func (m *mux) serveDeadImpact(w http.ResponseWriter, r *http.Request, runID stri
 }
 
 // includeInputs reads the runs route's sole optional param, include=inputs: the
-// flag that embeds each run's consumed upstream ids and replayed_from. Any other
-// param -- or include with any value other than inputs -- is a 400 naming it
-// (specification section 7: unknown or unparseable params are rejected, never
-// ignored). It reports the resolved flag and whether the request may proceed.
+// flag that embeds each run's consumed upstream ids and replayed_from. Any
+// other param -- or include with any value other than inputs -- is a 400 naming
+// it (unknown or unparseable params are rejected, never ignored). It reports
+// the resolved flag and whether the request may proceed.
 func includeInputs(w http.ResponseWriter, r *http.Request) (include, ok bool) {
 	q := r.URL.Query()
 	if err := checkKnownSingle(q, map[string]struct{}{"include": {}}); err != nil {
@@ -269,10 +269,9 @@ func includeInputs(w http.ResponseWriter, r *http.Request) (include, ok bool) {
 	}
 }
 
-// writeRunsNDJSON streams a runs collection payload as NDJSON: one JSON row object
-// per line, no envelope (specification section 7). The header is set before the
-// first row; a late marshal fault ends the stream, since the 200 is already
-// committed.
+// writeRunsNDJSON streams a runs collection payload as NDJSON: one JSON row
+// object per line, no envelope. The header is set before the first row; a late
+// marshal fault ends the stream, since the 200 is already committed.
 func writeRunsNDJSON(w http.ResponseWriter, res any) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	for _, row := range asRows(res) {

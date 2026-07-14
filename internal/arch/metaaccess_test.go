@@ -7,14 +7,11 @@ import (
 // TestCLINeverOpensMeta proves the CLI never opens a connection to meta (or the
 // data database): the cli package and its subpackages import neither store (the
 // meta client) nor pg (the data client), so the only route the CLI has to a state
-// change is over the control connection to the leader daemon (specification section
-// 2: "CLI never opens meta; every state change via leader"). The daemon, not the
+// change is over the control connection to the leader daemon. The daemon, not the
 // CLI, holds the database clients; the CLI speaks HTTP/JSON to it. Synthetic graphs
 // plant the forbidden edges, then the real repo must be clean.
-//
-// spec: S02/cli-writes-via-leader
 func TestCLINeverOpensMeta(t *testing.T) {
-	t.Run("S02/cli-writes-via-leader", func(t *testing.T) {
+	t.Run("cli-writes-via-leader", func(t *testing.T) {
 		t.Run("cli importing the meta or data client is a violation", func(t *testing.T) {
 			for _, dep := range []string{"store", "pg", "store/storetest"} {
 				t.Run(dep, func(t *testing.T) {

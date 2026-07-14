@@ -29,15 +29,13 @@ func doReq(t *testing.T, h http.Handler, method, path string) (int, errEnvelope)
 }
 
 // TestStandbyRejectsMutations proves a standby daemon rejects mutation requests
-// with guidance pointing at the leader (specification sections 2 and 15: "standbys
-// reject mutations with leader guidance"). A mutating (non-safe) request on a
-// standby -- or on a daemon whose role is not yet the confirmed leader -- gets the
-// not_leader error envelope carrying the leader hint; the leader accepts mutations
-// (they fall through to normal routing), and reads work on any role.
-//
-// spec: S02/standby-rejects-mutations
+// with guidance pointing at the leader ("standbys reject mutations with leader
+// guidance"). A mutating (non-safe) request on a standby -- or on a daemon
+// whose role is not yet the confirmed leader -- gets the not_leader error
+// envelope carrying the leader hint; the leader accepts mutations (they fall
+// through to normal routing), and reads work on any role.
 func TestStandbyRejectsMutations(t *testing.T) {
-	t.Run("S02/standby-rejects-mutations", func(t *testing.T) {
+	t.Run("standby-rejects-mutations", func(t *testing.T) {
 		t.Run("a standby rejects a mutation with leader guidance", func(t *testing.T) {
 			role := api.NewRoleState()
 			role.SetStandby("10.0.0.7:9000")

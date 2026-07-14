@@ -8,14 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// This file is the map-shaped execution surface the data routes ride
-// (specification section 7): one call executes one engine-built read statement
-// through the shared read pool's full checkout cycle and returns the served
-// rows as column-keyed maps in served order -- the form /q and /data serialize.
-// It also translates the one Postgres refusal the surface must recognize:
-// SQLSTATE 42501 (insufficient_privilege), the database physically bounding a
-// role's read to its granted fields, surfaces as ErrReadForbidden so the route
-// layer can answer 403 forbidden without ever parsing Postgres error text.
+// This file is the map-shaped execution surface the data routes ride: one call
+// executes one engine-built read statement through the shared read pool's full
+// checkout cycle and returns the served rows as column-keyed maps in served order
+// -- the form /q and /data serialize. It also translates the one Postgres refusal
+// the surface must recognize: SQLSTATE 42501 (insufficient_privilege), the
+// database physically bounding a role's read to its granted fields, surfaces as
+// ErrReadForbidden so the route layer can answer 403 forbidden without ever
+// parsing Postgres error text.
 
 // ErrReadForbidden marks a read Postgres itself refused for a missing grant
 // (SQLSTATE 42501): the caller's role lacks a privilege on a field the
@@ -41,12 +41,11 @@ func (p *ReadPool) ExecuteRead(ctx context.Context, role, name, text string, arg
 	return p.executeRead(ctx, role, name, text, args, columns)
 }
 
-// ExecuteReadSelf runs one engine-built statement as the pool's own login role
-// -- the engine itself, the identity an ambient (unix-socket) request carries
-// (specification section 7: socket requests are ambiently authorized). It is a
-// separate, deliberate entry so no caller can reach the engine's own read
-// authority by accidentally passing an empty role to ExecuteRead. The cycle is
-// identical minus SET ROLE.
+// ExecuteReadSelf runs one engine-built statement as the pool's own login role --
+// the engine itself, the identity an ambient (unix-socket) request carries
+// (socket requests are ambiently authorized). It is a separate, deliberate entry
+// so no caller can reach the engine's own read authority by accidentally passing
+// an empty role to ExecuteRead. The cycle is identical minus SET ROLE.
 func (p *ReadPool) ExecuteReadSelf(ctx context.Context, name, text string, args []any, columns []string) ([]map[string]any, error) {
 	return p.executeRead(ctx, "", name, text, args, columns)
 }

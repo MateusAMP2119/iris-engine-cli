@@ -3,9 +3,9 @@ package pg
 import "fmt"
 
 // RenderCaptureTriggers renders the CREATE TRIGGER statements that install the
-// engine's always-on write-capture triggers on a declared user table
-// (specification section 4: statement-level triggers with transition tables, one
-// INSERT...SELECT per statement -- a 10M-row load fires one trigger, not 10M).
+// engine's always-on write-capture triggers on a declared user table:
+// statement-level triggers with transition tables, one INSERT...SELECT per
+// statement -- a 10M-row load fires one trigger, not 10M.
 //
 // The set is three triggers, not one, because Postgres transition tables are
 // per-operation: an AFTER STATEMENT trigger may reference a NEW TABLE only for

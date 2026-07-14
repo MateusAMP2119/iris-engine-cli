@@ -79,14 +79,14 @@ func (p loopPostFake) AfterPass(_ context.Context, report dispatch.PassReport) e
 	return nil
 }
 
-// TestLeaderDrivesLaneLoop proves the daemon leader drives the perpetual lane loop over
-// its single dispatcher once leadership is won: the loop starts eligible members in
-// composer order and runs the dispatcher-owned post-pass bookkeeping only after the pass
-// completes, never mid-pass, and it stops cleanly when leadership ends (specification
-// sections 6.1 and 6.3). This is the daemon-side wiring of the pass loop: lead() composes
+// TestLeaderDrivesLaneLoop proves the daemon leader drives the perpetual lane loop
+// over its single dispatcher once leadership is won: the loop starts eligible
+// members in composer order and runs the dispatcher-owned post-pass bookkeeping
+// only after the pass completes, never mid-pass, and it stops cleanly when
+// leadership ends. This is the daemon-side wiring of the pass loop: lead() composes
 // the loop over the dispatcher and binds it to leadership.
 func TestLeaderDrivesLaneLoop(t *testing.T) {
-	t.Run("S06.1/dispatcher-post-pass-only", func(t *testing.T) {
+	t.Run("dispatcher-post-pass-only", func(t *testing.T) {
 		set := storetest.NewLockSet()
 		role := api.NewRoleState()
 		ev := &loopEvents{}

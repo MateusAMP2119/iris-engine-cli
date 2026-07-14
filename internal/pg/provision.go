@@ -13,8 +13,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the pipeline-independent, idempotent schema provisioner of
-// specification section 5: it walks the declared schemas/ tree and renders the
+// This file is the pipeline-independent, idempotent schema provisioner: it walks
+// the declared schemas/ tree and renders the
 // data-database plan that materializes it. Provisioning is create-if-missing and
 // takes exactly one path per table:
 //
@@ -51,8 +51,8 @@ import (
 // table created from its table.yaml head when no migration files are on disk yet.
 const createHeadID = "0001"
 
-// LiveView is the data database's current physical state as provisioning reads it
-// (specification section 5): which schemas and tables exist, whether each existing
+// LiveView is the data database's current physical state as provisioning reads it:
+// which schemas and tables exist, whether each existing
 // table's capture trigger is installed, and whether the partitioned journal
 // exists. Provisioning consults it so a re-plan against an already-provisioned
 // database is empty. E03.10 supplies the real view from an information_schema and
@@ -101,7 +101,7 @@ type TableLedger struct {
 // oneof with exactly two implementers, create-from-head XOR pending-migration
 // replay. A table's branch is a single value of this type, so it can never hold
 // both paths -- the "exactly one path per table" invariant is structural, not a
-// runtime check (specification section 5).
+// runtime check.
 type TableBranch interface {
 	isTableBranch()
 }
@@ -162,7 +162,7 @@ type TableProvision struct {
 }
 
 // ProvisionPlan is the deterministic data-database plan that materializes the
-// declared schemas/ tree (specification section 5): the schemas to create, the
+// declared schemas/ tree: the schemas to create, the
 // per-table provisioning work, and whether the partitioned journal must be
 // ensured. Apply performs the I/O; the plan itself is pure data, so a --dry-run is
 // exactly the plan without Apply. An empty plan (Empty) means the database already
@@ -180,14 +180,14 @@ type ProvisionPlan struct {
 
 // Empty reports whether the plan does nothing: no schemas to create, no journal to
 // ensure, and no per-table work. A re-plan against an already-provisioned live view
-// is empty, which is exactly the idempotency guarantee (specification section 5).
+// is empty, which is exactly the idempotency guarantee.
 func (p ProvisionPlan) Empty() bool {
 	return len(p.Schemas) == 0 && len(p.Tables) == 0 && !p.EnsureJournal
 }
 
 // PlanProvision renders the provisioning plan for the declared schemas/ tree
-// against a live-Postgres view and the reconstructed migration ledger
-// (specification section 5). It is pipeline-independent: the only table source is
+// against a live-Postgres view and the reconstructed migration ledger. It is
+// pipeline-independent: the only table source is
 // the schemas argument (the walked schemas/ tree), never a pipeline's reads or
 // writes, so every declared table is planned regardless of who references it. It
 // is idempotent: a schema, table, capture trigger, or journal already present in
@@ -273,8 +273,8 @@ func emptyReplay(b TableBranch) bool {
 
 // SelectTableBranch chooses a declared table's provisioning path from a single
 // predicate -- whether it exists in live Postgres -- and returns exactly one
-// branch: create-from-head when absent, pending-migration replay when present
-// (specification section 5). The two are mutually exclusive by construction: the
+// branch: create-from-head when absent, pending-migration replay when present.
+// The two are mutually exclusive by construction: the
 // return is one TableBranch value, so a table can never take both paths. declared
 // is the table.yaml head and raw its verbatim bytes (the create head's checksum
 // source); led is its reconstructed ledger.

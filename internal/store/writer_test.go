@@ -25,10 +25,8 @@ func (c *recordingWriteConn) Exec(_ context.Context, sql string, _ ...any) error
 // re-check (the leader's create-if-missing DDL) through its one connection: the
 // Writer is the sole meta-write path, and EnsureSchema is the leader-only write it
 // performs at election.
-//
-// spec: S04/only-leader-writes-meta
 func TestWriterEnsureSchema(t *testing.T) {
-	t.Run("S04/only-leader-writes-meta", func(t *testing.T) {
+	t.Run("only-leader-writes-meta", func(t *testing.T) {
 		conn := &recordingWriteConn{}
 		w := store.NewWriter(conn)
 
@@ -62,10 +60,8 @@ func TestWriterEnsureSchema(t *testing.T) {
 // dead_lettered run with no worklist row, and reconciliation (which scans only
 // running/queued runs) would never repair it, so the run would be lost from the
 // worklist forever. One CTE closes that window.
-//
-// spec: S02/inflight-runs-deadlettered
 func TestWriterDeadLetterRunAtomic(t *testing.T) {
-	t.Run("S02/inflight-runs-deadlettered", func(t *testing.T) {
+	t.Run("inflight-runs-deadlettered", func(t *testing.T) {
 		conn := &recordingWriteConn{}
 		w := store.NewWriter(conn)
 

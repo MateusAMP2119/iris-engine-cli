@@ -12,12 +12,12 @@ import (
 )
 
 // This file is the daemon's standalone pipeline-gate plane: the
-// api.PipelineGateHandler behind GET /pipelines/{name}/gate (specification sections
-// 6.2 and 7). It is the gate ledger `iris pipeline show` prints, served as its own
-// route for an external renderer or a script that reads only the verdict: per edge
-// the upstream, the resolved verdict from the closed set (open, up_to_date, pending,
-// poisoned), and the upstream's latest run id. It is a read, served on any role from
-// the reader pool, and mutates nothing.
+// api.PipelineGateHandler behind GET /pipelines/{name}/gate. It is the gate ledger
+// `iris pipeline show` prints, served as its own route for an external renderer or
+// a script that reads only the verdict: per edge the upstream, the resolved verdict
+// from the closed set (open, up_to_date, pending, poisoned), and the upstream's
+// latest run id. It is a read, served on any role from the reader pool, and mutates
+// nothing.
 //
 // It resolves the ledger exactly as the pipeline-show readout does -- the same
 // resolveGateEdges over meta feeding the same pure dispatch.Gate over the same

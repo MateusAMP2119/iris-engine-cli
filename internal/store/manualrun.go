@@ -6,18 +6,18 @@ import (
 	"fmt"
 )
 
-// This file is the read and terminal-write surface the manual `iris pipeline run` op
-// composes beyond the registry apply (specification section 8). The reads are plain MVCC
-// (never the single writer, never busy-retried): a pipeline's run target (folder + argv)
-// to execute, its upstreams' latest runs to resolve the depends_on gate, the run_inputs
-// already-consumed check, and the persisted lane rows for the queue-or-run-now routing.
-// The one write here, MarkRunSucceeded, is the guarded running -> succeeded terminal
-// transition the immediate own-lane run records, riding the single Writer like every
-// other run-record write.
+// This file is the read and terminal-write surface the manual `iris pipeline run`
+// op composes beyond the registry apply. The reads are plain MVCC (never the
+// single writer, never busy-retried): a pipeline's run target (folder + argv) to
+// execute, its upstreams' latest runs to resolve the depends_on gate, the
+// run_inputs already-consumed check, and the persisted lane rows for the
+// queue-or-run-now routing. The one write here, MarkRunSucceeded, is the guarded
+// running -> succeeded terminal transition the immediate own-lane run records,
+// riding the single Writer like every other run-record write.
 
-// LaneEntry is one persisted (lane, pipeline, pos) row, the manual router's basis for
-// deciding whether a pipeline is a lane member (queued at the run boundary) or its own
-// lane (run immediately). It mirrors the lanes table (specification section 4).
+// LaneEntry is one persisted (lane, pipeline, pos) row, the manual router's basis
+// for deciding whether a pipeline is a lane member (queued at the run boundary)
+// or its own lane (run immediately). It mirrors the lanes table.
 type LaneEntry struct {
 	// Lane is the lane the row places its pipeline in.
 	Lane string
@@ -37,9 +37,9 @@ type PipelineRunTarget struct {
 	Argv []string
 }
 
-// LatestRunInfo is a pipeline's most recent run: its id and lifecycle state, the single
-// run the depends_on gate reads for an upstream (specification section 6.2), and the
-// handle the immediate runner reads back after minting a manual run.
+// LatestRunInfo is a pipeline's most recent run: its id and lifecycle state, the
+// single run the depends_on gate reads for an upstream, and the handle the
+// immediate runner reads back after minting a manual run.
 type LatestRunInfo struct {
 	// ID is the run's meta id.
 	ID int64
@@ -58,9 +58,9 @@ type ManualReader interface {
 	// LatestRun returns a pipeline's most recent run (highest id), and whether it has
 	// any run at all.
 	LatestRun(ctx context.Context, pipeline string) (LatestRunInfo, bool, error)
-	// Consumed reports whether dependent has a run_inputs row recording upstreamRunID
-	// among the upstream runs any of its runs consumed (the gate's already-consumed
-	// check, specification sections 4 and 6.2).
+	// Consumed reports whether dependent has a run_inputs row recording
+	// upstreamRunID among the upstream runs any of its runs consumed (the gate's
+	// already-consumed check).
 	Consumed(ctx context.Context, dependent string, upstreamRunID int64) (bool, error)
 	// LaneRows returns every persisted (lane, pipeline, pos) row, in (lane, pos) order.
 	LaneRows(ctx context.Context) ([]LaneEntry, error)
@@ -142,8 +142,8 @@ func (r *pgxManualReader) LatestRun(ctx context.Context, pipeline string) (Lates
 	return info, true, nil
 }
 
-// Consumed answers the run_inputs already-consumed check in one plain MVCC query, with
-// no mutable cursor (specification section 6.2).
+// Consumed answers the run_inputs already-consumed check in one plain MVCC query,
+// with no mutable cursor.
 func (r *pgxManualReader) Consumed(ctx context.Context, dependent string, upstreamRunID int64) (bool, error) {
 	rows, err := r.pool.query(ctx, selectConsumedSQL, dependent, upstreamRunID)
 	if err != nil {

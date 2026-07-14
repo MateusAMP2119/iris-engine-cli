@@ -44,8 +44,7 @@ func requireSameDir(t *testing.T, got, want string) {
 func TestQuickstartActStructure(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-act-structure
-	t.Run("S08/quickstart-act-structure", func(t *testing.T) {
+	t.Run("quickstart-act-structure", func(t *testing.T) {
 		t.Run("marks frame the acts; one consent per act; steps run straight through", func(t *testing.T) {
 			chdirWorkspace(t)
 			wd := mustGetwd(t)
@@ -148,8 +147,7 @@ func TestQuickstartActStructure(t *testing.T) {
 func TestQuickstartWorkspacePrompt(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-workspace-prompt
-	t.Run("S08/quickstart-workspace-prompt", func(t *testing.T) {
+	t.Run("quickstart-workspace-prompt", func(t *testing.T) {
 		t.Run("empty answer accepts the ~/iris default: created, entered, announced", func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
@@ -282,8 +280,7 @@ func TestQuickstartWorkspacePrompt(t *testing.T) {
 func TestQuickstartFromInstallerContinuation(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-from-installer-continuation
-	t.Run("S08/quickstart-from-installer-continuation", func(t *testing.T) {
+	t.Run("quickstart-from-installer-continuation", func(t *testing.T) {
 		t.Run("opens on the ENGINE chapter: no welcome, straight to the workspace question", func(t *testing.T) {
 			chdirWorkspace(t)
 			wd := mustGetwd(t)

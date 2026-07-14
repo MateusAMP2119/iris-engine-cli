@@ -8,12 +8,12 @@ import (
 )
 
 // This file is the meta-backed StatsSource: the production implementation of the
-// stats read seam (specification section 11). It draws one plain-MVCC snapshot of
-// the runs, dead-letter worklist, persisted composer, registry, and checkpoint
-// chain from the reader pool, exactly like the other pgx readers -- no session
-// pinning, no busy-retry -- and feeds it to the pure BuildStats composition. The
-// storetest fake satisfies the same seam at integration tier; this is the one that
-// runs against a live Postgres.
+// stats read seam. It draws one plain-MVCC snapshot of the runs, dead-letter
+// worklist, persisted composer, registry, and checkpoint chain from the reader
+// pool, exactly like the other pgx readers -- no session pinning, no busy-retry
+// -- and feeds it to the pure BuildStats composition. The storetest fake
+// satisfies the same seam at integration tier; this is the one that runs against
+// a live Postgres.
 //
 // The journal-side counters (capture counter, wipe-eligible slice, journal size,
 // hot rows) live in the data journal, whose lifecycle machinery is E07's and whose

@@ -79,17 +79,16 @@ func seededWorkloadFake(t *testing.T) *storetest.ShowFake {
 	return f
 }
 
-// TestWorkloadShowWiringPanel claims the integration contract for the wiring
-// panel: renders lanes+composer walk+modes+run tips+per-edge gate state as
-// panel (not commit graph); optional pipeline zooms neighborhood. Uses
+// TestWorkloadShowWiringPanel proves the wiring panel: it renders
+// lanes+composer walk+modes+run tips+per-edge gate state as a panel (not a
+// commit graph); an optional pipeline zooms the neighborhood. Uses
 // in-proc daemon + store fake (no live PG).
 func TestWorkloadShowWiringPanel(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	// spec: S08/workload-show-wiring-panel
-	t.Run("S08/workload-show-wiring-panel", func(t *testing.T) {
+	t.Run("workload-show-wiring-panel", func(t *testing.T) {
 		sock := shortSocket(t)
 		f := seededWorkloadFake(t)
 		startWorkloadDaemon(t, sock, f)

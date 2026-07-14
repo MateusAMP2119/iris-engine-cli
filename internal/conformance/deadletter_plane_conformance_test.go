@@ -17,14 +17,14 @@ func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 // TestDeadletterBlastAndReplay drives the real iris binary end to end against a running
 // daemon and real Postgres to prove the two dead-letter dispositions of the golden
-// sample (specification section 6.2, and the golden sample step 6): the blast-radius
+// sample (golden sample step 6): the blast-radius
 // readout `iris deadletter show` renders, and the root-walking replay that clears the
 // worklist and discards the propagated entry as superseded.
 //
 // The propagation state itself -- a forced failure in extract_orders that propagates to
 // load_orders while reset_counters (composer-only) is untouched -- is the lane loop's to
 // PRODUCE (E13.3). Here it is seeded directly in meta so the readout and the replay
-// disposition, which are this task's contracts, can be proven through the real binary +
+// disposition can be proven through the real binary +
 // daemon + Postgres over registered golden pipelines. `iris deadletter show` reads the
 // blast radius on any node; `iris deadletter replay` mints the root's replacement on the
 // leader, clears the root entry, and discards the propagated entry as superseded.
@@ -95,8 +95,7 @@ func TestDeadletterBlastAndReplay(t *testing.T) {
 
 	loadRef := itoa(loadRun)
 
-	// spec: S13/blast-radius-readout
-	t.Run("S13/blast-radius-readout", func(t *testing.T) {
+	t.Run("blast-radius-readout", func(t *testing.T) {
 		// deadletter show on the PROPAGATED entry walks to the root cause and names
 		// load_orders poisoned and reset_counters untouched (order is not dependency).
 		res := bin.Run(t, RunOptions{Args: []string{"--socket", socket, "deadletter", "show", loadRef, "--json"}})
@@ -125,8 +124,7 @@ func TestDeadletterBlastAndReplay(t *testing.T) {
 		}
 	})
 
-	// spec: S13/replay-root-walk-supersedes
-	t.Run("S13/replay-root-walk-supersedes", func(t *testing.T) {
+	t.Run("replay-root-walk-supersedes", func(t *testing.T) {
 		// deadletter replay on the propagated entry auto-walks to the root failure, mints
 		// a replacement on current data, clears the worklist, and discards the propagated
 		// entry as superseded.

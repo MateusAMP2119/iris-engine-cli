@@ -1,13 +1,12 @@
 // Package golden compares generated artifacts against checked-in golden files
 // byte-for-byte and regenerates them in place under the -update flag.
 //
-// It is the executable form of the fixtures doctrine (specification section
-// 16): every generated artifact -- SQL/DDL, migration YAML, --dry-run previews,
-// --json output -- is diffed byte-for-byte against a checked-in golden and any
-// difference fails the test (S16/golden-byte-diff). Running the suite with
-// -update rewrites the goldens in place instead of failing on a diff
-// (S16/golden-update-flag). A golden diff is therefore a contract diff: a
-// changed golden ships with its spec delta.
+// It is the executable form of the fixtures doctrine: every generated artifact
+// -- SQL/DDL, migration YAML, --dry-run previews, --json output -- is diffed
+// byte-for-byte against a checked-in golden and any difference fails the test.
+// Running the suite with -update rewrites the goldens in place instead of
+// failing on a diff. A golden diff is therefore a contract diff: a changed
+// golden ships only with the deliberate change that produced it.
 //
 // This is test-support infrastructure imported only by _test.go files, so the
 // -update flag it registers never reaches the production iris binary.
@@ -62,7 +61,7 @@ func check(got []byte, goldenPath string, update bool) error {
 	if !bytes.Equal(got, want) {
 		return fmt.Errorf(
 			"golden %s: generated artifact differs from the checked-in golden "+
-				"(a golden diff is a contract diff; run -update only with its spec delta)\n%s",
+				"(a golden diff is a contract diff; run -update only when the change is deliberate)\n%s",
 			goldenPath, diff(want, got))
 	}
 	return nil

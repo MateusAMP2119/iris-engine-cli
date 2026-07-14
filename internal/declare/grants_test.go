@@ -6,22 +6,20 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file proves the grant-intent leaf logic of specification sections 3, 4, 5,
-// and 7: the standing bounds every engine-managed role is held to, expansion of a
+// This file proves the grant-intent leaf logic: the standing bounds every
+// engine-managed role is held to, expansion of a
 // declaration's reads/writes into per-field grants, and expansion of a data PAT's
 // mint read specs. It is pure over values, no I/O.
 
 // TestStrayPublicGrantNonAdditive proves the public-bounds rule specifically: a
 // live grant exceeding the standing bounds every pipeline and data-PAT role is
 // held to -- on public a role may hold read (SELECT) only, and no role may CONNECT
-// to meta -- is classified non-additive drift, reported, and never silently fixed
-// (specification sections 4 and 5). ExceedsStandingBounds codifies the rule, and
+// to meta -- is classified non-additive drift, reported, and never silently fixed.
+// ExceedsStandingBounds codifies the rule, and
 // ClassifyGrantDrift reports such a grant as a stray when it is beyond the ledger's
 // bounds.
-//
-// spec: S05/stray-public-grant-nonadditive
 func TestStrayPublicGrantNonAdditive(t *testing.T) {
-	t.Run("S05/stray-public-grant-nonadditive", func(t *testing.T) {
+	t.Run("stray-public-grant-nonadditive", func(t *testing.T) {
 		// ExceedsStandingBounds codifies the two standing invariants.
 		beyond := []declare.Grant{
 			{Role: "iris_pat_orders", Schema: "public", Object: "orders", Privilege: "INSERT"},

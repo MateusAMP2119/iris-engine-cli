@@ -15,8 +15,6 @@ import (
 // under --json, stdout carries exactly the single error envelope while the
 // daemon-reachability log line lands on stderr. A debug-level logger forces the
 // otherwise-quiet diagnostic out so the test can prove where it lands.
-//
-// spec: S08/logs-separate-from-command-output
 func TestLogsSeparateFromCommandOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))

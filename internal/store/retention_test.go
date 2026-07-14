@@ -36,15 +36,13 @@ func fullPrunableRun() store.PrunableRun {
 	}
 }
 
-// TestBuildRunSummaryCopiesRunFields proves the archival summary copies exactly the
-// run fields that must outlive pruning (specification section 4): run_id, pipeline
-// (copied, not an FK), state, artifact_hash, declaration_checksum, the consumed
-// upstream run ids as a JSON array, and the snapshot_lsn / journal_floor /
-// journal_ceiling pin. It is pure. A dev run's nil artifact hash and nil pin survive
-// as nil (SQL NULL), and a root run's empty consumed set becomes the JSON empty array
-// "[]", never "null".
-//
-// spec: S04/run-summary-construction
+// TestBuildRunSummaryCopiesRunFields proves the archival summary copies exactly
+// the run fields that must outlive pruning: run_id, pipeline (copied, not an FK),
+// state, artifact_hash, declaration_checksum, the consumed upstream run ids as a
+// JSON array, and the snapshot_lsn / journal_floor / journal_ceiling pin. It is
+// pure. A dev run's nil artifact hash and nil pin survive as nil (SQL NULL), and
+// a root run's empty consumed set becomes the JSON empty array "[]", never
+// "null".
 func TestBuildRunSummaryCopiesRunFields(t *testing.T) {
 	tests := []struct {
 		name string
@@ -142,13 +140,11 @@ func stmtIndex(stmts []storetest.RecordedStatement, fragment string) int {
 	return -1
 }
 
-// TestPruneRunSummaryOutlivesPruning proves the pruner writes the archival summary
-// BEFORE it deletes the run, and that run_summaries is insert-only -- never the target
-// of a delete (specification section 4: run_summaries is insert-only, never pruned, so
-// it outlives all it summarizes). The summary INSERT is the first statement issued and
-// precedes the run DELETE; no statement anywhere deletes from run_summaries.
-//
-// spec: S04/run-summaries-outlive-pruning
+// TestPruneRunSummaryOutlivesPruning proves the pruner writes the archival
+// summary BEFORE it deletes the run, and that run_summaries is insert-only --
+// never the target of a delete (run_summaries is insert-only, never pruned, so it
+// outlives all it summarizes). The summary INSERT is the first statement issued
+// and precedes the run DELETE; no statement anywhere deletes from run_summaries.
 func TestPruneRunSummaryOutlivesPruning(t *testing.T) {
 	rec := pruneTxn(t, fullPrunableRun(), nil)
 	stmts := rec.Statements()
@@ -193,14 +189,12 @@ func TestPruneRunSummaryOutlivesPruning(t *testing.T) {
 	}
 }
 
-// TestPruneRunSummarySameTxn proves the archival summary is written inside the SAME
-// meta transaction that deletes the run, so surviving references never dangle
-// (specification section 6.2). The whole prune commits as exactly one atomic ExecTx
-// batch that carries both the summary INSERT and the run DELETE; and an injected meta
-// failure rolls the whole thing back -- recording nothing and deleting no log file --
-// so a failed prune leaves the run and its log intact for the next pass.
-//
-// spec: S06.2/prune-summary-same-txn
+// TestPruneRunSummarySameTxn proves the archival summary is written inside the
+// SAME meta transaction that deletes the run, so surviving references never
+// dangle. The whole prune commits as exactly one atomic ExecTx batch that carries
+// both the summary INSERT and the run DELETE; and an injected meta failure rolls
+// the whole thing back -- recording nothing and deleting no log file -- so a
+// failed prune leaves the run and its log intact for the next pass.
 func TestPruneRunSummarySameTxn(t *testing.T) {
 	t.Run("summary and delete commit as one transaction", func(t *testing.T) {
 		rec := pruneTxn(t, fullPrunableRun(), nil)
@@ -245,18 +239,17 @@ func TestPruneRunSummarySameTxn(t *testing.T) {
 	})
 }
 
-// TestPruneRunCascadesInputsAndLog proves pruning a run cascades to its run_inputs
-// rows and deletes the run's per-run log file (specification section 6.2). The atomic
-// prune deletes the run's OWN consumption ledger rows (run_inputs.run_id = the pruned
-// run); and, after the meta transaction commits, the run's log file is deleted through
-// the supplied hook -- keyed by the run's decimal id, idempotent on an absent file.
-//
-// spec: S06.2/prune-cascades-inputs-and-log
+// TestPruneRunCascadesInputsAndLog proves pruning a run cascades to its
+// run_inputs rows and deletes the run's per-run log file. The atomic prune
+// deletes the run's OWN consumption ledger rows (run_inputs.run_id = the pruned
+// run); and, after the meta transaction commits, the run's log file is deleted
+// through the supplied hook -- keyed by the run's decimal id, idempotent on an
+// absent file.
 func TestPruneRunCascadesInputsAndLog(t *testing.T) {
 	run := fullPrunableRun()
 
-	// A real per-run log file on disk, keyed by the run's decimal id, mirroring the
-	// daemon's .iris/logs layout. The delete hook removes exactly that file.
+	// A real per-run log file on disk, keyed by the run's decimal id, mirroring
+	// the daemon's .iris/logs layout. The delete hook removes exactly that file.
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "run-"+strconv.FormatInt(run.RunID, 10)+".log")
 	if err := os.WriteFile(logPath, []byte("run output\n"), 0o600); err != nil {
@@ -307,10 +300,8 @@ func TestPruneRunCascadesInputsAndLog(t *testing.T) {
 // run_summary. This keeps the pin queryable after the run row is pruned
 // (the provenance walk's summary fallback depends on it). It is pure logic,
 // no I/O: the unit tier for the pin-survives contract.
-//
-// spec: S14/pin-survives-pruning
 func TestPinSurvivesPruning(t *testing.T) {
-	t.Run("S14/pin-survives-pruning", func(t *testing.T) {
+	t.Run("pin-survives-pruning", func(t *testing.T) {
 		run := fullPrunableRun()
 		// Ensure the input carries the pin (the test fixture does).
 		if run.SnapshotLSN == nil || run.JournalFloor == nil || run.JournalCeiling == nil {

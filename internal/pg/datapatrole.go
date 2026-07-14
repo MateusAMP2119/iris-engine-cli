@@ -7,8 +7,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the live data-PAT read-role surface of specification sections 4
-// and 7, the read-side analogue of the pipeline-role provisioning in roles.go. A
+// This file is the live data-PAT read-role surface, the read-side analogue of the
+// pipeline-role provisioning in roles.go. A
 // data PAT owns an engine-managed read-only Postgres role that is NOLOGIN --
 // assumed via SET ROLE on the shared read pool, never connected to directly -- so
 // its provisioning differs from a pipeline login role in three ways: the role is
@@ -25,7 +25,7 @@ import (
 // data-database connection every other provisioning statement rides.
 
 // EngineReadPoolRole is the fixed name of the engine's own read-pool login role:
-// the single identity the shared read pool connects as (specification section 7).
+// the single identity the shared read pool connects as.
 // It holds no table grants of its own; every data-surface read runs under the
 // caller PAT's role, assumed via SET ROLE, so this login is only a connection
 // identity that the data-PAT roles are granted membership to.
@@ -52,7 +52,7 @@ type ReadPoolLoginProvision struct {
 
 // ProvisionReadPoolLogin ensures the engine's read-pool login role exists on the
 // data cluster with exactly its connection identity, issuing the DDL through db in
-// order (specification section 7). It is idempotent: the role is created (with its
+// order. It is idempotent: the role is created (with its
 // least-privilege attributes baked in) if missing, and every credential/GRANT/REVOKE
 // is idempotent, so a re-provision (including a credential rotation on daemon
 // restart) is a safe no-op-or-update. Crucially it never re-asserts the role's
@@ -125,7 +125,7 @@ $iris_read_pool_login$;`, quoteStringLiteral(spec.Role), role),
 }
 
 // DataPATRoleProvision is the request to provision one data-PAT read-only role on
-// the data cluster (specification sections 4 and 7): the NOLOGIN role name
+// the data cluster: the NOLOGIN role name
 // (store.DataPATRoleName), the engine read-pool login it grants membership to (so
 // the pool may SET ROLE to it), the meta database it must not reach, the data
 // database it reads, and the field-level read grants recorded at mint.
@@ -148,8 +148,8 @@ type DataPATRoleProvision struct {
 
 // ProvisionDataPATRole ensures a data PAT's read-only role exists on the data
 // cluster with exactly its declared read access and membership in the engine
-// read-pool login, issuing the DDL through db in order (specification sections 4
-// and 7). It is idempotent: the role is created NOLOGIN (with its least-privilege
+// read-pool login, issuing the DDL through db in order. It is idempotent: the role
+// is created NOLOGIN (with its least-privilege
 // attributes baked in) if missing, and every GRANT/REVOKE is idempotent, so a retry
 // after a partial failure re-issues cleanly. It never re-asserts the attributes with
 // an ALTER ROLE, which would require the SUPERUSER attribute the engine's non-
@@ -158,7 +158,7 @@ type DataPATRoleProvision struct {
 //  1. create the role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE if it does not yet
 //     exist -- never LOGIN, so the role holds no credential and can only be assumed;
 //  2. deny the meta database -- revoke CONNECT from PUBLIC (default-deny) and from
-//     the role -- so the control plane is unreachable to the data PAT (section 2);
+//     the role -- so the control plane is unreachable to the data PAT;
 //  3. grant CONNECT on the data database and USAGE on each granted schema;
 //  4. apply each field-level SELECT grant (RenderGrant);
 //  5. grant the role TO the engine read-pool login WITH SET (so the pool may SET ROLE

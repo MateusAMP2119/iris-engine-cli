@@ -1,12 +1,12 @@
-# Iris CI: the merge gate (spec section 16, S16/ci-pipeline-merge-gate).
+# Iris CI: the merge gate.
 #
-# Per push to the integration lines and per pull request, run every stage the
-# spec fixes: the traceability gate, golangci-lint, database-free unit +
-# integration on a Go 1.25/1.26 matrix, cross-compile build, and the conformance
-# suite against a Postgres service container whose admin role carries CREATEDB.
-# Green across all stages (the gate included) is the merge gate. Windows is
-# deferred from v1 (unix socket, service wrapper, process-group kill need
-# Windows-specific answers); every runner is Ubuntu.
+# Per push to the integration lines and per pull request, run every stage:
+# golangci-lint, database-free unit + integration on a Go 1.25/1.26 matrix,
+# cross-compile build for linux/darwin on amd64/arm64, and the conformance suite
+# against a Postgres service container whose admin role carries CREATEDB.
+# Green across all four stages is the merge gate. Windows is deferred from v1
+# (unix socket, service wrapper, process-group kill need Windows-specific
+# answers); every runner is Ubuntu.
 name: CI
 
 on:
@@ -29,24 +29,6 @@ env:
   GOLANGCI_LINT_VERSION: v2.12.2
 
 jobs:
-  gate:
-    name: Traceability gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_TARGET }}
-          cache: true
-      - name: Gate (backlog mode, merge-blocking)
-        # The gate runs inside go test; a lint violation or spec delta fails it.
-        run: go test ./internal/trace/...
-      - name: Strict gate readout (informational, non-blocking)
-        # The full unclaimed backlog is a deliverable, not a failure during
-        # buildout: surface it without blocking the merge.
-        continue-on-error: true
-        run: IRIS_TRACE_STRICT=1 go test -run TestTraceabilityGateStrict -v ./internal/trace/...
-
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
@@ -99,9 +81,9 @@ jobs:
           cache: true
       - name: Cross-compile build
         env:
-          # cgo-free is a hard constraint (spec section 9): every cross-compiled
-          # artifact is a portable, statically linked binary. Pinned explicitly,
-          # not left to the toolchain's implicit cross-compile default.
+          # cgo-free is a hard project constraint: every cross-compiled artifact
+          # is a portable, statically linked binary. Pinned explicitly, not left
+          # to the toolchain's implicit cross-compile default.
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}

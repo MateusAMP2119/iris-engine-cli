@@ -10,12 +10,12 @@ import (
 // boolPtr returns a pointer to b, for setting an explicit nullable modifier.
 func boolPtr(b bool) *bool { return &b }
 
-// TestTypeMappingClosedSet proves each YAML column type in the closed set of
-// specification section 5 maps to exactly its listed Postgres type, including the
+// TestTypeMappingClosedSet proves each YAML column type in the closed set maps to
+// exactly its listed Postgres type, including the
 // parametrized varchar(n) / numeric(p,s) forms and the bare numeric.
 func TestTypeMappingClosedSet(t *testing.T) {
-	t.Run("S05/type-mapping-closed-set", func(t *testing.T) {
-		// The full spec section 5 table, plus the two parametrized forms and the
+	t.Run("type-mapping-closed-set", func(t *testing.T) {
+		// The full closed type set, plus the two parametrized forms and the
 		// bare numeric, each mapping to exactly its Postgres type.
 		cases := []struct {
 			yaml string
@@ -57,7 +57,7 @@ func TestTypeMappingClosedSet(t *testing.T) {
 // closed set fails apply validation, and the error names the offending table,
 // column, and type.
 func TestUnknownTypeFailsApply(t *testing.T) {
-	t.Run("S05/unknown-type-fails-apply", func(t *testing.T) {
+	t.Run("unknown-type-fails-apply", func(t *testing.T) {
 		// A valid table sweeps clean.
 		ok := &declare.Table{
 			Schema: "analytics",
@@ -103,7 +103,7 @@ func TestUnknownTypeFailsApply(t *testing.T) {
 // TestNullableDefaultsTrue proves a column parsed without an explicit nullable
 // modifier is nullable by default.
 func TestNullableDefaultsTrue(t *testing.T) {
-	t.Run("S05/nullable-defaults-true", func(t *testing.T) {
+	t.Run("nullable-defaults-true", func(t *testing.T) {
 		// No explicit nullable, no primary key: nullable.
 		c := declare.Column{Name: "amount", Type: "numeric"}
 		if !c.IsNullable() {
@@ -120,7 +120,7 @@ func TestNullableDefaultsTrue(t *testing.T) {
 // TestPrimaryKeyImpliesNotNull proves a column marked primary_key is treated as
 // not nullable even when nullable is unspecified.
 func TestPrimaryKeyImpliesNotNull(t *testing.T) {
-	t.Run("S05/primary-key-implies-not-null", func(t *testing.T) {
+	t.Run("primary-key-implies-not-null", func(t *testing.T) {
 		// primary_key with nullable unspecified: not nullable.
 		c := declare.Column{Name: "id", Type: "uuid", PrimaryKey: true}
 		if c.IsNullable() {

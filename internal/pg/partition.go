@@ -6,9 +6,9 @@ import (
 	"strconv"
 )
 
-// This file models the data journal's id-range partitioning (specification
-// sections 4 and 14). data_journal is declared PARTITION BY RANGE (id); its rows
-// are carved into partitions by a count-based threshold, journal_partition_rows
+// This file models the data journal's id-range partitioning. data_journal is
+// declared PARTITION BY RANGE (id); its rows are carved into partitions by a
+// count-based threshold, journal_partition_rows
 // (default 10M, configurable). The threshold is not an exact cap: a partition
 // seals only once it holds at least the threshold's worth of rows AND every
 // in-flight run writing into it has finished AND it holds zero open entries.
@@ -30,7 +30,7 @@ import (
 // identity starting at 1, so 0 is never a valid id and marks an unbounded end:
 // From == 0 renders MINVALUE (the very first partition's lower bound) and To == 0
 // renders MAXVALUE (the open, unsealed tail new stamps land in). A sealed
-// partition is immutable by construction (specification section 14).
+// partition is immutable by construction.
 type Partition struct {
 	// Seq is the partition's ordinal in id order (0 is the first partition).
 	Seq int64
@@ -89,9 +89,9 @@ func InitialPartition() Partition {
 }
 
 // MutablePartitions returns the partitions wipe and promote may touch: the
-// unsealed ones, in input order. Sealed partitions are immutable by construction
-// (specification section 14), so neither wipe (E06.5) nor promote (E06.6) ever
-// includes one. Both operations run over exactly this set.
+// unsealed ones, in input order. Sealed partitions are immutable by construction,
+// so neither wipe (E06.5) nor promote (E06.6) ever includes one. Both operations
+// run over exactly this set.
 func MutablePartitions(parts []Partition) []Partition {
 	var out []Partition
 	for _, p := range parts {
@@ -104,9 +104,8 @@ func MutablePartitions(parts []Partition) []Partition {
 
 // RunWindow is a run's journal window: the inclusive id range [Floor, Ceiling] its
 // stamps occupy (runs.journal_floor at dispatch, runs.journal_ceiling at terminal
-// transition; specification section 4). Stamps of concurrently in-flight runs
-// interleave within a window; the partition invariant is that the whole window
-// stays within one partition.
+// transition). Stamps of concurrently in-flight runs interleave within a window;
+// the partition invariant is that the whole window stays within one partition.
 type RunWindow struct {
 	// RunID is the run this window belongs to (runs.id).
 	RunID int64
@@ -210,9 +209,9 @@ func PartitionOf(boundaries []int64, id int64) int {
 }
 
 // CanSeal reports whether a journal partition is sealable under the seal
-// condition (S14/seal-condition): it must have crossed the row threshold,
-// hold zero open (undo=open) entries, and have no in-flight runs still writing
-// into it (every run that wrote into the partition range has finished).
+// condition: it must have crossed the row threshold, hold zero open (undo=open)
+// entries, and have no in-flight runs still writing into it (every run that wrote
+// into the partition range has finished).
 func CanSeal(threshold, rows int64, openEntries, overlappingInflight int) bool {
 	if threshold <= 0 || rows < threshold {
 		return false
