@@ -131,7 +131,12 @@ func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLea
 		return nil, nil, nil, fmt.Errorf("store: open leader session on meta: %w", err)
 	}
 
-	lock, err := newPgxLeaderLock(&pgxSessionConn{conn: session})
+	// One mutex serializes every statement on the pinned session: the lock's
+	// statements and watchdog pings (pgxSessionConn) and the meta writes
+	// (pgxWriteConn) share the one *pgx.Conn, which is not safe for concurrent
+	// use, and the watchdog runs on its own goroutine.
+	sessionMu := &sync.Mutex{}
+	lock, err := newPgxLeaderLock(&pgxSessionConn{conn: session, mu: sessionMu})
 	if err != nil {
 		_ = session.Close(ctx)
 		return nil, nil, nil, err
@@ -142,7 +147,7 @@ func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLea
 	// currently holds the leader lock, so a write is never issued over a session
 	// that has not re-acquired it -- not before election, and not after a
 	// demotion.
-	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
+	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session, mu: sessionMu})
 	if err != nil {
 		_ = session.Close(ctx)
 		return nil, nil, nil, err
@@ -272,8 +277,12 @@ func (c *Client) Close(ctx context.Context) error {
 
 // pgxWriteConn adapts the leader's session *pgx.Conn to the MetaWriteConn seam:
 // meta writes ride this one session, the same one the advisory lock is pinned to.
+// mu is the session mutex shared with the lock's adapter (pgxSessionConn): the
+// lock's watchdog pings the same connection from its own goroutine, so every
+// write -- and every transaction, whole -- serializes through it.
 type pgxWriteConn struct {
 	conn *pgx.Conn
+	mu   *sync.Mutex
 }
 
 // compile-time proof the leader session adapter satisfies the write and
@@ -284,6 +293,8 @@ var (
 )
 
 func (c *pgxWriteConn) Exec(ctx context.Context, sql string, args ...any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	_, err := c.conn.Exec(ctx, sql, args...)
 	return err
 }
@@ -299,6 +310,11 @@ func (c *pgxWriteConn) Exec(ctx context.Context, sql string, args ...any) error 
 // it was and the connection reusable. The whole batch rides the one lock-holding
 // session, like every other meta write.
 func (c *pgxWriteConn) ExecTx(ctx context.Context, stmts []Statement) error {
+	// The session mutex is held for the WHOLE transaction: a watchdog ping
+	// interleaved between BEGIN and COMMIT would run inside the transaction and
+	// read an aborted one as session death.
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	tx, err := c.conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("store: begin registry transaction: %w", err)

@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 )
 
 // scriptedSession is a fake pinnedConn that records the exact statements the
@@ -21,12 +23,25 @@ type scriptedSession struct {
 	blockAcq   chan struct{} // when non-nil, exec blocks on it before returning (models a held lock)
 	afterClose bool          // set true once close has been called, to detect use-after-return
 	usedAfter  bool          // set if exec ran after a close (a pooled-conn misuse)
+
+	// pingErr scripts the session watchdog's probe result (set before Acquire: the
+	// watchdog goroutine reads it). pings counts probes under mu, since the
+	// watchdog runs on its own goroutine.
+	pingErr error
+	mu      sync.Mutex
+	pings   int
 }
 
 type scriptedExec struct {
 	sql  string
 	args []any
 }
+
+// noopMetaWrite is a MetaWriteConn that accepts everything: the guard-refusal
+// test only cares that the refusal happens BEFORE the connection is reached.
+type noopMetaWrite struct{}
+
+func (noopMetaWrite) Exec(context.Context, string, ...any) error { return nil }
 
 func (s *scriptedSession) exec(ctx context.Context, sql string, args ...any) error {
 	if s.afterClose {
@@ -44,6 +59,19 @@ func (s *scriptedSession) exec(ctx context.Context, sql string, args ...any) err
 		return s.unlockErr
 	}
 	return s.execErr
+}
+
+func (s *scriptedSession) ping(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pings++
+	return s.pingErr
+}
+
+func (s *scriptedSession) pingCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pings
 }
 
 func (s *scriptedSession) close(context.Context) error {
@@ -141,6 +169,101 @@ func TestPgxLeaderLockSessionPinned(t *testing.T) {
 			case <-lock.SessionLost():
 			default:
 				t.Error("SessionLost did not close after Release ended the session")
+			}
+		})
+
+		t.Run("a dead session fires SessionLost and drops Held under a live process", func(t *testing.T) {
+			pingErr := errors.New("connection reset by peer")
+			sess := &scriptedSession{pingErr: pingErr}
+			lock, err := newPgxLeaderLock(sess)
+			if err != nil {
+				t.Fatalf("newPgxLeaderLock: %v", err)
+			}
+			lock.pingInterval = time.Millisecond
+			if err := lock.Acquire(context.Background()); err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+
+			// The watchdog's failed ping is the signal producer: SessionLost fires
+			// with no Release and no process death.
+			select {
+			case <-lock.SessionLost():
+			case <-time.After(3 * time.Second):
+				t.Fatal("SessionLost did not fire after the session watchdog's ping failed")
+			}
+			if lock.Held() {
+				t.Error("Held() = true over a dead session; the write guard would keep permitting writes")
+			}
+
+			// The write guard refuses with ErrNoLeaderLock -- the intended refusal,
+			// not a raw pgx connection error surfacing from the dead session.
+			guard, err := NewLockGuardedConn(lock, noopMetaWrite{})
+			if err != nil {
+				t.Fatalf("NewLockGuardedConn: %v", err)
+			}
+			if err := guard.Exec(context.Background(), "UPDATE runs SET state = 'x'"); !errors.Is(err, ErrNoLeaderLock) {
+				t.Errorf("write over the dead session returned %v, want store.ErrNoLeaderLock", err)
+			}
+
+			// The demotion path still Releases the dead session's lock afterwards:
+			// idempotent teardown, no double SessionLost close, unlock+close issued.
+			if err := lock.Release(context.Background()); err != nil {
+				t.Fatalf("Release after session loss: %v", err)
+			}
+			if sess.closes != 1 {
+				t.Errorf("session closed %d times on post-loss Release, want 1", sess.closes)
+			}
+		})
+
+		t.Run("healthy pings keep leadership: no false demotion", func(t *testing.T) {
+			sess := &scriptedSession{}
+			lock, err := newPgxLeaderLock(sess)
+			if err != nil {
+				t.Fatalf("newPgxLeaderLock: %v", err)
+			}
+			lock.pingInterval = time.Millisecond
+			if err := lock.Acquire(context.Background()); err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+			defer func() { _ = lock.Release(context.Background()) }()
+
+			// Wait until the watchdog has demonstrably probed the session, then some.
+			deadline := time.Now().Add(3 * time.Second)
+			for sess.pingCount() < 3 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if got := sess.pingCount(); got < 3 {
+				t.Fatalf("watchdog issued %d pings, want at least 3; the held session is not being watched", got)
+			}
+			select {
+			case <-lock.SessionLost():
+				t.Error("SessionLost fired over a healthy session")
+			default:
+			}
+			if !lock.Held() {
+				t.Error("Held() = false over a healthy held session")
+			}
+		})
+
+		t.Run("Release stops the watchdog before ending the session", func(t *testing.T) {
+			sess := &scriptedSession{}
+			lock, err := newPgxLeaderLock(sess)
+			if err != nil {
+				t.Fatalf("newPgxLeaderLock: %v", err)
+			}
+			lock.pingInterval = time.Millisecond
+			if err := lock.Acquire(context.Background()); err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+			if err := lock.Release(context.Background()); err != nil {
+				t.Fatalf("Release: %v", err)
+			}
+			// Release joins the watchdog goroutine before the unlock/close statements
+			// run, so after it returns no further ping can ever land.
+			settled := sess.pingCount()
+			time.Sleep(10 * time.Millisecond)
+			if got := sess.pingCount(); got != settled {
+				t.Errorf("watchdog pinged after Release returned (%d -> %d); Release must join the watch first", settled, got)
 			}
 		})
 
