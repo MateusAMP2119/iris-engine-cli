@@ -87,10 +87,11 @@ type Candidate struct {
 	pipelines    *pipelinePlane
 	manualReader store.ManualReader
 	runner       exec.Runner
-	// manualDataDSN is the base scoped data-database connection a manual run's
-	// IRIS_DB_URL is derived from (the run id rides it), the same DSN the lane loop
-	// injects; empty leaves a manual run without a data connection.
-	manualDataDSN string
+	// runConn builds each manual run's IRIS_DB_URL: the pipeline's own
+	// least-privilege login role over the data database, the run id riding it
+	// (the lane loop receives the same builder through its build closure). Nil
+	// leaves a manual run without a data connection.
+	runConn *runConnBuilder
 
 	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
 	// and seal decisions after runs reach terminal.
@@ -276,7 +277,7 @@ func WithDeadletterPlane(dp *deadletterPlane) CandidateOption {
 // for terminal window stamping. dbURL is the base scoped data-database connection a manual
 // run's IRIS_DB_URL is derived from (the same DSN the lane loop injects). A nil pp leaves
 // the candidate without a manual-run plane (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string) CandidateOption {
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, runConn *runConnBuilder) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
@@ -285,7 +286,7 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.objects = objects
 		c.runner = runner
 		c.journalHM = journal
-		c.manualDataDSN = dbURL
+		c.runConn = runConn
 	}
 }
 
@@ -682,6 +683,10 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 			destroyOpts = append(destroyOpts, dispatch.WithObjectDeleter(destroyObjectDeleter{objects: c.objects}))
 		}
 		reg, _ := c.inflight.(*inflightRuns)
+		var roleCreds store.RoleCredentialReader
+		if c.runConn != nil {
+			roleCreds = c.runConn.creds
+		}
 		orch := newControlOrchestrator(
 			c.workspace,
 			dispatch.NewApplier(c.registry, d),
@@ -691,6 +696,8 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 			dispatch.NewLedgerRecorder(d),
 			c.appliedHds,
 			destructiveGate{reader: c.reader, inflight: reg, submit: d},
+			d,
+			roleCreds,
 			c.logger,
 		)
 		c.control.install(orch)
@@ -712,7 +719,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// store (the *pg.Client that also serves as the journal high-watermark), the
 		// meta seal read seam, the single dispatcher (checkpoint insert + archive
 		// flip), and the object store. Nil seams (the shape tests) leave sealing off.
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.manualDataDSN, reg, c.buildSealer(d), c.runLogs, c.logger)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.runConn, reg, c.buildSealer(d), c.runLogs, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

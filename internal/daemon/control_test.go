@@ -89,7 +89,7 @@ func TestProvisionRejectsPublicSchemaFolder(t *testing.T) {
 
 		o := newControlOrchestrator(ws, nil, nil, storetest.NewRegistryFake(),
 			&controlDataFake{live: provEmptyLive()}, controlLedgerFake{},
-			controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil)
+			controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil, nil, nil)
 
 		err := o.provision(context.Background(), true) // dry run: the reserved guard must fire first.
 		if err == nil {
@@ -120,7 +120,7 @@ func TestProvisionEnsuresCaptureOnEmptyPlan(t *testing.T) {
 		}
 		data := &controlDataFake{live: live}
 		o := newControlOrchestrator(ws, nil, nil, storetest.NewRegistryFake(), data,
-			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{"sales.orders": "0001"}}, destructiveGate{}, nil)
+			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{"sales.orders": "0001"}}, destructiveGate{}, nil, nil, nil)
 
 		if err := o.provision(context.Background(), false); err != nil {
 			t.Fatalf("provision: %v", err)
@@ -146,7 +146,7 @@ func TestComposerInterlockCountsRegisteredFromDB(t *testing.T) {
 		reg.SeedLane("etl", "extract", "transform", "load")
 
 		o := newControlOrchestrator(ws, nil, nil, reg, &controlDataFake{live: provEmptyLive()},
-			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil)
+			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil, nil, nil)
 
 		members, err := o.laneMembers(ctx, "etl")
 		if err != nil {

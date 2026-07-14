@@ -134,15 +134,21 @@ type controlOrchestrator struct {
 	// the destroyer runs (--yes refuses on in-flight runs or un-promoted data,
 	// --force cancels the runs and proceeds). An unwired gate (nil reader) skips
 	// evaluation -- the shape-test compositions.
-	gate   destructiveGate
-	logger *slog.Logger
+	gate destructiveGate
+	// submit and roleCreds back the apply-time pipeline-role provisioning: the
+	// ledger writes ride the single writer, and the credential read-back keeps a
+	// re-apply on the persisted secret (create-once). Nil seams skip provisioning
+	// -- the shape-test compositions.
+	submit    dispatch.Submitter
+	roleCreds store.RoleCredentialReader
+	logger    *slog.Logger
 }
 
 // newControlOrchestrator builds the leader's control orchestrator over its workspace
 // root and the wired seams. reg is the plain-MVCC registry reader the composer-destroy
 // interlock counts a lane's registered members from (the lanes table in meta, not the
 // workspace disk). A nil logger discards output.
-func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, reg store.RegistryReader, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, gate destructiveGate, logger *slog.Logger) *controlOrchestrator {
+func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, reg store.RegistryReader, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, gate destructiveGate, submit dispatch.Submitter, roleCreds store.RoleCredentialReader, logger *slog.Logger) *controlOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -155,6 +161,8 @@ func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroy
 		ledgerRec: ledgerRec,
 		heads:     heads,
 		gate:      gate,
+		submit:    submit,
+		roleCreds: roleCreds,
 		logger:    logger,
 	}
 }
@@ -193,6 +201,13 @@ func (o *controlOrchestrator) apply(ctx context.Context, req api.ControlRequest)
 		}
 		if err := o.provision(ctx, req.DryRun); err != nil {
 			return api.ControlResult{}, err
+		}
+		// The role rides AFTER schema provisioning: its schema USAGE and column
+		// grants resolve only once the declared schemas and tables exist.
+		if !req.DryRun {
+			if err := o.provisionPipelineRole(ctx, decl.Pipeline); err != nil {
+				return api.ControlResult{}, err
+			}
 		}
 		return api.ControlResult{Kind: decl.Kind.String(), Target: decl.Pipeline.Name, DryRun: req.DryRun}, nil
 	case declare.KindComposer:
@@ -292,6 +307,70 @@ func (o *controlOrchestrator) unpromotedCount(ctx context.Context, pipeline stri
 		}
 	}
 	return count, nil
+}
+
+// provisionPipelineRole provisions the pipeline's least-privilege login role on
+// the data database and records it in the meta access ledger, as part of every
+// (non-dry-run) pipeline apply. The credential is create-once: a re-apply reads
+// the persisted secret back and re-issues the idempotent DDL, so two applies
+// converge instead of racing fresh secrets. Ledger rewrites ride the single
+// writer (RegisterRole is idempotent, ReplaceGrants is a full-role rewrite, the
+// credential row is written only when freshly minted). Grants are the
+// declaration's reads and writes, exactly -- the run then connects as this role,
+// so Postgres enforces the declared access. Provisioning applies grants
+// additively; a field removed from the declaration leaves its live grant behind
+// until a future revoking tier (mirroring the reported-not-revoked drift
+// doctrine). Unwired seams (nil submit/roleCreds/data) skip provisioning -- the
+// shape-test compositions.
+func (o *controlOrchestrator) provisionPipelineRole(ctx context.Context, p *declare.Pipeline) error {
+	if o.submit == nil || o.roleCreds == nil || o.data == nil {
+		return nil
+	}
+	role := pg.PipelineRoleName(p.Name)
+
+	secret, ok, err := o.roleCreds.RoleSecret(ctx, role)
+	if err != nil {
+		return fmt.Errorf("declare apply: read pipeline role credential: %w", err)
+	}
+	minted := false
+	if !ok {
+		if secret, err = store.GenerateSecret(); err != nil {
+			return fmt.Errorf("declare apply: mint pipeline role credential: %w", err)
+		}
+		minted = true
+	}
+
+	grants, err := declare.GrantsFromAccess(p.Reads, p.Writes)
+	if err != nil {
+		return fmt.Errorf("declare apply: expand declared access for %q: %w", p.Name, err)
+	}
+	if err := pg.ProvisionPipelineRole(ctx, o.data, pg.RoleProvision{
+		Role:          role,
+		CredentialDDL: store.RenderSetRolePassword(role, secret),
+		MetaDatabase:  store.MetaDatabase,
+		DataDatabase:  pg.DataDatabase,
+		Grants:        grants,
+	}); err != nil {
+		return fmt.Errorf("declare apply: provision pipeline role: %w", err)
+	}
+
+	owner := store.PipelineOwner(p.Name)
+	if err := o.submit.Submit(ctx, func(w *store.Writer) error {
+		if err := w.RegisterRole(ctx, role, owner); err != nil {
+			return err
+		}
+		if err := w.RecordAccessGrants(ctx, role, p.Reads, p.Writes); err != nil {
+			return err
+		}
+		if minted {
+			return w.SetCredential(ctx, role, owner, secret)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("declare apply: record pipeline role ledger: %w", err)
+	}
+	o.logger.Info("declare apply: provisioned pipeline role", "pipeline", p.Name, "role", role, "grants", len(grants))
+	return nil
 }
 
 // laneMembers returns the lane's member names from the lanes table in meta (the

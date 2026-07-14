@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -21,17 +22,27 @@ func dbURLFromEnv(env []string) (string, bool) {
 
 // TestManualRunScopedConnectionInjected proves the manual-run plane injects the
 // run-scoped data-database connection into the subprocess environment exactly as
-// the lane path does: the run id rides the base scoped DSN as the iris.run_id GUC
-// (pg.InjectRunID), so a manually-run pipeline's captured writes attribute to its
-// own run. The injection is a function of the base DSN plus the run id, identical
-// whether the run's cause is loop or manual.
+// the lane path does: the run id rides the DSN as the iris.run_id GUC
+// (pg.InjectRunID), so a manually-run pipeline's captured writes attribute to
+// its own run. With no credential seam wired the builder serves its fallback DSN
+// (the pre-provisioning behaviour); the scoped-role path is proven in
+// runconn_internal_test.go.
 func TestManualRunScopedConnectionInjected(t *testing.T) {
 	t.Run("pipeline-scoped-connection-injected", func(t *testing.T) {
 		const base = "postgres://writer:pw@localhost:5432/data?sslmode=disable" //nolint:gosec // G101: test-only fake DSN, not a real credential
+		ctx := context.Background()
+		build := func(t *testing.T) *runConnBuilder {
+			t.Helper()
+			b, err := newRunConnBuilder(base, nil, nil)
+			if err != nil {
+				t.Fatalf("newRunConnBuilder: %v", err)
+			}
+			return b
+		}
 
-		t.Run("the run id rides the base scoped DSN", func(t *testing.T) {
-			m := &manualExec{dbURL: base}
-			got, ok := dbURLFromEnv(m.childEnv(42))
+		t.Run("the run id rides the injected DSN", func(t *testing.T) {
+			m := &manualExec{runConn: build(t)}
+			got, ok := dbURLFromEnv(m.childEnv(ctx, "p", 42))
 			if !ok {
 				t.Fatal("manual child env carries no IRIS_DB_URL")
 			}
@@ -48,24 +59,24 @@ func TestManualRunScopedConnectionInjected(t *testing.T) {
 		})
 
 		t.Run("distinct runs get distinct injected connections", func(t *testing.T) {
-			m := &manualExec{dbURL: base}
-			a, _ := dbURLFromEnv(m.childEnv(1))
-			b, _ := dbURLFromEnv(m.childEnv(2))
+			m := &manualExec{runConn: build(t)}
+			a, _ := dbURLFromEnv(m.childEnv(ctx, "p", 1))
+			b, _ := dbURLFromEnv(m.childEnv(ctx, "p", 2))
 			if a == b {
 				t.Errorf("runs 1 and 2 got the same injected DSN %q; each run must attribute to itself", a)
 			}
 		})
 
-		t.Run("no base scoped DSN yields an empty connection, never a malformed one", func(t *testing.T) {
-			// A manualExec wired with no scoped data connection has an empty base; the
-			// injection stays empty rather than producing an options-only DSN.
+		t.Run("no data connection yields an empty IRIS_DB_URL, never a malformed one", func(t *testing.T) {
+			// A manualExec wired with no run-connection builder has no data
+			// connection; the variable is still present, empty.
 			m := &manualExec{}
-			got, ok := dbURLFromEnv(m.childEnv(42))
+			got, ok := dbURLFromEnv(m.childEnv(ctx, "p", 42))
 			if !ok {
 				t.Fatal("manual child env carries no IRIS_DB_URL key")
 			}
 			if got != "" {
-				t.Errorf("empty base injected %q, want an empty IRIS_DB_URL", got)
+				t.Errorf("no builder injected %q, want an empty IRIS_DB_URL", got)
 			}
 		})
 	})

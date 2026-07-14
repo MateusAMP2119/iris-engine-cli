@@ -14,7 +14,6 @@ import (
 
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -118,7 +117,7 @@ func newLaneLoop(
 	runner exec.Runner,
 	journal dispatch.JournalHighWatermark,
 	objects *store.ObjectStore,
-	dataDSN string,
+	runConn *runConnBuilder,
 	passCounter *dispatch.PassCounter,
 	retention store.RetentionReader,
 	retain int64,
@@ -141,7 +140,7 @@ func newLaneLoop(
 		runner:    runner,
 		journal:   journal,
 		objects:   objects,
-		dataDSN:   dataDSN,
+		runConn:   runConn,
 		runLogs:   runLogs,
 		logger:    logger,
 	}
@@ -225,8 +224,8 @@ type laneExec struct {
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
 	objects   *store.ObjectStore
-	dataDSN   string
-	runLogs   *RunLogWriter // per-run output capture; nil discards (shape tests)
+	runConn   *runConnBuilder // per-run scoped data connection; nil leaves IRIS_DB_URL empty (shape tests)
+	runLogs   *RunLogWriter   // per-run output capture; nil discards (shape tests)
 	logger    *slog.Logger
 }
 
@@ -273,7 +272,7 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 	h, err := m.runner.Start(ctx, exec.Spec{
 		Dir:    filepath.Join(m.workspace, target.Folder),
 		Argv:   argv,
-		Env:    m.childEnv(info.ID),
+		Env:    m.childEnv(ctx, rec.Pipeline, info.ID),
 		Stdout: sink,
 		Stderr: sink,
 	})
@@ -333,16 +332,13 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 }
 
 // childEnv builds a lane run's environment: the inherited daemon environment plus
-// the run-scoped data connection under IRIS_DB_URL, carrying the run id as the
-// per-session iris.run_id GUC so the capture trigger attributes every write to this
-// run. A run whose data DSN is empty (no data database wired) still receives the
-// variable, empty, so a run resolves its connection from one place.
-func (m *laneExec) childEnv(runID int64) []string {
-	url := m.dataDSN
-	if url != "" {
-		url = pg.InjectRunID(url, runID)
-	}
-	return append(os.Environ(), dispatch.DBConnEnvVar+"="+url)
+// the run-scoped data connection under IRIS_DB_URL -- the pipeline's own
+// least-privilege login role, carrying the run id as the per-session iris.run_id
+// GUC so the capture trigger attributes every write to this run. A run with no
+// data connection wired still receives the variable, empty, so a run resolves
+// its connection from one place.
+func (m *laneExec) childEnv(ctx context.Context, pipeline string, runID int64) []string {
+	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.runConn.dsnFor(ctx, pipeline, runID))
 }
 
 // lanePostPass runs the dispatcher-owned bookkeeping after a lane pass completes,
