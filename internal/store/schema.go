@@ -470,8 +470,8 @@ func MetaSchema() Schema {
 			// one and resetting the shared login's password (last-starter-wins, which killed
 			// an earlier node's pool). It lives in meta, engine-admin-only like engine_key:
 			// no grant renderer touches it and every pipeline/data-PAT/read-pool role is
-			// denied CONNECT on meta, so the secret is unreachable to any caller. The shared
-			// meta database standbys already read gives HA superuser-free.
+			// denied CONNECT on meta, so the secret is unreachable to any caller. Keeping it
+			// in the meta database standbys already read is what makes HA superuser-free.
 			{
 				Name: "read_pool_credential",
 				Columns: []Column{

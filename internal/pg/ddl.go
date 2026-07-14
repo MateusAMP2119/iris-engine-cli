@@ -73,9 +73,9 @@ func RenderCreateTable(t *declare.Table) (string, error) {
 
 // RenderAddColumn renders the additive ALTER TABLE ADD COLUMN DDL for one column
 // added to schema.table. It is the applied form of a migration file's recorded
-// column definition; emitting it during sync is E03.7's, this is only the
-// deterministic rendering. A column whose YAML type is outside the closed set
-// returns an error.
+// column definition; emitting it during sync belongs to the sync engine, while
+// this is only the deterministic rendering. A column whose YAML type is outside
+// the closed set returns an error.
 //
 // The ADD COLUMN carries IF NOT EXISTS (Postgres 9.6+) so it is idempotent: the
 // data ALTER runs before the meta migration head is recorded, so a head-record
