@@ -119,3 +119,18 @@ func TestAdminDSNPrivilegeCheck(t *testing.T) {
 		}
 	})
 }
+
+// TestSuperuserBypassesGrantBits proves a bare superuser passes the check even
+// with its rolcreaterole/rolcreatedb bits false: a role created with just
+// SUPERUSER can do everything the individual grants confer, so requiring the
+// bits would refuse a working DSN.
+func TestSuperuserBypassesGrantBits(t *testing.T) {
+	t.Run("superuser-bypasses-grant-bits", func(t *testing.T) {
+		r := scriptedPrivileges{priv: daemon.AdminPrivileges{
+			Role: "root_only", CreateRole: false, CreateDB: false, Superuser: true,
+		}}
+		if err := daemon.CheckPrivileges(context.Background(), r); err != nil {
+			t.Errorf("CheckPrivileges(bare superuser) = %v, want nil (a superuser holds every capability the grants confer)", err)
+		}
+	})
+}

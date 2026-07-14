@@ -64,6 +64,15 @@ func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) 
 
 	src := adminDSN.Source()
 
+	// Preflight the admin DSN's privileges before the first CREATE DATABASE, so a
+	// misconfigured role fails install with the missing grant named (CREATEROLE is
+	// otherwise first needed only at daemon start, letting install report success
+	// on a DSN that was never viable).
+	if err := CheckPrivileges(ctx, NewAdminPrivilegeReader(src.ConnString())); err != nil {
+		return InstallReport{}, err
+	}
+	logger.Info("engine install: admin DSN privileges verified")
+
 	// Open the admin and meta connections the meta bootstrap rides. Close on a
 	// background context so a cancelled install still tears the connections down.
 	conns, err := store.OpenInstallConns(ctx, src)
