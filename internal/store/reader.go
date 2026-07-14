@@ -94,9 +94,21 @@ func (p *pgxReadPool) query(ctx context.Context, sql string, args ...any) (poolR
 	return rows, nil
 }
 
-// selectRunsSQL reads the run records the reader returns. It is a plain SELECT: no
-// locking clause, no advisory-lock interplay, just an MVCC snapshot.
-const selectRunsSQL = "SELECT id, pipeline, state, coalesce(exit_code, 0), coalesce(handle, 0) FROM runs ORDER BY id"
+// selectRunsSQL reads the run records the reader returns, with the RunFilter
+// pushed into the WHERE so a filtered read transfers only its result set, never
+// the whole runs table (runs grows to `retain` rows per pipeline, and pipeline
+// show / reconciliation filter it constantly). An empty filter field matches
+// everything, mirroring runMatchesFilter's zero-value semantics. Each run joins
+// its pipeline's lane row so Run.Lane is populated and the lane filter is
+// answerable (runs carries no lane column; lane membership lives in lanes). It
+// is a plain SELECT: no locking clause, no advisory-lock interplay, just an MVCC
+// snapshot.
+const selectRunsSQL = `SELECT r.id, r.pipeline, r.state, coalesce(r.exit_code, 0), coalesce(r.handle, 0), coalesce(l.lane, '')
+FROM runs r LEFT JOIN lanes l ON l.pipeline = r.pipeline
+WHERE ($1::text = '' OR r.pipeline = $1)
+  AND ($2::text = '' OR r.state = $2)
+  AND ($3::text = '' OR l.lane = $3)
+ORDER BY r.id`
 
 // pgxReader is the pgx-pool-backed Reader.
 type pgxReader struct {
@@ -109,13 +121,13 @@ var _ Reader = (*pgxReader)(nil)
 // newPgxReader builds a reader over a pooled-query seam.
 func newPgxReader(pool readPool) *pgxReader { return &pgxReader{pool: pool} }
 
-// Runs issues one plain MVCC query and scans the result. A query error is returned
-// immediately -- there is no retry, no backoff, no second attempt. filter is still
-// applied in memory over the snapshot rather than pushed into the SELECT
-// (selectRunsSQL takes no parameters); what the read path guarantees is that it is
-// a single, un-retried MVCC query.
+// Runs issues one plain MVCC query and scans the result. A query error is
+// returned immediately -- there is no retry, no backoff, no second attempt. The
+// filter rides the statement as bound parameters (selectRunsSQL), so the
+// database returns only the matching rows and a filtered read never transfers
+// the whole runs table.
 func (r *pgxReader) Runs(ctx context.Context, filter RunFilter) ([]Run, error) {
-	rows, err := r.pool.query(ctx, selectRunsSQL)
+	rows, err := r.pool.query(ctx, selectRunsSQL, filter.Pipeline, string(filter.State), filter.Lane)
 	if err != nil {
 		return nil, fmt.Errorf("store: read runs: %w", err)
 	}
@@ -125,15 +137,13 @@ func (r *pgxReader) Runs(ctx context.Context, filter RunFilter) ([]Run, error) {
 	for rows.Next() {
 		var run Run
 		var exit, handle int64
-		if err := rows.Scan(&run.ID, &run.Pipeline, &run.State, &exit, &handle); err != nil {
+		if err := rows.Scan(&run.ID, &run.Pipeline, &run.State, &exit, &handle, &run.Lane); err != nil {
 			return nil, fmt.Errorf("store: scan run: %w", err)
 		}
 		run.Handle = int(handle)
 		code := int(exit)
 		run.ExitCode = &code
-		if runMatchesFilter(run, filter) {
-			out = append(out, run)
-		}
+		out = append(out, run)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: read runs: %w", err)

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -17,17 +18,20 @@ func (r *countingRows) Scan(...any) error { return nil }
 func (r *countingRows) Err() error        { return nil }
 func (r *countingRows) Close()            { r.closed = true }
 
-// countingPool is a fake readPool that records how many times a query was issued,
-// so a test can prove the reader attempts a failing read exactly once -- no
-// busy-retry, no backoff loop.
+// countingPool is a fake readPool that records how many times a query was issued
+// and with what arguments, so a test can prove the reader attempts a failing read
+// exactly once (no busy-retry, no backoff loop) and pushes the filter into the
+// statement's bound parameters.
 type countingPool struct {
 	attempts int
 	err      error
 	rows     *countingRows
+	lastArgs []any
 }
 
-func (p *countingPool) query(_ context.Context, _ string, _ ...any) (poolRows, error) {
+func (p *countingPool) query(_ context.Context, _ string, args ...any) (poolRows, error) {
 	p.attempts++
+	p.lastArgs = args
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -69,6 +73,26 @@ func TestReaderNoBusyRetry(t *testing.T) {
 			}
 			if pool.rows == nil || !pool.rows.closed {
 				t.Error("reader did not close the rows it opened")
+			}
+		})
+
+		t.Run("the filter rides the statement as bound parameters", func(t *testing.T) {
+			pool := &countingPool{}
+			r := newPgxReader(pool)
+			if _, err := r.Runs(context.Background(), RunFilter{Pipeline: "load", State: RunRunning, Lane: "etl"}); err != nil {
+				t.Fatalf("Runs: %v", err)
+			}
+			want := []any{"load", "running", "etl"}
+			if !reflect.DeepEqual(pool.lastArgs, want) {
+				t.Errorf("filtered read args = %v, want %v (the filter must reach the database, not run in memory)", pool.lastArgs, want)
+			}
+
+			// The zero filter binds empty strings: match-everything at the database.
+			if _, err := r.Runs(context.Background(), RunFilter{}); err != nil {
+				t.Fatalf("Runs (zero filter): %v", err)
+			}
+			if want := []any{"", "", ""}; !reflect.DeepEqual(pool.lastArgs, want) {
+				t.Errorf("zero-filter read args = %v, want %v", pool.lastArgs, want)
 			}
 		})
 	})
