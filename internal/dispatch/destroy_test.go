@@ -3,6 +3,7 @@ package dispatch_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -37,11 +38,13 @@ func (r *recordingReverter) RevertUnpromoted(_ context.Context, pipeline string)
 // to delete (the seam E05/E07 fills with real content-addressed file deletion).
 type recordingObjectDeleter struct {
 	deleted []string
+	hashes  []string
 	fail    error
 }
 
-func (d *recordingObjectDeleter) DeleteObjects(_ context.Context, pipeline string) error {
+func (d *recordingObjectDeleter) DeleteObjects(_ context.Context, pipeline string, hashes []string) error {
 	d.deleted = append(d.deleted, pipeline)
+	d.hashes = append(d.hashes, hashes...)
 	return d.fail
 }
 
@@ -352,22 +355,40 @@ func (r *recordingRunLister) ListPrunableRuns(_ context.Context, pipeline string
 	return append([]store.PrunableRun(nil), r.runs[pipeline]...), nil
 }
 
+func (r *recordingRunLister) ListArtifactHashes(_ context.Context, pipeline string) ([]string, error) {
+	var hashes []string
+	for _, run := range r.runs[pipeline] {
+		if run.ArtifactHash != nil {
+			hashes = append(hashes, *run.ArtifactHash)
+		}
+	}
+	return hashes, nil
+}
+
 // TestDestroySummariesBeforeDelete proves declare destroy writes each remaining
 // run's archival summary into run_summaries BEFORE deleting the run rows, inside
 // the same meta transaction, so journal stamps continue to resolve after the
 // pipeline and its runs are gone.
 func TestDestroySummariesBeforeDelete(t *testing.T) {
 	t.Run("destroy-summaries-before-delete", func(t *testing.T) {
-		// Seed two runs for the pipeline via the lister seam.
+		// Seed two runs for the pipeline via the lister seam, one carrying an
+		// artifact hash (a built run).
+		builtHash := "beefcafe"
 		lister := &recordingRunLister{runs: map[string][]store.PrunableRun{
 			"load_orders": {
-				{RunID: 42, Pipeline: "load_orders", State: store.RunSucceeded, DeclarationChecksum: "declX"},
+				{RunID: 42, Pipeline: "load_orders", State: store.RunSucceeded, DeclarationChecksum: "declX", ArtifactHash: &builtHash},
 				{RunID: 39, Pipeline: "load_orders", State: store.RunSucceeded, DeclarationChecksum: "declY"},
 			},
 		}}
 		h := newDestroyHarnessWithLister(t, lister)
 		if err := h.destroyer.DestroyPipeline(context.Background(), "load_orders"); err != nil {
 			t.Fatalf("DestroyPipeline: %v", err)
+		}
+
+		// The artifact hashes were read BEFORE the retirement deleted the index rows
+		// and handed to the object deleter, so the teardown frees the bytes.
+		if got, want := h.objects.hashes, []string{builtHash}; !reflect.DeepEqual(got, want) {
+			t.Errorf("object deleter received hashes %v, want %v (read pre-retirement)", got, want)
 		}
 
 		txns := h.rec.Transactions()

@@ -116,6 +116,11 @@ type Candidate struct {
 	// ExecuteWipe only while leading.
 	wipes *wipePlane
 
+	// retention is the archival read seam the destroy teardown draws from (the
+	// remaining-run records and artifact-hash census read before retirement). Nil
+	// leaves the destroyer's no-op lister (shape-test compositions).
+	retention store.RetentionReader
+
 	// Promote wiring (for pipeline promote).
 	promotes        *promotePlane
 	promoteState    store.PromoteStateReader
@@ -351,6 +356,17 @@ func WithWipePlane(wp *wipePlane, reader store.Reader, data dataPlane) Candidate
 		c.wipes = wp
 		c.reader = reader
 		c.data = data
+	}
+}
+
+// WithTeardownSeams wires the destroy teardown's archival read: the retention
+// reader supplies the remaining-run records (archival summaries) and the
+// artifact-hash census a pipeline destroy reads before retiring the rows. With
+// it absent, the destroyer falls back to its no-op lister -- no summaries, no
+// freed bytes (the shape-test compositions).
+func WithTeardownSeams(retention store.RetentionReader) CandidateOption {
+	return func(c *Candidate) {
+		c.retention = retention
 	}
 }
 
@@ -611,6 +627,20 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		var destroyOpts []dispatch.DestroyerOption
 		if blocker := c.destroyBlocker(); blocker != nil {
 			destroyOpts = append(destroyOpts, dispatch.WithDestroyBlocker(blocker))
+		}
+		// The teardown seams: the journal-driven revert of the target's un-promoted
+		// disposable data (the same reverse-replay a scoped wipe runs), the archival
+		// reads (remaining-run summaries + artifact-hash census), and the
+		// content-addressed deletion of the artifact bytes. Each wires only when its
+		// seams are present, leaving the no-op defaults for shape compositions.
+		if c.reader != nil && c.data != nil {
+			destroyOpts = append(destroyOpts, dispatch.WithDataReverter(destroyReverter{reader: c.reader, data: c.data}))
+		}
+		if c.retention != nil {
+			destroyOpts = append(destroyOpts, dispatch.WithRunLister(destroyRunLister{retention: c.retention}))
+		}
+		if c.objects != nil {
+			destroyOpts = append(destroyOpts, dispatch.WithObjectDeleter(destroyObjectDeleter{objects: c.objects}))
 		}
 		reg, _ := c.inflight.(*inflightRuns)
 		orch := newControlOrchestrator(

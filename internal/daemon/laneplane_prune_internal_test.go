@@ -55,6 +55,14 @@ func (f *retentionReaderFake) PrunableRunsByID(_ context.Context, ids []int64) (
 	return out, nil
 }
 
+func (f *retentionReaderFake) PrunablePipelineRuns(context.Context, string) ([]store.PrunableRun, error) {
+	return nil, nil
+}
+
+func (f *retentionReaderFake) ArtifactHashes(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
 // recorderSubmitter is a dispatch.Submitter handing each mutation the single
 // writer over the recording write connection, so a test reads the exact
 // statements the prune submitted.

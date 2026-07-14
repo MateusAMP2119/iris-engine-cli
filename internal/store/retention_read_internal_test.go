@@ -155,6 +155,48 @@ func TestPgxRetentionReaderReads(t *testing.T) {
 			}
 		})
 
+		t.Run("the pipeline archival read returns every remaining run, any state", func(t *testing.T) {
+			pool := &retentionScriptPool{bySQL: map[string][][]any{
+				prunablePipelineRunsSQL: {
+					{int64(1), "load", "succeeded", nil, "sum1", nil, nil, nil},
+					{int64(2), "load", "dead_lettered", nil, "sum2", nil, nil, nil},
+				},
+				pipelineRunInputsSQL: {
+					{int64(2), int64(1)},
+				},
+			}}
+			got, err := newPgxRetentionReader(pool).PrunablePipelineRuns(context.Background(), "load")
+			if err != nil {
+				t.Fatalf("PrunablePipelineRuns: %v", err)
+			}
+			want := []PrunableRun{
+				{RunID: 1, Pipeline: "load", State: RunSucceeded, DeclarationChecksum: "sum1"},
+				{RunID: 2, Pipeline: "load", State: RunDeadLettered, DeclarationChecksum: "sum2", ConsumedUpstreamRunIDs: []int64{1}},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("PrunablePipelineRuns =\n %+v, want\n %+v", got, want)
+			}
+			for _, sql := range []string{prunablePipelineRunsSQL, pipelineRunInputsSQL} {
+				args := pool.args[sql]
+				if len(args) != 1 || args[0] != "load" {
+					t.Errorf("query %q args = %v, want [load]", sql, args)
+				}
+			}
+		})
+
+		t.Run("the artifact-hash census returns the pipeline's index rows", func(t *testing.T) {
+			pool := &retentionScriptPool{bySQL: map[string][][]any{
+				artifactHashesSQL: {{"aaa"}, {"bbb"}},
+			}}
+			got, err := newPgxRetentionReader(pool).ArtifactHashes(context.Background(), "load")
+			if err != nil {
+				t.Fatalf("ArtifactHashes: %v", err)
+			}
+			if want := []string{"aaa", "bbb"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("ArtifactHashes = %v, want %v", got, want)
+			}
+		})
+
 		t.Run("no ids reads nothing", func(t *testing.T) {
 			pool := &retentionScriptPool{bySQL: map[string][][]any{}}
 			got, err := newPgxRetentionReader(pool).PrunableRunsByID(context.Background(), nil)

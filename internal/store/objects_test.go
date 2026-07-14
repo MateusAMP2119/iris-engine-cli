@@ -87,3 +87,36 @@ func TestObjectStoreContentAddressed(t *testing.T) {
 		t.Errorf("object-store root holds %v, want exactly the two hashed objects", names)
 	}
 }
+
+// TestObjectStoreDelete proves the teardown deletion: Delete removes exactly the
+// named object, leaves other objects standing, and treats an already-absent
+// object as success (idempotent re-run teardowns).
+func TestObjectStoreDelete(t *testing.T) {
+	t.Run("object-store-delete", func(t *testing.T) {
+		root := t.TempDir()
+		s := store.NewObjectStore(root)
+		hashA, _, err := s.Put(bytes.NewReader([]byte("artifact-a")))
+		if err != nil {
+			t.Fatalf("Put a: %v", err)
+		}
+		hashB, _, err := s.Put(bytes.NewReader([]byte("artifact-b")))
+		if err != nil {
+			t.Fatalf("Put b: %v", err)
+		}
+
+		if err := s.Delete(hashA); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		if _, err := os.Stat(s.Path(hashA)); !os.IsNotExist(err) {
+			t.Errorf("deleted object still present (stat err %v)", err)
+		}
+		if _, err := os.Stat(s.Path(hashB)); err != nil {
+			t.Errorf("unrelated object was disturbed: %v", err)
+		}
+
+		// Idempotent: deleting the already-absent object is not an error.
+		if err := s.Delete(hashA); err != nil {
+			t.Errorf("Delete of an absent object errored: %v", err)
+		}
+	})
+}

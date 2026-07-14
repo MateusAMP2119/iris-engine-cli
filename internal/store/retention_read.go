@@ -24,8 +24,9 @@ type RetentionRunRef struct {
 	Pipeline string
 }
 
-// RetentionReader is the plain-MVCC read seam the post-pass pruner draws from. A
-// pgx-pool-backed implementation and a fake both satisfy it.
+// RetentionReader is the plain-MVCC read seam the post-pass pruner and the
+// destroy teardown's archival step draw from. A pgx-pool-backed implementation
+// and a fake both satisfy it.
 type RetentionReader interface {
 	// RetentionRuns returns every run's (id, pipeline), ascending by id: the
 	// count-based decision's input.
@@ -38,6 +39,15 @@ type RetentionReader interface {
 	// TERMINAL runs are returned: a queued or running run among ids is silently
 	// omitted, so a prune can never delete a run that is still in flight.
 	PrunableRunsByID(ctx context.Context, ids []int64) ([]PrunableRun, error)
+	// PrunablePipelineRuns returns the full archival records of EVERY remaining
+	// run of one pipeline, ascending, any state: the destroy teardown archives
+	// whatever run history still exists before retiring it (the destructive-op
+	// gate has already refused or cancelled in-flight runs by then).
+	PrunablePipelineRuns(ctx context.Context, pipeline string) ([]PrunableRun, error)
+	// ArtifactHashes returns the pipeline's content-addressed artifact hashes
+	// (its artifacts index rows, including built-but-never-run artifacts): the
+	// object bytes a teardown frees once the meta retirement commits.
+	ArtifactHashes(ctx context.Context, pipeline string) ([]string, error)
 }
 
 // SQL the retention reader issues. Each is a plain SELECT over an MVCC snapshot.
@@ -63,6 +73,22 @@ ORDER BY id`
 	// prunableRunInputsSQL reads the selected runs' own consumption ledger rows, the
 	// consumed upstream ids the archival summary preserves as JSON.
 	prunableRunInputsSQL = `SELECT run_id, upstream_run_id FROM run_inputs WHERE run_id = ANY($1) ORDER BY run_id, upstream_run_id`
+
+	// prunablePipelineRunsSQL reads the archival record of every remaining run of
+	// one pipeline, any state: the destroy teardown archives whatever exists.
+	prunablePipelineRunsSQL = `SELECT id, pipeline, state, artifact_hash, declaration_checksum, snapshot_lsn, journal_floor, journal_ceiling
+FROM runs
+WHERE pipeline = $1
+ORDER BY id`
+
+	// pipelineRunInputsSQL reads the consumption ledger rows of one pipeline's runs.
+	pipelineRunInputsSQL = `SELECT ri.run_id, ri.upstream_run_id
+FROM run_inputs ri JOIN runs r ON r.id = ri.run_id
+WHERE r.pipeline = $1
+ORDER BY ri.run_id, ri.upstream_run_id`
+
+	// artifactHashesSQL reads one pipeline's content-addressed artifact hashes.
+	artifactHashesSQL = `SELECT hash FROM artifacts WHERE pipeline = $1 ORDER BY hash`
 )
 
 // pgxRetentionReader is the pgx-pool-backed RetentionReader.
@@ -128,8 +154,41 @@ func (r *pgxRetentionReader) PrunableRunsByID(ctx context.Context, ids []int64) 
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	return r.readPrunable(ctx, prunableRunsSQL, prunableRunInputsSQL, ids)
+}
 
-	rows, err := r.pool.query(ctx, prunableRunsSQL, ids)
+// PrunablePipelineRuns reads the archival records of every remaining run of one
+// pipeline, any state, with each run's consumed upstream ids stitched in.
+func (r *pgxRetentionReader) PrunablePipelineRuns(ctx context.Context, pipeline string) ([]PrunableRun, error) {
+	return r.readPrunable(ctx, prunablePipelineRunsSQL, pipelineRunInputsSQL, pipeline)
+}
+
+// ArtifactHashes reads one pipeline's content-addressed artifact hashes.
+func (r *pgxRetentionReader) ArtifactHashes(ctx context.Context, pipeline string) ([]string, error) {
+	rows, err := r.pool.query(ctx, artifactHashesSQL, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("store: read artifact hashes: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, fmt.Errorf("store: scan artifact hash row: %w", err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: read artifact hashes: %w", err)
+	}
+	return out, nil
+}
+
+// readPrunable runs one archival-record read: the run rows under runsSQL, then
+// their consumption ledger rows under inputsSQL, both parameterized by arg, with
+// the consumed upstream ids stitched into each record.
+func (r *pgxRetentionReader) readPrunable(ctx context.Context, runsSQL, inputsSQL string, arg any) ([]PrunableRun, error) {
+	rows, err := r.pool.query(ctx, runsSQL, arg)
 	if err != nil {
 		return nil, fmt.Errorf("store: read prunable runs: %w", err)
 	}
@@ -150,7 +209,7 @@ func (r *pgxRetentionReader) PrunableRunsByID(ctx context.Context, ids []int64) 
 		return nil, fmt.Errorf("store: read prunable runs: %w", err)
 	}
 
-	inRows, err := r.pool.query(ctx, prunableRunInputsSQL, ids)
+	inRows, err := r.pool.query(ctx, inputsSQL, arg)
 	if err != nil {
 		return nil, fmt.Errorf("store: read prunable run inputs: %w", err)
 	}

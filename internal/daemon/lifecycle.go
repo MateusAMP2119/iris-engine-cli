@@ -319,6 +319,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithWipePlane(wipes, client.Reader(), data),
 		WithLaneLoop(laneBuild),
 		WithLanePlane(lanes),
+		WithTeardownSeams(client.RetentionReader()),
 		WithPassCounter(passCounter),
 		WithDeadletterPlane(deadletters),
 		WithInflightKiller(inflight),

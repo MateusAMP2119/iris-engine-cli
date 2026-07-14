@@ -167,6 +167,17 @@ func (s *ObjectStore) Publish(key string, r io.Reader, mode os.FileMode) (size i
 	return size, nil
 }
 
+// Delete removes the object stored under hash: the content-addressed deletion a
+// pipeline teardown frees its artifact bytes with, called only after the meta
+// index rows naming the hash are gone. An already-absent object is not an error,
+// so a re-run teardown stays idempotent.
+func (s *ObjectStore) Delete(hash string) error {
+	if err := os.Remove(s.Path(hash)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("store: object store: delete object %s: %w", hash, err)
+	}
+	return nil
+}
+
 // syncDir fsyncs a directory so a rename into it is durable across a crash: the
 // published object name survives even if the OS has not yet flushed the directory
 // entry. A close error after a successful sync is still reported.
