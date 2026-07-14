@@ -4,7 +4,6 @@ package conformance
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -39,9 +38,10 @@ func waitForRole(t *testing.T, socket, want string) bool {
 // leader, and proves the standby takes over as the dispatching leader: one
 // scenario, one real kill, both observable outcomes.
 func TestFailoverStandbyTakesOver(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("failover needs two daemons sharing one external meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared advisory lock to contend for)")
-	}
+	// Two daemons share one external meta: the suite-owned embedded cluster (or
+	// an ambient IRIS_PG_DSN), never per-workspace managed mode, whose daemons
+	// have no shared advisory lock to contend for.
+	requireSharedCluster(t)
 	freshDatabases(t)
 	bin := Build(t)
 

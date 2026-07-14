@@ -5,7 +5,6 @@ package conformance
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,10 +21,10 @@ import (
 // CREATEROLE) on the shared external cluster and proves install refuses it,
 // naming the missing grant, and creates nothing.
 func TestInstallPreflightsAdminPrivileges(t *testing.T) {
-	ext := os.Getenv("IRIS_PG_DSN")
-	if ext == "" {
-		t.Skip("the preflight leg mints a weak role on a shared external cluster; set IRIS_PG_DSN (managed mode boots as the superuser, which always passes)")
-	}
+	// The weak role is minted on the shared external cluster: the suite-owned
+	// embedded one, or an ambient IRIS_PG_DSN (managed mode boots as the
+	// superuser, which always passes the preflight).
+	ext := requireSharedCluster(t)
 	freshDatabases(t)
 	bin := Build(t)
 	ws := shortWorkspace(t)

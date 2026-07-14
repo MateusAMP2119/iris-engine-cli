@@ -180,9 +180,9 @@ func scStartStandby(t *testing.T, bin *Binary, ws string) string {
 // takeover leg in failover_conformance_test.go by proving reconciliation AND lane
 // resumption over the sample graph.
 func TestGoldenFailoverStandbyTakeover(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("golden failover needs two candidates on one shared meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared lock to contend for)")
-	}
+	// Two candidates share one meta: the suite-owned embedded cluster (or an
+	// ambient IRIS_PG_DSN).
+	requireSharedCluster(t)
 	ensurePython(t)
 	freshDatabases(t)
 	bin := Build(t)
@@ -260,9 +260,7 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 // sample's own mutations), distinct from the bare standby-rejection leg's rejection
 // of an unregistered "any_pipeline" (standby_rejection_conformance_test.go).
 func TestGoldenStandbyMutationExit6(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("golden standby rejection needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")
-	}
+	requireSharedCluster(t)
 	freshDatabases(t)
 	bin := Build(t)
 
@@ -339,9 +337,7 @@ func TestGoldenStandbyMutationExit6(t *testing.T) {
 // dedicated legs -- this is the integrative proof that the whole scenario runs
 // unattended.
 func TestGoldenScenarioPassesUnattended(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("the full acceptance scenario includes the HA leg (two candidates on one shared meta); set IRIS_PG_DSN (external mode) to run it")
-	}
+	requireSharedCluster(t)
 	ensurePython(t)
 	freshDatabases(t)
 	bin := Build(t)

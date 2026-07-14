@@ -4,7 +4,6 @@ package conformance
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,9 +40,9 @@ func waitForStandby(t *testing.T, socket string) bool {
 // there is no standby to reject against. It is skipped when no external DSN is
 // present.
 func TestStandbyMutationRejection(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("standby rejection needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")
-	}
+	// Two candidates share one meta: the suite-owned embedded cluster (or an
+	// ambient IRIS_PG_DSN).
+	requireSharedCluster(t)
 	// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a prior
 	// test's lingering daemon sessions (including a still-held leader advisory lock), so
 	// the first candidate here wins the lock and leads instead of timing out behind a

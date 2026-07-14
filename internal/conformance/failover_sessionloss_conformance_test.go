@@ -39,9 +39,9 @@ WHERE l.locktype = 'advisory' AND l.granted AND d.datname = $1`
 // failover halves: the standby takes over, and the still-running deposed daemon
 // self-demotes to an honest standby instead of reporting leader forever.
 func TestFailoverSessionLossSelfDemotes(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("session-loss failover needs two daemons sharing one external meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared advisory lock to contend for)")
-	}
+	// Two daemons share one external meta: the suite-owned embedded cluster (or
+	// an ambient IRIS_PG_DSN).
+	requireSharedCluster(t)
 	freshDatabases(t)
 	bin := Build(t)
 
