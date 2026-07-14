@@ -269,17 +269,22 @@ func (a *app) engineUninstall() runE {
 			ctx = context.Background()
 		}
 
-		// Refuse while a daemon candidate holds meta (shared meta is never dropped
-		// under a live candidate). The predicate is still an open seam: nothing is
-		// backed by the leadership/liveness wiring, so the only implementation is
-		// daemon.ProceedWithoutLiveCheck, which always reports no live candidate --
-		// this guard passes today.
-		held, err := daemon.ProceedWithoutLiveCheck().LiveCandidateHoldsMeta(ctx)
-		if err == nil && held {
-			err = daemon.ErrLiveCandidate
+		// Refuse while a daemon candidate is live (engine state is never torn down
+		// out from under a running daemon). Two probes back the guard: the daemon
+		// probe (GET /healthz over the resolved socket/TCP target) catches any
+		// serving daemon, and the pidfile check catches a detached daemon whose
+		// listener is wedged or still starting. A stale pidfile (process gone)
+		// never blocks.
+		held := a.probeDaemon(ctx, settings) == nil
+		if !held {
+			held, _ = daemon.PIDFileLiveCheck(settings).LiveCandidateHoldsMeta(ctx)
 		}
-		if err != nil {
-			return &fault{code: exitOpFailed, codeStr: "uninstall_refused", message: err.Error()}
+		if held {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "uninstall_refused",
+				message: daemon.ErrLiveCandidate.Error() + `; stop the engine first with "iris engine stop"`,
+			}
 		}
 
 		removed, err := daemon.RemoveEngineArtifacts(settings)
