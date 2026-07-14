@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/arch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/arch"
 )
 
 // TestImportGraphOneDirection proves the layering as static analysis: the

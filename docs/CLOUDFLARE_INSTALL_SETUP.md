@@ -45,7 +45,7 @@ export default {
     const path = url.pathname;
 
     // Always fetch the real script from the repo
-    const base = 'https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD';
+    const base = 'https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD';
 
     if (path === '/' || path === '/install.sh') {
       const target = `${base}/install.sh`;

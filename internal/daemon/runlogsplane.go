@@ -8,7 +8,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // This file is the daemon's run-logs plane: the api.RunLogsHandler behind GET

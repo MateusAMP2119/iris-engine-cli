@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
 )
 
 // quickstartStep is one canonical tour step: a stable id, a one-line

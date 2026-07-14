@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // TestDaemonLogRotation proves the daemon log rotates by SIZE only, at a bounded

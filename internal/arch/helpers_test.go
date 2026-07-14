@@ -1,6 +1,6 @@
 package arch_test
 
-import "github.com/MateusAMP2119/iris-engine-cli/internal/arch"
+import "github.com/MateusAMP2119/iris-lakehouse/internal/arch"
 
 // Shared fixtures for the graph checks. The synthetic module lets a test build an
 // import graph in memory -- no I/O -- while the real-repo subtests drive the same

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // WorklistExit is one of the three -- and only three -- ways a dead_letters row

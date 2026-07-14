@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // TestRunReadRoutesServeLive drives the real iris binary and daemon against real

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the production TCP bearer-token verifier: the api.TokenVerifier the

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/socketio"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/socketio"
 )
 
 // TestUnixSocketHTTPRoundTrip is the real socket-HTTP proof: an in-process

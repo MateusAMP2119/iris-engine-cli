@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate proves the production

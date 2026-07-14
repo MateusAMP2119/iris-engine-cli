@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the live half of grant-drift detection: the pg_catalog read that

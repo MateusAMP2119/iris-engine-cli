@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // pinnedManagedPGMajor is the engine's pinned Postgres major version as the data

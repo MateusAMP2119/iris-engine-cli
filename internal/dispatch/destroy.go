@@ -32,7 +32,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // LaneComposerDestroyable reports whether a lane composer is destroyable given the

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the request-side half of the read-API wire contract: the

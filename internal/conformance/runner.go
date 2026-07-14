@@ -43,7 +43,7 @@ import (
 // irisPkg is the import path of the iris command that Build compiles. Building
 // by import path (rather than a relative ./cmd/iris) keeps Build independent of
 // the caller's working directory within the module.
-const irisPkg = "github.com/MateusAMP2119/iris-engine-cli/cmd/iris"
+const irisPkg = "github.com/MateusAMP2119/iris-lakehouse/cmd/iris"
 
 // defaultRunTimeout bounds a single binary invocation so a hung process fails
 // the test promptly instead of the CI job's wall clock.

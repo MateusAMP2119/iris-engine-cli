@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 )
 
 // This file holds the per-run log lifecycle helpers (per-run logs unrotated

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // scriptedPrivileges is a scripted fake of the startup privilege reader: it

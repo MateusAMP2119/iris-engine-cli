@@ -3,7 +3,7 @@ package daemon
 import (
 	"context"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // This file is the leader-side grant-drift reconciliation: on winning

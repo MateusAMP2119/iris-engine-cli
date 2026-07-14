@@ -4,7 +4,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // This file is the daemon's slog wiring (structured JSON logs (slog); human console

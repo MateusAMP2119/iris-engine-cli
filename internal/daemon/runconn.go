@@ -5,8 +5,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file builds the data connection a run is handed in IRIS_DB_URL. A run

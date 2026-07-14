@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/golden"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/golden"
 )
 
 // This file is the honesty suite for `iris run list --graph`, the lineage rail

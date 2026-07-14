@@ -18,7 +18,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // ErrDispatcherStopped is returned by Submit when the dispatcher has stopped: a

@@ -1,4 +1,4 @@
-module github.com/MateusAMP2119/iris-engine-cli
+module github.com/MateusAMP2119/iris-lakehouse
 
 go 1.25
 

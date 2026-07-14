@@ -15,8 +15,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // GroupKiller best-effort SIGKILLs a surviving process group by its recorded

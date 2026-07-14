@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // Recorder is a store.Execer that records the statements issued through it

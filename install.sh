@@ -6,7 +6,7 @@
 #   curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
 #
 # Current (raw GitHub):
-#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash
 #
 # Knobs:
 #   IRIS_VERSION=<tag>   install that release instead of latest
@@ -17,7 +17,7 @@
 #   NO_COLOR             plain output
 set -eu
 
-REPO="MateusAMP2119/iris-engine-cli"
+REPO="MateusAMP2119/iris-lakehouse"
 if [ -n "${IRIS_VERSION:-}" ]; then
   BASE="https://github.com/${REPO}/releases/download/${IRIS_VERSION}"
   requested="${IRIS_VERSION}"

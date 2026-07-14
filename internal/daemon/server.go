@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // This file is the daemon's listener wiring: the one http.Handler (the api mux)

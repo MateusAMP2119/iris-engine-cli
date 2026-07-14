@@ -10,8 +10,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec/exectest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec/exectest"
 )
 
 // startTracked scripts a blocking fake run, starts it, and returns its handle so a

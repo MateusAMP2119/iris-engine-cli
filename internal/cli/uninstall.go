@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
 )
 
 // errNotATerminal reports that the interactive confirmation cannot run because

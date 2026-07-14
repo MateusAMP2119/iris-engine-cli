@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // idleReadInterval bounds how long the perpetual loop waits before re-reading the

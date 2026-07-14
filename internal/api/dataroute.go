@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the raw /data/{schema}/{table} route: the ad-hoc debugging

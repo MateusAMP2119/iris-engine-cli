@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // TestIrisDirDefaultPaths proves the .iris directory path defaults: the unix socket

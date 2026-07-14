@@ -29,7 +29,7 @@ import (
 // gitHubBase is the release surface the production updater walks: GitHub follows
 // <base>/releases/latest with a redirect to <base>/releases/tag/<tag> and serves
 // assets under <base>/releases/download/<tag>/.
-const gitHubBase = "https://github.com/MateusAMP2119/iris-engine-cli"
+const gitHubBase = "https://github.com/MateusAMP2119/iris-lakehouse"
 
 // maxDownloadBytes caps a single release download, so a runaway or hostile
 // response cannot exhaust memory. A published iris archive is a few tens of MB.

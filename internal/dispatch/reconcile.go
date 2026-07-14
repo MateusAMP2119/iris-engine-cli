@@ -17,7 +17,7 @@ package dispatch
 // journal-related (the journal lives in the internal/pg data client, never touched
 // here), the mechanism the no-journal-touch contract asserts.
 
-import "github.com/MateusAMP2119/iris-engine-cli/internal/store"
+import "github.com/MateusAMP2119/iris-lakehouse/internal/store"
 
 // DaemonTerminatedDetail is the human error detail recorded (in dead_letters.error)
 // for a run left in flight when the daemon terminated. The dead-letter *reason* enum

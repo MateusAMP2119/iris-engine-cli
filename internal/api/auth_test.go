@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
 )
 
 // fakeVerifier accepts exactly one bearer token and rejects every other, so the

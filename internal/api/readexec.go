@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the execution composition of the data surface: the seam the
