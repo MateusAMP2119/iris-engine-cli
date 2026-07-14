@@ -55,7 +55,7 @@ func WithDataSource(src DataSource) MuxOption {
 }
 
 // serveData handles GET /data/{schema}/{table}. With either seam unwired it
-// answers the E09.5 internal-fault envelope. Wired, it resolves the declared
+// answers the internal-fault envelope. Wired, it resolves the declared
 // shape (404 for an undeclared table), parses the projection and the eq/range
 // wire grammar (400 naming a refused param), assembles the fixed statement from
 // validated identifiers, and executes it through the read pool as the calling

@@ -7,19 +7,25 @@ import (
 	"strings"
 )
 
-// This file holds the startup privilege check for the admin DSN. Before any lane
-// runs, the daemon validates that the admin role the DSN authenticates as holds the
-// privileges the engine needs: CREATEROLE (to mint pipeline and data-PAT roles),
-// CREATEDB (to create the meta database), and ownership of every managed schema.
-// Superuser is never required — a plain role with those grants passes — and a
-// superuser is accepted, not demanded. A missing privilege fails fast, naming what
-// is missing, so a misconfigured DSN is caught at startup rather than mid-run.
+// This file holds the privilege check for the admin DSN: the validation that the
+// admin role the DSN authenticates as holds the privileges the engine needs --
+// CREATEROLE (to mint pipeline and data-PAT roles), CREATEDB (to create the meta
+// database), and ownership of every managed schema. Superuser is never required —
+// a plain role with those grants passes — and a superuser is accepted, not
+// demanded. A missing privilege fails fast, naming what is missing, so a
+// misconfigured DSN can be caught before any lane runs rather than mid-run.
+//
+// The check is still an unwired seam: nothing implements PrivilegeReader over a
+// live cluster, and no startup path calls CheckPrivileges, so today a
+// misconfigured admin DSN surfaces as the first statement that needs the missing
+// grant rather than as a fail-fast at startup.
 
-// PrivilegeQuery is the catalog query the real reader runs to snapshot the admin
-// role's cluster privileges: the current session role's CREATEROLE, CREATEDB, and
+// PrivilegeQuery is the catalog query a reader runs to snapshot the admin role's
+// cluster privileges: the current session role's CREATEROLE, CREATEDB, and
 // superuser bits from pg_roles. rolsuper is selected only so the check can accept
-// a superuser; it is never a requirement. The pgx-backed reader that runs this
-// query lands in E02.3; the check logic here is proven with a scripted fake.
+// a superuser; it is never a requirement. No pgx-backed reader runs this query
+// today -- the check logic here is proven with a scripted fake and nothing in the
+// startup path calls it yet (see PrivilegeReader).
 const PrivilegeQuery = "SELECT rolcreaterole, rolcreatedb, rolsuper FROM pg_roles WHERE rolname = current_user"
 
 // ErrInsufficientPrivilege is the sentinel a failed privilege check wraps: the
@@ -50,9 +56,10 @@ type AdminPrivileges struct {
 }
 
 // PrivilegeReader reads the admin role's privilege snapshot from the cluster the
-// admin DSN points at (PrivilegeQuery plus the managed-schema ownership check).
-// The pgx-backed reader lands in E02.3; a scripted fake drives CheckPrivileges in
-// tests, so the check needs no live Postgres.
+// admin DSN points at (PrivilegeQuery plus the managed-schema ownership check). It
+// has no pgx-backed implementation: a scripted fake drives CheckPrivileges in
+// tests, so the check needs no live Postgres, and the seam is still waiting for a
+// live reader to be wired into the daemon's startup.
 type PrivilegeReader interface {
 	// ReadPrivileges returns the admin role's current privilege snapshot.
 	ReadPrivileges(ctx context.Context) (AdminPrivileges, error)

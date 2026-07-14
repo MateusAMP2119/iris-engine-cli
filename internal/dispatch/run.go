@@ -23,9 +23,13 @@ import (
 
 // DBConnEnvVar is the environment variable through which the engine injects a run's
 // scoped database connection URL (env = inherited + declared + injected scoped DB
-// connection). It is the documented seam the real per-pipeline scoped connection
-// (E04.4) later populates; today StartRun injects RunSpec.DBURL under this name so a
-// run can already resolve its connection from a single place.
+// connection). StartRun injects RunSpec.DBURL under this name, with the run's id
+// riding it as the iris.run_id session setting, so a run resolves its connection
+// from a single place. What the daemon supplies as RunSpec.DBURL today is the
+// engine's own data-database DSN: the per-pipeline least-privilege login role (pg's
+// ProvisionPipelineRole, over store's roles/grants/credentials ledger) is rendered
+// but never provisioned for a run, so a run does not yet connect as its own scoped
+// role -- this name remains the seam such a connection would arrive through.
 const DBConnEnvVar = "IRIS_DB_URL"
 
 // ErrRunNotInFlight reports that no in-flight run has the given id: it has already

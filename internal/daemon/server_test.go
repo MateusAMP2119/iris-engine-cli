@@ -27,7 +27,7 @@ import (
 
 // fakeVerifier accepts exactly one bearer token, so the TCP listener's PAT gate
 // can be proven to admit an authenticated request and reject the rest without the
-// real (E09.1) PAT store.
+// real PAT store behind it (the store-backed verifier in verifier.go).
 type fakeVerifier struct {
 	good   string
 	scopes []pat.Scope

@@ -24,15 +24,16 @@ import (
 //
 // Drain (`iris deadletter drain`, below) mirrors the same shape: the CLI
 // resolves/validates the scope locally (bare is a usage error, exit 2), then POSTs
-// it to the daemon's leader-gated drain route. Drain is a pure discard: the
-// leader resolves the scope to the exact entries named -- never walking
-// failed_upstream to a root the way replay does --
-// and deletes their dead_letters worklist rows; nothing re-runs, nothing downstream
-// is altered. There is no re-dead-letter outcome for drain (nothing runs, so
-// nothing can dead-letter again), so a clean drain always exits 0; the confirmation
-// gate for this destructive op (typed-name prompt, soft-block y/N) is E10.2's
-// contract, not this one's -- --yes/--force are accepted and forwarded, not yet
-// locally gated.
+// it to the daemon's leader-gated drain route. Drain is a pure discard: the leader
+// resolves the scope to the exact entries named -- never walking failed_upstream to
+// a root the way replay does -- and deletes their dead_letters worklist rows;
+// nothing re-runs, nothing downstream is altered. There is no re-dead-letter
+// outcome for drain (nothing runs, so nothing can dead-letter again), so a clean
+// drain always exits 0. The confirmation gate for this destructive op -- the
+// dev-loop y/N flavor, not a typed-name teardown -- is enforced locally, before the
+// POST: an unconfirmed drain is refused (confirmation_required, exit 4) and never
+// reaches the daemon, while a confirmed one carries the explicit confirm flag the
+// API demands of a destructive route.
 
 // replayScope is the POST /deadletter/replay body: the operator scope, exactly one of
 // a single run, one pipeline's entries, or every outstanding entry. The leader

@@ -111,9 +111,11 @@ func quickstartActsFor(e catalogEntry) []tourAct {
 	}
 }
 
-// quickstartActs returns the act table for the catalog's default entry -- the
-// tour still selects it unconditionally until the shop lands (E16.3). A
-// malformed embedded catalog surfaces as the error.
+// quickstartActs returns the act table for the catalog's default entry. It is the
+// default-entry shorthand behind quickstartSteps; the live surfaces select their
+// entry first -- the shop's interactive pick, an explicit --pipeline, or the
+// default under --yes -- and call quickstartActsFor with it. A malformed embedded
+// catalog surfaces as the error.
 func quickstartActs() ([]tourAct, error) {
 	cat, err := loadCatalog()
 	if err != nil {

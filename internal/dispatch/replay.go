@@ -19,9 +19,9 @@ import (
 // WorklistExit is one of the three -- and only three -- ways a dead_letters row
 // leaves the worklist: a replay that mints a replacement run, a supersession, or a
 // drain. Every exit disposes of the parking row while the run row stays in runs; the
-// set is closed, so a fourth disposition is a bug, never a default. Drain is
-// delivered by E05.8; the model names it here so the closed exit set is asserted
-// whole.
+// set is closed, so a fourth disposition is a bug, never a default. Drain's own
+// resolution lives in drain.go (its write is store.DrainDeadLetters); the model
+// names it here so the closed exit set is asserted whole.
 type WorklistExit int
 
 // The worklist exit paths (a closed set).
@@ -33,7 +33,7 @@ const (
 	// consumes a later upstream run (no replay, no human).
 	ExitSupersession
 	// ExitDrain is a pure discard: the entry is removed, nothing re-runs, the run
-	// becomes prunable (delivered by E05.8).
+	// becomes prunable (`iris deadletter drain`, resolved in drain.go).
 	ExitDrain
 )
 

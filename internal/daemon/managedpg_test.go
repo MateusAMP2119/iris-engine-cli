@@ -252,8 +252,8 @@ func TestExternalPGIdenticalPath(t *testing.T) {
 	})
 
 	t.Run("identical admin-DSN code path", func(t *testing.T) {
-		// The admin DSN external mode resolves is exactly the one the E02.2 admin-DSN
-		// chain resolves for the same settings: Manager.Startup funnels external mode
+		// The admin DSN external mode resolves is exactly the one the admin-DSN chain
+		// resolves for the same settings: Manager.Startup funnels external mode
 		// straight through daemon.Resolve, adding no divergent path.
 		direct, err := daemon.Resolve(settings)
 		if err != nil {

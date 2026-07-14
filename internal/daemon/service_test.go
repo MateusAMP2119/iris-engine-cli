@@ -174,7 +174,7 @@ func TestServiceInstallOnDemand(t *testing.T) {
 			}
 		})
 
-		t.Run("install defaults to the E02.4 ServiceUnitPath seam", func(t *testing.T) {
+		t.Run("install defaults to the ServiceUnitPath seam", func(t *testing.T) {
 			realWS := t.TempDir()
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
 

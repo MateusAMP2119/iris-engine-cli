@@ -36,12 +36,13 @@ type applyEnvelope struct {
 
 // TestCrossModeWarningRidesJSON proves the cross-mode read warning is carried in
 // apply's --json output, and that the warning accompanies the apply rather than
-// replacing it: apply still falls through to the
-// daemon dial (exit 3, no daemon reachable), and the warning rides the single
-// terminal --json envelope. The applyWarnings seam stands in for the meta-backed
-// data-mode facts apply reads once it runs against the daemon (E03.9/E03.10); here
-// it runs the real declare.CheckCrossModeReads over the parsed declaration, so what
-// is proven is the warning structure riding the --json envelope end to end.
+// replacing it: apply still falls through to the daemon dial (exit 3, no daemon
+// reachable), and the warning rides the single terminal --json envelope. The
+// applyWarnings seam stands in for the meta-backed data-mode facts, which no
+// production apply path supplies -- the seam stays nil, and the daemon's /apply
+// route returns no cross-mode warnings (that check runs on pipeline promote). Here
+// the seam runs the real declare.CheckCrossModeReads over the parsed declaration,
+// so what is proven is the warning structure riding the --json envelope end to end.
 func TestCrossModeWarningRidesJSON(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "iris-declare.yaml")

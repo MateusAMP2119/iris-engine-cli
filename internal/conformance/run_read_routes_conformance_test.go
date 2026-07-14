@@ -15,18 +15,18 @@ import (
 )
 
 // TestRunReadRoutesServeLive drives the real iris binary and daemon against real
-// Postgres to prove the E14 read routes now serve live instead of faulting:
-// `iris run list` renders the run history with its
-// consumed upstream ids and replayed_from as plain attributes (and the rail view
-// draws the run_inputs edge), GET /runs/{id}/trace walks the run_inputs ancestry,
-// and GET /pipelines/{name}/gate answers the depends_on gate ledger. Before this
-// wiring these routes reached their unwired no* handlers and faulted 500; here they
-// answer real seeded data end to end.
+// Postgres to prove the E14 read routes serve live instead of faulting: `iris run
+// list` renders the run history with its consumed upstream ids and replayed_from as
+// plain attributes (and the rail view draws the run_inputs edge), GET
+// /runs/{id}/trace walks the run_inputs ancestry, and GET /pipelines/{name}/gate
+// answers the depends_on gate ledger. Before this wiring these routes reached their
+// unwired no* handlers and faulted 500; here they answer real seeded data end to end.
 //
 // The lineage state (a consumption edge, a replay) is seeded directly in meta so the
-// read routes -- this task's subject -- can be proven through the real binary +
+// read routes -- this leg's subject -- can be proven through the real binary +
 // daemon + Postgres over the registered golden pipelines, without depending on the
-// lane loop to produce it (that is E13.3's).
+// lane loop to produce it (producing it live is the lane-loop leg's job:
+// TestGoldenLaneRunsAndFailures).
 func TestRunReadRoutesServeLive(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)

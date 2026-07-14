@@ -134,11 +134,12 @@ func (ConnectionSource) String() string { return redacted }
 func (ConnectionSource) GoString() string { return redacted }
 
 // Connect opens the engine's database connections — meta through the store seam,
-// data through the pg seam — each derived from the single admin DSN. It is the one
-// place the daemon dials Postgres: both connections take their string from the
-// admin DSN's derived source, so no engine connection originates from any other
-// string. The dialers are injected (the pgx-backed ones land in E02.3), so this
-// derivation is provable with recording fakes and no live Postgres.
+// data through the pg seam — each derived from the single admin DSN: both
+// connections take their string from the admin DSN's derived source, so no engine
+// connection originates from any other string. The dialers are injected, so the
+// derivation is provable with recording fakes and no live Postgres. The daemon's
+// live startup path opens the same two connections through the pgx-backed clients
+// (store.Connect, pg.Connect), which take the very same derived source.
 func (a AdminDSN) Connect(ctx context.Context, meta store.Dialer, data pg.Dialer) error {
 	src := a.Source()
 	if err := store.Open(ctx, src, meta); err != nil {

@@ -28,10 +28,11 @@ import (
 // is wired; the object-store, socket, and service-unit removal is real from now.
 
 // ServiceUnitName is the filename of the local service unit under the workspace
-// .iris directory. It is a convention seam: `iris engine service install` (E02.8)
-// generates the real platform unit (systemd/launchd) and may place it elsewhere;
-// until then this workspace-local path is the single agreed location uninstall
-// removes, so the two never disagree on where the unit lives.
+// .iris directory. It is the convention the two halves agree on: `iris engine
+// service install` (service.go) generates the real platform unit (systemd/launchd)
+// and may place it elsewhere when given an explicit path, but its default target is
+// this workspace-local path -- the single location uninstall removes, so the two
+// never disagree on where the unit lives.
 const ServiceUnitName = "iris.service"
 
 // ErrLiveCandidate is returned when uninstall refuses because a daemon candidate
@@ -42,8 +43,10 @@ var ErrLiveCandidate = errors.New("daemon: refusing engine uninstall while a dae
 
 // LiveCandidatePredicate reports whether any daemon candidate currently holds a
 // meta connection, so uninstall can refuse rather than drop meta out from under a
-// live candidate. The real predicate lands with the leadership/liveness wiring
-// (E02.5+); ProceedWithoutLiveCheck is the default until then.
+// live candidate. It is still an open seam: no predicate backed by the
+// leadership/liveness wiring exists, so ProceedWithoutLiveCheck -- which always
+// reports no live candidate -- remains the only implementation and the one the CLI
+// uses.
 type LiveCandidatePredicate interface {
 	// LiveCandidateHoldsMeta reports whether a daemon candidate holds a meta
 	// connection right now.
@@ -51,8 +54,9 @@ type LiveCandidatePredicate interface {
 }
 
 // ProceedWithoutLiveCheck returns the default live-candidate predicate: it reports
-// no live candidate, so uninstall proceeds. It is the documented seam the
-// leadership/liveness wiring (E02.5+) replaces with a real meta-connection check.
+// no live candidate, so uninstall proceeds. It is the documented default a real
+// meta-connection check over the leadership/liveness wiring would replace; nothing
+// replaces it today, so the guard is open.
 func ProceedWithoutLiveCheck() LiveCandidatePredicate { return proceedPredicate{} }
 
 // proceedPredicate is the default LiveCandidatePredicate: it always reports no live
@@ -144,8 +148,8 @@ func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, 
 }
 
 // ServiceUnitPath returns the workspace-local service-unit path for the settings:
-// <workspace>/.iris/iris.service. See ServiceUnitName for why this is a convention
-// seam E02.8 refines.
+// <workspace>/.iris/iris.service. See ServiceUnitName for why this path is the
+// convention service install and engine uninstall share.
 func ServiceUnitPath(s config.Settings) string {
 	return filepath.Join(irisDir(s), ServiceUnitName)
 }

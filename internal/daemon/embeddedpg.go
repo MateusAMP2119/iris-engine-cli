@@ -43,8 +43,9 @@ type pgInstance interface {
 // EmbeddedSupervisor is the production SupervisorFactory. It builds a managed-
 // Postgres supervisor that places the pinned build under the configured
 // <workspace>/.iris/pg directory and supervises it as a child subprocess. It
-// satisfies daemon.SupervisorFactory, so the CLI wires it into a Manager for
-// `iris engine install` and (from E02.4) the daemon lifecycle.
+// satisfies daemon.SupervisorFactory, and is the factory a Manager is built with on
+// both engine paths that need Postgres: `iris engine install` (install.go) and the
+// daemon lifecycle (lifecycle.go).
 func EmbeddedSupervisor(cfg SupervisorConfig) (Supervisor, error) {
 	s := &embeddedSupervisor{cfg: cfg}
 	s.newInstance = s.buildInstance
@@ -93,10 +94,12 @@ func (s *embeddedSupervisor) buildInstance() pgInstance {
 // On a cold install it runs the subprocess only long enough for initdb, then stops
 // it. It is idempotent: when the binaries are already extracted and the data
 // directory already records the pinned major, it does nothing at all -- it does not
-// even start the subprocess, so it never depends on the (memory-only, per-process)
-// engine-minted password matching an already-initialized cluster. Continuity of
-// that credential across separate runs -- so a later `iris engine start` can
-// re-open an existing managed cluster -- is E02.4's connection-bootstrap concern.
+// even start the subprocess, so it never depends on the engine-minted password
+// matching an already-initialized cluster. Continuity of that credential across
+// separate runs -- so a later `iris engine start` can re-open an existing managed
+// cluster -- is managedpg.go's: resolveManagedPassword persists the minted
+// superuser password (engine-owned, 0600) under the managed-Postgres directory and
+// every later start reuses it.
 //
 // Context handling: EnsureInstalled honors a context cancelled before it begins, but
 // once embedded-postgres's Start is underway a cancellation cannot interrupt it --

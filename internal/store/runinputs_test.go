@@ -112,11 +112,11 @@ func TestRunInputsUpstreamNotFK(t *testing.T) {
 
 // TestRunInputsWriteOnce proves run start writes one run_inputs row per consumed
 // upstream run -- several under fan-in -- and never mutates them afterward.
-// CreateRun (the E05.3 run-create path this reuses) mints the runs row and its
-// run_inputs rows as one atomic CTE: the consumed upstream ids flow 1:1 into the
-// single INSERT ... unnest, committed as one transaction, and no statement the
-// write path issues ever UPDATEs run_inputs -- the ledger is written once and is
-// immutable.
+// CreateRun (the run-create write path this reuses, in runs.go) mints the runs row
+// and its run_inputs rows as one atomic CTE: the consumed upstream ids flow 1:1
+// into the single INSERT ... unnest, committed as one transaction, and no
+// statement the write path issues ever UPDATEs run_inputs -- the ledger is written
+// once and is immutable.
 func TestRunInputsWriteOnce(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

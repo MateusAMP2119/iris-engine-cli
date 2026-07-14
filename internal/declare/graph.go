@@ -11,11 +11,13 @@ import (
 // upstreams -- the depends_on edges, "from depends_on to" with from the
 // dependent). ValidateDependencies reads a declaration against this view.
 //
-// The view is deliberately minimal so more than one backing satisfies it: the
-// in-memory Registry here (used to validate a declaration before it is
-// persisted, and in tests), and E03.9's persisted registry (the pipelines and
-// dependencies meta tables). Lane membership is intentionally absent: depends_on
-// is a data gate that may cross lanes, so lane never enters this check.
+// The view is deliberately minimal so any backing satisfies it, though the
+// in-memory Registry here is the only implementation today: apply rebuilds one from
+// the persisted registry -- the pipelines and dependencies meta tables -- and
+// validates the declaration against it before persisting (buildGraph, in
+// internal/dispatch/apply.go); tests build one directly. Lane membership is
+// intentionally absent: depends_on is a data gate that may cross lanes, so lane
+// never enters this check.
 type Graph interface {
 	// Registered reports whether name is a registered pipeline.
 	Registered(name string) bool

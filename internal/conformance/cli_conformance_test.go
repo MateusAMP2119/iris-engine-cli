@@ -225,11 +225,13 @@ func TestReadSurfacesCLIVsAPI(t *testing.T) {
 // capture trigger stamps the journal in the writer's own transaction), and the
 // writing/upstream runs are recorded in meta as a completed run records them.
 // The provenance walk then resolves the stamp -> run facts -> ancestry, and the
-// CLI renders the readout. Attribution rides the injected connection
-// rather than a spawned subprocess because the per-pipeline scoped connection for
-// manual runs is not yet wired (E04.4); the golden uuid analytics.orders is used
-// (not a private bigint table) so the shared data database's schema stays
-// consistent with the neighbouring lineage conformance test.
+// CLI renders the readout. Attribution rides the injected connection rather than a
+// spawned subprocess because the per-pipeline scoped connection for manual runs is
+// still unwired: a spawned run is handed the engine's own data-database DSN with
+// the run id merged in, not a connection authenticating as its pipeline's
+// least-privilege role. The golden uuid analytics.orders is used (not a private
+// bigint table) so the shared data database's schema stays consistent with the
+// neighbouring lineage conformance test.
 func TestProvenanceCLIReadout(t *testing.T) {
 	t.Run("provenance-cli-readout", func(t *testing.T) {
 		// Shared-cluster isolation: this test provisions the golden analytics.orders

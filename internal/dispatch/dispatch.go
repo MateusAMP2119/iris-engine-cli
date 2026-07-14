@@ -6,10 +6,11 @@
 // store.Writer -- which it alone constructs, so no other package can open a second
 // write path to meta.
 //
-// E02.6 lands the write-serialization mechanism and the leader-only schema
-// re-check it carries; the run-record, dead-letter, replay, and journal-lifecycle
-// writes the dispatcher owns join it in later epics, each riding the same Submit
-// path so the single-writer invariant holds for every meta mutation.
+// The dispatcher carries the write-serialization mechanism itself plus the two
+// leader-only writes below (the meta schema re-check and the leader-address
+// advertisement); the run-record, dead-letter, replay, and journal-lifecycle writes
+// it owns all ride the same Submit path, so the single-writer invariant holds for
+// every meta mutation.
 package dispatch
 
 import (

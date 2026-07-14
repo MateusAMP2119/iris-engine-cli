@@ -90,8 +90,8 @@ func InitialPartition() Partition {
 
 // MutablePartitions returns the partitions wipe and promote may touch: the
 // unsealed ones, in input order. Sealed partitions are immutable by construction,
-// so neither wipe (E06.5) nor promote (E06.6) ever includes one. Both operations
-// run over exactly this set.
+// so neither wipe (wipe.go) nor promote (promote.go) ever includes one. Both
+// operations run over exactly this set.
 func MutablePartitions(parts []Partition) []Partition {
 	var out []Partition
 	for _, p := range parts {

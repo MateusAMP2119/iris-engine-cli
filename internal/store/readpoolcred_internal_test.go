@@ -38,8 +38,9 @@ func (f *fakeReadPoolCredMeta) mintReadPoolCredential(_ context.Context, candida
 // TestEnsureReadPoolCredentialPersistsCreateOnce proves the read-pool login secret is
 // persisted create-once in engine-owned meta and reused across daemon starts: a
 // second start reads the stored secret back rather than minting a fresh one, so an
-// earlier node's pool credential is never invalidated by a later start (the E13.7
-// single-node latent gap). The table is ensured create-if-missing first (bootstrap).
+// earlier node's pool credential is never invalidated by a later start (the latent
+// multi-node gap left by minting the pool secret fresh on every daemon start). The
+// table is ensured create-if-missing first (bootstrap).
 func TestEnsureReadPoolCredentialPersistsCreateOnce(t *testing.T) {
 	ctx := context.Background()
 	meta := &fakeReadPoolCredMeta{}

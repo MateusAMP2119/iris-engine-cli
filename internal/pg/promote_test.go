@@ -17,7 +17,7 @@ import (
 // permanent, and does NOTHING else -- no table row or journal entry is copied,
 // moved, or deleted, capture and provenance continue unchanged, and later wipes
 // skip the released entries. The undo lifecycle types (UndoState, JournalEntry,
-// Retirement, WipeTarget, PlanWipe) are the E06.5 wipe model's own; promotion
+// Retirement, WipeTarget, PlanWipe) are the wipe model's own (wipe.go); promotion
 // reuses them so the two halves of the marker lifecycle can never drift.
 
 // promotionFixture returns the canonical two-pipeline journal the promotion

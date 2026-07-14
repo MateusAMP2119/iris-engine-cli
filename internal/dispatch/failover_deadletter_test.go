@@ -1,13 +1,14 @@
 package dispatch_test
 
-// This file is the E11.3 failover cost test: "stopped runs dead-letter and poison
+// This file is the failover cost test: "stopped runs dead-letter and poison
 // dependents' next consumption; unsticking a chain is an explicit `iris deadletter
 // replay`". It composes, over the meta-store fake and with no live Postgres, the
 // exact production pieces a failover exercises in order: the new leader's startup
 // reconciliation (the failover kill's disposal path -- the same Reconciler cold start
-// uses), the depends_on gate and its propagation plan (the E05.6 poisoning mechanism
-// -- this test proves failover- killed runs feed that same path), and the pure replay
-// resolution (E05.7). The chain is stuck for as many passes as no one replays, and
+// uses), the depends_on gate and its propagation plan (gate.go plus propagation.go's
+// PlanPropagation, the poisoning mechanism -- this test proves failover-killed runs
+// feed that same path), and the pure replay resolution (replay.go's
+// ResolveReplayTargets). The chain is stuck for as many passes as no one replays, and
 // only the explicit replay -- never time, never a retry -- unsticks it.
 
 import (

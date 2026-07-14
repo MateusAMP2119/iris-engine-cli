@@ -39,14 +39,14 @@ const leaderAdPollInterval = 500 * time.Millisecond
 // -- and reports the leader role so its listeners accept mutations. Standbys reject
 // mutations and serve reads.
 //
-// Losing the meta session is the other transition (E11.3). Connection death
-// releases the lock at Postgres and promotes the next standby, but connection
-// death is not process death: the deposed daemon must demote ITSELF, explicitly
-// and at once -- stop dispatching (the lane loop is halted before anything else),
-// kill its in-flight runs (their records are the new leader's to dead-letter; the
-// new leader cannot reach the processes across hosts, so the kill is this side's
-// duty), and re-enter standby on a FRESH session, because a dead Postgres session
-// can never re-acquire the lock and its write guard refuses forever.
+// Losing the meta session is the other transition. Connection death releases the
+// lock at Postgres and promotes the next standby, but connection death is not
+// process death: the deposed daemon must demote ITSELF, explicitly and at once --
+// stop dispatching (the lane loop is halted before anything else), kill its
+// in-flight runs (their records are the new leader's to dead-letter; the new leader
+// cannot reach the processes across hosts, so the kill is this side's duty), and
+// re-enter standby on a FRESH session, because a dead Postgres session can never
+// re-acquire the lock and its write guard refuses forever.
 
 // Candidate is one daemon candidate for leadership. Serve blocks it as a standby
 // until it acquires the leader lock, then runs it as the leader (sole dispatcher)
@@ -59,14 +59,16 @@ type Candidate struct {
 
 	// Startup reconciliation, run once on winning the lock before any lane dispatch
 	// (crash recovery). reader is nil when reconciliation is not configured (the
-	// election-only wiring E02.6 tests use), in which case the leader skips
+	// election-only wiring the shape tests use), in which case the leader skips
 	// reconciliation entirely.
 	reader    store.Reader
 	killer    dispatch.GroupKiller
 	hostMatch dispatch.HostMatcher
 	// onDispatchReady is the dispatch-ready latch fired once reconciliation completes,
-	// before the leader role is reported: the seam the E05 lane dispatcher waits on so
-	// no lane is dispatched until crash reconciliation is done. Nil until E05 wires it.
+	// before the leader role is reported and before the lane loop starts. It is an
+	// observation hook: Serve's own ordering is what holds every lane until crash
+	// reconciliation is done, so the daemon's real wiring leaves it nil and only the
+	// tests that assert that ordering set it.
 	onDispatchReady func()
 
 	// Control-plane wiring, installed on winning leadership and cleared on demotion so
@@ -213,9 +215,9 @@ func WithReconciliation(reader store.Reader, killer dispatch.GroupKiller, matche
 }
 
 // WithDispatchReady sets the dispatch-ready latch, fired once reconciliation
-// completes and before the leader role is reported: the hook the E05 lane
-// dispatcher consumes to hold every lane until crash reconciliation is done. A nil
-// hook is ignored.
+// completes and before the leader role is reported and the lane loop starts. It is
+// an observation hook on that ordering -- Serve's own sequencing is what holds every
+// lane until crash reconciliation is done. A nil hook is ignored.
 func WithDispatchReady(hook func()) CandidateOption {
 	return func(c *Candidate) { c.onDispatchReady = hook }
 }
@@ -314,8 +316,8 @@ func WithInflightKiller(k InflightKiller) CandidateOption {
 // (dispatch stopped, in-flight runs killed, dead lock released), never for the
 // first election, and each call must mint a genuinely fresh session -- a dead
 // Postgres session can never re-acquire the lock, and its lock-guarded write
-// connection refuses forever. Absent this option a demotion ends Serve, which is
-// how the pre-E11.3 wiring behaved.
+// connection refuses forever. Absent this option a demotion simply ends Serve
+// rather than re-entering standby.
 func WithFreshSessions(fresh func() (store.LeaderLock, store.MetaWriteConn)) CandidateOption {
 	return func(c *Candidate) { c.fresh = fresh }
 }
@@ -714,8 +716,8 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		defer c.deadletters.clear()
 	}
 
-	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
-	// dispatcher waits on it) before reporting the leader role, so no lane is ever
+	// Reconciliation is done: fire the dispatch-ready latch before reporting the
+	// leader role and before the lane loop starts below, so no lane is ever
 	// dispatched ahead of reconciliation. Advertise this leader's address into the
 	// single-row leadership meta table through the single writer, so a standby
 	// (sharing meta) can name it for retargeting. It rides the same pre-dispatch

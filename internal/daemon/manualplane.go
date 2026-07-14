@@ -18,10 +18,10 @@ import (
 )
 
 // This file is the daemon's leader-side manual-run plane: the composition root that
-// turns POST /pipeline/run and GET /pipeline/list into the E05.5 depends_on gate,
-// the single-writer run-record mints, and the direct subprocess exec. It sits at
-// the top of the import graph (daemon composes api, dispatch, exec, and store) and
-// is the one place they are wired together.
+// turns POST /pipeline/run and GET /pipeline/list into the depends_on gate, the
+// single-writer run-record mints, and the direct subprocess exec. It sits at the
+// top of the import graph (daemon composes api, dispatch, exec, and store) and is
+// the one place they are wired together.
 //
 // The listing is a plain-MVCC read, so it is served on any node (standby included) from
 // the reader pool. The manual run is a mutation -- it mints runs through the single meta
@@ -33,11 +33,12 @@ import (
 //
 // Scope note: an own-lane manual run executes synchronously here (mint cause=manual, run,
 // record terminal). A lane member is queued as a cause=manual run for the lane runner to
-// start in turn (E05.12 owns the perpetual lane loop); the manual path never starts a
-// lane member out of band, so same-lane serialization holds. Each run's IRIS_DB_URL is
-// the base data-database connection carrying the run id (the same injection the lane
-// loop applies), so a manual run's captured writes attribute to its own run; run output
-// is not captured to a log file yet (E05 run logs), so log_ref stays null.
+// start in turn -- the perpetual lane loop (dispatch.Loop, built in laneplane.go) owns
+// starting it -- so the manual path never starts a lane member out of band and same-lane
+// serialization holds. Each run's IRIS_DB_URL is the base data-database connection
+// carrying the run id (the same injection the lane loop applies), so a manual run's
+// captured writes attribute to its own run. Run output is still not captured to a per-run
+// log file (neither run path wires the dispatch.RunLog seam), so log_ref stays null.
 
 // pipelinePlane is the daemon's api.PipelineHandler: it serves the pipeline listing from
 // the reader pool always, and delegates the manual run to the live orchestrator when the
@@ -119,8 +120,8 @@ func (p *pipelinePlane) RunPipeline(ctx context.Context, req api.PipelineRunRequ
 }
 
 // manualOrchestrator runs the leader-side manual `iris pipeline run` against meta and the
-// exec seam. It composes the E05.5 depends_on gate (over the run_inputs consumed check),
-// the edge and lane read seams, and the queue (lane members) and immediate (own-lane) run
+// exec seam. It composes the depends_on gate (over the run_inputs consumed check), the
+// edge and lane read seams, and the queue (lane members) and immediate (own-lane) run
 // seams into the dispatch.ManualRunner, then translates the run's terminal state to the
 // wire outcome the CLI maps to an exit code.
 type manualOrchestrator struct {
@@ -271,9 +272,9 @@ func (l laneReader) LaneRows(ctx context.Context) ([]dispatch.LaneRow, error) {
 	return out, nil
 }
 
-// runQueue mints a lane member's manual run as a queued cause=manual run for the lane
-// runner to start in turn (E05.12), so same-lane serialization holds. It never starts the
-// run.
+// runQueue mints a lane member's manual run as a queued cause=manual run for the
+// perpetual lane loop to start in turn, so same-lane serialization holds. It never starts
+// the run.
 type runQueue struct {
 	exec *manualExec
 }
@@ -305,7 +306,7 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	dbURL     string         // the run's base scoped data-database connection; the run id rides it (empty until the E04.4 scoped connection is provisioned)
+	dbURL     string         // the run's base scoped data-database connection; the run id rides it (the daemon derives it with pg.DataDSN; empty only where no data connection is wired)
 	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
 	logger    *slog.Logger
@@ -435,9 +436,9 @@ func (m *manualExec) childEnv(runID int64) []string {
 }
 
 // injectedDBURL rides the run id on the base scoped DSN, mirroring the lane path's
-// dispatch.injectedDBURL. An empty base DSN (before the E04.4 scoped connection is
-// provisioned) stays empty rather than becoming a malformed options-only DSN; a
-// non-positive run id leaves the base unchanged. Otherwise the run id is merged in as
+// dispatch.injectedDBURL. An empty base DSN (a wiring with no scoped data connection,
+// as in the shape tests) stays empty rather than becoming a malformed options-only DSN;
+// a non-positive run id leaves the base unchanged. Otherwise the run id is merged in as
 // the iris.run_id connection option the capture trigger reads in-transaction.
 func (m *manualExec) injectedDBURL(runID int64) string {
 	if m.dbURL == "" {

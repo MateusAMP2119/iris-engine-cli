@@ -9,11 +9,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file proves the E09.5 route-mux half of the read API: the fixed
-// engine-state route roster (the meta-roster routes with their item sub-routes
-// plus the E14 graph and triage routes), all GET; the role report on GET
-// /healthz and GET /leader; and the per-route scope checks with the 403 split
-// between the engine-state and data surfaces.
+// This file proves the route-mux half of the read API: the fixed engine-state
+// route roster (the meta-roster routes with their item sub-routes plus the E14
+// graph and triage routes), all GET; the role report on GET /healthz and GET
+// /leader; and the per-route scope checks with the 403 split between the
+// engine-state and data surfaces.
 
 // engineStateRoutes is the fixed engine-state roster, each pattern instantiated
 // with sample path params: the meta-roster collection and item routes plus the

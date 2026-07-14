@@ -82,9 +82,13 @@ type GrantReconcile struct {
 }
 
 // LiveGrantReader reads a role's current field-level grants from the data database
-// (a pg_catalog / information_schema.column_privileges read). *Client implements it
-// against a live Postgres; a fake stands in at integration tier so reconcile is
-// provable with no live database.
+// (a pg_catalog / information_schema.column_privileges read). Nothing implements it
+// against a live Postgres: the only implementation is the fake in this package's
+// tests, which is what makes the reconcile below provable with no live database.
+// Reconcile and ReconcileGrants have no caller outside those tests either --
+// production issues grants without a live read, applying the ledger's fixed
+// per-field set directly as DDL (ProvisionDataPATRole, datapatrole.go), so a stray
+// grant held by Postgres beyond the ledger is never detected today.
 type LiveGrantReader interface {
 	// ReadFieldGrants returns the field-level grants Postgres currently holds for
 	// role.

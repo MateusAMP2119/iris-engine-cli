@@ -1,6 +1,6 @@
 package daemon_test
 
-// This file is the E11.3 failover-transition suite: the leadership handover
+// This file is the failover-transition suite: the leadership handover
 // semantics, proven at integration tier over the meta-store fakes
 // (storetest.LockSet models the one advisory lock, storetest.Fake the meta run
 // records) and the exec-seam fake (exectest models subprocesses) -- no live

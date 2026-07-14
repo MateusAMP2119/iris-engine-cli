@@ -10,7 +10,7 @@ import (
 
 // This file is the manual pipeline-run path: iris pipeline run <name>. A manual run
 // applies the depends_on gate EXACTLY like a loop pass -- the same
-// Gate.Evaluate/Decide (E05.5), no manual-only relaxation -- and, when the gate
+// Gate.Evaluate/Decide from gate.go, no manual-only relaxation -- and, when the gate
 // opens, mints a run cause=manual that consumes the upstream successes it ran
 // against, one run_inputs row per edge (1:1). An ineligible gate mints no run and the
 // CLI exits 4 with the reason; an awaited-upstream-dead-lettered gate poisons
@@ -62,9 +62,9 @@ func (d ManualDisposition) String() string {
 
 // ManualGate is the result of applying the depends_on gate to a manual run: its
 // disposition, the run record to mint when runnable (cause=manual, consuming the
-// resolved upstreams 1:1), the ineligibility reason when the gate did not open (for the
-// CLI's exit-4 message), and the per-edge gate ledger (the E05.5 read surface). Record
-// is the zero RunRecord unless Disposition is ManualRunnable.
+// resolved upstreams 1:1), the ineligibility reason when the gate did not open (for
+// the CLI's exit-4 message), and the per-edge gate ledger (gate.go's EdgeVerdict
+// read surface). Record is the zero RunRecord unless Disposition is ManualRunnable.
 type ManualGate struct {
 	// Disposition is the classified gate outcome.
 	Disposition ManualDisposition
@@ -76,12 +76,12 @@ type ManualGate struct {
 	Ledger []EdgeVerdict
 }
 
-// EvaluateManual applies the depends_on gate to a manual run of pipeline for one pass,
-// exactly like a loop pass: it resolves the gate over edges plus the run_inputs
-// already-consumed check with Gate.Evaluate -- the same decision, no mutable cursor
-// (E05.5) -- then classifies the result for the manual path. A reader error aborts
-// before any classification, so a manual run never decides on a half-read consumed
-// check.
+// EvaluateManual applies the depends_on gate to a manual run of pipeline for one
+// pass, exactly like a loop pass: it resolves the gate over edges plus the
+// run_inputs already-consumed check with Gate.Evaluate -- the same decision, no
+// mutable cursor -- then classifies the result for the manual path. A reader error
+// aborts before any classification, so a manual run never decides on a half-read
+// consumed check.
 func (g *Gate) EvaluateManual(ctx context.Context, pipeline string, edges []Edge) (ManualGate, error) {
 	d, err := g.Evaluate(ctx, pipeline, edges)
 	if err != nil {
@@ -182,8 +182,9 @@ func (s ManualRunState) String() string {
 
 // EdgeReader resolves a pipeline's depends_on edges for the manual-run gate: its
 // upstreams, each upstream's latest run disposition and id, and the awaited-from
-// baseline (E05.5 Edge). A meta-backed implementation (dependency edges joined to each
-// upstream's latest run) and a fake both satisfy it.
+// baseline (gate.go's Edge). The daemon's manual plane supplies the meta-backed
+// implementation (dependency edges joined to each upstream's latest run); a fake
+// satisfies it in tests.
 type EdgeReader interface {
 	// Edges returns pipeline's depends_on edges, resolved against each upstream's most
 	// recent run. A pipeline with no depends_on edges returns none (ungated).

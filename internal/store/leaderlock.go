@@ -11,8 +11,9 @@ import (
 // releases it so the next standby acquires and becomes leader. The lock MUST be
 // held on a session-pinned connection -- one dedicated pgx *Conn, never a pooled
 // connection whose return to the pool would release the lock. This package owns
-// that lock; failover (self-demotion on session loss, standby promotion) is E11
-// -- E02.6 lands election and the single-writer path.
+// the lock and the single-writer path it guards; failover itself -- self-demotion
+// when the session is lost, and the promotion of a standby blocked in Acquire --
+// is driven by the daemon's election loop (internal/daemon/leadership.go).
 
 // LeaderLockKey is the fixed 64-bit key of the leader-election advisory lock. It
 // is a single, documented constant so every engine candidate contends for the
@@ -48,8 +49,9 @@ type LeaderLock interface {
 	// Release relinquishes the leader lock, so a blocked standby can acquire it.
 	Release(ctx context.Context) error
 	// SessionLost returns a channel closed when the lock's session dies.
-	// Connection death releases the lock; the daemon watches this to self-demote.
-	// Failover consumption of it is E11.
+	// Connection death releases the lock; the daemon's election loop watches this
+	// to self-demote -- it stops dispatching, kills in-flight runs, and re-enters
+	// standby.
 	SessionLost() <-chan struct{}
 }
 

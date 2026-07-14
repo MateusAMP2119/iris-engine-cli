@@ -128,11 +128,13 @@ func (a *app) groupStub() runE {
 	}
 }
 
-// daemonStub is the handler of a command that must reach a running daemon: it
-// dials the resolved daemon and, with none reachable, reports no-daemon (exit 3)
-// with start guidance, never auto-starting one. When the daemon is reachable the
-// command is not wired yet, so it reports not-implemented (exit 4); the command's
-// real body lands in a later epic.
+// daemonStub is the handler of a command that must reach a running daemon but has
+// no body of its own: it dials the resolved daemon and, with none reachable,
+// reports no-daemon (exit 3) with start guidance, never auto-starting one. When the
+// daemon is reachable it reports not-implemented (exit 4) -- the honest answer for
+// the verbs still carrying this handler (run show, run logs, engine logs,
+// deadletter list, endpoint remove/list/show, pat list/revoke): no client of theirs
+// was ever wired.
 func (a *app) daemonStub(op string) runE {
 	return func(cmd *cobra.Command, _ []string) error { return a.requireDaemon(cmd, op) }
 }

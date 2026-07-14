@@ -4,13 +4,14 @@
 // (runs.handle); the engine owns the run, captures its output, and cancels or
 // kills it reliably.
 //
-// This package defines the seam and its real unix implementation (the seed of
-// E05.1's exec seam), kept small and production-quality: Start(ctx, spec) yields
-// a Handle over its own process group, which the caller Waits on and can Kill as
-// a group. A fake (internal/exec/exectest) satisfies the same interface with no
-// real process, so dispatch tests run runs, stream output, and cancel mid-flight
-// with no OS process; the real implementation here is exercised against
-// throwaway scripts for real.
+// This package defines the seam and its real unix implementation, kept small and
+// production-quality: Start(ctx, spec) yields a Handle over its own process
+// group, which the caller Waits on and can Kill as a group. The daemon wires the
+// real runner (NewOSRunner) into every plane that spawns work. A fake
+// (internal/exec/exectest) satisfies the same interface with no real process, so
+// dispatch tests run runs, stream output, and cancel mid-flight with no OS
+// process; the real implementation here is exercised against throwaway scripts
+// for real.
 package exec
 
 import (

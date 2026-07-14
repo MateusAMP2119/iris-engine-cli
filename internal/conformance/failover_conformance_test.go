@@ -11,15 +11,14 @@ import (
 	"time"
 )
 
-// This file is the live-daemon failover leg (E11.4):
-// two real daemon candidates share ONE meta (the external cluster's single meta
-// database), so exactly one holds the leader advisory lock and the other blocks on
-// it as a standby. Killing the leader process abruptly (a host-loss simulation, not
-// a graceful stop) drops the leader's Postgres session, releasing the session-level
-// advisory lock, and the blocked standby's pg_advisory_lock returns: it acquires,
-// runs startup reconciliation, and becomes the dispatching leader. It needs a shared
-// external Postgres (IRIS_PG_DSN); managed mode gives each daemon its OWN Postgres,
-// so there is no shared lock to contend for.
+// This file is the live-daemon failover leg: two real daemon candidates share ONE
+// meta (the external cluster's single meta database), so exactly one holds the leader
+// advisory lock and the other blocks on it as a standby. Killing the leader process
+// abruptly (a host-loss simulation, not a graceful stop) drops the leader's Postgres
+// session, releasing the session-level advisory lock, and the blocked standby's
+// pg_advisory_lock returns: it acquires, runs startup reconciliation, and becomes the
+// dispatching leader. It needs a shared external Postgres (IRIS_PG_DSN); managed mode
+// gives each daemon its OWN Postgres, so there is no shared lock to contend for.
 
 // waitForRole polls a daemon's /healthz until it reports want or the deadline
 // passes. Readiness is the reported role (a condition), never elapsed time; the poll

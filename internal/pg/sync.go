@@ -35,9 +35,12 @@ const migrationsDirName = "migrations"
 // LedgerView is the migration-ledger head of one declared table the sync engine
 // diffs table.yaml against: the head migration id (the greatest applied
 // migration_id, e.g. "0001") that seeds the next migration's sequence and parent,
-// and the reconstructed ledger columns the additive diff runs over. E03.8
-// provisioning builds it from the migrations/ files and the meta migrations table;
-// the sync engine is pure over it.
+// and the reconstructed ledger columns the additive diff runs over. The sync engine
+// is pure over it -- it reads no file and no database to build one. The seam has no
+// production supplier: provisioning (provision.go) reconstructs the same two facts
+// from the migrations/ files and the meta migrations table, but into its own
+// TableLedger view, and it is provisioning that the daemon's apply path drives; a
+// LedgerView is assembled only by the sync engine's own tests.
 type LedgerView struct {
 	// HeadID is the current ledger head's zero-padded migration id (e.g. "0001").
 	// An empty head is treated as sequence zero, so the first generated migration is

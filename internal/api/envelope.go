@@ -20,10 +20,12 @@ import (
 // the request's cursor plan go in; the exact envelope bytes come out. It never
 // opens a connection, touches a server, or interprets a value beyond its
 // declared type -- in particular a recorded_at audit string is an opaque text
-// value, emitted verbatim and never parsed or ordered by. The route layer
-// (E09.5/E09.8) calls RenderPage/RenderError and writes the bytes; EncodeRow is
-// the shared row form the NDJSON stream reuses (same rows, one per line, no
-// envelope).
+// value, emitted verbatim and never parsed or ordered by. RenderPage and
+// RenderError produce those envelope bytes for a caller that needs them exactly;
+// the mounted routes serve the same shapes through the mux's write helpers
+// (WriteData, WriteDataPage, WriteError in api.go and endpoint.go). EncodeRow
+// renders a single row on its own -- the envelope-free row form the NDJSON
+// streams emit, one per line.
 //
 // Byte-exactness is deliberate: rows mirror the source columns in projection
 // order (never a canonicalized or alphabetized object), so the renderer builds

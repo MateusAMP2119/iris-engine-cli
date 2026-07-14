@@ -13,8 +13,8 @@ import (
 // reach the always-on iris.capture() function -- its write fires the per-table capture
 // trigger, which calls the function -- so provisioning issues USAGE on the iris schema
 // and EXECUTE on iris.capture() for every role, independent of any declared field
-// grant. These grants are what E06.2's capture-emission proof relied on as explicit
-// test setup before; now they ride provisioning.
+// grant. The capture-emission conformance proof once had to issue these two grants as
+// explicit test setup; it no longer does, because they ride provisioning.
 func TestRenderProvisionPipelineRoleGrantsCapture(t *testing.T) {
 	role := PipelineRoleName("ingest")
 

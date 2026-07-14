@@ -20,9 +20,10 @@ import (
 // advertises its address into the shared meta, a real standby names that live address
 // for retargeting, and after the leader is killed and the standby takes over, the
 // advertisement converges on the new leader. It reuses the two-daemon-on-one-meta
-// pattern the E11 failover legs established, adding TCP listeners so the advertised
-// address is a concrete, routable value -- the whole point flagged by E11.2 (guidance
-// had the shape but no concrete address).
+// pattern the other E11 failover legs established, adding TCP listeners so the
+// advertised address is a concrete, routable value -- the point of advertisement: the
+// not_leader guidance had the shape of a retarget hint long before it carried a
+// concrete address (it fell back to "unknown").
 //
 // It needs two candidates on ONE shared meta, so it runs only in external mode
 // (IRIS_PG_DSN set, the conformance/CI configuration); managed Postgres gives each

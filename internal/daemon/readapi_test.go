@@ -15,7 +15,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the E09.5 transport half of the read API over the daemon's real
+// This file proves the transport half of the read API over the daemon's real
 // listeners: HTTP/1.1 resource-shaped JSON GETs on the one server both listeners
 // share, the auth split (ambient socket vs per-request bearer on TCP), the exact
 // HTTP status matrix, and read service from a standby.

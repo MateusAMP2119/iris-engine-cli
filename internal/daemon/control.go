@@ -45,7 +45,7 @@ type dataPlane interface {
 	pg.DB
 	pg.LiveViewReader
 	// EnsureCaptureFunction ensures iris.capture() exists so provisioning's capture
-	// triggers bind (the E03.10 forward seam; E06.2 owns the real body).
+	// triggers bind; pg's capture.go owns the function's PL/pgSQL body.
 	EnsureCaptureFunction(ctx context.Context) error
 	// ExecuteWipe runs a workload wipe (or destroy revert) on the data database.
 	// Added here so the same client instance wires to wipe plane without extra
@@ -310,7 +310,8 @@ func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error 
 	// return: the capture triggers bind to it, so a dropped function must be
 	// re-created (the seam is self-healing) even when the plan is otherwise empty.
 	// Skipping it on an empty plan would leave a re-apply computing nothing and the
-	// triggers silently broken (E03.10 forward seam, E06.2 owns the body).
+	// triggers silently broken. The function's body is pg's (capture.go); this only
+	// ensures it is there.
 	if err := o.data.EnsureCaptureFunction(ctx); err != nil {
 		return fmt.Errorf("declare apply: ensure capture function: %w", err)
 	}

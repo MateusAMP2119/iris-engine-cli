@@ -17,8 +17,8 @@ import (
 // run_inputs): the ONLY statement issued is the dead_letters delete, scoped to
 // exactly the given run ids and no others. The runs rows themselves are never
 // named in the write, so a drained run's row is left exactly as it was in runs --
-// untouched, never deleted, never re-minted -- the disposition retention (E05.9)
-// later reads as prunable.
+// untouched, never deleted, never re-minted -- which count-based retention
+// (dispatch.SelectPrunable) later reads as prunable.
 func TestDrainDeadLettersPureDiscard(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

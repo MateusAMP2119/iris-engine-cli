@@ -14,8 +14,10 @@ import (
 
 // OSRunner is the real subprocess runner: it spawns an OS process in its own
 // process group, captures its output through the standard library, and kills the
-// whole group on Kill or context cancellation. It is the seed of E05.1's exec
-// seam. Unix only (darwin + linux); Windows is deferred from v1.
+// whole group on Kill or context cancellation. It is the production
+// implementation of the Runner seam, the one the daemon wires into its lane loop
+// and into its pipeline and build planes. Unix only (darwin + linux); Windows is
+// deferred from v1.
 type OSRunner struct{}
 
 // NewOSRunner returns the real subprocess runner.

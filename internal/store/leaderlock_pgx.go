@@ -19,9 +19,11 @@ import (
 // minimal surface the advisory lock needs -- issue the acquire/release statements
 // and close the session -- so a test can drive the lock mechanics against a
 // scripted fake with no live Postgres. A single dedicated *pgx.Conn (adapted by
-// pgxSessionConn) satisfies it; a pool never does, which is the whole point. The
-// active session-liveness watch (a ping loop that fires SessionLost on real
-// connection death) lands with failover in E11; E02.6 fires SessionLost on Release.
+// pgxSessionConn) satisfies it; a pool never does, which is the whole point.
+// There is still no active session-liveness watch here: no ping loop that fires
+// SessionLost on real connection death. The lock fires SessionLost when Release
+// ends the session; a session that dies underneath it surfaces as an error on the
+// next statement issued over it.
 type pinnedConn interface {
 	// exec issues one statement on the pinned session connection.
 	exec(ctx context.Context, sql string, args ...any) error
@@ -134,7 +136,9 @@ func (l *PgxLeaderLock) Release(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// SessionLost returns a channel closed when the lock's session ends: on Release, or
-// when a liveness check finds the session dead. The daemon watches it to
-// self-demote; E11 drives promotion off it.
+// SessionLost returns a channel closed when the lock's session ends. Release is
+// the only closer: no liveness check watches the pinned session, so a real
+// connection death does not fire it here. The daemon's election loop watches the
+// channel to self-demote; a standby blocked in Acquire is promoted by Postgres
+// freeing the lock, not by this signal.
 func (l *PgxLeaderLock) SessionLost() <-chan struct{} { return l.lost }

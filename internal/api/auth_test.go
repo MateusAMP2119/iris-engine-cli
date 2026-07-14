@@ -81,9 +81,10 @@ func TestRequirePATGatesTCP(t *testing.T) {
 			t.Errorf("401 envelope code = %q, want unauthorized", env.Error.Code)
 		}
 
-		// The default deployment verifier rejects every token: no PAT exists yet, so
-		// even a well-formed bearer is 401 with an honest "no PATs" detail (E09.1
-		// supplies the real verifier).
+		// The fallback verifier rejects every token: with no PAT store behind it
+		// there is nothing to authenticate against, so even a well-formed bearer is
+		// 401 with an honest "no PATs" detail. The daemon wires the store-backed
+		// verifier in its place.
 		rejectAll := RequirePAT(RejectAllVerifier(), okHandler())
 		code, body := do(t, rejectAll, "Bearer anything")
 		if code != http.StatusUnauthorized {

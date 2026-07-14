@@ -15,15 +15,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 )
 
-// This file is E06.7 Live wipe closure: the epic's final conformance leg, proving
-// `iris workload wipe [<pipeline>]` against a REAL database. It exercises the live
-// wipe executor (pg.ExecuteWipe) the way E06.6's promotion leg exercises
+// This file is the live wipe closure, proving `iris workload wipe [<pipeline>]`
+// against a REAL database. It exercises the live wipe executor (pg.ExecuteWipe) the
+// way the promotion leg (promotion_conformance_test.go) exercises
 // pg.ExecutePromotionFlip: it stands up a bare Postgres cluster, provisions the
 // partitioned journal, the real iris.capture() function, a user table with the
 // three per-operation capture triggers, and a pipeline writer role through the live
 // pg path, drives real captured writes, then runs the live wipe and asserts the
-// outcome from an independent admin connection. The full binary/daemon wiring of
-// the command rides E13's acceptance scenario; this leg proves what only a live
+// outcome from an independent admin connection. The full binary/daemon wiring of the
+// command is proven by the golden-sample legs, where TestJournalCaptureAndWipe drives
+// `iris workload wipe` through the shipped binary; this leg proves what only a live
 // database can: wipe is one atomic transaction, exactly reverts in-scope disposable
 // rows, never clobbers permanent writes, and retains every journal row.
 

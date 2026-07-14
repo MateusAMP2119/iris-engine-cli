@@ -46,7 +46,8 @@ func (d *recordingObjectDeleter) DeleteObjects(_ context.Context, pipeline strin
 }
 
 // blockingBlocker is a dispatch.DestroyBlocker that always blocks, for proving the
-// blocker seam gates the teardown (E10.1 supplies the real downstream predicates).
+// blocker seam gates the teardown. The real downstream predicates are
+// dispatch.DestroyBlockReasons; no wiring supplies them to a Destroyer yet.
 type blockingBlocker struct{ reason string }
 
 func (b blockingBlocker) Blocked(_ context.Context, _ string) (bool, string, error) {
@@ -317,10 +318,11 @@ func TestDestroyScopedTeardown(t *testing.T) {
 	})
 }
 
-// TestDestroyBlockerGatesTeardown proves the destroy blocker seam (E10.1's downstream
-// predicates) gates the teardown: a blocked pipeline refuses destroy with the
-// blocker's reason and writes nothing, and the default (unwired) blocker is open so a
-// plain destroy proceeds.
+// TestDestroyBlockerGatesTeardown proves the destroy blocker seam (the downstream
+// predicates: a dependent's depends_on, a downstream run_inputs row, a dead-letter
+// entry naming the target) gates the teardown: a blocked pipeline refuses destroy
+// with the blocker's reason and writes nothing, and the default (unwired) blocker is
+// open so a plain destroy proceeds.
 func TestDestroyBlockerGatesTeardown(t *testing.T) {
 	t.Run("declare-destroy-scoped-teardown", func(t *testing.T) {
 		h := newDestroyHarness(t, dispatch.WithDestroyBlocker(blockingBlocker{reason: "downstream load_orders depends_on it"}))

@@ -3,11 +3,11 @@
 // it renders exactly the resource-shaped HTTP/JSON views the CLI's read commands
 // print and never reaches back up into the daemon, dispatcher, or a database.
 //
-// The mux mounts the full read roster (roster.go): the engine-state
-// routes and their item sub-routes, the data surface (/data, /q), and the
-// control-plane mutations, with the closed error envelope for unknown routes
-// and non-GET methods. Routes whose payload lands with a later epic are
-// mounted but answer the internal-fault envelope until their reader is wired.
+// The mux mounts the full read roster (roster.go): the engine-state routes and
+// their item sub-routes, the data surface (/data, /q), and the control-plane
+// mutations, with the closed error envelope for unknown routes and non-GET
+// methods. A route whose reader is not wired is still mounted, but answers the
+// internal-fault envelope rather than a fabricated payload.
 //
 // Authorization is a two-step split. Transport: a unix-socket request is
 // ambient (local, filesystem-guarded), while a TCP request must present a PAT

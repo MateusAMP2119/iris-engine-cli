@@ -7,13 +7,13 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// This file holds the migration-file format: the
-// immutable additive-migration ledger file an engine writes under a table
-// folder's migrations/ directory (e.g. migrations/0002_add_status.yaml). Only
-// the file format lives here -- its fields, its canonical YAML shape, and its
-// checksum semantics. Diffing table.yaml against the ledger and emitting the
-// files (sync) is E03.7's; this leaf owns the durable on-disk shape those files
-// must take.
+// This file holds the migration-file format: the immutable additive-migration
+// ledger file an engine writes under a table folder's migrations/ directory (e.g.
+// migrations/0002_add_status.yaml). Only the file format lives here -- its fields,
+// its canonical YAML shape, and its checksum semantics. Diffing table.yaml against
+// the ledger and emitting the files belongs to the sync engine in internal/pg
+// (sync.go: PlanLedgerSync plans the diff, DirMigrationSink writes the file); this
+// leaf owns the durable on-disk shape those files must take.
 
 // MigrationColumn is the column definition a migration file records: the name,
 // YAML type, and optional raw-SQL default of the added column. It is the minimal

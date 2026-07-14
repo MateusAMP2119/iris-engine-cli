@@ -4,7 +4,8 @@
 // time, the rest block acquiring, and a release (or a scripted session loss)
 // promotes the next waiter. This is the mechanism the election and single-writer
 // wiring are proven against with no live Postgres (standby blocks, release
-// promotes); E11 reuses it for the failover contracts.
+// promotes); the failover contracts (self-demotion on session loss, standby
+// promotion) are proven against the same fake.
 package storetest
 
 import (
@@ -118,7 +119,8 @@ func (l *FakeLock) SessionLost() <-chan struct{} { return l.lost }
 
 // LoseSession models the candidate's Postgres session dying: connection death
 // releases the lock, so a blocked standby is promoted, and SessionLost fires. It
-// is the hook E11's failover tests drive; E02.6 builds it for reuse.
+// is the hook the failover tests drive (store's own leaderlock_failover_test.go
+// and the daemon's failover tests).
 func (l *FakeLock) LoseSession() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

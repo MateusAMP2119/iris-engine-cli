@@ -19,13 +19,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestJournalCaptureAndWipe proves the E13.4 journal capture and wipe contracts
-// against the real binary, a running daemon, and real Postgres (the conformance
-// runner). It exercises dev/disposable runs that land rows, scoped and bare
-// workload wipe, promotion making subsequent writes wipe-immune while still
-// captured, commit-ordered journaling under concurrent writers from separate
-// lanes with provenance naming the last committed author, and the capture
-// overhead bound on a promoted bulk write.
+// TestJournalCaptureAndWipe proves the journal capture and wipe contracts against
+// the real binary, a running daemon, and real Postgres (the conformance runner). It
+// exercises dev/disposable runs that land rows, scoped and bare workload wipe,
+// promotion making subsequent writes wipe-immune while still captured,
+// commit-ordered journaling under concurrent writers from separate lanes with
+// provenance naming the last committed author, and the capture overhead bound on a
+// promoted bulk write.
 //
 // All assertions use the real CLI surface (`iris pipeline run`, `iris workload
 // wipe`, `iris data provenance`, `iris pipeline build`/`promote`) plus direct
@@ -185,7 +185,7 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 
 		// Promote flipped the disposable-era writes from open to promoted: still
 		// captured, no longer wipe-eligible. Assert this now, before the next run's
-		// opportunistic seal (E13.5) archives and drops them from the live journal.
+		// opportunistic seal archives them and drops them from the live journal.
 		assertCount(ctxFor(t), t, conn, 2,
 			fmt.Sprintf("SELECT count(*) FROM public.data_journal WHERE undo='promoted' AND run_id=%d", run1))
 

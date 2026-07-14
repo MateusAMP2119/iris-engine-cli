@@ -18,11 +18,13 @@ import (
 // fallback, ancestry with summary consumed list), and maps to the wire result.
 // It is a read, served on any role.
 //
-// Archived stamps: when a partition has been exported and dropped the stamps for
-// ids in that range are served from the object store archive (digest = checkpoint
-// digest key). The test contract for archived only marks the checkpoint (rows stay
-// in journal for the setup), so live stamps suffice to answer; full drop+load is
-// exercised by the archive flow in E07/E13.5.
+// Archived stamps: once a partition has been exported and dropped, the stamps for
+// ids in that range live only in the object-store archive (keyed by the checkpoint
+// digest). Serving them back from there is still unwired -- the plane carries the
+// object store handle for that case, but every walk is answered from the live
+// journal, so a row whose stamps have all been dropped reads as "no provenance
+// recorded". The export half is the seal step's (seal.go, writing through
+// internal/archive).
 
 // provenancePlane implements api.ProvenanceHandler.
 type provenancePlane struct {

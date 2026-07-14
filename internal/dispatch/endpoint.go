@@ -1,14 +1,15 @@
 package dispatch
 
 // This file is the endpoint apply lifecycle op: the leader-side path that takes
-// E09.2's compiled endpoint shapes live. An apply prepare-verifies each endpoint's
-// one derived SQL statement against the DATA database (a shape whose statement
-// Postgres refuses never publishes), then persists every shape to endpoints +
-// endpoint_filters as one atomic meta transaction through the single writer, and only
-// on commit swaps the shapes into the live serving registry -- so an applied endpoint
-// takes effect immediately, with no daemon restart, and a failed apply changes
-// nothing, neither meta nor the serving surface. Remove retires the shape the same
-// way: meta rows first, live registry on commit.
+// declare's compiled endpoint shapes (declare.CompileEndpoint) live. An apply
+// prepare-verifies each endpoint's one derived SQL statement against the DATA
+// database (a shape whose statement Postgres refuses never publishes), then
+// persists every shape to endpoints + endpoint_filters as one atomic meta
+// transaction through the single writer, and only on commit swaps the shapes into
+// the live serving registry -- so an applied endpoint takes effect immediately, with
+// no daemon restart, and a failed apply changes nothing, neither meta nor the
+// serving surface. Remove retires the shape the same way: meta rows first, live
+// registry on commit.
 //
 // The lifecycle is deliberately independent of the workload graph: apply reads
 // no registry and writes no workload table, remove retires shape only, and
@@ -16,10 +17,10 @@ package dispatch
 // publish and retire independently of declare apply, and declare destroy
 // leaves tables and endpoints standing.
 //
-// One seam is open by design: PrepareVerifier is the data-database PREPARE.
-// The pgx-backed implementation rides the shared read pool (E09.7) at daemon
-// wiring; a fake drives it here, mirroring the DataReverter/ObjectDeleter
-// doctrine in destroy.go.
+// PrepareVerifier is the data-database PREPARE, kept as a seam so this op stays
+// free of a database client. The pgx-backed implementation is
+// pg.Client.PrepareVerify, which rides the shared data pool and is what the daemon
+// wires in at leader election; a fake drives it in this package's tests.
 
 import (
 	"context"

@@ -21,11 +21,12 @@ import "fmt"
 // table missing any of the three is the missing-trigger condition, repaired by
 // installing the full set). The capture function's PL/pgSQL body (iris.capture(),
 // which reads the transition tables and writes the provenance rows into
-// public.data_journal) is owned and emitted by E06.2; here the triggers reference
-// it by its stable engine-owned name. Each trigger name embeds the operation and
-// the (schema, table) it guards so it is unique per table, and every user-supplied
-// identifier is double-quoted, consistent with the rest of pg's DDL rendering. The
-// output is deterministic, so a golden diff is a contract diff.
+// public.data_journal) is owned and emitted by CaptureFunctionDDL in capture.go,
+// and installed by the live client's EnsureCaptureFunction; here the triggers
+// reference it by its stable engine-owned name. Each trigger name embeds the
+// operation and the (schema, table) it guards so it is unique per table, and every
+// user-supplied identifier is double-quoted, consistent with the rest of pg's DDL
+// rendering. The output is deterministic, so a golden diff is a contract diff.
 func RenderCaptureTriggers(schema, table string) []string {
 	return []string{
 		renderCaptureTrigger(schema, table, "ins", "INSERT", "NEW TABLE AS new_rows"),
@@ -42,10 +43,12 @@ func RenderCaptureTriggers(schema, table string) []string {
 // so it is idempotent on every Postgres version (CREATE OR REPLACE TRIGGER is 14+
 // only). A partial prior provisioning run may leave one or more of the three
 // triggers installed; a plain CREATE TRIGGER re-apply then fails "trigger already
-// exists" and makes no progress. The leading drop is safe: the capture seam is a
-// no-op stub until E06.2, so dropping and re-creating the binding loses nothing.
-// Both statements carry no bound arguments, so a no-argument Exec runs them over
-// the simple query protocol, which executes the two commands in one round trip.
+// exists" and makes no progress. The leading drop is safe: a trigger holds no state
+// of its own -- the capture behaviour lives in iris.capture() (capture.go) and in
+// the journal rows it has already written -- so dropping the binding and re-creating
+// it identically loses nothing. Both statements carry no bound arguments, so a
+// no-argument Exec runs them over the simple query protocol, which executes the two
+// commands in one round trip.
 func renderCaptureTrigger(schema, table, tag, op, referencing string) string {
 	name := fmt.Sprintf("iris_capture_%s_%s_%s", tag, schema, table)
 	return fmt.Sprintf(

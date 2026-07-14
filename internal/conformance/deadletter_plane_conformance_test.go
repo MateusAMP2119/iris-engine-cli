@@ -17,17 +17,18 @@ func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 // TestDeadletterBlastAndReplay drives the real iris binary end to end against a running
 // daemon and real Postgres to prove the two dead-letter dispositions of the golden
-// sample (golden sample step 6): the blast-radius
-// readout `iris deadletter show` renders, and the root-walking replay that clears the
-// worklist and discards the propagated entry as superseded.
+// sample (golden sample step 6): the blast-radius readout `iris deadletter show`
+// renders, and the root-walking replay that clears the worklist and discards the
+// propagated entry as superseded.
 //
 // The propagation state itself -- a forced failure in extract_orders that propagates to
-// load_orders while reset_counters (composer-only) is untouched -- is the lane loop's to
-// PRODUCE (E13.3). Here it is seeded directly in meta so the readout and the replay
-// disposition can be proven through the real binary +
-// daemon + Postgres over registered golden pipelines. `iris deadletter show` reads the
-// blast radius on any node; `iris deadletter replay` mints the root's replacement on the
-// leader, clears the root entry, and discards the propagated entry as superseded.
+// load_orders while reset_counters (composer-only) is untouched -- is the perpetual lane
+// loop's to PRODUCE, and the lane-loop leg (TestGoldenLaneRunsAndFailures) proves it
+// there. Here it is seeded directly in meta so the readout and the replay disposition
+// can be proven through the real binary + daemon + Postgres over registered golden
+// pipelines. `iris deadletter show` reads the blast radius on any node; `iris deadletter
+// replay` mints the root's replacement on the leader, clears the root entry, and
+// discards the propagated entry as superseded.
 func TestDeadletterBlastAndReplay(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)

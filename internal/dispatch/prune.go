@@ -32,12 +32,13 @@ type RetentionRun struct {
 
 // SelectPrunable returns the run ids the count-based clockless retention policy
 // prunes, ascending: per pipeline, every run beyond the newest `retain` (default
-// 1000, resolved via --retain / IRIS_RETAIN / iris.toml at E01.3), EXCEPT any run
-// still held by an outstanding dead_letters entry, which is spared until replay,
-// supersession, or drain releases it. It is pure over the given runs: no clock is
-// read (the run id orders newest-first, so the result is independent of the order
-// runs are supplied in) and no consumer watermark is consulted (a run is prunable
-// regardless of whether any downstream consumed it), so retention is count only.
+// 1000, resolved from --retain / IRIS_RETAIN / iris.toml by internal/config), EXCEPT
+// any run still held by an outstanding dead_letters entry, which is spared until
+// replay, supersession, or drain releases it. It is pure over the given runs: no
+// clock is read (the run id orders newest-first, so the result is independent of the
+// order runs are supplied in) and no consumer watermark is consulted (a run is
+// prunable regardless of whether any downstream consumed it), so retention is count
+// only.
 //
 // A retain of zero or less keeps no run (every run is a candidate); a pipeline with
 // `retain` or fewer runs prunes none of them.

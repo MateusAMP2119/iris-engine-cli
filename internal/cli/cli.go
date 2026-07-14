@@ -3,14 +3,15 @@
 // at the top of the product import graph (nothing imports it), and cmd/iris is a
 // thin entrypoint over Execute.
 //
-// The command handlers are stubs during epic E01. What is real from day one is
-// the contract around those stubs: the categorical exit codes, the single-JSON
+// Nearly every command handler is real: it resolves its target, dials the daemon
+// over the unix socket or TCP, and maps the reply onto the contract that framed
+// the surface from the first day -- the categorical exit codes, the single-JSON
 // document on stdout under --json, and the strict separation of log output
-// (stderr) from command output (stdout). A stub that would reach a running
-// daemon reports "no daemon reachable" (exit 3) with guidance to start the
-// engine -- the honest current behavior, since no daemon exists yet -- and a
-// stub that would act on the local host but is not wired yet reports "not
-// implemented" (exit 4).
+// (stderr) from command output (stdout). A handful of read verbs are still
+// unwired stubs (run show, run logs, engine logs, deadletter list, endpoint
+// list/show/remove, pat list/revoke): they carry the daemonStub handler, which
+// reports "no daemon reachable" (exit 3) with guidance to start the engine when
+// nothing answers, and "not implemented" (exit 4) once a daemon does.
 package cli
 
 import (
@@ -72,11 +73,13 @@ type app struct {
 	// test CA. A remote-control epic can promote it to a real --tls-ca flag.
 	daemonTLSConfig *tls.Config
 	// applyWarnings computes the advisory warnings `iris declare apply` surfaces for
-	// a parsed declaration -- cross-mode reads and the like. It is nil in production:
-	// the data-mode facts it needs live in meta, reachable
-	// only once apply runs against the daemon (E03.9/E03.10), so pre-daemon apply
-	// computes no local warnings and proceeds unchanged. Tests inject it to drive the
-	// --json warning surface, proving the warning structure rides the envelope.
+	// a parsed declaration -- cross-mode reads and the like. It is still nil in
+	// production: the data-mode facts it needs live in meta, which only the daemon
+	// reads, and the daemon's /apply route returns no such warnings (the cross-mode
+	// check runs on `iris pipeline promote` instead, in internal/dispatch), so a
+	// production apply computes no local warnings and proceeds unchanged. Tests
+	// inject it to drive the --json warning surface, proving the warning structure
+	// rides the envelope.
 	applyWarnings func(*declare.Declaration) []declare.Warning
 	// warnings are the advisory warnings a handler computed for the current
 	// invocation. They accompany the terminal outcome (they never replace it): the
@@ -88,12 +91,15 @@ type app struct {
 	// back to update.New().Run); tests inject a fake to drive the exit-code and
 	// output surface without network or filesystem I/O.
 	runUpdate func(ctx context.Context, current string) (update.Result, error)
-	// confirm is the E10.2 confirmation seam for interactive prompts (typed-name
-	// for teardowns, y/N for dev-loop ops). When non-nil it is consulted when
-	// neither --yes nor --force was supplied. The name is the target of the
-	// operation (pipeline name, or "engine" for uninstall); isTeardown chooses
-	// the prompt style. Tests inject it to simulate TTY answers without a real
-	// terminal.
+	// confirm is the confirmation seam for the destructive ops' interactive prompts
+	// (typed-name for teardowns, y/N for dev-loop ops). When non-nil it is consulted
+	// when neither --yes nor --force was supplied. The name is the target of the
+	// operation (pipeline name, or "engine" for uninstall); isTeardown chooses the
+	// prompt style. It is nil in production: `iris uninstall` then falls back to
+	// terminalConfirm (a real y/N read off the terminal), while the ops gated through
+	// confirmOrFlags -- declare destroy, deadletter drain, workload wipe, engine
+	// uninstall -- refuse without --yes/--force rather than prompt. Tests inject it to
+	// simulate TTY answers without a real terminal.
 	confirm func(name string, isTeardown bool) (bool, error)
 	// executablePath resolves the running iris binary's real on-disk path (through
 	// its symlinks), the file `iris uninstall` removes. It is nil in production

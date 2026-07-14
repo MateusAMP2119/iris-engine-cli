@@ -270,8 +270,10 @@ func (a *app) engineUninstall() runE {
 		}
 
 		// Refuse while a daemon candidate holds meta (shared meta is never dropped
-		// under a live candidate). The predicate is a seam that proceeds by default
-		// until the leadership/liveness wiring (E02.5+) fills it.
+		// under a live candidate). The predicate is still an open seam: nothing is
+		// backed by the leadership/liveness wiring, so the only implementation is
+		// daemon.ProceedWithoutLiveCheck, which always reports no live candidate --
+		// this guard passes today.
 		held, err := daemon.ProceedWithoutLiveCheck().LiveCandidateHoldsMeta(ctx)
 		if err == nil && held {
 			err = daemon.ErrLiveCandidate
@@ -322,8 +324,9 @@ type startResult struct {
 // SIGTERM/SIGINT; with -d it detaches, re-execing itself as a background daemon
 // and returning once the socket is reachable so the daemon survives the CLI's
 // exit. In managed mode with no installed Postgres it fails fast with install
-// guidance (exit 4); it does not itself start Postgres yet (managed-PG startup
-// and meta connectivity land in E02.6).
+// guidance (exit 4); otherwise the candidate it runs (daemon.Run) brings Postgres
+// up itself -- the managed subprocess, or the external cluster's DSN -- and
+// connects meta before it serves.
 func (a *app) engineStart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
@@ -449,8 +452,10 @@ type stopResult struct {
 // engineStop is the handler for `iris engine stop`: it stops a detached daemon by
 // the pid it recorded, signalling SIGTERM and waiting for it to exit. With no
 // recorded daemon there is nothing to stop, so it reports no-daemon (exit 3) with
-// start guidance. Graceful-shutdown semantics deepen in E02.7/E02.8; this is the
-// minimal stop that also cleans up a detached daemon.
+// start guidance. The stop is graceful: SIGTERM lands on the daemon's signal
+// context, which drains the listeners, releases the leader lock and tears the
+// managed Postgres down; daemon.StopDaemon waits out the grace window, escalating
+// to SIGKILL only if the daemon overruns it, and reaps the pidfile either way.
 func (a *app) engineStop() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)

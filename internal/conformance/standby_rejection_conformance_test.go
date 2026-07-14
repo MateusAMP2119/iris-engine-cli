@@ -99,8 +99,9 @@ func TestStandbyMutationRejection(t *testing.T) {
 
 	// The standby reads the leader's advertisement from the shared meta and names the
 	// leader's concrete TCP address on GET /leader -- the guidance is a real retarget
-	// address, not "unknown" (the gap E11.2 flagged). Wait for the poll to pick it up
-	// before asserting the exit-6 envelope carries the same address.
+	// address, not the bare "unknown" a standby falls back to with no advertisement to
+	// read. Wait for the poll to pick it up before asserting the exit-6 envelope
+	// carries the same address.
 	if !waitLeaderReport(t, standbySock, leaderAddr) {
 		_, got := leaderReport(t, standbySock)
 		t.Fatalf("standby GET /leader named %q, want the live leader's advertised address %q", got, leaderAddr)
@@ -129,9 +130,10 @@ func TestStandbyMutationRejection(t *testing.T) {
 		res.RequireExit(t, 6)
 		// Under --json the single stdout document is the not_leader error envelope: its
 		// machine code is not_leader and its message names the leader by its concrete
-		// advertised TCP address for retargeting -- no longer "unknown" (the gap E11.2
-		// flagged, now closed by leader advertisement). The CLI folds the daemon's leader
-		// hint into the retarget guidance, so the address appears in the message text.
+		// advertised TCP address for retargeting -- not the bare "unknown" hint, since
+		// the leader advertises its address into the shared meta and the standby polls
+		// it. The CLI folds the daemon's leader hint into the retarget guidance, so the
+		// address appears in the message text.
 		var env struct {
 			Error struct {
 				Code    string `json:"code"`

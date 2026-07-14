@@ -22,10 +22,14 @@ var ErrNilDeclaredTable = errors.New("declare: classify drift: nil declared tabl
 //
 // The classifier is pure and holds no database knowledge. It consumes declared
 // Table heads (this package) and abstract views of the live world -- LiveTable,
-// LedgerState, GrantView -- that later tasks (E03.7 ledger sync, E03.8 schema
-// provisioning, E04.3 grant reconcile) fill from real reads. This leaf owns the
-// classification vocabulary and its rules; execution of the resolved actions
-// belongs to those tasks.
+// LedgerState, GrantView -- that its callers in internal/pg fill: the sync engine
+// (pg/sync.go) drives the schema and ledger comparisons, the grant reconcile
+// (pg/grants.go) drives the grant comparison. This leaf owns the classification
+// vocabulary and its rules; executing the resolved actions -- the ADD COLUMN DDL,
+// the migration file, the GRANT -- belongs to internal/pg. Who supplies each view
+// is documented on its type below; several are still assembled only by their
+// consumers' tests, the daemon's apply path driving provisioning's own coarser
+// views instead.
 
 // journalSchema and journalTableName name the engine-owned data journal
 // (public.data_journal), the one surface the schema-drift comparison always
@@ -184,8 +188,12 @@ type LiveColumn struct {
 // classification: the columns physically present and whether the engine's capture
 // trigger is installed. Engine-owned surfaces never enter the column set -- the
 // journal is a separate table (IsEngineOwnedTable) and the capture trigger is a
-// trigger object tracked by HasCaptureTrigger, never a column. E03.8 supplies the
-// real view from an information_schema read; the classifier is pure over it.
+// trigger object tracked by HasCaptureTrigger, never a column. The classifier is
+// pure over the view, and no production reader assembles one today: its only
+// consumer is the sync engine's schema-fix planner (pg.PlanSchemaFix), whose tests
+// build the view, while the apply path the daemon drives goes through provisioning,
+// which reads a coarser live view of its own (pg.LiveView: which schemas, tables,
+// and capture triggers exist) from information_schema and pg_trigger.
 type LiveTable struct {
 	// Schema is the table's schema name.
 	Schema string
@@ -324,21 +332,25 @@ type LedgerColumn struct {
 }
 
 // LedgerState is the ledger-head view of one table: the columns the applied
-// migration chain has established. E03.7 reconstructs it
-// from the migrations/ files and the migrations table; the classifier is pure over
-// it.
+// migration chain has established, reconstructed from the migrations/ files and the
+// meta migrations table. The classifier is pure over it. Its only consumer is the
+// sync engine (pg.PlanLedgerSync), which takes it inside a pg.LedgerView that only
+// the sync engine's own tests assemble; the apply path the daemon drives
+// reconstructs the same two facts into provisioning's own view (pg.TableLedger)
+// instead.
 type LedgerState struct {
 	// Columns are the ledger-head columns.
 	Columns []LedgerColumn
 }
 
 // ClassifyLedgerDrift classifies a table's declared head (table.yaml) against its
-// migration-ledger head. A declared column absent from
-// the ledger is an additive gap: the next migration is generated to add it (E03.7
-// executes). A ledger column absent from the declared head -- a column removed from
-// table.yaml -- is non-additive and refused, never dropped. A column whose declared
-// YAML type differs from the ledger's is a non-additive retype, also refused. A nil
-// declared head returns ErrNilDeclaredTable, consistent with ClassifySchemaDrift.
+// migration-ledger head. A declared column absent from the ledger is an additive
+// gap: the next migration is generated to add it (the sync engine in internal/pg
+// writes the immutable migration file and records the new head). A ledger column
+// absent from the declared head -- a column removed from table.yaml -- is
+// non-additive and refused, never dropped. A column whose declared YAML type
+// differs from the ledger's is a non-additive retype, also refused. A nil declared
+// head returns ErrNilDeclaredTable, consistent with ClassifySchemaDrift.
 func ClassifyLedgerDrift(declared *Table, ledger LedgerState) (DriftReport, error) {
 	if declared == nil {
 		return DriftReport{}, ErrNilDeclaredTable
@@ -410,12 +422,16 @@ func (g Grant) key() string {
 	return strings.Join([]string{g.Role, g.Schema, g.Object, g.Privilege}, ":")
 }
 
-// GrantView is the bounds-check input for grant drift:
-// the grants the meta access ledger asserts (Bounds) and the grants Postgres
-// currently holds (Live). On public, pipeline and data-PAT roles may hold read
-// only, and none may connect to meta; a grant Postgres holds beyond Bounds is a
-// stray grant. E04.3 supplies the real view from a pg_catalog read; the classifier
-// is pure over it.
+// GrantView is the bounds-check input for grant drift: the grants the meta access
+// ledger asserts (Bounds) and the grants Postgres currently holds (Live). On public,
+// pipeline and data-PAT roles may hold read only, and none may connect to meta; a
+// grant Postgres holds beyond Bounds is a stray grant. The classifier is pure over
+// the view. pg's grant reconcile (pg.ReconcileGrants, through
+// ClassifyFieldGrantDrift) is its consumer, and reads the Live half through the
+// pg.LiveGrantReader seam -- a pg_catalog / information_schema.column_privileges
+// read. No production reader implements that seam today: a fake stands in at test
+// tier, and the engine's role provisioning applies the ledger's grants without
+// consulting a live read.
 type GrantView struct {
 	// Bounds are the grants the meta access ledger asserts (the allowed set).
 	Bounds []Grant

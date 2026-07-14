@@ -19,10 +19,10 @@ import (
 const idleReadInterval = 250 * time.Millisecond
 
 // This file is the perpetual lane loop: the leader-owned dispatch runtime that turns
-// the persisted walk into runs. It composes the E05.4 lane walk (BuildWalk / one
-// goroutine per lane), the E05.5 depends_on gate (pass eligibility), and the E05.1
-// run-start seam into the pass semantics the engine runs forever once a leader wins
-// the lock.
+// the persisted walk into runs. It composes the lane walk (lane.go's BuildWalk, one
+// goroutine per lane), the depends_on gate (gate.go, pass eligibility), and the
+// run-start seam (run.go's RunManager, behind FreshRunner) into the pass semantics
+// the engine runs forever once a leader wins the lock.
 //
 // Pass semantics:
 //   - One goroutine per lane, a perpetual per-lane loop. Distinct lanes run in
@@ -52,14 +52,15 @@ type WalkReader interface {
 	Walk(ctx context.Context) ([]Lane, error)
 }
 
-// PassGate resolves a pipeline's depends_on eligibility at its turn in a pass, exactly
-// like the manual path (E05.5): an ungated pipeline is always eligible, an open gate
-// runs and consumes the resolved upstreams 1:1, a closed gate mints no run, and a
-// poisoned gate defers to post-pass failure propagation. The loop evaluates it at each
-// member's turn -- after the previous same-lane member reached terminal -- so a
-// same-lane dependent sees the upstream's run of this pass. A meta-backed
-// implementation (edges joined to each upstream's latest run, over the run_inputs
-// consumed check) and a fake both satisfy it.
+// PassGate resolves a pipeline's depends_on eligibility at its turn in a pass,
+// exactly like the manual path (manual.go): an ungated pipeline is always eligible,
+// an open gate runs and consumes the resolved upstreams 1:1, a closed gate mints no
+// run, and a poisoned gate defers to post-pass failure propagation. The loop
+// evaluates it at each member's turn -- after the previous same-lane member reached
+// terminal -- so a same-lane dependent sees the upstream's run of this pass. The
+// daemon's lane plane supplies the meta-backed implementation (edges joined to each
+// upstream's latest run, over the run_inputs consumed check); a fake satisfies it in
+// tests.
 type PassGate interface {
 	// Eligible resolves the pipeline's gate for this pass turn.
 	Eligible(ctx context.Context, pipeline string) (Decision, error)
@@ -67,13 +68,13 @@ type PassGate interface {
 
 // FreshRunner starts a fresh cause=loop run of an open-gated pipeline and blocks
 // until it reaches a terminal state, returning that disposition. It is the loop's
-// seam onto E05.1 run execution: the production adapter mints the run (pinning its
-// snapshot at dispatch), execs the subprocess, and records the terminal transition
-// through the single writer, while a test fakes it. A returned error means the run
-// could not be carried out at all (for example ctx was cancelled) and stops the
-// lane's pass; a run that executes and then dead-letters is not an error -- it
-// returns (RunDeadLettered, nil), and the lane proceeds to its next member, because
-// composer order never gates.
+// seam onto run execution (run.go): the daemon's lane-plane adapter mints the run
+// (pinning its snapshot at dispatch), execs the subprocess, and records the terminal
+// transition through the single writer, while a test fakes it. A returned error
+// means the run could not be carried out at all (for example ctx was cancelled) and
+// stops the lane's pass; a run that executes and then dead-letters is not an error --
+// it returns (RunDeadLettered, nil), and the lane proceeds to its next member,
+// because composer order never gates.
 type FreshRunner interface {
 	// StartFresh mints and runs rec (cause=loop), blocking until it is terminal.
 	StartFresh(ctx context.Context, rec store.RunRecord) (RunOutcome, error)

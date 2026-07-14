@@ -13,8 +13,9 @@ import (
 // a primary-key foreign key to runs; reason drawn from the closed set (failed,
 // stopped, upstream_dead_lettered); a nullable human error; and a nullable
 // failed_upstream foreign key to pipelines (the immediate upstream whose
-// dead-lettered run propagated, else null). The DDL is E02.1's; this test locks
-// the worklist's shape as the contract replay and drain depend on.
+// dead-lettered run propagated, else null). The DDL lives in the bootstrap meta
+// schema (MetaSchema, schema.go); this test locks the worklist's shape as the
+// contract replay and drain depend on.
 func TestDeadLettersWorklistShape(t *testing.T) {
 	s := store.MetaSchema()
 	dl := tableByName(t, s, "dead_letters")

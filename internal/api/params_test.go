@@ -11,7 +11,8 @@ import (
 
 // compileOrdersEndpoint compiles the worked-example endpoint
 // (orders_by_customer over analytics.orders) so the /q-route grammar tests run
-// against an authentic E09.2 CompiledEndpoint, not a hand-built binding plan.
+// against a CompiledEndpoint declare itself produced, not a hand-built binding
+// plan.
 func compileOrdersEndpoint(t *testing.T) *declare.CompiledEndpoint {
 	t.Helper()
 	src := []byte(`endpoint: orders_by_customer

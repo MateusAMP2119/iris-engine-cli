@@ -12,8 +12,9 @@ import (
 // This file is the engine-owned access-ledger write surface: the meta writes that
 // register a Postgres role's owner, replace its field-level grants, and store its
 // engine-managed login credential. Truth lives in meta and is reconciled onto the
-// data database (the DDL rendering is internal/pg; the reconcile execution is
-// E04.3). Every write rides the single meta writer.
+// data database by internal/pg, which both renders the role/grant DDL and issues
+// it (ProvisionPipelineRole, ProvisionDataPATRole). Every write rides the single
+// meta writer.
 //
 // Three shapes, one ledger:
 //   - roles maps a pg_role to exactly one owner, a pipeline XOR a data PAT. The

@@ -72,7 +72,7 @@ func TestEndpointsSurviveRestart(t *testing.T) {
 		// the persisted secret rather than minting a new one and resetting the login.
 		credAfter := readPoolCredentialFromMeta(t, env.ws)
 		if credAfter != credBefore {
-			t.Errorf("read-pool credential changed across restart; a restart must reuse the persisted secret (E13.7 HA fix)")
+			t.Errorf("read-pool credential changed across restart; a restart must reuse the persisted secret")
 		}
 	})
 }

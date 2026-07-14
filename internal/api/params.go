@@ -23,13 +23,13 @@ import (
 // pure grammar: it turns a route's compiled shape plus a request's raw query
 // values into a validated QueryPlan (filter predicates + a keyset cursor plan),
 // or a ParamError naming the offending param. It never assembles SQL, opens a
-// connection, or touches a server; the route layer (E09.5/E09.8) surfaces a
-// ParamError as a 400 bad_param and renders the plan against the read pool.
+// connection, or touches a server; the route layer (/q in endpoint.go, /data in
+// dataroute.go) surfaces a ParamError as a 400 bad_param and executes the plan
+// against the shared read pool.
 //
 // It lives in the api layer (not a declare leaf) because it is a read-API concern
-// that composes declare's CompiledEndpoint binding plan (E09.2) downward: api
-// outranks declare, so the import flows one direction, and no arch roster entry is
-// needed.
+// that composes declare's CompiledEndpoint binding plan downward: api outranks
+// declare, so the import flows one direction, and no arch roster entry is needed.
 
 // ParamError is a wire-grammar rejection: a query param the grammar refuses. It
 // names the offending param so the route layer can surface a 400 bad_param
@@ -240,8 +240,8 @@ type QueryPlan struct {
 // every value per its source-column type (parse failure -> 400 naming the
 // param), resolves the limit (default 100, cap 1000, over-cap -> 400), and
 // builds the ascending keyset cursor from after= (a /q endpoint is never
-// id-keyed, so it takes no before). It composes E09.2's ParamSlot plan
-// directly: the allowed param set and the per-param type are exactly the
+// id-keyed, so it takes no before). It composes declare's compiled ParamSlot
+// plan directly: the allowed param set and the per-param type are exactly the
 // compiled slots.
 func PlanEndpointQuery(ce *declare.CompiledEndpoint, q url.Values) (*QueryPlan, error) {
 	if ce == nil {

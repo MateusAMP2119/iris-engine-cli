@@ -169,10 +169,11 @@ func isReconcileDisposal(event string) bool {
 // TestReconcileBeforeDispatch proves the leader completes startup reconciliation
 // before dispatching any lane, using identical logic on cold start and failover
 // (crash recovery: leader runs startup reconciliation before any lane; cold start
-// and failover identical). The dispatch-ready latch -- the seam the E05 lane
-// dispatcher waits on -- fires only after reconciliation's kills and disposal
-// writes complete; and a cold-start leader and a failover-promoted leader produce
-// the identical action sequence on identical fixtures.
+// and failover identical). The dispatch-ready latch -- the ordering hook this test
+// installs, fired before the leader role is reported and before the lane loop
+// starts -- fires only after reconciliation's kills and disposal writes complete;
+// and a cold-start leader and a failover-promoted leader produce the identical
+// action sequence on identical fixtures.
 func TestReconcileBeforeDispatch(t *testing.T) {
 	t.Run("reconcile-before-dispatch", func(t *testing.T) {
 		t.Run("cold start: reconciliation completes before the dispatch-ready latch", func(t *testing.T) {

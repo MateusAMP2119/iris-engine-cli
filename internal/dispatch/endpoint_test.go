@@ -58,7 +58,8 @@ func endpointTables() map[string]*declare.Table {
 }
 
 // compileTestEndpoint parses and compiles one endpoint YAML document against the
-// test source table, exactly the E09.2 compile path the apply consumes.
+// test source table, exactly the declare compile path (ParseEndpoint then
+// CompileEndpoint) whose output the apply consumes.
 func compileTestEndpoint(t *testing.T, doc string) *declare.CompiledEndpoint {
 	t.Helper()
 	ep, err := declare.ParseEndpoint([]byte(doc))

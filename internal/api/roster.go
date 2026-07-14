@@ -15,14 +15,19 @@ import (
 // is a closed switch, so it cannot drift at runtime, and anything outside it
 // falls through to the mux's not_found envelope.
 //
-// E09.5 owns the mounting, the auth split, and the status matrix; the routes'
-// payloads land with their owning epics. /healthz, /leader, and /stats serve
-// their real payloads today; every other roster route answers through
-// serveUnwiredRead -- mounted, scope-checked, GET-enforced, but faulting with
-// the 500 internal envelope until its reader is wired (the noStats/noControl
-// doctrine: an unwired seam is an internal fault, never a silent empty
-// payload). The meta readers follow the E12.1 StatsSource pattern: a seam
-// interface in api, the daemon supplying the pgx-backed implementation.
+// The mounting, the auth split, and the status matrix live here; each route's
+// payload comes from a reader seam the daemon wires in, on the StatsSource
+// pattern: a seam interface in api, the daemon supplying the pgx-backed
+// implementation. Most of the roster serves a real payload today -- /leader off
+// the role reporter below, and /runs(/{id}), /runs/{id}/trace,
+// /pipelines/{name}/gate, /dead_letters/{run_id}/impact, /workload,
+// /provenance/..., /data, and /q off their wired readers (/healthz and /stats
+// are exact-path routes on the mux itself, api.go and stats.go). The exceptions
+// are the /pipelines and /dead_letters collections with their item routes,
+// /lanes, and /dependencies: nothing supplies a reader for those, so they answer
+// through serveUnwiredRead -- mounted, scope-checked, GET-enforced, but faulting
+// with the 500 internal envelope (the noStats/noControl doctrine: an unwired
+// seam is an internal fault, never a silent empty payload).
 
 // LeaderReport is the payload of GET /leader: the node's leadership role and
 // the leader's address as this node knows it, reported on leader and standby
@@ -107,9 +112,9 @@ func (m *mux) serveRoster(w http.ResponseWriter, r *http.Request) bool {
 		}
 		m.serveData(w, r, segs[1], segs[2])
 	case "q":
-		// /q/{endpoint}: the declared endpoint read. E09.6 owns the live-shape
-		// checkout and lifecycle (endpoint.go); the production reader over the
-		// shared read pool lands with E09.7/E09.8.
+		// /q/{endpoint}: the declared endpoint read. endpoint.go owns the
+		// live-shape checkout and lifecycle; PoolReader (readexec.go) is the
+		// production reader over the shared read pool.
 		if len(segs) != 2 {
 			return false
 		}
@@ -155,11 +160,11 @@ func (m *mux) serveLeader(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serveUnwiredRead answers a roster route whose reader is not wired yet: the
-// route is mounted (scope-checked by authorize, GET-enforced here) but its
-// payload belongs to a later epic, so a request faults with the 500 internal
-// envelope naming the missing reader -- never a 404 (the route exists) and
-// never a fabricated empty payload (the noStats doctrine).
+// serveUnwiredRead answers a roster route that has no reader: the route is
+// mounted (scope-checked by authorize, GET-enforced here) but nothing supplies
+// its payload, so a request faults with the 500 internal envelope naming the
+// missing reader -- never a 404 (the route exists) and never a fabricated empty
+// payload (the noStats doctrine).
 func serveUnwiredRead(w http.ResponseWriter, r *http.Request, reader string) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")

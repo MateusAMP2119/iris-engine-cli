@@ -15,10 +15,12 @@ import (
 // This file is the leader-side journal seal step: the opportunistic dispatcher
 // action that runs after a terminal run and, when the resident partition has
 // crossed the journal_partition_rows threshold with no in-flight run left writing
-// into it, seals that partition -- compact, checkpoint, archive. It replaces the
-// E13.5 presence stub (a seal that fired on every terminal run with a placeholder
-// digest, a fixed key, and a hardcoded id range) with the real flow over the E07.3
-// seal primitives and the E07.4 checkpoint chain and engine key.
+// into it, seals that partition -- compact, checkpoint, archive. It is the real
+// flow, over pg's seal primitives (range compaction, the compacted-row read, the
+// partition detach-and-drop) and the checkpoint chain in meta signed with the
+// engine key (enginekey.go). It supersedes the earlier presence stub, which fired
+// on every terminal run with a placeholder digest, a fixed key, and a hardcoded id
+// range.
 //
 // Seal timing is the seal condition: a partition seals only when it is past the row
 // threshold, every in-flight run writing into it has finished, and it holds zero

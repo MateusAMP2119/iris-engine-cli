@@ -138,7 +138,7 @@ func TestCaptureEmission(t *testing.T) {
 	defer func() { _ = adminConn.Close(ctx) }()
 
 	// The writer connection: a run id rides its session (the injected-connection
-	// contract E06.3 owns; here the trigger reads it in-transaction).
+	// contract pg.InjectRunID owns; here the trigger reads it in-transaction).
 	writerConn, err := pgx.Connect(ctx, dsnTo(pg.DataDatabase, writer, writerpw))
 	if err != nil {
 		t.Fatalf("connect as writer role: %v", err)

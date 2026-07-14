@@ -31,11 +31,11 @@ import (
 //
 // Planning is pure over three views: the declared schemas tree, the live-Postgres
 // state, and the reconstructed migration ledger. Apply performs the I/O through
-// the same two seams the E03.7 sync engine uses -- the pg.DB data-database client
-// and the LedgerRecorder meta-write seam -- and never writes a migration file
-// (provisioning replays the ledger; the sync engine is the sole file writer). The
-// emitted DDL stream is deterministic (schemas then tables then capture, each in
-// sorted order), so a golden diff is a contract diff.
+// the same two seams the sync engine (sync.go) uses -- the pg.DB data-database
+// client and the LedgerRecorder meta-write seam -- and never writes a migration
+// file (provisioning replays the ledger; the sync engine is the sole file writer).
+// The emitted DDL stream is deterministic (schemas then tables then capture, each
+// in sorted order), so a golden diff is a contract diff.
 //
 // Head-recording definition: the ledger head recorded when a table is created
 // from its head is the highest migration id present in the table's migrations/
@@ -52,11 +52,11 @@ import (
 const createHeadID = "0001"
 
 // LiveView is the data database's current physical state as provisioning reads it:
-// which schemas and tables exist, whether each existing
-// table's capture trigger is installed, and whether the partitioned journal
-// exists. Provisioning consults it so a re-plan against an already-provisioned
-// database is empty. E03.10 supplies the real view from an information_schema and
-// pg_trigger read; the planner is pure over it.
+// which schemas and tables exist, whether each existing table's capture trigger is
+// installed, and whether the partitioned journal exists. Provisioning consults it
+// so a re-plan against an already-provisioned database is empty. The live client
+// (Client.ReadLiveView, live.go) supplies the real view from an information_schema
+// and pg_trigger read; the planner is pure over it.
 type LiveView struct {
 	// Schemas is the set of schema names that already exist (keys present => exists).
 	Schemas map[string]bool
@@ -83,11 +83,12 @@ func (v LiveView) hasCaptureTrigger(schema, table string) bool {
 // TableLedger is the reconstructed migration-ledger view of one declared table
 // that provisioning diffs against live Postgres: the immutable migration files
 // present on disk under the table's migrations/ directory and the highest migration
-// id already recorded applied in the meta migrations table. E03.10 reconstructs it
-// from the migrations/ files (LoadDiskMigrations) and a meta read; the planner is
-// pure over it. The create-head checksum for a table with no migrations comes from
-// the DECLARED table.yaml bytes (declare.DiscoveredTable.Raw), which are always
-// present, not from this diff view, which may be absent for a brand-new table.
+// id already recorded applied in the meta migrations table. The daemon's apply
+// orchestrator (internal/daemon/control.go) reconstructs it per table from the
+// migrations/ files (LoadDiskMigrations) and a meta read of the applied heads; the
+// planner is pure over it. The create-head checksum for a table with no migrations
+// comes from the DECLARED table.yaml bytes (declare.DiscoveredTable.Raw), which are
+// always present, not from this diff view, which may be absent for a brand-new table.
 type TableLedger struct {
 	// DiskMigrations are the migration files present on disk, one per additive
 	// migration; order is normalized to ascending migration id by the planner.
@@ -133,9 +134,10 @@ type ReplayPending struct {
 func (ReplayPending) isTableBranch() {}
 
 // PendingMigration is one additive migration replayed against an existing table:
-// the ADD COLUMN ALTER to run and the ledger head it advances to. Unlike an E03.7
-// PlannedMigration it writes no migration file -- the file already exists on disk;
-// provisioning only reconciles the live table and the applied head to it.
+// the ADD COLUMN ALTER to run and the ledger head it advances to. Unlike the sync
+// engine's PlannedMigration (sync.go) it writes no migration file -- the file
+// already exists on disk; provisioning only reconciles the live table and the
+// applied head to it.
 type PendingMigration struct {
 	// Alter is the ADD COLUMN ALTER that applies the migration to the data database.
 	Alter string
@@ -405,8 +407,8 @@ func sortedMigrations(migs []declare.MigrationFile) []declare.MigrationFile {
 // is a golden.
 //
 // Within create-from-head the CREATE TABLE runs before the head is recorded (the
-// durable data change first, then the meta record), matching the E03.7 sync
-// engine's order; the two databases cannot share a transaction, so a failure
+// durable data change first, then the meta record), matching the sync engine's
+// order (sync.go); the two databases cannot share a transaction, so a failure
 // between them is reconciled by re-provisioning, which is idempotent. Every step's
 // error is wrapped and returned immediately -- no error is swallowed -- and the
 // plan is immutable, so it is safely re-appliable once a fault is cleared.

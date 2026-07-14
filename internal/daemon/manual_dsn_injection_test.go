@@ -57,7 +57,7 @@ func TestManualRunScopedConnectionInjected(t *testing.T) {
 		})
 
 		t.Run("no base scoped DSN yields an empty connection, never a malformed one", func(t *testing.T) {
-			// Until the scoped connection is provisioned (E04.4) the base is empty; the
+			// A manualExec wired with no scoped data connection has an empty base; the
 			// injection stays empty rather than producing an options-only DSN.
 			m := &manualExec{}
 			got, ok := dbURLFromEnv(m.childEnv(42))

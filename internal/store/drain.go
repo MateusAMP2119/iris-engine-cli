@@ -11,9 +11,10 @@ import (
 // worklist rows, one atomic statement, and nothing else -- no re-run, no
 // downstream alteration. The run rows themselves stay in runs (a worklist exit
 // never deletes run history); with no outstanding dead_letters entry left,
-// retention (E05.9) reads the run as prunable, and -- because the removed entry
-// was the run's only replay ticket -- the run can never be replayed again
-// (ResolveReplayTargets finds no worklist entry for it and errors). The
+// count-based retention (dispatch.SelectPrunable, which spares any run its
+// worklist entry still holds) reads the run as prunable, and -- because the
+// removed entry was the run's only replay ticket -- the run can never be replayed
+// again (ResolveReplayTargets finds no worklist entry for it and errors). The
 // dispatcher resolves which run ids the operator's scope names
 // (internal/dispatch, ResolveDrainTargets) and hands the resolved list here to
 // write.

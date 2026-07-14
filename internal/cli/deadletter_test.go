@@ -15,8 +15,10 @@ import (
 // /deadletter/replay with the given status and body, so the real replay client is
 // driven end to end (resolve target, POST the scope, classify the reply) with no live
 // daemon. It is the integration-tier "in-process daemon over a socket" the coder
-// doctrine names, standing in for the leader's replay route until E05.10/E05.12 wire
-// the daemon-side lane runner that mints and runs the replacement.
+// doctrine names, and it stands in for the leader's real replay route (the daemon's
+// deadletterPlane.Replay, which resolves the scope to root causes and mints each a
+// replacement through the leader's lane executor) so these tests exercise the CLI
+// side alone -- scripted statuses and bodies, no Postgres, no leadership.
 func startReplayStub(t *testing.T, sock string, status int, body any) {
 	t.Helper()
 	ln, err := net.Listen("unix", sock)

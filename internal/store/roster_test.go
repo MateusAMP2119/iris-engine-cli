@@ -11,11 +11,10 @@ import (
 // tables: the twenty meta control tables plus public.data_journal in the data
 // database. The eighteenth meta table is engine_key (moving the engine signing key
 // from a per-database GUC into an engine-owned single-row meta table); the
-// nineteenth is read_pool_credential (the E13.7 follow-up persisting the shared
-// read-pool login secret create-once so a restart or HA standby reuses one stable
-// credential); the twentieth is leadership (the leader's advertised address a
-// standby reads to name the leader). The test name keeps its original count though
-// the roster grew.
+// nineteenth is read_pool_credential (persisting the shared read-pool login secret
+// create-once, so a restart or HA standby reuses one stable credential); the
+// twentieth is leadership (the leader's advertised address a standby reads to name
+// the leader). The test name keeps its original count though the roster grew.
 func TestEighteenTableRoster(t *testing.T) {
 	meta := store.MetaSchema()
 

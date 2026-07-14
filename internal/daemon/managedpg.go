@@ -27,9 +27,9 @@ import (
 //
 // # Two modes, one code path
 //
-// The mode is E02.2's admin-DSN chain applied: config.Settings.Managed() (an empty
-// pg_dsn) selects managed mode, any pg_dsn selects external. External mode starts
-// no local instance and resolves the admin DSN straight through daemon.Resolve;
+// The mode is the admin-DSN chain (admindsn.go) applied: config.Settings.Managed()
+// (an empty pg_dsn) selects managed mode, any pg_dsn selects external. External mode
+// starts no local instance and resolves the admin DSN straight through daemon.Resolve;
 // managed mode mints its own superuser DSN and starts the subprocess. Both modes
 // end at the same AdminDSN the rest of the engine derives every connection from
 // (AdminDSN.Connect), so the only thing that differs between them is where the
@@ -223,9 +223,10 @@ func NewManager(settings config.Settings, newSup SupervisorFactory) *Manager {
 // failing fast on a version-mismatched existing data directory. In external mode
 // there is no local instance to install, so it is a no-op. It is idempotent.
 //
-// This implements only the managed-Postgres download/placement leg. Meta bootstrap,
-// the control socket, and the engine key are `iris engine install`'s remaining legs
-// and land in E02.4; they extend this method rather than replace it.
+// This is only the managed-Postgres download/placement leg. `iris engine install`'s
+// remaining legs -- meta bootstrap, the data journal, the control socket, and the
+// engine key -- belong to InstallEngine (install.go), which calls this method first
+// rather than replacing it.
 func (m *Manager) Install(ctx context.Context) error {
 	if !m.settings.Managed() {
 		return nil // external mode: the user's Postgres, nothing to install locally.
@@ -247,14 +248,16 @@ func (m *Manager) Install(ctx context.Context) error {
 // Startup resolves the admin DSN for the configured mode and, in managed mode,
 // starts the managed-Postgres subprocess so it is accepting connections before the
 // caller dispatches any lane. External mode starts no local instance and resolves
-// the admin DSN straight through the E02.2 chain. The returned AdminDSN is what the
-// caller Connects meta and data from -- one code path for both modes. Call Shutdown
-// to stop a managed instance.
+// the admin DSN straight through the admin-DSN chain (Resolve). The returned
+// AdminDSN is what the caller Connects meta and data from -- one code path for both
+// modes. Call Shutdown to stop a managed instance.
 //
-// Managed Startup mints a fresh superuser credential each call; re-opening an
-// already-initialized managed cluster with a matching credential (so a restarted
-// daemon can reconnect) is E02.4's connection-bootstrap concern. Startup is exercised
-// here through the fake supervisor; the CLI wires only Install in this task.
+// Managed Startup does not mint a fresh superuser credential each call: it reuses
+// the one persisted under the managed-Postgres directory (resolveManagedPassword),
+// so a restarted daemon re-opens an already-initialized managed cluster instead of
+// failing its health check against a password the data directory never saw. Both
+// `iris engine install` (install.go) and the daemon lifecycle (lifecycle.go) come
+// through here; the integration tier exercises it through the fake supervisor.
 func (m *Manager) Startup(ctx context.Context) (AdminDSN, error) {
 	if !m.settings.Managed() {
 		// External mode: no local instance; the admin DSN is the user's, resolved by

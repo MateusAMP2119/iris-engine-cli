@@ -17,12 +17,14 @@ import (
 // replayLeaderStub stands up a leader endpoint over a unix socket that answers POST
 // /deadletter/replay with the given status and JSON body, so the shipped binary's
 // replay client is driven end to end (resolve target, POST scope, classify reply)
-// against a real socket and real HTTP. The daemon-side lane runner that mints and runs
-// a replacement -- and so produces a real re-dead-letter -- is E05.10/E05.12; this stub
-// delivers the dead-lettering-replay outcome the leader will report once that lands, so
-// the conformance leg proves the SHIPPED BINARY's exit-5 contract today. The
-// dispatch-internal correctness (root walk, atomic mint + worklist exit, replayed_from
-// chaining) is proven at the unit and integration tiers.
+// against a real socket and real HTTP. The daemon's leader-side replay mints each root
+// cause a replacement for real, but a minted replacement is QUEUED rather than executed
+// inline, so a live replay never reports a re-dead-letter in its own reply: its
+// dead_lettered list is always empty, and a replacement that later fails parks a fresh
+// worklist entry through the lane loop instead. This stub is what hands the binary a
+// dead-lettering-replay reply, so the conformance leg can prove the SHIPPED BINARY's
+// exit-5 contract. The dispatch-internal correctness (root walk, atomic mint + worklist
+// exit, replayed_from chaining) is proven at the unit and integration tiers.
 func replayLeaderStub(t *testing.T, socket string, status int, body any) {
 	t.Helper()
 	ln, err := net.Listen("unix", socket)

@@ -153,8 +153,9 @@ func TestStatsPlane(t *testing.T) {
 		t.Errorf("pipeline rollup = %+v, want extract succeeded run %s exit 0", p, run.ID)
 	}
 
-	// An empty engine keeps the chain-head field explicit and null (E07.4's chain is
-	// not built yet; the payload field is present regardless).
+	// An empty engine keeps the chain-head field explicit and null (nothing has been
+	// sealed, so the checkpoint chain has no head; the payload field is present
+	// regardless).
 	empty, err := daemon.NewStatsPlane(storetest.NewStats(), nil, nil).Stats(context.Background())
 	if err != nil {
 		t.Fatalf("stats plane over empty state: %v", err)

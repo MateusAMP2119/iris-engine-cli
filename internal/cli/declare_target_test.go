@@ -180,8 +180,10 @@ func TestDeclareBareUsageError(t *testing.T) {
 // TestDestroySingleDeclaration proves iris declare destroy accepts exactly
 // one declaration file per invocation -- the same single-target rule as
 // apply, folder resolution included -- so a full teardown is one confirmed
-// destroy per declaration (leaf-first ordering is enforced elsewhere, later
-// epics E03.10/E10).
+// destroy per declaration. Ordering those destroys leaf-first is not this
+// command's concern: it rests on the destroy op's downstream-blocker
+// predicate in internal/dispatch (DestroyBlockReasons), whose seam still
+// defaults open, so nothing refuses an out-of-order destroy today.
 func TestDestroySingleDeclaration(t *testing.T) {
 	t.Run("destroy-single-declaration", func(t *testing.T) {
 		t.Run("exactly one declaration file per invocation", func(t *testing.T) {

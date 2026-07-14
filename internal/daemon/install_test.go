@@ -266,8 +266,9 @@ func TestPrepareSocketDir(t *testing.T) {
 	})
 }
 
-// TestEngineKeyMintedAtInstall and checkpoints insert-only prove the integration
-// contracts using fakes (per E00.4).
+// TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly proves two install-time
+// contracts -- the engine key is minted at install, and the checkpoint chain is
+// insert-only -- at integration tier, over fakes and with no live Postgres.
 func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 	ctx := context.Background()
 

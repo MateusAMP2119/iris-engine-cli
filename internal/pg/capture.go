@@ -62,10 +62,11 @@ func RenderCaptureReachabilityGrants(role string) []string {
 // opaque recorded_at audit string. There is no post-image.
 //
 //   - Attribution. run_id rides the injected connection as the per-session setting
-//     iris.run_id, read here in-transaction with current_setting. E06.3 sets it on
-//     the connection Iris injects; this function only reads it. data_journal.run_id
-//     is NOT NULL, so a write with no run in session cannot be stamped and the write
-//     fails -- no row is ever keyed to a role without a run.
+//     iris.run_id, read here in-transaction with current_setting. InjectRunID
+//     (runid.go) puts it on the run-scoped DSN the daemon hands a run at spawn; this
+//     function only reads it. data_journal.run_id is NOT NULL, so a write with no run
+//     in session cannot be stamped and the write fails -- no row is ever keyed to a
+//     role without a run.
 //   - Writer identity. The function is SECURITY DEFINER so the INSERT runs as the
 //     journal's owner: the journal grants no INSERT to anyone (only SELECT TO
 //     PUBLIC), so a pipeline role's write can only reach the journal through the

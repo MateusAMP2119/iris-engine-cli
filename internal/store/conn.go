@@ -8,8 +8,10 @@ import (
 // This file holds the meta connection-opening seam. Every meta connection derives
 // from the single daemon-owned admin DSN: store never accepts a raw connection
 // string, only a ConnSource the daemon builds from the admin DSN, so no meta
-// connection can originate from anywhere else. The real pgx-backed Dialer lands
-// in E02.3; a recording fake stands in until then.
+// connection can originate from anywhere else. The live pgx-backed meta client
+// (Connect, client.go) takes that same ConnSource; the Dialer seam below has no
+// pgx implementation of its own -- a recording fake drives it, which is what
+// keeps the derivation provable with no live Postgres.
 
 // ConnSource yields the connection string store dials for the meta database. The
 // daemon builds the sole production source from its admin DSN, so a ConnSource is
@@ -21,8 +23,9 @@ type ConnSource interface {
 }
 
 // Dialer opens a live connection to a meta database connection string. It is the
-// one place store turns a connection string into a connection; the pgx-backed
-// dialer arrives in E02.3 and a recording fake drives it in tests until then.
+// injection point that keeps Open free of pgx: only a recording fake implements
+// it (the live client dials pgx itself, in Connect), so the admin-DSN derivation
+// Open enforces is provable in tests with no live Postgres.
 type Dialer interface {
 	// Dial opens a connection to connString.
 	Dial(ctx context.Context, connString string) error

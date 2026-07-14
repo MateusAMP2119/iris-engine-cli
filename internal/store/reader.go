@@ -110,9 +110,10 @@ var _ Reader = (*pgxReader)(nil)
 func newPgxReader(pool readPool) *pgxReader { return &pgxReader{pool: pool} }
 
 // Runs issues one plain MVCC query and scans the result. A query error is returned
-// immediately -- there is no retry, no backoff, no second attempt. filter is
-// applied in memory over the snapshot (E05 pushes it into SQL); the point E02.6
-// pins is that the read path is a single, un-retried MVCC query.
+// immediately -- there is no retry, no backoff, no second attempt. filter is still
+// applied in memory over the snapshot rather than pushed into the SELECT
+// (selectRunsSQL takes no parameters); what the read path guarantees is that it is
+// a single, un-retried MVCC query.
 func (r *pgxReader) Runs(ctx context.Context, filter RunFilter) ([]Run, error) {
 	rows, err := r.pool.query(ctx, selectRunsSQL)
 	if err != nil {

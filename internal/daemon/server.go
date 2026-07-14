@@ -57,9 +57,10 @@ type Server struct {
 // ServerOption configures a Server at construction.
 type ServerOption func(*Server)
 
-// WithVerifier sets the TCP PAT verifier. The default is api.RejectAllVerifier
-// (every TCP request 401s until E09.1 mints the first PAT). A nil verifier is
-// ignored, keeping the safe default.
+// WithVerifier sets the TCP PAT verifier. The daemon passes the store-backed one
+// (verifier.go, over the meta PAT store); without this option the default is
+// api.RejectAllVerifier, so every TCP request 401s -- the honest answer when no PAT
+// store is wired. A nil verifier is ignored, keeping that safe default.
 func WithVerifier(v api.TokenVerifier) ServerOption {
 	return func(s *Server) {
 		if v != nil {

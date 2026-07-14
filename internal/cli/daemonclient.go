@@ -18,11 +18,12 @@ import (
 // fails fast (never hangs) when nothing is listening.
 const daemonProbeTimeout = 3 * time.Second
 
-// requireDaemon is the reachability gate every daemon-touching command passes
-// through: it resolves the configured target and dials it. A refused or absent
-// daemon is no-daemon (exit 3) with start guidance, never an auto-start. A
-// reachable daemon lets the command proceed; since the command bodies land in
-// later epics, a reached daemon currently yields not-implemented (exit 4).
+// requireDaemon is the reachability gate behind the command surface's remaining
+// unwired verbs: it resolves the configured target and dials it. A refused or
+// absent daemon is no-daemon (exit 3) with start guidance, never an auto-start.
+// Reaching a daemon proves only that much: these verbs have no body of their own,
+// so a reached daemon yields not-implemented (exit 4). The wired commands do not
+// pass through here -- each dials and classifies its own route.
 func (a *app) requireDaemon(cmd *cobra.Command, op string) error {
 	target := a.resolveTarget(cmd)
 	if err := a.probeDaemon(cmd.Context(), target); err != nil {

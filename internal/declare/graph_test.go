@@ -191,11 +191,12 @@ func TestApplyUpstreamFirst(t *testing.T) {
 	})
 }
 
-// TestRegistryGraphView proves the in-memory Registry satisfies the Graph view
-// the apply-time checks read through (and that E03.9's persisted registry will
-// also satisfy): registered names report registered and unknown names do not --
-// the Registered() lookup upstream-first depends on -- while DependsOn returns a
-// node's recorded upstreams as an isolated copy, the edge view acyclicity walks.
+// TestRegistryGraphView proves the in-memory Registry satisfies the Graph view the
+// apply-time checks read through -- the same view apply rebuilds from the persisted
+// registry (the pipelines and dependencies meta tables) before validating a
+// declaration. Registered names report registered and unknown names do not (the
+// Registered() lookup upstream-first depends on), while DependsOn returns a node's
+// recorded upstreams as an isolated copy, the edge view acyclicity walks.
 func TestRegistryGraphView(t *testing.T) {
 	t.Run("apply-upstream-first", func(t *testing.T) {
 		var g declare.Graph = declare.NewRegistry().Add("a").Add("b", "a")

@@ -137,7 +137,7 @@ func TestAdminDSNMemoryOnly(t *testing.T) {
 	t.Run("resolving the chain writes no local state", func(t *testing.T) {
 		// The daemonless lifecycle commands resolve the same chain and must never
 		// store the DSN. Resolve in an empty temp cwd and assert nothing was written
-		// (the no-local-state pattern from E02.1).
+		// (the no-local-state rule: the admin DSN is held in memory only).
 		tmp := t.TempDir()
 		t.Chdir(tmp)
 

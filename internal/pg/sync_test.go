@@ -414,8 +414,9 @@ func TestSchemaDriftMissingColumnAutofix(t *testing.T) {
 
 // TestMissingCaptureTriggerAutofix proves a missing capture trigger on a declared
 // table is classified additive and auto-fixed, like a missing column: the sync runs
-// the create-trigger DDL through the pg seam (E06.2 owns the trigger's PL/pgSQL
-// body; here the sync emits the CREATE TRIGGER statement that installs it).
+// the create-trigger DDL through the pg seam (CaptureFunctionDDL in capture.go owns
+// the trigger's PL/pgSQL body; here the sync emits the CREATE TRIGGER statement that
+// binds it to the table).
 func TestMissingCaptureTriggerAutofix(t *testing.T) {
 	ctx := context.Background()
 	declared := parseTable(t, ordersWithStatusYAML)
@@ -460,11 +461,11 @@ func TestMissingCaptureTriggerAutofix(t *testing.T) {
 }
 
 // TestRenderCaptureTriggers pins the statement-level, transition-table capture
-// trigger DDL the sync emits as a seam: E06.2 owns the trigger function's PL/pgSQL
-// body, and these are the CREATE TRIGGER statements that bind it to a declared
-// table. Postgres transition tables are per-operation, so the set is three triggers
-// (INSERT with NEW TABLE, UPDATE with OLD and NEW TABLE, DELETE with OLD TABLE), one
-// INSERT...SELECT per statement. A golden diff is a contract diff.
+// trigger DDL the sync emits as a seam: capture.go owns the trigger function's
+// PL/pgSQL body, and these are the CREATE TRIGGER statements that bind it to a
+// declared table. Postgres transition tables are per-operation, so the set is three
+// triggers (INSERT with NEW TABLE, UPDATE with OLD and NEW TABLE, DELETE with OLD
+// TABLE), one INSERT...SELECT per statement. A golden diff is a contract diff.
 func TestRenderCaptureTriggers(t *testing.T) {
 	stmts := pg.RenderCaptureTriggers("analytics", "orders")
 	if len(stmts) != 3 {

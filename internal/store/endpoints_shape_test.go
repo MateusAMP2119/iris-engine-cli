@@ -12,8 +12,8 @@ import (
 // endpoints keys name (PK) to a dotted schema.table source, a JSON fields
 // projection, and a unique-column keyset sort; endpoint_filters is keyed
 // (endpoint, param) with a foreign key to endpoints.name and an op drawn from the
-// closed set (eq, range). The DDL is E02.1's; this locks the shape the endpoint
-// compiler's results persist into.
+// closed set (eq, range). The DDL lives in the bootstrap meta schema (MetaSchema,
+// schema.go); this locks the shape the endpoint compiler's results persist into.
 func TestEndpointsTableShape(t *testing.T) {
 	s := store.MetaSchema()
 

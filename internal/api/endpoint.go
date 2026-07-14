@@ -21,7 +21,8 @@ import (
 // EndpointReader seam; the production reader is PoolReader (readexec.go): the
 // shared data-database read pool, SET ROLE to the caller PAT's role, the
 // compiled statement with bound params. With either seam unwired, /q answers
-// the internal-fault envelope exactly as E09.5 mounted it.
+// the internal-fault envelope the roster serves for any reader-less route
+// (roster.go) -- mounted and scope-checked all the same.
 
 // EndpointSource is the live compiled-shape lookup the /q route checks a
 // request's endpoint out of. The daemon supplies dispatch's endpoint registry;
@@ -35,9 +36,9 @@ type EndpointSource interface {
 
 // EndpointReader executes one compiled endpoint read: the checked-out shape's
 // statement with the request's validated plan, returning the served rows as
-// column-to-value maps in served order. The production implementation rides
-// the shared read pool on the data database (E09.7/E09.8); a fake stands in
-// for integration tests.
+// column-to-value maps in served order. The production implementation is
+// PoolReader (readexec.go), riding the shared read pool on the data database; a
+// fake stands in for it in tests.
 type EndpointReader interface {
 	// ReadEndpoint runs the shape's compiled statement under the request's plan.
 	ReadEndpoint(ctx context.Context, shape *declare.CompiledEndpoint, plan *QueryPlan) ([]map[string]any, error)
@@ -83,7 +84,7 @@ func WriteDataPage(w http.ResponseWriter, status int, v any, page Page) {
 }
 
 // serveEndpoint handles GET /q/{endpoint}: the declared read contract. With
-// either seam unwired it answers the E09.5 internal-fault envelope (mounted,
+// either seam unwired it answers the internal-fault envelope (mounted,
 // scope-checked, never a silent payload). Wired, it checks the request's shape
 // out of the live source exactly once -- the request boundary the re-apply swap
 // honors -- resolves the wire grammar against that shape (400 naming a refused

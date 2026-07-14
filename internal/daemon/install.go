@@ -12,20 +12,19 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file wires the full `iris engine install` bootstrap over the pieces the
-// earlier E02 tasks built: probe for the meta database and create it with a plain
-// CREATE DATABASE if missing, ensure its tables, create the partitioned
-// public.data_journal on the data connection, store the minted ed25519 engine key
-// on the meta connection, and set up the socket.
+// This file wires the full `iris engine install` bootstrap: probe for the meta
+// database and create it with a plain CREATE DATABASE if missing, ensure its
+// tables, create the partitioned public.data_journal on the data connection, store
+// the minted ed25519 engine key on the meta connection, and set up the socket.
 //
-// BootstrapEngine is the orchestration; it composes store.Bootstrap/EnsureSchema,
-// pg.EnsureJournal, the engine key (enginekey.go), and the socket setup
-// (socket.go) over injected seams, so the whole sequence is proven with recording
-// fakes and no live Postgres. The seams are exactly the E02.1/E02.2 connection
-// seams (store.Execer, pg.DB) plus the small MetaProbe and SocketPreparer here;
-// the pgx-backed implementations of the DB seams land with the daemon's live
-// connection wiring, at which point the CLI drives this same function against a
-// real cluster.
+// Two entry points run that one sequence. InstallEngine is the live path the CLI
+// drives against a real cluster: it brings Postgres up through the Manager and runs
+// the legs over the pgx-backed clients (store.OpenInstallConns, pg.Connect), which
+// the daemon composes without ever importing pgx itself. BootstrapEngine is the
+// same sequence over injected seams -- the connection seams (store.Execer, pg.DB)
+// plus the small MetaProbe and SocketPreparer here, with the engine key
+// (enginekey.go) and the socket setup (socket.go) -- so the ordering is proven with
+// recording fakes and no live Postgres.
 
 // InstallEngine runs the `iris engine install` bootstrap against a live cluster: it
 // brings up Postgres for the configured mode -- the managed local subprocess or the

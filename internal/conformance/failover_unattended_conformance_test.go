@@ -19,15 +19,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
 )
 
-// This file is the golden-sample acceptance spine (E13.8, the final epic task):
-// the three scenario contracts that prove the whole
-// engine end to end, unattended, against the shipped binary, a running daemon, and
-// real Postgres. It reuses the two-daemon-on-one-meta pattern the failover legs
-// established (E11.2 standby rejection, E11.4 leader kill) but drives the GOLDEN
-// workspace through the numbered acceptance steps and adds the properties
-// those legs do not: reconciliation of the orphaned in-flight run to stopped, lanes
-// resuming on the new leader, and the whole scenario running with zero human
-// intervention.
+// This file is the golden-sample acceptance spine: the three scenario contracts that
+// prove the whole engine end to end, unattended, against the shipped binary, a
+// running daemon, and real Postgres. It reuses the two-daemon-on-one-meta pattern the
+// bare failover legs established (standby_rejection_conformance_test.go's mutation
+// rejection, failover_conformance_test.go's leader kill) but drives the GOLDEN
+// workspace through the numbered acceptance steps and adds the properties those legs
+// do not: reconciliation of the orphaned in-flight run to stopped, lanes resuming on
+// the new leader, and the whole scenario running with zero human intervention.
 //
 // All three need two candidates on ONE shared meta, so they run only in external
 // mode (IRIS_PG_DSN set, the conformance/CI configuration); managed Postgres gives
@@ -172,14 +171,14 @@ func scStartStandby(t *testing.T, bin *Binary, ws string) string {
 }
 
 // TestGoldenFailoverStandbyTakeover is the golden-sample failover leg of acceptance
-// step 9. Two candidates share one meta over the
-// golden workspace; a hanging golden pipeline leaves a real in-flight run on the
-// leader. Killing the leader abruptly (host-loss simulation) drops its meta session
-// and releases the advisory lock: the standby acquires it, runs startup
-// reconciliation (the orphaned running run is dead-lettered stopped), reports itself
-// leader, and resumes lanes (a fresh succeeded run lands on the new leader). This is
-// the golden version -- richer than E11.4's bare takeover
-// by proving reconciliation AND lane resumption over the sample graph.
+// step 9. Two candidates share one meta over the golden workspace; a hanging golden
+// pipeline leaves a real in-flight run on the leader. Killing the leader abruptly
+// (host-loss simulation) drops its meta session and releases the advisory lock: the
+// standby acquires it, runs startup reconciliation (the orphaned running run is
+// dead-lettered stopped), reports itself leader, and resumes lanes (a fresh succeeded
+// run lands on the new leader). This is the golden version -- richer than the bare
+// takeover leg in failover_conformance_test.go by proving reconciliation AND lane
+// resumption over the sample graph.
 func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("golden failover needs two candidates on one shared meta; set IRIS_PG_DSN (managed mode gives each daemon its own Postgres, so there is no shared lock to contend for)")
@@ -254,12 +253,12 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 }
 
 // TestGoldenStandbyMutationExit6 is the golden-sample standby-rejection leg of
-// acceptance step 9. Two candidates share one
-// meta over the golden workspace with the ingest graph applied; a golden mutation
-// posted to the standby is rejected before it reaches a route, exit 6, with the
-// not_leader envelope naming the leader for retargeting. This is the golden version
-// (real registered golden pipelines, the sample's own mutations), distinct from
-// E11.2's rejection of an unregistered "any_pipeline".
+// acceptance step 9. Two candidates share one meta over the golden workspace with the
+// ingest graph applied; a golden mutation posted to the standby is rejected before it
+// reaches a route, exit 6, with the not_leader envelope naming the leader for
+// retargeting. This is the golden version (real registered golden pipelines, the
+// sample's own mutations), distinct from the bare standby-rejection leg's rejection
+// of an unregistered "any_pipeline" (standby_rejection_conformance_test.go).
 func TestGoldenStandbyMutationExit6(t *testing.T) {
 	if os.Getenv("IRIS_PG_DSN") == "" {
 		t.Skip("golden standby rejection needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")

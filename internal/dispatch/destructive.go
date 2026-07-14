@@ -7,9 +7,16 @@ package dispatch
 // downstream-blocker predicates (a dependent's depends_on, a downstream run_inputs
 // row, an outstanding dead-letter entry naming the target as failed_upstream).
 // Everything here is a decision over snapshots -- no I/O, no daemon -- mirroring
-// drain.go and gate.go: the predicates decide, the callers (the CLI's confirmation
-// flows and the daemon's control connection, E10.2's wiring) read the snapshots and
-// act.
+// drain.go and gate.go: the predicates decide, and a caller reads the snapshots and
+// acts on them.
+//
+// No production caller does so yet. The confirmation gate is enforced in the CLI
+// (internal/cli: a typed target name on a TTY, or --yes/--force), which forwards
+// the confirm/force flags to the daemon's control connection, and the daemon then
+// executes the op -- declare destroy runs with the Destroyer's open blocker
+// (destroy.go), and the workload-wipe plane notes the same gap. So the evaluation
+// and decision below are the model, proven by this package's tests, not a gate the
+// running engine consults.
 //
 // The tier split: hard blockers versus soft-blocks. The destroy
 // downstream blockers are HARD -- destroy refuses while they hold, naming them
@@ -74,9 +81,10 @@ func (op DestructiveOp) Teardown() bool {
 }
 
 // ConfirmMode is how a non-interactive invocation satisfied the confirmation gate
-// (--yes/--force on destructive commands). The interactive prompt flows (typed target
-// name, y/N) are E10.2's; both resolve to one of these modes before the decision here
-// runs. The zero value is ConfirmYes, the safe mode: it never overrides a soft-block.
+// (--yes/--force on destructive commands). The interactive prompt flows (typed
+// target name, y/N) belong to the CLI, which resolves either form to one of these
+// modes before the decision here runs. The zero value is ConfirmYes, the safe mode:
+// it never overrides a soft-block.
 type ConfirmMode int
 
 // The confirmation modes.
@@ -317,9 +325,10 @@ func DestroyBlockReasons(target string, dependsOn map[string][]string, edges []R
 	return reasons
 }
 
-// DestroyBlockerFunc adapts a function to the DestroyBlocker seam, so the wiring
-// (E10.2's confirmation flows) can feed DestroyBlockReasons over live snapshots
-// into a Destroyer without a named type.
+// DestroyBlockerFunc adapts a function to the DestroyBlocker seam, so a caller can
+// feed DestroyBlockReasons over live snapshots into a Destroyer without a named
+// type. Nothing in the daemon does so today (the Destroyer's blocker still defaults
+// open); this package's tests drive the adapter.
 type DestroyBlockerFunc func(ctx context.Context, pipeline string) (blocked bool, reason string, err error)
 
 // Blocked consults the adapted function.
