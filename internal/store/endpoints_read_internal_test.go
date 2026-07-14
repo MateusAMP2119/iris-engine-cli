@@ -53,10 +53,8 @@ func (p *endpointPool) query(_ context.Context, sql string, _ ...any) (poolRows,
 // persisted endpoint from its shape row plus its filter rows: it decodes the JSON
 // field projection, groups filters onto their endpoint by name, and returns endpoints
 // in name order -- exactly the shape the startup reload recompiles from.
-//
-// spec: S07/endpoints-reload-from-meta
 func TestReadEndpointsJoinsShapeAndFilters(t *testing.T) {
-	t.Run("S07/endpoints-reload-from-meta", func(t *testing.T) {
+	t.Run("endpoints-reload-from-meta", func(t *testing.T) {
 		pool := &endpointPool{
 			endpoints: [][]any{
 				{"orders_by_customer", "analytics.orders", []byte(`["id","customer_id","amount"]`), "id"},

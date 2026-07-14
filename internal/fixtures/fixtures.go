@@ -4,9 +4,9 @@
 // without duplicating it. Paths are resolved from this source file's location,
 // so they are stable regardless of the caller's working directory.
 //
-// The inventory (the S16/fixture-inventory convention) lives under testdata/:
+// The inventory lives under testdata/:
 //
-//	workspace/golden/            the golden sample workspace (spec sections 3, 5, 7, 10, 13)
+//	workspace/golden/            the golden sample workspace
 //	  pipelines/ingest/          the ingest lane
 //	    iris-declare.yaml        lane composer: lane + order (extract_orders, reset_counters, load_orders)
 //	    extract_orders/          reads + writes raw.orders_staging; no depends_on
@@ -31,8 +31,8 @@
 //	  cycle/                     a depends_on cycle (a -> b -> a)
 //	  lane_no_composer/          a 2+ pipeline lane with no composer
 //
-// A golden diff is a contract diff: any change to these fixtures ships with its
-// specification delta.
+// A golden diff is a contract diff: any change to these fixtures changes what
+// every consuming package asserts against.
 package fixtures
 
 import (
@@ -55,8 +55,7 @@ func resolveRoot() string {
 
 // WorkspaceGolden returns the absolute path to the golden sample workspace: the
 // complete sample project (ingest lane + composer, raw and analytics schemas,
-// the orders_by_customer endpoint) from specification sections 3, 5, 7, 10 and
-// 13.
+// the orders_by_customer endpoint).
 func WorkspaceGolden() string {
 	return filepath.Join(resolveRoot(), "workspace", "golden")
 }

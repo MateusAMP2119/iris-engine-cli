@@ -12,7 +12,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg/pgtest"
 )
 
-// ordersYAML is the specification section 5 worked example table.yaml: the four
+// ordersYAML is the worked example table.yaml: the four
 // column modifiers each on their own column (primary_key, nullable: false,
 // bare default, no modifiers).
 const ordersYAML = `schema: analytics
@@ -73,7 +73,7 @@ columns:
 
 // reservedYAML names its schema, table, and columns after SQL reserved words, so
 // the golden pins that every identifier is double-quoted (the correctness
-// superset of the spec's worked-example shape).
+// superset of the worked-example shape).
 const reservedYAML = `schema: order
 table: select
 columns:
@@ -105,9 +105,7 @@ func parseTable(t *testing.T, doc string) *declare.Table {
 // DEFAULT clause always ahead of the constraint keywords and every identifier
 // double-quoted. The rendered DDL is "applied" through the pg.DB seam (the
 // recording fake) and diffed byte-for-byte against golden files, matching the
-// section 5 worked example shape.
-//
-// spec: S05/modifier-ddl-rendering
+// worked example shape.
 func TestRenderCreateTable(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
@@ -144,8 +142,6 @@ func TestRenderCreateTable(t *testing.T) {
 // column named after a SQL reserved word renders double-quoted, so the generated
 // DDL is a syntactically valid identifier rather than a keyword collision that
 // would fail only at the database.
-//
-// spec: S05/modifier-ddl-rendering
 func TestRenderCreateTableQuotesReservedIdentifiers(t *testing.T) {
 	ddl, err := pg.RenderCreateTable(parseTable(t, reservedYAML))
 	if err != nil {
@@ -166,8 +162,6 @@ func TestRenderCreateTableQuotesReservedIdentifiers(t *testing.T) {
 // TestRenderCreateTableUnknownType proves RenderCreateTable refuses a column
 // whose YAML type is outside the closed set, returning the resolve error rather
 // than emitting invalid SQL that surfaces only at the database.
-//
-// spec: S05/modifier-ddl-rendering
 func TestRenderCreateTableUnknownType(t *testing.T) {
 	bad := &declare.Table{
 		Schema: "analytics",
@@ -192,12 +186,10 @@ func TestRenderCreateTableUnknownType(t *testing.T) {
 }
 
 // TestRenderAddColumn proves the column definition a migration file records
-// renders to the section 5 additive ADD COLUMN DDL, so the recorded definition
+// renders to the additive ADD COLUMN DDL, so the recorded definition
 // is a faithful, applicable form of the migration. The rendered ALTER is issued
 // through the pg.DB seam and diffed against the golden; identifiers are quoted
 // and an out-of-set type is refused.
-//
-// spec: S05/migration-file-format
 func TestRenderAddColumn(t *testing.T) {
 	ctx := context.Background()
 	col := declare.MigrationColumn{Name: "status", Type: "text", Default: "'pending'"}

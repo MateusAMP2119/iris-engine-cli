@@ -23,13 +23,11 @@ func (f fakeKeyReader) ReadEngineKey(context.Context) (daemon.EngineKey, error) 
 }
 
 // TestEngineInfoExposesPublicKeyHalf proves `iris engine info` exposes the engine
-// key's public half and never its private half (specification sections 4 and 11):
-// the human and --json renderings both carry the base64 public key read back from
+// key's public half and never its private half: the human and --json renderings
+// both carry the base64 public key read back from
 // meta, and neither stream ever carries the private material. When the key cannot
 // be read (the engine is not installed / meta unreachable) info fails with the
 // operation-failed category and a clear message.
-//
-// spec: S04/engine-key-public-via-info
 func TestEngineInfoExposesPublicKeyHalf(t *testing.T) {
 	t.Chdir(t.TempDir())
 

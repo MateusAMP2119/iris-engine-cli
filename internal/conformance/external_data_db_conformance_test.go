@@ -23,7 +23,7 @@ type testConnSource struct{ dsn string }
 func (s testConnSource) ConnString() string { return s.dsn }
 
 // TestExternalDataDatabaseAdminOwned reproduces the external-mode CI shape and proves
-// the data-database fix (specification section 2: one cluster, one admin DSN; the
+// the data-database fix (one cluster, one admin DSN; the
 // engine bootstraps the databases it owns, mirroring how it creates meta). The CI
 // Postgres exposes a non-superuser admin role (CREATEDB, but it does not own the DSN's
 // default database, which the cluster superuser owns). Before the fix, the data pool
@@ -34,10 +34,8 @@ func (s testConnSource) ConnString() string { return s.dsn }
 // The reproduction stands up a bare Postgres cluster (no iris engine has touched it),
 // mints a non-superuser CREATEDB role, and drives pg.Connect + the provisioning
 // capture-function step as that role -- the exact statement that failed in CI.
-//
-// spec: S13/apply-repeat-noop
 func TestExternalDataDatabaseAdminOwned(t *testing.T) {
-	t.Run("S13/apply-repeat-noop", func(t *testing.T) {
+	t.Run("apply-repeat-noop", func(t *testing.T) {
 		const (
 			superuser = "postgres"
 			superpw   = "superpw"

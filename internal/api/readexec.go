@@ -11,16 +11,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the execution composition of the data surface (specification
-// section 7): the seam the routes execute engine-built statements through, and
-// the production /q reader over it. The ReadExecutor is the shared read pool's
-// map-shaped surface (store.ReadPool satisfies it; api holds no database path
-// of its own -- the daemon supplies the wired pool); a request's execution
-// identity comes from its resolved Authority: always the calling PAT's
-// engine-managed role, or the engine's own self read for ambient (socket)
-// callers. Endpoints never enter the picture as an identity -- they own no
-// roles and mint no credentials (pure shape) -- so the same endpoint read by
-// two PATs executes under two different roles.
+// This file is the execution composition of the data surface: the seam the
+// routes execute engine-built statements through, and the production /q reader
+// over it. The ReadExecutor is the shared read pool's map-shaped surface
+// (store.ReadPool satisfies it; api holds no database path of its own -- the
+// daemon supplies the wired pool); a request's execution identity comes from
+// its resolved Authority: always the calling PAT's engine-managed role, or the
+// engine's own self read for ambient (socket) callers. Endpoints never enter
+// the picture as an identity -- they own no roles and mint no credentials (pure
+// shape) -- so the same endpoint read by two PATs executes under two different
+// roles.
 
 // ReadExecutor executes one engine-built read statement through the shared
 // read pool on the data database and returns the served rows as column-keyed
@@ -50,11 +50,11 @@ func WithReadExecutor(ex ReadExecutor) MuxOption {
 }
 
 // executionRole resolves the Postgres identity a data-surface request executes
-// as (specification section 7): the calling PAT's engine-managed data role, or
-// the engine's own self read for ambient authority (self true). A non-ambient
-// authority without a data role is an internal fault -- the scope check already
-// admitted the request, so a missing role is broken wiring, never a reason to
-// fall back to any other identity.
+// as: the calling PAT's engine-managed data role, or the engine's own self read
+// for ambient authority (self true). A non-ambient authority without a data
+// role is an internal fault -- the scope check already admitted the request, so
+// a missing role is broken wiring, never a reason to fall back to any other
+// identity.
 func executionRole(a Authority) (role string, self bool, err error) {
 	if a.DataRole != "" {
 		return a.DataRole, false, nil

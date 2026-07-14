@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// fakeReadPoolCredMeta is an in-memory create-once single-row table: the first mint
-// stores its candidate, every later mint returns that stored secret unchanged --
-// exactly the INSERT ... ON CONFLICT DO NOTHING + read-back the live seam runs, with
-// no live Postgres.
+// fakeReadPoolCredMeta is an in-memory create-once single-row table: the first
+// mint stores its candidate, every later mint returns that stored secret
+// unchanged -- exactly the INSERT ... ON CONFLICT DO NOTHING + read-back the live
+// seam runs, with no live Postgres.
 type fakeReadPoolCredMeta struct {
 	stored      string
 	tableEnsure int
@@ -40,8 +40,6 @@ func (f *fakeReadPoolCredMeta) mintReadPoolCredential(_ context.Context, candida
 // second start reads the stored secret back rather than minting a fresh one, so an
 // earlier node's pool credential is never invalidated by a later start (the E13.7
 // single-node latent gap). The table is ensured create-if-missing first (bootstrap).
-//
-// spec: S04/read-pool-credential-in-meta-table
 func TestEnsureReadPoolCredentialPersistsCreateOnce(t *testing.T) {
 	ctx := context.Background()
 	meta := &fakeReadPoolCredMeta{}
@@ -75,8 +73,6 @@ func TestEnsureReadPoolCredentialPersistsCreateOnce(t *testing.T) {
 
 // TestEnsureReadPoolCredentialSurfacesErrors proves the table-ensure and mint errors
 // are wrapped and returned (no swallowed error, no zero-secret returned on failure).
-//
-// spec: S04/read-pool-credential-in-meta-table
 func TestEnsureReadPoolCredentialSurfacesErrors(t *testing.T) {
 	ctx := context.Background()
 
@@ -92,8 +88,6 @@ func TestEnsureReadPoolCredentialSurfacesErrors(t *testing.T) {
 // TestReadPoolCredentialTableDDLFromModel proves the bootstrap create-if-missing DDL
 // is rendered from the meta schema model (the single source of truth), so it can
 // never drift from the roster and golden-DDL contracts.
-//
-// spec: S04/read-pool-credential-in-meta-table
 func TestReadPoolCredentialTableDDLFromModel(t *testing.T) {
 	ddl := readPoolCredentialTableDDL()
 	if ddl == "" {

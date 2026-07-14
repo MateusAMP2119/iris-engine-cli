@@ -29,8 +29,6 @@ func unsetNoColor(t *testing.T) {
 // TestLifecycleCeremonyTTYGating proves the styling helper activates only when
 // stdout is a terminal AND --json is off AND NO_COLOR is unset; any one gate
 // against it yields a disabled painter that injects no escape codes.
-//
-// spec: S08/lifecycle-ceremony-tty-gating
 func TestLifecycleCeremonyTTYGating(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -70,8 +68,6 @@ func TestLifecycleCeremonyTTYGating(t *testing.T) {
 // TestLifecycleCeremonyRainbow proves the per-letter rainbow farewell: enabled it
 // wraps every rune in a bright color and resets at the end; disabled it returns
 // the string untouched, so the plain "Goodbye from iris." line stays byte-exact.
-//
-// spec: S08/lifecycle-ceremony-tty-gating
 func TestLifecycleCeremonyRainbow(t *testing.T) {
 	off := painter{enabled: false}
 	if got := off.rainbow("Goodbye"); got != "Goodbye" {
@@ -99,8 +95,6 @@ func TestLifecycleCeremonyRainbow(t *testing.T) {
 // plain text, and the pinned strings are unchanged. It also proves the converse:
 // forcing the tty seam on turns the ceremony on (escapes appear), so the plain
 // guarantee is a real gate, not a dead helper.
-//
-// spec: S08/lifecycle-ceremony-plain-when-piped
 func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
@@ -239,8 +233,6 @@ func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
 // length: the top rule, the content line, and the bottom rule share one visible
 // width, and the content line carries both a left and a right border. Width is
 // measured on the unstyled text, so the magenta version never inflates it.
-//
-// spec: S08/lifecycle-ceremony-tty-gating
 func TestUninstallBoxAligns(t *testing.T) {
 	paths := []string{"/a", "/usr/local/bin/iris", "/very/long/nested/path/to/somewhere/deep/iris"}
 	for _, path := range paths {

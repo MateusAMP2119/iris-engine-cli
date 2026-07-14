@@ -14,7 +14,7 @@ import (
 )
 
 // TestSignalGracefulShutdown drives the real iris binary and proves the daemon
-// shuts down gracefully on SIGTERM and SIGINT (specification section 2): the
+// shuts down gracefully on SIGTERM and SIGINT: the
 // running daemon stops dispatching, drains its listeners and managed Postgres,
 // flushes state, and exits cleanly -- releasing its socket and pidfile and
 // recording a shutdown line in daemon.log. No runs exist yet, so the drained path
@@ -23,8 +23,7 @@ import (
 func TestSignalGracefulShutdown(t *testing.T) {
 	bin := Build(t)
 
-	// spec: S02/signal-graceful-shutdown
-	t.Run("S02/signal-graceful-shutdown", func(t *testing.T) {
+	t.Run("signal-graceful-shutdown", func(t *testing.T) {
 		signals := []struct {
 			name string
 			sig  syscall.Signal

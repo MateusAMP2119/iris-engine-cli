@@ -10,12 +10,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
-// This file proves the per-route scope checks at the mux level (specification
-// section 7): the deliberate surface split -- data-only PATs see no engine
-// internals, read-only PATs see no table data -- and that every mounted route,
-// control plane included, is scope-checked. The transport half (RequirePAT
-// resolving a bearer token into the request's authority over TCP, ambient
-// authorization over the socket) is proven in the daemon's listener tests.
+// This file proves the per-route scope checks at the mux level: the deliberate
+// surface split -- data-only PATs see no engine internals, read-only PATs see
+// no table data -- and that every mounted route, control plane included, is
+// scope-checked. The transport half (RequirePAT resolving a bearer token into
+// the request's authority over TCP, ambient authorization over the socket) is
+// proven in the daemon's listener tests.
 
 // getAs performs a request as the given authority and returns the status code
 // and the error envelope's code ("" for a success envelope).
@@ -36,14 +36,12 @@ func getAs(t *testing.T, h http.Handler, method, path string, a api.Authority) (
 }
 
 // TestScopeSplit403 proves the 403 split between the two read surfaces and that
-// every route is scope-checked (specification section 7): a data-only PAT gets
-// 403 forbidden on every engine-state route, a read-only PAT gets 403 on /data
-// and /q, the control routes demand the control scope, and ambient (socket)
-// authority passes every scope check.
-//
-// spec: S07/scope-split-403
+// every route is scope-checked: a data-only PAT gets 403 forbidden on every
+// engine-state route, a read-only PAT gets 403 on /data and /q, the control
+// routes demand the control scope, and ambient (socket) authority passes every
+// scope check.
 func TestScopeSplit403(t *testing.T) {
-	t.Run("S07/scope-split-403", func(t *testing.T) {
+	t.Run("scope-split-403", func(t *testing.T) {
 		mux := leaderMux()
 		dataOnly := api.Authority{PATID: "d1", Scopes: []pat.Scope{pat.ScopeData}}
 		readOnly := api.Authority{PATID: "r1", Scopes: []pat.Scope{pat.ScopeRead}}

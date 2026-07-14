@@ -6,15 +6,14 @@ import (
 	"fmt"
 )
 
-// This file is the pipeline-show read surface (specification sections 8 and 11):
-// the plain-MVCC meta reads `iris pipeline show <name>` composes into a
-// single-pipeline readout -- the resolved declaration (folder, run argv, artifact
-// and data modes), the pipeline role's field-level grants, its recent runs, and
-// the inputs the depends_on gate ledger is computed from (the dependency edges,
-// each upstream's latest run, and the already-consumed check). Every read is a
-// plain pooled MVCC query, never serialized through the single writer and never
-// busy-retried (specification section 2): viewing a pipeline never blocks the
-// leader's writes.
+// This file is the pipeline-show read surface: the plain-MVCC meta reads `iris
+// pipeline show <name>` composes into a single-pipeline readout -- the resolved
+// declaration (folder, run argv, artifact and data modes), the pipeline role's
+// field-level grants, its recent runs, and the inputs the depends_on gate ledger
+// is computed from (the dependency edges, each upstream's latest run, and the
+// already-consumed check). Every read is a plain pooled MVCC query, never
+// serialized through the single writer and never busy-retried: viewing a pipeline
+// never blocks the leader's writes.
 //
 // The ledger itself is not composed here -- the gate is dispatch's, and store must
 // not import it. This seam returns the raw meta facts; the daemon feeds them to

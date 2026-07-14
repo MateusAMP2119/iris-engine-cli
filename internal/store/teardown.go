@@ -5,17 +5,17 @@ import (
 	"fmt"
 )
 
-// This file is the registry teardown write surface: the meta writes that retire one
-// declared pipeline in full (specification section 12, destructive ops item 1). Like
-// every registry write it rides the single meta writer, and the whole retirement is
-// one atomic meta transaction: the pipeline's runs and their inputs, dead-letter
-// entries, artifacts, dependency edges, lane rows, and role/grants/credentials are
-// deleted together, with the pipelines row deleted last, so a validation-passing
-// destroy either retires the whole unit or leaves meta exactly as it was -- never a
-// half-torn pipeline with a dangling edge, ledger, or worklist row.
+// This file is the registry teardown write surface: the meta writes that retire
+// one declared pipeline in full. Like every registry write it rides the single
+// meta writer, and the whole retirement is one atomic meta transaction: the
+// pipeline's runs and their inputs, dead-letter entries, artifacts, dependency
+// edges, lane rows, and role/grants/credentials are deleted together, with the
+// pipelines row deleted last, so a validation-passing destroy either retires the
+// whole unit or leaves meta exactly as it was -- never a half-torn pipeline with
+// a dangling edge, ledger, or worklist row.
 //
 // What this does NOT do, by design:
-//   - It writes no run_summaries archival row. The spec has destroy write each
+//   - It writes no run_summaries archival row. Destroy is meant to write each
 //     remaining run's archival summary before deleting it, so pruned lineage never
 //     dangles; that archival tier is E05/E07's, and this teardown is deliberately
 //     the retirement half. The summaries seam is documented at the dispatch layer
@@ -92,13 +92,14 @@ WHERE run_id IN (SELECT id FROM runs WHERE pipeline = $1)
 )
 
 // RetirePipeline retires one declared pipeline in full as one atomic meta
-// transaction (specification section 12): it deletes the pipeline's runs and their
-// consumption-ledger inputs, its dead-letter worklist entries, its artifact index
-// rows, every dependency edge touching it, its lane-membership row, and its
+// transaction: it deletes the pipeline's runs and their consumption-ledger
+// inputs, its dead-letter worklist entries, its artifact index rows, every
+// dependency edge touching it, its lane-membership row, and its
 // role/grants/credentials, with the pipelines registry row deleted last. Every
-// statement is scoped to name, and the whole batch commits together or not at all,
-// so a destroy never leaves a half-torn pipeline: either the whole unit is retired
-// or meta is unchanged. It is a leader-only meta write, riding the single Writer.
+// statement is scoped to name, and the whole batch commits together or not at
+// all, so a destroy never leaves a half-torn pipeline: either the whole unit is
+// retired or meta is unchanged. It is a leader-only meta write, riding the single
+// Writer.
 //
 // It touches no schema DDL and no journal, so the engine and the schemas/ tree stay
 // intact; run_summaries (the archival tier) and the object-store bytes are not this
@@ -125,7 +126,7 @@ func (w *Writer) RetirePipeline(ctx context.Context, name string) error {
 // RetirePipelineWithSummaries writes archival summaries for the listed runs and
 // then retires the pipeline's registration and related rows in one atomic meta
 // transaction. Summaries are inserted first so that journal stamps resolve to a
-// summary after the runs are deleted (S12/destroy-summaries-before-delete).
+// summary after the runs are deleted.
 func (w *Writer) RetirePipelineWithSummaries(ctx context.Context, name string, sums []RunSummary) error {
 	stmts := make([]Statement, 0, len(sums)+9)
 	for _, s := range sums {

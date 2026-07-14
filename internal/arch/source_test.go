@@ -22,14 +22,12 @@ func writeSource(t *testing.T, root, rel, src string) {
 
 // TestSingleWriterConstruction proves the meta writer has exactly one construction
 // site: only internal/dispatch may call store.NewWriter, so no other package can
-// mint a second meta writer and open a second write path (specification section
-// 6.1: the dispatcher is the sole meta writer). A planted call outside dispatch is
-// a violation; the dispatcher's own call is fine; the real repo constructs the
-// writer only in dispatch.
-//
-// spec: S06.1/dispatcher-sole-meta-writer
+// mint a second meta writer and open a second write path -- the dispatcher is the
+// sole meta writer. A planted call outside dispatch is a violation; the
+// dispatcher's own call is fine; the real repo constructs the writer only in
+// dispatch.
 func TestSingleWriterConstruction(t *testing.T) {
-	t.Run("S06.1/dispatcher-sole-meta-writer", func(t *testing.T) {
+	t.Run("dispatcher-sole-meta-writer", func(t *testing.T) {
 		const module = "example.com/m"
 		storeImport := module + "/internal/store"
 
@@ -81,14 +79,12 @@ func mk(c store.MetaWriteConn) *store.Writer { return store.NewWriter(c) }
 }
 
 // TestNoBusyRetry proves the meta read/write and dispatch paths carry no busy-retry
-// or backoff loop (specification section 2: "No busy-retry anywhere"). The check is
-// a documented name-based heuristic: no identifier in store, pg, or dispatch may be
+// or backoff loop anywhere. The check is a documented name-based heuristic: no
+// identifier in store, pg, or dispatch may be
 // named for a retry or backoff mechanism. A planted retry loop is caught; the real
 // repo has none.
-//
-// spec: S02/readers-plain-mvcc-no-retry
 func TestNoBusyRetry(t *testing.T) {
-	t.Run("S02/readers-plain-mvcc-no-retry", func(t *testing.T) {
+	t.Run("readers-plain-mvcc-no-retry", func(t *testing.T) {
 		t.Run("a retry/backoff identifier in a scanned package is a violation", func(t *testing.T) {
 			root := t.TempDir()
 			writeSource(t, root, "internal/store/bad.go", `package store

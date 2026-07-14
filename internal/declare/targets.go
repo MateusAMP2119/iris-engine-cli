@@ -9,7 +9,7 @@ import (
 )
 
 // ResolveDeclarationFile resolves a user-supplied apply/destroy target to
-// exactly one iris-declare.yaml, per specification sections 3, 6.3, and 8:
+// exactly one iris-declare.yaml:
 // apply and destroy each target exactly one declaration file, never a
 // workspace or a set. A file path must be named iris-declare.yaml; a folder
 // path resolves to <folder>/iris-declare.yaml, with no further search -- a

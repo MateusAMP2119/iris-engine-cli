@@ -10,14 +10,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the production TCP bearer-token verifier (specification sections 2
-// and 7): the api.TokenVerifier the daemon wraps around the shared mux for the TCP
-// listener, resolving "Authorization: Bearer <token>" to the PAT's authority. It is
-// the real seam that replaces api.RejectAllVerifier once a PAT store exists. The
-// daemon is the composition root, so the verifier lives here: it composes the pat
-// leaf (parse + argon2id verify + scope union) with the store PAT reader (the
-// prefix -> record lookup over the meta pool), reaching neither into api's internals
-// nor giving store a dependency on pat.
+// This file is the production TCP bearer-token verifier: the api.TokenVerifier the
+// daemon wraps around the shared mux for the TCP listener, resolving
+// "Authorization: Bearer <token>" to the PAT's authority. It is the real seam that
+// replaces api.RejectAllVerifier once a PAT store exists. The daemon is the
+// composition root, so the verifier lives here: it composes the pat leaf (parse +
+// argon2id verify + scope union) with the store PAT reader (the prefix -> record
+// lookup over the meta pool), reaching neither into api's internals nor giving
+// store a dependency on pat.
 //
 // The verification is deliberately uniform: a malformed token, an unknown prefix, a
 // revoked PAT, and a wrong secret all reject the same way, so a caller learns only

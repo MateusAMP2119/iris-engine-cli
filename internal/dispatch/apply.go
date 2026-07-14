@@ -1,14 +1,13 @@
 package dispatch
 
 // This file is the declaration apply op: the leader-side path that turns a validated
-// declaration into persisted registry state (specification sections 3 and 6.3). A
-// pipeline apply reads the current registry, validates the declaration's depends_on
-// edges against it (upstream-first plus acyclicity), and -- only on success --
-// submits the pipelines row and its dependency edges to the single meta writer as
-// one atomic transaction; a validation failure returns before any write, so meta is
-// unchanged. A composer apply rewrites its lane's whole order atomically. This is
-// the dispatch-level surface; the CLI and daemon control-connection wiring that
-// drives it is a later task.
+// declaration into persisted registry state. A pipeline apply reads the current
+// registry, validates the declaration's depends_on edges against it (upstream-first
+// plus acyclicity), and -- only on success -- submits the pipelines row and its
+// dependency edges to the single meta writer as one atomic transaction; a validation
+// failure returns before any write, so meta is unchanged. A composer apply rewrites
+// its lane's whole order atomically. This is the dispatch-level surface; the CLI and
+// daemon control-connection wiring that drives it is a later task.
 
 import (
 	"context"
@@ -72,9 +71,9 @@ func (a *Applier) ApplyPipeline(ctx context.Context, folder string, decl *declar
 
 // ApplyComposer persists a lane composer: it rewrites the lane's entire member order
 // in lanes as one atomic full-lane rewrite through the single meta writer,
-// all-or-nothing, members registered or not (specification sections 3 and 6.3). The
-// composer's 2+ interlock and containment rules are validated upstream (lane
-// composer validation); this op owns only the atomic persistence.
+// all-or-nothing, members registered or not. The composer's 2+ interlock and
+// containment rules are validated upstream (lane composer validation); this op owns
+// only the atomic persistence.
 func (a *Applier) ApplyComposer(ctx context.Context, composer *declare.Composer) error {
 	if err := a.submit.Submit(ctx, func(w *store.Writer) error {
 		return w.RewriteLane(ctx, composer.Lane, composer.Order)

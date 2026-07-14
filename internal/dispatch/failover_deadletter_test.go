@@ -1,15 +1,14 @@
 package dispatch_test
 
-// This file is the E11.3 failover cost test (specification section 15): "stopped
-// runs dead-letter and poison dependents' next consumption; unsticking a chain is
-// an explicit `iris deadletter replay`". It composes, over the meta-store fake and
-// with no live Postgres, the exact production pieces a failover exercises in
-// order: the new leader's startup reconciliation (the failover kill's disposal
-// path -- the same Reconciler cold start uses), the depends_on gate and its
-// propagation plan (the E05.6 poisoning mechanism -- this test proves failover-
-// killed runs feed that same path), and the pure replay resolution (E05.7). The
-// chain is stuck for as many passes as no one replays, and only the explicit
-// replay -- never time, never a retry -- unsticks it.
+// This file is the E11.3 failover cost test: "stopped runs dead-letter and poison
+// dependents' next consumption; unsticking a chain is an explicit `iris deadletter
+// replay`". It composes, over the meta-store fake and with no live Postgres, the
+// exact production pieces a failover exercises in order: the new leader's startup
+// reconciliation (the failover kill's disposal path -- the same Reconciler cold start
+// uses), the depends_on gate and its propagation plan (the E05.6 poisoning mechanism
+// -- this test proves failover- killed runs feed that same path), and the pure replay
+// resolution (E05.7). The chain is stuck for as many passes as no one replays, and
+// only the explicit replay -- never time, never a retry -- unsticks it.
 
 import (
 	"context"
@@ -49,14 +48,13 @@ func latestUpstreamEdge(t *testing.T, f *storetest.Fake, upstream string) dispat
 	return dispatch.Edge{Upstream: upstream, Latest: latest, LatestRunID: last.Seq}
 }
 
-// TestFailoverStoppedRunsDeadLetter proves the accepted failover cost end to end
-// (specification section 15): a run stopped by a failover is dead-lettered
-// (stopped, daemon-terminated) by the new leader's startup reconciliation, that
-// dead-letter poisons its dependent's next consumption -- and every consumption
-// after that -- and the chain unsticks only through the explicit
-// `iris deadletter replay` resolution, never on its own.
+// TestFailoverStoppedRunsDeadLetter proves the accepted failover cost end to end: a
+// run stopped by a failover is dead-lettered (stopped, daemon-terminated) by the new
+// leader's startup reconciliation, that dead-letter poisons its dependent's next
+// consumption -- and every consumption after that -- and the chain unsticks only
+// through the explicit `iris deadletter replay` resolution, never on its own.
 func TestFailoverStoppedRunsDeadLetter(t *testing.T) {
-	t.Run("S15/failover-stopped-runs-dead-letter", func(t *testing.T) {
+	t.Run("failover-stopped-runs-dead-letter", func(t *testing.T) {
 		ctx := context.Background()
 		f := storetest.New()
 
@@ -123,9 +121,9 @@ func TestFailoverStoppedRunsDeadLetter(t *testing.T) {
 			t.Errorf("poisoned upstream run ids = %v, want [%d] (the failover-stopped run)", plan.PoisonedUpstreamRunIDs, up.Seq)
 		}
 
-		// Phase 3 -- the poison holds: with nothing replayed, a later pass resolves
-		// the identical poisoned decision. Nothing auto-replays (specification
-		// section 2: "Nothing auto-replays"); only the explicit command unsticks.
+		// Phase 3 -- the poison holds: with nothing replayed, a later pass resolves the
+		// identical poisoned decision. Nothing auto-replays ("Nothing auto-replays"); only
+		// the explicit command unsticks.
 		again, err := gate.Evaluate(ctx, "load", []dispatch.Edge{latestUpstreamEdge(t, f, "extract")})
 		if err != nil {
 			t.Fatalf("gate.Evaluate (later pass): %v", err)

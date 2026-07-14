@@ -11,17 +11,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 )
 
-// TestPGVersionMismatchFails proves the managed-Postgres version guard: when a
-// data directory records a Postgres major version that differs from the engine
-// release's pinned version, the guard fails fast with a typed error naming both
-// versions, and it never rewrites or upgrades the data directory (never a silent
-// auto-upgrade). A matching version passes, and a fresh data directory with no
-// recorded version yet is not a mismatch (nothing to conflict with). A corrupt
-// PG_VERSION also fails fast rather than being silently treated as a match
-// (specification section 2, managed-vs-external Q/A: "data directory records
-// version; mismatch fails fast, never silent auto-upgrade").
-//
-// spec: S02/pg-version-mismatch-fails
+// TestPGVersionMismatchFails proves the managed-Postgres version guard: when a data
+// directory records a Postgres major version that differs from the engine release's
+// pinned version, the guard fails fast with a typed error naming both versions, and
+// it never rewrites or upgrades the data directory (never a silent auto-upgrade). A
+// matching version passes, and a fresh data directory with no recorded version yet
+// is not a mismatch (nothing to conflict with). A corrupt PG_VERSION also fails
+// fast rather than being silently treated as a match (data directory records
+// version; mismatch fails fast, never silent auto-upgrade).
 func TestPGVersionMismatchFails(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -92,11 +89,9 @@ func TestPGVersionMismatchFails(t *testing.T) {
 }
 
 // TestPinnedMajorVersionExposed proves the engine pins a Postgres major version as
-// a package constant (specification section 2: "major version pinned per engine
-// release"). The guard compares a data directory against this pin, so the pin must
-// be a real, positive major the rest of the engine can reference.
-//
-// spec: S02/pg-version-mismatch-fails
+// a package constant (major version pinned per engine release). The guard compares
+// a data directory against this pin, so the pin must be a real, positive major the
+// rest of the engine can reference.
 func TestPinnedMajorVersionExposed(t *testing.T) {
 	if daemon.PinnedMajorVersion <= 0 {
 		t.Fatalf("PinnedMajorVersion = %d, want a positive pinned major version", daemon.PinnedMajorVersion)

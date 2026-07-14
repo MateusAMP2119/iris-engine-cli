@@ -10,17 +10,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// TestRunInputsTableShape proves the run_inputs consumption ledger's DDL shape
-// (specification section 4): run_id and upstream_run_id are both bigint columns, the
-// primary key is the composite of both columns, and there is a secondary index on
-// upstream_run_id alone -- the reverse lookup the downstream walk (run show --trace
-// --down, the dead-letter blast radius) needs, which the composite primary key cannot
-// serve. run_id is a foreign key to runs.id; upstream_run_id is deliberately FK-free
-// (see TestRunInputsUpstreamNotFK). The model is the single source the DDL renders
-// from, so a shape assertion here is a DDL-shape assertion; the rendered CREATE INDEX
-// is checked too.
-//
-// spec: S04/run-inputs-table-shape
+// TestRunInputsTableShape proves the run_inputs consumption ledger's DDL shape:
+// run_id and upstream_run_id are both bigint columns, the primary key is the
+// composite of both columns, and there is a secondary index on upstream_run_id
+// alone -- the reverse lookup the downstream walk (run show --trace --down, the
+// dead-letter blast radius) needs, which the composite primary key cannot serve.
+// run_id is a foreign key to runs.id; upstream_run_id is deliberately FK-free
+// (see TestRunInputsUpstreamNotFK). The model is the single source the DDL
+// renders from, so a shape assertion here is a DDL-shape assertion; the rendered
+// CREATE INDEX is checked too.
 func TestRunInputsTableShape(t *testing.T) {
 	s := store.MetaSchema()
 	ri := tableByName(t, s, "run_inputs")
@@ -77,18 +75,16 @@ func TestRunInputsTableShape(t *testing.T) {
 	}
 }
 
-// TestRunInputsUpstreamNotFK proves run_inputs.upstream_run_id is deliberately FK-free
-// (specification section 4, the precedent is data_journal.run_id): it references a run
-// logically only, resolving to a live run OR its archival summary. Count-based
-// retention (section 6.2, no reference pin) prunes an upstream run while a cross-
-// pipeline downstream still holds a run_inputs row naming it; a hard FK there could
-// only block the prune (RESTRICT, a live violation) or cascade-delete the surviving
-// downstream's consumption record (erasing a live run's lineage and re-opening its
-// gate), and the composite NOT NULL primary key forbids SET NULL. So the column carries
-// no FK and no reference-to-runs appears for it in the rendered CREATE TABLE, exactly
+// TestRunInputsUpstreamNotFK proves run_inputs.upstream_run_id is deliberately
+// FK-free (the precedent is data_journal.run_id): it references a run logically
+// only, resolving to a live run OR its archival summary. Count-based retention
+// prunes an upstream run while a cross- pipeline downstream still holds a
+// run_inputs row naming it; a hard FK there could only block the prune (RESTRICT,
+// a live violation) or cascade-delete the surviving downstream's consumption
+// record (erasing a live run's lineage and re-opening its gate), and the
+// composite NOT NULL primary key forbids SET NULL. So the column carries no FK
+// and no reference-to-runs appears for it in the rendered CREATE TABLE, exactly
 // like data_journal.run_id. run_id (the downstream's own run) keeps its FK.
-//
-// spec: S04/run-inputs-upstream-not-fk
 func TestRunInputsUpstreamNotFK(t *testing.T) {
 	s := store.MetaSchema()
 	ri := tableByName(t, s, "run_inputs")
@@ -115,14 +111,12 @@ func TestRunInputsUpstreamNotFK(t *testing.T) {
 }
 
 // TestRunInputsWriteOnce proves run start writes one run_inputs row per consumed
-// upstream run -- several under fan-in -- and never mutates them afterward
-// (specification section 4). CreateRun (the E05.3 run-create path this reuses) mints
-// the runs row and its run_inputs rows as one atomic CTE: the consumed upstream ids
-// flow 1:1 into the single INSERT ... unnest, committed as one transaction, and no
-// statement the write path issues ever UPDATEs run_inputs -- the ledger is written
-// once and is immutable.
-//
-// spec: S04/run-inputs-write-once
+// upstream run -- several under fan-in -- and never mutates them afterward.
+// CreateRun (the E05.3 run-create path this reuses) mints the runs row and its
+// run_inputs rows as one atomic CTE: the consumed upstream ids flow 1:1 into the
+// single INSERT ... unnest, committed as one transaction, and no statement the
+// write path issues ever UPDATEs run_inputs -- the ledger is written once and is
+// immutable.
 func TestRunInputsWriteOnce(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

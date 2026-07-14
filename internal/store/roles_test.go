@@ -11,21 +11,19 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the engine-owned access ledger's meta write surface
-// (specification section 4): the grants and roles table shapes, the atomic write
-// paths that populate them, and the credentials login-only guard. Every write
-// rides the single meta writer over a recording fake -- no live Postgres -- so a
-// test asserts the exact statement set and its transaction grouping.
+// This file proves the engine-owned access ledger's meta write surface: the
+// grants and roles table shapes, the atomic write paths that populate them, and
+// the credentials login-only guard. Every write rides the single meta writer over
+// a recording fake -- no live Postgres -- so a test asserts the exact statement
+// set and its transaction grouping.
 
 // TestAccessLedgerShape proves the access ledger's meta shape and write path:
 // grants stores (pg_role, schema, table, field, access) indexed on pg_role, and
 // roles maps each pg_role to exactly one owner -- a pipeline XOR a data PAT. The
 // write path registers a role with a single owner column set and replaces its
 // grants as one atomic full-role rewrite.
-//
-// spec: S04/access-ledger-shape
 func TestAccessLedgerShape(t *testing.T) {
-	t.Run("S04/access-ledger-shape", func(t *testing.T) {
+	t.Run("access-ledger-shape", func(t *testing.T) {
 		s := store.MetaSchema()
 
 		// grants: (pg_role, schema, table, field, access), indexed on pg_role.
@@ -34,7 +32,7 @@ func TestAccessLedgerShape(t *testing.T) {
 			columnByName(t, grants, col)
 		}
 		if grants.PrimaryKey[0] != "pg_role" {
-			t.Errorf("grants PK does not lead with pg_role (the index the spec names): %v", grants.PrimaryKey)
+			t.Errorf("grants PK does not lead with pg_role: %v", grants.PrimaryKey)
 		}
 		grantFK := map[string]string{}
 		for _, fk := range grants.ForeignKeys {
@@ -108,10 +106,8 @@ func TestAccessLedgerShape(t *testing.T) {
 // grants as one atomic full-role rewrite: a clearing DELETE for the role's grants
 // followed by one INSERT per grant carrying exactly (pg_role, schema, table, field,
 // access), all in a single meta transaction.
-//
-// spec: S04/access-ledger-shape
 func TestReplaceGrantsAtomic(t *testing.T) {
-	t.Run("S04/access-ledger-shape", func(t *testing.T) {
+	t.Run("access-ledger-shape", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		grants := []store.Grant{
@@ -166,10 +162,8 @@ func TestReplaceGrantsAtomic(t *testing.T) {
 // TestRegisterRoleRejectsBadOwner proves RegisterRole fails loudly on an owner
 // with no name or an unknown kind rather than writing a roles row that would trip
 // the pipeline-XOR-pat CHECK at the database.
-//
-// spec: S04/access-ledger-shape
 func TestRegisterRoleRejectsBadOwner(t *testing.T) {
-	t.Run("S04/access-ledger-shape", func(t *testing.T) {
+	t.Run("access-ledger-shape", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		for _, owner := range []store.RoleOwner{
@@ -191,10 +185,8 @@ func TestRegisterRoleRejectsBadOwner(t *testing.T) {
 // engine-managed secret per login role, and only for pipeline roles: SetCredential
 // stores a row for a pipeline (login) role, and rejects a data-PAT role -- which is
 // NOLOGIN and holds no credential -- writing nothing.
-//
-// spec: S04/credentials-pipeline-login-only
 func TestCredentialsPipelineLoginOnly(t *testing.T) {
-	t.Run("S04/credentials-pipeline-login-only", func(t *testing.T) {
+	t.Run("credentials-pipeline-login-only", func(t *testing.T) {
 		// credentials table shape: pg_role PK, secret, FK to roles.
 		s := store.MetaSchema()
 		creds := tableByName(t, s, "credentials")
@@ -245,10 +237,8 @@ func TestCredentialsPipelineLoginOnly(t *testing.T) {
 // TestSecretNeverLeaksInFormatting proves an engine-managed credential never leaks
 // through a formatting path: every fmt verb, String, and GoString redact it, so a
 // stray log line can never print the secret (the AdminDSN redaction pattern).
-//
-// spec: S04/credentials-pipeline-login-only
 func TestSecretNeverLeaksInFormatting(t *testing.T) {
-	t.Run("S04/credentials-pipeline-login-only", func(t *testing.T) {
+	t.Run("credentials-pipeline-login-only", func(t *testing.T) {
 		secret, err := store.GenerateSecret()
 		if err != nil {
 			t.Fatalf("GenerateSecret: %v", err)

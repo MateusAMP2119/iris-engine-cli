@@ -7,13 +7,13 @@ import (
 	"net/http"
 )
 
-// This file is the daemon's workload surface for `iris workload wipe [<pipeline>]`
-// (specification sections 5, 12, 13 and 14). POST /workload/wipe is a mutation,
-// so the mux's leader gate already rejects it on a standby with not_leader
-// guidance (exit 6); its scope is control. api stays a leaf: it defines the
-// WipeHandler seam and the plain request/result shapes but reaches nothing up
-// the stack. The daemon supplies the handler that reads attribution, plans
-// scope, and executes the revert over the data database via pg.ExecuteWipe.
+// This file is the daemon's workload surface for `iris workload wipe
+// [<pipeline>]`. POST /workload/wipe is a mutation, so the mux's leader gate
+// already rejects it on a standby with not_leader guidance (exit 6); its scope
+// is control. api stays a leaf: it defines the WipeHandler seam and the plain
+// request/result shapes but reaches nothing up the stack. The daemon supplies
+// the handler that reads attribution, plans scope, and executes the revert over
+// the data database via pg.ExecuteWipe.
 //
 // Confirmation: the request carries Confirm (from --yes/--force or interactive
 // prompt) for the dev-loop gate; the handler itself performs the wipe when
@@ -26,7 +26,7 @@ type WorkloadWipeRequest struct {
 	// Pipeline, when non-empty, narrows the wipe to that pipeline's journal
 	// entries (through their runs).
 	Pipeline string `json:"pipeline,omitempty"`
-	// Confirm is the explicit confirmation (specification section 12).
+	// Confirm is the explicit confirmation.
 	Confirm bool `json:"confirm,omitempty"`
 }
 

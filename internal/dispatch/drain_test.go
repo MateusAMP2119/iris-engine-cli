@@ -9,15 +9,13 @@ import (
 )
 
 // TestResolveDrainTargetsScopedOnly proves drain resolves EXACTLY the entries the
-// operator's scope names and no others (specification sections 6.2 and 12): <run>
-// resolves to that one entry, --pipeline to every outstanding entry for that
-// pipeline (and none of another pipeline's), --all to every outstanding entry.
-// Critically, and unlike replay, drain never walks failed_upstream to a root: a
-// propagated entry is discarded as ITSELF, not collapsed to the cause it propagated
-// from -- the same worklist resolved for replay walks to the root, resolved for
-// drain stays put, proving the two are deliberately different operations.
-//
-// spec: S12/drain-discards-scoped-entries
+// operator's scope names and no others: <run> resolves to that one entry, --pipeline
+// to every outstanding entry for that pipeline (and none of another pipeline's),
+// --all to every outstanding entry. Critically, and unlike replay, drain never walks
+// failed_upstream to a root: a propagated entry is discarded as ITSELF, not collapsed
+// to the cause it propagated from -- the same worklist resolved for replay walks to
+// the root, resolved for drain stays put, proving the two are deliberately different
+// operations.
 func TestResolveDrainTargetsScopedOnly(t *testing.T) {
 	// Two independent chains across two pipelines, so a --pipeline scope has
 	// something else in the worklist it must NOT touch.
@@ -104,15 +102,13 @@ func TestResolveDrainTargetsScopedOnly(t *testing.T) {
 }
 
 // TestDrainedRunNeverReplayable proves the structural half of the "drained runs can
-// never be replayed" rule (specification sections 6.2 and 12): once drain resolves
-// and discards a run's worklist entry, that entry -- the run's only replay ticket --
-// is gone from the worklist, so a subsequent replay resolution for the same run id
-// fails loudly rather than minting a fresh run for it. The run row itself is
-// untouched by this removal (WorklistExit.RetainsRunRow, proven in
-// TestWorklistExitPaths), so it stays in runs, its only remaining fate release from
-// the outstanding-dead_letters guard: prunable, never replayable.
-//
-// spec: S12/drained-prunable-not-replayable
+// never be replayed" rule: once drain resolves and discards a run's worklist entry,
+// that entry -- the run's only replay ticket -- is gone from the worklist, so a
+// subsequent replay resolution for the same run id fails loudly rather than minting a
+// fresh run for it. The run row itself is untouched by this removal
+// (WorklistExit.RetainsRunRow, proven in TestWorklistExitPaths), so it stays in runs,
+// its only remaining fate release from the outstanding-dead_letters guard: prunable,
+// never replayable.
 func TestDrainedRunNeverReplayable(t *testing.T) {
 	worklist := []dispatch.DeadLetterEntry{
 		rootEntry(10, "extract", store.ReasonFailed),

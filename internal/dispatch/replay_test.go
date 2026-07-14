@@ -25,20 +25,17 @@ func propEntry(runID int64, pipeline string, upstreamRunID int64) dispatch.DeadL
 	}
 }
 
-// TestWorklistExitPaths proves the three -- and only three -- ways a dead_letters
-// row leaves the worklist (replay, supersession, drain), and the shared invariant:
-// each removes the worklist entry while the run row stays in runs (specification
-// sections 4 and 6.2). The set is closed; the run history is never discarded by a
-// worklist exit.
-//
-// spec: S04/dead-letter-exit-paths
+// TestWorklistExitPaths proves the three -- and only three -- ways a dead_letters row
+// leaves the worklist (replay, supersession, drain), and the shared invariant: each
+// removes the worklist entry while the run row stays in runs. The set is closed; the
+// run history is never discarded by a worklist exit.
 func TestWorklistExitPaths(t *testing.T) {
 	exits := dispatch.WorklistExits()
 	want := []dispatch.WorklistExit{dispatch.ExitReplay, dispatch.ExitSupersession, dispatch.ExitDrain}
 	if !reflect.DeepEqual(exits, want) {
 		t.Fatalf("WorklistExits() = %v, want the closed set %v", exits, want)
 	}
-	// The set is closed: exactly three, one per spec-named exit path.
+	// The set is closed: exactly three, one per named exit path.
 	if len(exits) != 3 {
 		t.Fatalf("worklist has %d exit paths, want exactly 3 (replay, supersession, drain)", len(exits))
 	}
@@ -66,11 +63,8 @@ func TestWorklistExitPaths(t *testing.T) {
 // TestResolveReplayTargetsWalksToRoot proves replay resolution walks a propagated
 // entry along its failed_upstream chain to the ROOT cause (the run that actually
 // failed or was stopped), and that --pipeline/--all selections collapse the worklist
-// to the distinct set of roots (specification section 6.2: "replay targets root
-// causes: propagated entries walk failed_upstream to the root; --pipeline/--all
-// collapse to roots").
-//
-// spec: S06.2/replay-resolves-to-root
+// to the distinct set of roots ("replay targets root causes: propagated entries walk
+// failed_upstream to the root; --pipeline/--all collapse to roots").
 func TestResolveReplayTargetsWalksToRoot(t *testing.T) {
 	// A three-level chain: root A (failed) <- B (propagated from A) <- C (propagated
 	// from B). Replaying any of them must resolve to A, the single root cause.
@@ -135,8 +129,6 @@ func TestResolveReplayTargetsWalksToRoot(t *testing.T) {
 // silently replaying the wrong thing: an unknown selected run, a propagated entry
 // with no recorded upstream run, a dangling chain, and a cycle each return an error
 // (never an infinite walk, never a propagated entry replayed as if it were a root).
-//
-// spec: S06.2/replay-resolves-to-root
 func TestResolveReplayTargetsErrors(t *testing.T) {
 	t.Run("selected run absent from worklist", func(t *testing.T) {
 		wl := []dispatch.DeadLetterEntry{rootEntry(10, "extract", store.ReasonFailed)}
@@ -174,10 +166,7 @@ func TestResolveReplayTargetsErrors(t *testing.T) {
 // a whole poisoned chain yields the root alone, so a replay mints exactly one fresh
 // run (the root's), and the dependents are absent from the target set. Dependents
 // follow via the normal depends_on gate on the next pass -- they are never force-run
-// by the replay (specification section 6.2: "dependents follow next pass, never
-// force-run").
-//
-// spec: S06.2/replay-dependents-not-forced
+// by the replay ("dependents follow next pass, never force-run").
 func TestReplayResolvesToRootNeverForcesDependents(t *testing.T) {
 	// Root A (failed) with two dependents that propagated from it: B directly, C
 	// transitively through B.
@@ -209,11 +198,9 @@ func TestReplayResolvesToRootNeverForcesDependents(t *testing.T) {
 // dead-letter entry clears itself once its dependent consumes a LATER upstream run
 // than the poisoned one it recorded -- no replay or human needed. Only root causes
 // (failed, stopped) require operator disposition; a propagated entry is superseded by
-// the next successful consumption (specification section 6.2: "propagated entries
-// clear themselves: superseded once their dependent consumes a later upstream run;
-// only root causes demand a human").
-//
-// spec: S06.2/propagated-self-supersede
+// the next successful consumption ("propagated entries clear themselves: superseded
+// once their dependent consumes a later upstream run; only root causes demand a
+// human").
 func TestPropagatedSelfSupersede(t *testing.T) {
 	// The dependent's propagated entry was poisoned by upstream run 10.
 	entry := propEntry(20, "load", 10)
@@ -252,11 +239,9 @@ func TestPropagatedSelfSupersede(t *testing.T) {
 // TestFailedReplayChainsEntry proves the dead-lettering-replay rule: a replay whose
 // fresh run itself dead-letters parks a new worklist entry chained to the ORIGINAL
 // replaced run via replayed_from, and the batch is flagged as dead-lettered so the
-// replay command exits 5 (specification sections 6.2 and 8). The replacement's
-// replayed_from points at the run it replaced, so the new entry chains back through
-// replay lineage rather than orphaning.
-//
-// spec: S06.2/failed-replay-chains-entry
+// replay command exits 5. The replacement's replayed_from points at the run it
+// replaced, so the new entry chains back through replay lineage rather than
+// orphaning.
 func TestFailedReplayChainsEntry(t *testing.T) {
 	// Replaying replaced run 10 minted replacement run 40, which itself dead-lettered.
 	results := []dispatch.ReplayResult{
@@ -305,11 +290,7 @@ func classFor(impacts []dispatch.BlastImpact, pipeline string) (dispatch.BlastCl
 // entry it walks failed_upstream to the ROOT cause, walks forward over depends_on to
 // the transitive dependents, and classifies each poisoned_now / shielded / pending;
 // the root itself is poisoned_now; a lane neighbor reachable only by composer order
-// (not a dependency) is untouched (specification section 6.2 and the golden sample
-// step 6: "iris deadletter show on the propagated entry names load_orders poisoned
-// and reset_counters untouched -- order is not dependency").
-//
-// spec: S06.2/blast-radius-classification
+// (not a dependency) is untouched -- order is not dependency.
 func TestBlastRadiusClassification(t *testing.T) {
 	// The golden lane: extract_orders (root, failed run 10) -> load_orders depends_on
 	// extract_orders (propagated run 20); reset_counters is composer-ordered only, no
@@ -322,8 +303,7 @@ func TestBlastRadiusClassification(t *testing.T) {
 	edges := []dispatch.BlastEdge{{Dependent: "load_orders", Upstream: "extract_orders"}}
 	laneMembers := []string{"extract_orders", "reset_counters", "load_orders"}
 
-	// spec: S06.2/blast-radius-classification
-	t.Run("S06.2/blast-radius-classification", func(t *testing.T) {
+	t.Run("blast-radius-classification", func(t *testing.T) {
 		// Show on the PROPAGATED entry (load_orders run 20): it walks to the root
 		// extract_orders and classifies the whole lane.
 		impacts, err := dispatch.ClassifyBlastRadius(worklist[1], worklist, edges, laneMembers, nil)

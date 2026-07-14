@@ -2,8 +2,7 @@
 // (internal/pg). The Recorder captures every statement issued through the pg
 // interface, in order, so a test can drive the real DDL/grant reconcile code and
 // then diff the captured CREATE / ALTER / GRANT and trigger DDL byte-for-byte
-// against golden files -- with no live Postgres (S16/integration-fakes-interfaces).
-// A golden diff is a contract diff.
+// against golden files -- with no live Postgres. A golden diff is a contract diff.
 //
 // This is test-support infrastructure imported only by _test.go files. It is the
 // seam by which E03/E04 prove their generated DDL: build a Recorder, issue the

@@ -39,13 +39,12 @@ const (
 // whose type does not match its key are all errors -- so a structured file (a
 // project manifest, say) does not parse as configuration.
 //
-// The file is limited to engine/connection settings (specification section 8):
-// the recognized keys are socket, host, token, pg_dsn, retain,
-// journal_partition_rows, objects_path, tcp, tls_cert, and tls_key. Any other
-// well-formed key -- including the project-level keys of an iris-declare.yaml
-// (name, run, reads, writes, depends_on, ...) -- is not honored: it is recorded
-// in Ignored and contributes nothing to the resolved settings. iris.toml is never
-// a project manifest.
+// The file is limited to engine/connection settings: the recognized keys are
+// socket, host, token, pg_dsn, retain, journal_partition_rows, objects_path,
+// tcp, tls_cert, and tls_key. Any other well-formed key -- including the
+// project-level keys of an iris-declare.yaml (name, run, reads, writes,
+// depends_on, ...) -- is not honored: it is recorded in Ignored and contributes
+// nothing to the resolved settings. iris.toml is never a project manifest.
 func ParseTOML(data []byte) (TOML, error) {
 	var out TOML
 	for i, raw := range strings.Split(string(data), "\n") {

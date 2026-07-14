@@ -115,14 +115,12 @@ func unixClient(sock string) *http.Client {
 	}}
 }
 
-// TestUnixSocketDefault proves the zero-config unix control socket
-// (specification sections 2 and 10): a Server with nothing configured but a
-// socket path always listens on that unix socket, protects it with owner-only
-// filesystem permissions, serves HTTP/JSON there needing no authentication
-// (ambient, local), and brings up no TCP listener.
+// TestUnixSocketDefault proves the zero-config unix control socket: a Server with
+// nothing configured but a socket path always listens on that unix socket, protects
+// it with owner-only filesystem permissions, serves HTTP/JSON there needing no
+// authentication (ambient, local), and brings up no TCP listener.
 func TestUnixSocketDefault(t *testing.T) {
-	// spec: S02/unix-socket-default
-	t.Run("S02/unix-socket-default", func(t *testing.T) {
+	t.Run("unix-socket-default", func(t *testing.T) {
 		sock := shortSocket(t)
 		srv := NewServer(config.Settings{Socket: sock}, api.NewMux())
 		startServer(t, srv)
@@ -154,14 +152,12 @@ func TestUnixSocketDefault(t *testing.T) {
 	})
 }
 
-// TestTCPOptInPATGated proves the opt-in, PAT-gated TCP listener (specification
-// sections 2 and 7): it stays off unless a TCP address is configured; once on,
-// every request over it must authenticate with a PAT (missing bearer -> 401,
-// valid bearer -> 200), while the sibling unix-socket request on the same server
-// needs nothing.
+// TestTCPOptInPATGated proves the opt-in, PAT-gated TCP listener: it stays off
+// unless a TCP address is configured; once on, every request over it must
+// authenticate with a PAT (missing bearer -> 401, valid bearer -> 200), while the
+// sibling unix-socket request on the same server needs nothing.
 func TestTCPOptInPATGated(t *testing.T) {
-	// spec: S02/tcp-opt-in-pat-gated
-	t.Run("S02/tcp-opt-in-pat-gated", func(t *testing.T) {
+	t.Run("tcp-opt-in-pat-gated", func(t *testing.T) {
 		// Off by default: no TCP address configured, no TCP listener.
 		off := NewServer(config.Settings{Socket: shortSocket(t)}, api.NewMux())
 		startServer(t, off)
@@ -204,11 +200,10 @@ func TestTCPOptInPATGated(t *testing.T) {
 }
 
 // TestTLSWhenCertsGiven proves TLS is served on the TCP listener when a cert/key
-// pair is configured and plain TCP is served when they are absent (specification
-// section 2: "--tls-cert/--tls-key ...; no certs: plain TCP").
+// pair (--tls-cert/--tls-key) is configured and plain TCP is served when they are
+// absent.
 func TestTLSWhenCertsGiven(t *testing.T) {
-	// spec: S02/tls-when-certs-given
-	t.Run("S02/tls-when-certs-given", func(t *testing.T) {
+	t.Run("tls-when-certs-given", func(t *testing.T) {
 		certFile, keyFile, pool := selfSignedCertFiles(t)
 
 		// With certs: the TCP listener speaks TLS. An HTTPS client that trusts the
@@ -299,15 +294,13 @@ func selfSignedCertFiles(t *testing.T) (certPath, keyPath string, pool *x509.Cer
 }
 
 // TestDestructiveOpsTCPReachable proves declare destroy (and by tiering the
-// dev-loop destructive surfaces) are reachable over the TCP listener with a
-// control PAT (specification section 12). They must pass the PAT transport gate
-// and the mux leader/scope gates (not refused as unauthorized/forbidden/not_leader).
-// 4xx/5xx from later handler or no route is acceptable; the contract is the
-// remote surface tiering, in contrast to engine uninstall which is local-only.
-//
-// spec: S12/destructive-ops-tcp-reachable
+// dev-loop destructive surfaces) are reachable over the TCP listener with a control
+// PAT. They must pass the PAT transport gate and the mux leader/scope gates (not
+// refused as unauthorized/forbidden/not_leader). 4xx/5xx from later handler or no
+// route is acceptable; the contract is the remote surface tiering, in contrast to
+// engine uninstall which is local-only.
 func TestDestructiveOpsTCPReachable(t *testing.T) {
-	t.Run("S12/destructive-ops-tcp-reachable", func(t *testing.T) {
+	t.Run("destructive-ops-tcp-reachable", func(t *testing.T) {
 		sock := shortSocket(t)
 		srv := NewServer(
 			config.Settings{Socket: sock, TCP: "127.0.0.1:0"},
@@ -352,7 +345,7 @@ func TestDestructiveOpsTCPReachable(t *testing.T) {
 			}
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == api.StatusNotLeader {
-				t.Errorf("%s over TCP got blocked status %d; destructive ops must be TCP-reachable with control PAT (S12/destructive-ops-tcp-reachable)", path, resp.StatusCode)
+				t.Errorf("%s over TCP got blocked status %d; destructive ops must be TCP-reachable with control PAT", path, resp.StatusCode)
 			}
 		}
 	})

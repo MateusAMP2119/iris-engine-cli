@@ -11,22 +11,20 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the unified PAT store (specification sections 4 and 7): the pats
-// and pat_scopes table shapes, the atomic create path that persists a token's prefix
-// and argon2id hash plus its scope rows, and the data-scope side -- an engine-managed
-// read-only NOLOGIN Postgres role recorded in the access ledger, with no credentials
-// row. Every write rides the single meta writer over a recording fake (no live
-// Postgres), so a test asserts the exact statement set and its transaction grouping.
+// This file proves the unified PAT store: the pats and pat_scopes table shapes,
+// the atomic create path that persists a token's prefix and argon2id hash plus
+// its scope rows, and the data-scope side -- an engine-managed read-only NOLOGIN
+// Postgres role recorded in the access ledger, with no credentials row. Every
+// write rides the single meta writer over a recording fake (no live Postgres), so
+// a test asserts the exact statement set and its transaction grouping.
 
 // TestPATStoreShape proves the pats and pat_scopes meta shapes and the atomic create
 // path: pats keys a row by token prefix (id PK) with an argon2id hash, label, and
 // revoked flag; pat_scopes stores one row per scope with scope in (control, read,
 // data) and PK (pat_id, scope). CreatePAT persists the pats row and its scope rows as
 // one atomic transaction.
-//
-// spec: S04/pat-store-shape
 func TestPATStoreShape(t *testing.T) {
-	t.Run("S04/pat-store-shape", func(t *testing.T) {
+	t.Run("pat-store-shape", func(t *testing.T) {
 		s := store.MetaSchema()
 
 		// pats: id PK (token prefix), hash (argon2id), label, revoked.
@@ -112,10 +110,8 @@ func TestPATStoreShape(t *testing.T) {
 // TestCreatePATRejectsEmptyInputs proves CreatePAT fails loudly on a missing prefix,
 // hash, or scope set rather than writing a half-formed PAT row (a PAT with no hash
 // could never authenticate; a PAT with no scope gates nothing).
-//
-// spec: S04/pat-store-shape
 func TestCreatePATRejectsEmptyInputs(t *testing.T) {
-	t.Run("S04/pat-store-shape", func(t *testing.T) {
+	t.Run("pat-store-shape", func(t *testing.T) {
 		for _, rec := range []store.PATRecord{
 			{ID: "", Hash: "h", Label: "l", Scopes: []string{"read"}},
 			{ID: "id", Hash: "", Label: "l", Scopes: []string{"read"}},
@@ -137,10 +133,8 @@ func TestCreatePATRejectsEmptyInputs(t *testing.T) {
 // engine-managed read-only Postgres role for it in the access ledger (roles),
 // owner=data-PAT, together with its fixed field-level read grants, all in the same
 // atomic transaction that writes the pats and pat_scopes rows.
-//
-// spec: S04/data-pat-owns-read-role
 func TestDataPATOwnsReadRole(t *testing.T) {
-	t.Run("S04/data-pat-owns-read-role", func(t *testing.T) {
+	t.Run("data-pat-owns-read-role", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		role := pat.DataRoleName("0a1b2c3d")
@@ -189,10 +183,8 @@ func TestDataPATOwnsReadRole(t *testing.T) {
 // is a data PAT (IsLogin false), and the create path writes no credentials row. The
 // read-path SET ROLE itself lands in a later route task; here the role shape is what
 // makes it assumable.
-//
-// spec: S04/data-pat-role-nologin-set-role
 func TestDataPATRoleNoLoginSetRole(t *testing.T) {
-	t.Run("S04/data-pat-role-nologin-set-role", func(t *testing.T) {
+	t.Run("data-pat-role-nologin-set-role", func(t *testing.T) {
 		// The ledger owner of a data-PAT role is NOLOGIN by construction: a data PAT
 		// owner is not a login owner (pipeline roles log in and hold a credential).
 		owner := store.DataPATOwner("0a1b2c3d")
@@ -223,13 +215,10 @@ func TestDataPATRoleNoLoginSetRole(t *testing.T) {
 
 // TestDataPATRoleNoLoginNoCredentials proves a data PAT maps to an engine-managed
 // read-only NOLOGIN role assumed via SET ROLE and gets no row in credentials, which
-// holds pipeline login roles only (specification sections 4 and 7 invariant). The
-// create path writes none, and the ledger's own guard rejects a credential for a
-// data-PAT role.
-//
-// spec: S07/data-pat-role-nologin-no-credentials
+// holds pipeline login roles only. The create path writes none, and the ledger's
+// own guard rejects a credential for a data-PAT role.
 func TestDataPATRoleNoLoginNoCredentials(t *testing.T) {
-	t.Run("S07/data-pat-role-nologin-no-credentials", func(t *testing.T) {
+	t.Run("data-pat-role-nologin-no-credentials", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		role := pat.DataRoleName("0a1b2c3d")
@@ -260,16 +249,14 @@ func TestDataPATRoleNoLoginNoCredentials(t *testing.T) {
 	})
 }
 
-// TestPATShowOnceHash proves the persistence half of show-once (specification section
-// 7): composing the real pat mint with the store, PAT creation persists only the
-// token prefix and its argon2id hash (plus label and scopes) -- never the raw token.
-// The raw token appears in no persisted argument, and the stored hash verifies the
-// token it was minted from, so a lost token can only be revoked and re-minted, never
-// recovered from meta.
-//
-// spec: S07/pat-show-once-hash
+// TestPATShowOnceHash proves the persistence half of show-once: composing the
+// real pat mint with the store, PAT creation persists only the token prefix and
+// its argon2id hash (plus label and scopes) -- never the raw token. The raw token
+// appears in no persisted argument, and the stored hash verifies the token it was
+// minted from, so a lost token can only be revoked and re-minted, never recovered
+// from meta.
 func TestPATShowOnceHash(t *testing.T) {
-	t.Run("S07/pat-show-once-hash", func(t *testing.T) {
+	t.Run("pat-show-once-hash", func(t *testing.T) {
 		tok, err := pat.Mint()
 		if err != nil {
 			t.Fatalf("Mint: %v", err)
@@ -324,10 +311,8 @@ func TestPATShowOnceHash(t *testing.T) {
 
 // TestRevokePAT proves a PAT is revoked by flipping its pats.revoked flag by prefix,
 // a single guarded statement -- the disposition for a lost token (revoke + re-mint).
-//
-// spec: S07/pat-show-once-hash
 func TestRevokePAT(t *testing.T) {
-	t.Run("S07/pat-show-once-hash", func(t *testing.T) {
+	t.Run("pat-show-once-hash", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		if err := w.RevokePAT(context.Background(), "0a1b2c3d"); err != nil {

@@ -7,12 +7,11 @@ import (
 )
 
 // This file is the daemon's pipeline-show surface: GET /pipeline/show, the
-// single-pipeline readout `iris pipeline show <name>` prints (specification
-// sections 8 and 11). It reports the pipeline's resolved declaration, its Postgres
-// role and field-level grants, its recent runs, and the gate ledger -- the
-// per-edge depends_on verdict from the closed set (open, up_to_date, pending,
-// poisoned, specification section 6.2). It is a read, served on any role (reads
-// work anywhere), and mutates nothing.
+// single-pipeline readout `iris pipeline show <name>` prints. It reports the
+// pipeline's resolved declaration, its Postgres role and field-level grants,
+// its recent runs, and the gate ledger -- the per-edge depends_on verdict from
+// the closed set (open, up_to_date, pending, poisoned). It is a read, served on
+// any role (reads work anywhere), and mutates nothing.
 //
 // Like the other read surfaces, api stays a leaf: it defines the seam and the wire
 // shapes but reaches nothing up the stack. The gate verdict rides the wire as a
@@ -21,8 +20,8 @@ import (
 
 // PipelineShowResult is the GET /pipeline/show document: a pipeline's resolved
 // declaration, its role and grants, its recent runs, and the gate ledger. It
-// carries no clock readout -- no recorded_at, no last-seen, no timestamp -- since
-// connection state is the only liveness signal (specification section 11).
+// carries no clock readout -- no recorded_at, no last-seen, no timestamp --
+// since connection state is the only liveness signal.
 type PipelineShowResult struct {
 	// Name is the pipeline's name.
 	Name string `json:"name"`
@@ -44,9 +43,9 @@ type PipelineShowResult struct {
 	// RecentRuns are the pipeline's runs, newest last (ordering identity, never a
 	// clock). Always present, possibly empty.
 	RecentRuns []RunView `json:"recent_runs"`
-	// GateLedger is the per-edge depends_on verdict, in edge order: the gate's read
-	// surface (specification section 6.2). Always present, possibly empty (a
-	// pipeline with no depends_on edges has an empty ledger).
+	// GateLedger is the per-edge depends_on verdict, in edge order: the gate's
+	// read surface. Always present, possibly empty (a pipeline with no depends_on
+	// edges has an empty ledger).
 	GateLedger []EdgeVerdictView `json:"gate_ledger"`
 }
 
@@ -122,10 +121,10 @@ func (noPipelineShow) ShowPipeline(context.Context, string) (PipelineShowResult,
 	return PipelineShowResult{}, ErrPipelineShowUnavailable
 }
 
-// servePipelineShow handles GET /pipeline/show?name=<name>: run the wired handler
-// and render the section-7 envelope. It is a read, served on any node. A missing
-// name is 400 bad_param; an unwired handler is 500 internal; an unregistered
-// pipeline (or any read error) is 422 operation_failed.
+// servePipelineShow handles GET /pipeline/show?name=<name>: run the wired
+// handler and render the data envelope. It is a read, served on any node. A
+// missing name is 400 bad_param; an unwired handler is 500 internal; an
+// unregistered pipeline (or any read error) is 422 operation_failed.
 func (m *mux) servePipelineShow(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")

@@ -12,22 +12,22 @@ import (
 	"strings"
 )
 
-// This file holds the import-graph model and the four static checks over it
-// (specification section 10): acyclicity, one-direction layering, harness
-// isolation, and store/pg as the sole database clients, plus the module-wide
-// pgx-only / no-database-sql / no-SQLite import ban (specification section 9).
+// This file holds the import-graph model and the four static checks over it:
+// acyclicity, one-direction layering, harness isolation, and store/pg as the sole
+// database clients, plus the module-wide pgx-only / no-database-sql / no-SQLite
+// import ban.
 
-// Class is a package's structural class: Product (a spec section 10 roster
-// package), Main (cmd/iris), or Harness (test-support scaffolding).
+// Class is a package's structural class: Product (a product-roster package),
+// Main (cmd/iris), or Harness (test-support scaffolding).
 type Class int
 
 // The package classes.
 const (
-	// ClassHarness is a test-support / executable-spec package, outside the
-	// product graph and carrying no layer rank.
+	// ClassHarness is a test-support package, outside the product graph and
+	// carrying no layer rank.
 	ClassHarness Class = iota
-	// ClassProduct is a specification section 10 roster package, carrying a layer
-	// rank the one-direction rule enforces.
+	// ClassProduct is a product-roster package, carrying a layer rank the
+	// one-direction rule enforces.
 	ClassProduct
 	// ClassMain is the single main package, cmd/iris, the top of the direction.
 	ClassMain
@@ -38,14 +38,14 @@ const (
 // import it.
 const rankMain = 100
 
-// productRanks assigns each specification section 10 product package its layer
-// rank. The one-direction rule is: a shipped package may import another shipped
-// package only when the target's rank is strictly lower. That single rule
-// captures the spec's whole layering at once -- cli -> daemon -> api -> dispatch
-// -> store/pg/exec, archive beside dispatch, config/declare/build/pat/buildinfo as
-// leaves -- and, because a strictly-lower target is required, it also forbids the
-// same-rank crossings the spec bans: store<->pg ("two clients, two databases,
-// never crossed") and archive<->dispatch (siblings coordinated from above).
+// productRanks assigns each product package its layer rank. The one-direction
+// rule is: a shipped package may import another shipped package only when the
+// target's rank is strictly lower. That single rule captures the whole layering
+// at once -- cli -> daemon -> api -> dispatch -> store/pg/exec, archive beside
+// dispatch, config/declare/build/pat/buildinfo as leaves -- and, because a
+// strictly-lower target is required, it also forbids the banned same-rank
+// crossings: store<->pg ("two clients, two databases, never crossed") and
+// archive<->dispatch (siblings coordinated from above).
 // daemon outranks api because listener wiring (which mounts the api mux) lives in
 // the daemon; api renders read views and never reaches back up. config is a leaf
 // carrying no dependencies of its own -- pure configuration resolution the CLI
@@ -355,9 +355,9 @@ func (g *Graph) CheckHarnessIsolation() []Violation {
 
 // CheckDBClients returns a violation for every package that imports the pgx
 // driver yet is neither store nor pg nor a harness package: a third path to a
-// database (specification section 10, store and pg the sole database clients;
-// archive reuses them and never holds pgx itself). Harness packages may drive
-// Postgres via pgx in tests, so they are exempt.
+// database (store and pg are the sole database clients; archive reuses them and
+// never holds pgx itself). Harness packages may drive Postgres via pgx in tests,
+// so they are exempt.
 func (g *Graph) CheckDBClients() []Violation {
 	var vs []Violation
 	for _, p := range g.sortedPackages() {
@@ -384,8 +384,7 @@ func (g *Graph) CheckDBClients() []Violation {
 
 // CheckPgxOnly returns a violation for every package that imports database/sql
 // or a SQLite driver: all database access goes through pgx directly, with no
-// SQLite anywhere (specification section 9). The ban is module-wide, harness
-// included.
+// SQLite anywhere. The ban is module-wide, harness included.
 func (g *Graph) CheckPgxOnly() []Violation {
 	var vs []Violation
 	for _, p := range g.sortedPackages() {

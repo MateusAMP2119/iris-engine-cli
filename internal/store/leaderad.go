@@ -6,12 +6,11 @@ import (
 )
 
 // This file is the leader-advertisement read seam: the plain-MVCC read a standby
-// uses to learn the current leader's advertised address and name it for retargeting
-// (specification sections 7, 8, and 15; the leadership table is specification
-// section 4). The leader writes the address through the single writer
-// (Writer.AdvertiseLeader); a standby -- which shares meta by the HA model -- reads
-// it here off the reader pool, never blocking behind the leader lock or the single
-// writer, so a standby learns the leader's address on any candidate.
+// uses to learn the current leader's advertised address and name it for
+// retargeting. The leader writes the address through the single writer
+// (Writer.AdvertiseLeader); a standby -- which shares meta by the HA model --
+// reads it here off the reader pool, never blocking behind the leader lock or the
+// single writer, so a standby learns the leader's address on any candidate.
 
 // LeaderAddrReader reads the current leader's advertised address from the single-row
 // leadership table. A meta-backed implementation and a test fake both satisfy it; the

@@ -60,8 +60,7 @@ const (
 )
 
 // pickQuestion is THE PIPELINE act's opening question, doubling as its
-// consent: the shop pick over the n embedded catalog entries (specification
-// section 8, quickstart pipeline catalog).
+// consent: the shop pick over the n embedded catalog entries.
 func pickQuestion(n int) string {
 	return fmt.Sprintf("Pick a pipeline (1-%d, Enter=1):", n)
 }
@@ -217,9 +216,9 @@ func actColor(p painter, id string) func(string) string {
 	}
 }
 
-// runQuickstartTour is the chaptered guided tour of the first session
-// (specification section 8): after the welcome (skipped for the installer's
-// continuation, whose banner was the welcome) it walks the acts -- chapter
+// runQuickstartTour is the chaptered guided tour of the first session: after the
+// welcome (skipped for the installer's continuation, whose banner was the
+// welcome) it walks the acts -- chapter
 // mark, one consent (THE ENGINE's workspace question, or the act gate), then
 // the act's steps straight through the in-process runner. A reachable daemon
 // on the workspace socket announces install/start as already done and skips
@@ -431,8 +430,8 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 			// The act closes only on the readout: `engine start -d` returns on
 			// socket-up while leadership can lag, so the tour holds here until the
 			// daemon reports a role -- THE PIPELINE act never opens on an unready
-			// engine (specification section 8, quickstart surface). The ceremony
-			// surface holds behind a spinner; plain surfaces hold silently.
+			// engine. The ceremony surface holds behind a spinner; plain surfaces
+			// hold silently.
 			var stopSpin func(string)
 			if p.enabled {
 				stopSpin = startSpinner(a.out, p, "Waiting for the engine to take leadership…")
@@ -460,8 +459,7 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 
 // renderCatalogShop paints the browse list: every embedded entry as one
 // numbered line, number and name in cyan, the one-line pitch dim -- the shop
-// THE PIPELINE act opens at (specification section 8, quickstart pipeline
-// catalog).
+// THE PIPELINE act opens at.
 func (a *app) renderCatalogShop(p painter, cat *pipelineCatalog) {
 	fmt.Fprintln(a.out, "The pipeline catalog — starter pipelines embedded in the binary:")
 	width := 0
@@ -500,9 +498,9 @@ func (a *app) renderTourStep(p painter, step quickstartStep) {
 	}
 }
 
-// openEngineWorkspace is THE ENGINE act's opener: the workspace question
-// (specification section 8, quickstart surface). Interactive, it reads one
-// line with a visible default -- `~/iris`, or the invoking directory when that
+// openEngineWorkspace is THE ENGINE act's opener: the workspace question.
+// Interactive, it reads one line with a visible default -- `~/iris`, or the
+// invoking directory when that
 // is already a workspace (.iris/ or pipelines/ present) -- expands `~` to the
 // operator's home, creates the directory (mkdir -p) and enters it, so every
 // subsequent step operates on cwd exactly like any command. The empty answer

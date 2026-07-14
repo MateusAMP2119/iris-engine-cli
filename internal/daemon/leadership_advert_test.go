@@ -86,16 +86,14 @@ type advertEnvelope struct {
 }
 
 // TestLeaderAdvertisement proves the leader-advertisement mechanism at integration
-// tier with fakes (specification sections 4, 7, 8, and 15): a leader writes its
-// advertised address into meta through the single writer, and a standby reads a meta
-// advertisement and surfaces it in the not_leader rejection the CLI turns into exit-6
-// guidance -- so the guidance names the live leader for retargeting, no live Postgres.
-//
-// spec: S15/leader-advertises-address
+// tier with fakes: a leader writes its advertised address into meta through the
+// single writer, and a standby reads a meta advertisement and surfaces it in the
+// not_leader rejection the CLI turns into exit-6 guidance -- so the guidance names
+// the live leader for retargeting, no live Postgres.
 func TestLeaderAdvertisement(t *testing.T) {
 	const leaderAddr = "10.1.2.3:9099"
 
-	t.Run("S15/leader-advertises-address", func(t *testing.T) {
+	t.Run("leader-advertises-address", func(t *testing.T) {
 		t.Run("the leader advertises its address into meta on winning the lock", func(t *testing.T) {
 			conn := &advertRecordingConn{}
 			role := api.NewRoleState()

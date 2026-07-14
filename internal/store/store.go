@@ -1,16 +1,14 @@
 // Package store is the meta client seam: the sole path Iris uses to read and
-// write meta, the dedicated control-plane database (specification section 10).
-// Only the leader writes meta, through one dispatcher-owned single-writer path
-// guarded by the leader lock (sections 2 and 15); this package will own that
-// path and that lock.
+// write meta, the dedicated control-plane database. Only the leader writes meta,
+// through one dispatcher-owned single-writer path guarded by the leader lock;
+// this package will own that path and that lock.
 //
 // This is the minimal, behavior-focused seam the later epics extend: E02 lands
 // the real Postgres-backed implementation, the nineteen-table roster, and the
 // leader lock; E05's dispatcher drives run records through it. It is deliberately
 // small -- run records and their states, the surface the dispatch tests need --
 // so the seam can grow without churn. A fake (internal/store/storetest) satisfies
-// the interface so the wiring around meta is tested with no live database
-// (S16/integration-fakes-interfaces).
+// the interface so the wiring around meta is tested with no live database.
 package store
 
 import (
@@ -22,9 +20,8 @@ import (
 // given id. Callers test it with errors.Is.
 var ErrRunNotFound = errors.New("store: run not found")
 
-// RunState is a run's lifecycle state (specification section 1). Dead-lettered
-// is the single non-success terminal state (a failed, cancelled, or
-// upstream-dead-lettered run).
+// RunState is a run's lifecycle state. Dead-lettered is the single non-success
+// terminal state (a failed, cancelled, or upstream-dead-lettered run).
 type RunState string
 
 // The run states.
@@ -36,34 +33,34 @@ const (
 	// RunSucceeded is a run that exited zero.
 	RunSucceeded RunState = "succeeded"
 	// RunDeadLettered is the single non-success terminal state, parked in the
-	// dead-letter worklist. Its wire token is the spec's DDL/grammar form
-	// `dead_lettered` (specification sections 4 and 7), the value E02's Postgres
-	// CHECK constraint and every --json golden pin.
+	// dead-letter worklist. Its wire token is the DDL/grammar form
+	// `dead_lettered`, the value E02's Postgres CHECK constraint and every --json
+	// golden pin.
 	RunDeadLettered RunState = "dead_lettered"
 )
 
 // DeadLetterReason is the reason a run landed in the dead-letter worklist
-// (dead_letters.reason, specification sections 2 and 4). It is the closed enum the
-// meta CHECK constraint pins; crash reconciliation uses ReasonStopped.
+// (dead_letters.reason). It is the closed enum the meta CHECK constraint pins;
+// crash reconciliation uses ReasonStopped.
 type DeadLetterReason string
 
 // The dead-letter reasons (the dead_letters.reason CHECK value set).
 const (
 	// ReasonFailed is a run that exited non-zero on its own.
 	ReasonFailed DeadLetterReason = "failed"
-	// ReasonStopped is a run the engine stopped rather than one that failed on its
-	// own: a cancelled run, or -- the crash-reconciliation case -- a run left in
-	// flight when the daemon terminated (specification section 2 crash recovery).
-	// The enum value is `stopped`; the human detail ("daemon terminated while run
-	// was in flight") rides the dead_letters.error column, not this enum.
+	// ReasonStopped is a run the engine stopped rather than one that failed on
+	// its own: a cancelled run, or -- the crash-reconciliation case -- a run left
+	// in flight when the daemon terminated. The enum value is `stopped`; the
+	// human detail ("daemon terminated while run was in flight") rides the
+	// dead_letters.error column, not this enum.
 	ReasonStopped DeadLetterReason = "stopped"
 	// ReasonUpstreamDeadLettered is a run dead-lettered because an upstream it
 	// depended on was dead-lettered (failure propagation).
 	ReasonUpstreamDeadLettered DeadLetterReason = "upstream_dead_lettered"
 )
 
-// Run is one execution record in meta: a minimal slice of the runs table
-// (section 4) carrying only what the dispatch seam needs today.
+// Run is one execution record in meta: a minimal slice of the runs table carrying
+// only what the dispatch seam needs today.
 type Run struct {
 	// ID is the run's stable identity, assigned on creation.
 	ID string
@@ -82,7 +79,7 @@ type Run struct {
 	// Reason is the dead-letter reason, set when State is RunDeadLettered.
 	Reason string
 	// Seq is a monotonic ordering identity assigned on creation: identity, never
-	// a clock (section 4, ordering-identity-never-clock).
+	// a clock.
 	Seq int64
 }
 

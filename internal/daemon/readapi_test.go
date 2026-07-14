@@ -15,11 +15,10 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the E09.5 transport half of the read API over the daemon's
-// real listeners (specification section 7): HTTP/1.1 resource-shaped JSON GETs
-// on the one server both listeners share, the auth split (ambient socket vs
-// per-request bearer on TCP), the exact HTTP status matrix, and read service
-// from a standby.
+// This file proves the E09.5 transport half of the read API over the daemon's real
+// listeners: HTTP/1.1 resource-shaped JSON GETs on the one server both listeners
+// share, the auth split (ambient socket vs per-request bearer on TCP), the exact
+// HTTP status matrix, and read service from a standby.
 
 // scopedVerifier resolves each known token to its authority, so the TCP
 // listener's per-route scope checks can be proven without the real PAT store.
@@ -111,14 +110,11 @@ func startReadServer(t *testing.T, role *api.RoleState, tokens map[string]api.Au
 	return srv, sock, unixClient(sock)
 }
 
-// TestHTTPGetJSONBothListeners proves the daemon serves the read API as
-// HTTP/1.1 resource-shaped JSON GETs on the same server as the control plane,
-// reachable over both the unix socket and the optional TCP listener
-// (specification sections 2 and 7).
-//
-// spec: S07/http-get-json-both-listeners
+// TestHTTPGetJSONBothListeners proves the daemon serves the read API as HTTP/1.1
+// resource-shaped JSON GETs on the same server as the control plane, reachable over
+// both the unix socket and the optional TCP listener.
 func TestHTTPGetJSONBothListeners(t *testing.T) {
-	t.Run("S07/http-get-json-both-listeners", func(t *testing.T) {
+	t.Run("http-get-json-both-listeners", func(t *testing.T) {
 		role := api.NewRoleState()
 		role.SetLeader()
 		srv, _, socketClient := startReadServer(t, role,
@@ -162,14 +158,12 @@ func TestHTTPGetJSONBothListeners(t *testing.T) {
 	})
 }
 
-// TestTransportAuthSocketVsTCP proves the transport auth split (specification
-// section 7): socket requests are ambiently authorized -- no token, full
-// authority -- while every TCP request must present Authorization: Bearer
-// <token>, with 401 unauthorized for a missing or bad token.
-//
-// spec: S07/transport-auth-socket-vs-tcp
+// TestTransportAuthSocketVsTCP proves the transport auth split: socket requests are
+// ambiently authorized -- no token, full authority -- while every TCP request must
+// present Authorization: Bearer <token>, with 401 unauthorized for a missing or bad
+// token.
 func TestTransportAuthSocketVsTCP(t *testing.T) {
-	t.Run("S07/transport-auth-socket-vs-tcp", func(t *testing.T) {
+	t.Run("transport-auth-socket-vs-tcp", func(t *testing.T) {
 		role := api.NewRoleState()
 		role.SetLeader()
 		srv, _, socketClient := startReadServer(t, role,
@@ -230,14 +224,12 @@ func (s matrixStats) Stats(context.Context) (api.StatsPayload, error) {
 	return api.StatsPayload{}, nil
 }
 
-// TestHTTPStatusMatrix proves the exact status matrix (specification section
-// 7): 200 success, 400 malformed/unknown/repeated param, 401 missing or bad
-// token on TCP, 403 missing scope, 404 unknown endpoint, 405 non-GET, 500
-// engine fault -- each carrying its closed-set error code.
-//
-// spec: S07/http-status-matrix
+// TestHTTPStatusMatrix proves the exact status matrix: 200 success, 400
+// malformed/unknown/repeated param, 401 missing or bad token on TCP, 403 missing
+// scope, 404 unknown endpoint, 405 non-GET, 500 engine fault -- each carrying its
+// closed-set error code.
 func TestHTTPStatusMatrix(t *testing.T) {
-	t.Run("S07/http-status-matrix", func(t *testing.T) {
+	t.Run("http-status-matrix", func(t *testing.T) {
 		role := api.NewRoleState()
 		role.SetLeader()
 		srv, _, socketClient := startReadServer(t, role,
@@ -329,14 +321,11 @@ func TestHTTPStatusMatrix(t *testing.T) {
 	})
 }
 
-// TestStandbyServesReads proves a standby daemon serves every read route
-// (specification sections 7 and 15: "reads work anywhere"): the whole
-// engine-state roster answers on a standby with exactly the status a leader
-// gives, never a not_leader rejection.
-//
-// spec: S07/standby-serves-reads
+// TestStandbyServesReads proves a standby daemon serves every read route (reads
+// work anywhere): the whole engine-state roster answers on a standby with exactly
+// the status a leader gives, never a not_leader rejection.
 func TestStandbyServesReads(t *testing.T) {
-	t.Run("S07/standby-serves-reads", func(t *testing.T) {
+	t.Run("standby-serves-reads", func(t *testing.T) {
 		leaderRole := api.NewRoleState()
 		leaderRole.SetLeader()
 		standbyRole := api.NewRoleState()
@@ -369,12 +358,10 @@ func TestStandbyServesReads(t *testing.T) {
 	})
 }
 
-// TestStatsReadPATAccess proves a monitor with only the read scope can fetch
-// GET /stats over TCP (specification section 11).
-//
-// spec: S11/stats-read-pat-access
+// TestStatsReadPATAccess proves a monitor with only the read scope can fetch GET
+// /stats over TCP.
 func TestStatsReadPATAccess(t *testing.T) {
-	t.Run("S11/stats-read-pat-access", func(t *testing.T) {
+	t.Run("stats-read-pat-access", func(t *testing.T) {
 		role := api.NewRoleState()
 		role.SetLeader()
 		readTok := "read-pat"
@@ -429,14 +416,12 @@ func pollRole(cond func() bool) bool {
 }
 
 // TestCandidateBindsListeners proves every candidate binds its own listeners and
-// serves reads regardless of the role it holds (specification section 15: "every
-// candidate binds its own listeners; reads work anywhere"). It drives a real
-// Candidate contending for a held lock -- so it stays a standby -- over the
-// daemon's real unix listener, and shows the read roster answers on the standby.
-//
-// spec: S15/reads-work-on-any-candidate
+// serves reads regardless of the role it holds (every candidate binds its own
+// listeners; reads work anywhere). It drives a real Candidate contending for a held
+// lock -- so it stays a standby -- over the daemon's real unix listener, and shows
+// the read roster answers on the standby.
 func TestCandidateBindsListeners(t *testing.T) {
-	t.Run("S15/reads-work-on-any-candidate", func(t *testing.T) {
+	t.Run("reads-work-on-any-candidate", func(t *testing.T) {
 		// Contend with a held lock so this candidate stays a standby while we
 		// prove its listeners are up and serving reads.
 		set := storetest.NewLockSet()
@@ -480,14 +465,12 @@ func TestCandidateBindsListeners(t *testing.T) {
 
 // TestStandbyDaemonListenerRejectsMutations proves a mutation sent to a standby
 // daemon's real listener is rejected with the not_leader envelope carrying the
-// leader guidance (specification section 15). It drives a real Candidate
-// contending for a held lock (so it stays a standby) and POSTs a mutation over
-// the daemon's unix socket, asserting the 421 not_leader rejection and that the
-// envelope carries the leader the role holds.
-//
-// spec: S15/standby-rejects-mutations-with-leader-guidance
+// leader guidance. It drives a real Candidate contending for a held lock (so it
+// stays a standby) and POSTs a mutation over the daemon's unix socket, asserting
+// the 421 not_leader rejection and that the envelope carries the leader the role
+// holds.
 func TestStandbyDaemonListenerRejectsMutations(t *testing.T) {
-	t.Run("S15/standby-rejects-mutations-with-leader-guidance", func(t *testing.T) {
+	t.Run("standby-rejects-mutations-with-leader-guidance", func(t *testing.T) {
 		set := storetest.NewLockSet()
 		holder := set.New()
 		if err := holder.Acquire(context.Background()); err != nil {

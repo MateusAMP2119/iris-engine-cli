@@ -204,10 +204,8 @@ func startSealDispatcher(t *testing.T, conn store.MetaWriteConn) *dispatch.Dispa
 // the compacted rows, a signature that verifies against the engine key, and the
 // parent that chains to the current head; the sealed partition is exported to the
 // object store under its digest and dropped.
-//
-// spec: S14/seal-dispatcher-step
 func TestSealDispatcherStep(t *testing.T) {
-	t.Run("S14/seal-dispatcher-step", func(t *testing.T) {
+	t.Run("seal-dispatcher-step", func(t *testing.T) {
 		log := &orderLog{}
 		rows := [][]byte{[]byte("1|role|7|analytics|orders|a|insert||promoted|t"), []byte("2|role|7|analytics|orders|b|insert||promoted|t")}
 		data := &fakeSealData{log: log, count: 6, minID: 1, maxID: 6, runIDs: []int64{7}, rows: rows}
@@ -298,10 +296,8 @@ func TestSealDispatcherStep(t *testing.T) {
 // through the single writer before signing -- the meta-table persistence that
 // superseded the per-database GUC and the workspace key file. The checkpoint is
 // then signed with exactly the key stored in meta.
-//
-// spec: S04/engine-key-in-meta-table
 func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
-	t.Run("S04/engine-key-in-meta-table", func(t *testing.T) {
+	t.Run("engine-key-in-meta-table", func(t *testing.T) {
 		log := &orderLog{}
 		rows := [][]byte{[]byte("1|role|7|analytics|orders|a|insert||promoted|t")}
 		data := &fakeSealData{log: log, count: 6, minID: 1, maxID: 6, runIDs: []int64{7}, rows: rows}
@@ -318,7 +314,7 @@ func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
 		// The seal minted the engine key into meta before signing, create-once.
 		ins, ok := conn.find("INSERT INTO engine_key")
 		if !ok {
-			t.Fatal("seal did not mint the engine key when meta held none (S04/engine-key-in-meta-table)")
+			t.Fatal("seal did not mint the engine key when meta held none")
 		}
 		if !strings.Contains(ins.sql, "ON CONFLICT") {
 			t.Errorf("engine-key mint is not create-once (missing ON CONFLICT DO NOTHING): %s", ins.sql)
@@ -332,7 +328,7 @@ func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
 		// not a discarded second mint).
 		stored := keys.get()
 		if len(stored) == 0 {
-			t.Fatal("engine key not stored in meta after mint (S04/engine-key-in-meta-table)")
+			t.Fatal("engine key not stored in meta after mint")
 		}
 		key, err := DecodeEngineKeyBytes(stored)
 		if err != nil {
@@ -345,7 +341,7 @@ func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
 		digest, _ := cp.args[2].([]byte)
 		sig, _ := cp.args[4].([]byte)
 		if !key.VerifyDigest(digest, sig) {
-			t.Error("checkpoint signed with a key that differs from the one minted into meta (S04/engine-key-in-meta-table)")
+			t.Error("checkpoint signed with a key that differs from the one minted into meta")
 		}
 	})
 }
@@ -353,10 +349,8 @@ func TestSealMintsEngineKeyOnFirstNeed(t *testing.T) {
 // TestSealDispatcherStepDefers proves the step is a no-op when the partition is not
 // due: below threshold, and while a run is still in flight, no compaction,
 // checkpoint, or export occurs.
-//
-// spec: S14/seal-dispatcher-step
 func TestSealDispatcherStepDefers(t *testing.T) {
-	t.Run("S14/seal-dispatcher-step", func(t *testing.T) {
+	t.Run("seal-dispatcher-step", func(t *testing.T) {
 		priv, _ := newTestEngineKey(t)
 		rows := [][]byte{[]byte("row")}
 

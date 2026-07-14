@@ -35,7 +35,6 @@ func readFileFrom(m map[string]string) func(string) ([]byte, error) {
 // literals or ${HOST_VAR} daemon-environment interpolations, producing the
 // deterministic overlay composeEnv merges onto the inherited environment.
 func TestResolveRunEnvInterpolationMerge(t *testing.T) {
-	// spec: S03/env-interpolation-merge
 	host := map[string]string{
 		"HOST_TOKEN": "s3cr3t",
 		"REGION":     "eu-west-1",
@@ -101,7 +100,6 @@ func TestResolveRunEnvInterpolationMerge(t *testing.T) {
 // TestResolveRunEnvWinsOverEnvFile proves the explicit env value wins over an
 // env_file entry for the same key, while keys unique to either source survive.
 func TestResolveRunEnvWinsOverEnvFile(t *testing.T) {
-	// spec: S03/env-wins-over-env-file
 	host := map[string]string{"HOST_TOKEN": "from-host"}
 
 	t.Run("explicit env overrides env_file on key collision", func(t *testing.T) {
@@ -153,7 +151,6 @@ func TestResolveRunEnvWinsOverEnvFile(t *testing.T) {
 // the second result, so no caching survives a run and a change takes effect on the
 // next dispatch without re-apply. It also pins the file-read error paths.
 func TestResolveRunEnvEnvFileFreshPerRun(t *testing.T) {
-	// spec: S03/env-file-fresh-per-run
 	host := hostEnvFrom(nil)
 
 	t.Run("a file change is reflected on the next resolve", func(t *testing.T) {

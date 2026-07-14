@@ -11,14 +11,14 @@ import (
 )
 
 // This file generates the platform service unit `iris engine service install`
-// writes on demand (specification section 2: "On demand, never auto-shipped: iris
-// engine service install installs a systemd/launchd unit wrapping the detached
-// daemon, itself service-ready (clean SIGTERM/SIGINT, no TTY, sane exit codes)").
-// The unit wraps `<binary> engine start --detach` rooted at the workspace, so the
-// service manager runs the same detached daemon the CLI does. It is generated only
-// here and written only by the service-install command (a structural sweep proves
-// no other command installs a unit or a boot autostart); `service uninstall`
-// removes it, at the ServiceUnitPath seam engine uninstall shares.
+// writes on demand (on demand, never auto-shipped: iris engine service install
+// installs a systemd/launchd unit wrapping the detached daemon, itself
+// service-ready (clean SIGTERM/SIGINT, no TTY, sane exit codes)). The unit wraps
+// `<binary> engine start --detach` rooted at the workspace, so the service manager
+// runs the same detached daemon the CLI does. It is generated only here and written
+// only by the service-install command (a structural sweep proves no other command
+// installs a unit or a boot autostart); `service uninstall` removes it, at the
+// ServiceUnitPath seam engine uninstall shares.
 
 // ServicePlatform identifies the init system a generated unit targets.
 type ServicePlatform string

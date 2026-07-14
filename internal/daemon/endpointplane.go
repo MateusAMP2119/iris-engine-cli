@@ -13,15 +13,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 )
 
-// This file is the daemon's leader-side endpoint-apply plane (specification section
-// 7): the composition root that turns POST /endpoint/apply into workspace endpoint
-// discovery, compilation against the schemas/ set, prepare-verification against the
-// data database, atomic meta persistence, and the live serving-registry swap. Like
-// the control plane it is leader-only: the api mux gates the mutation to the leader,
-// and the single meta writer (the dispatcher) only exists once a candidate wins the
-// lock, so the live orchestrator is installed on winning leadership (before the
-// leader role is reported) and cleared on demotion; a swappable endpointPlane holds
-// it and satisfies api.EndpointControlHandler for the daemon's whole life.
+// This file is the daemon's leader-side endpoint-apply plane: the composition root
+// that turns POST /endpoint/apply into workspace endpoint discovery, compilation
+// against the schemas/ set, prepare-verification against the data database, atomic
+// meta persistence, and the live serving-registry swap. Like the control plane it
+// is leader-only: the api mux gates the mutation to the leader, and the single meta
+// writer (the dispatcher) only exists once a candidate wins the lock, so the live
+// orchestrator is installed on winning leadership (before the leader role is
+// reported) and cleared on demotion; a swappable endpointPlane holds it and
+// satisfies api.EndpointControlHandler for the daemon's whole life.
 //
 // The live EndpointRegistry, by contrast, is process-long: it is built once at
 // startup and shared with the serving mux, so an apply that commits makes the

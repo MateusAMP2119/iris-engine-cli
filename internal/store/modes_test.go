@@ -7,15 +7,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestArtifactDataModeMatrix proves the artifact/data mode matrix (specification
-// section 1): artifact (source/built) and data (disposable/permanent) toggle
-// independently, but permanent requires built. Validation accepts
-// source+disposable (dev), built+disposable (throwaway-data artifact test), and
-// built+permanent (production), and blocks source+permanent so loose source
-// never writes permanent data. A value outside either CHECK set is rejected
-// rather than waved through, so a zero value can never slip past the matrix.
-//
-// spec: S01/artifact-data-mode-matrix
+// TestArtifactDataModeMatrix proves the artifact/data mode matrix: artifact
+// (source/built) and data (disposable/permanent) toggle independently, but
+// permanent requires built. Validation accepts source+disposable (dev),
+// built+disposable (throwaway-data artifact test), and built+permanent
+// (production), and blocks source+permanent so loose source never writes
+// permanent data. A value outside either CHECK set is rejected rather than waved
+// through, so a zero value can never slip past the matrix.
 func TestArtifactDataModeMatrix(t *testing.T) {
 	cases := []struct {
 		name     string

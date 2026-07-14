@@ -2,7 +2,7 @@
 // Recorder captures every statement bootstrap and EnsureSchema issue, in order,
 // so a test can drive the embedded meta DDL and diff the captured CREATE
 // DATABASE / CREATE TABLE / CREATE INDEX statements byte-for-byte against golden
-// files -- with no live Postgres (S16/integration-fakes-interfaces). A golden
+// files -- with no live Postgres. A golden
 // diff is a contract diff.
 package storetest
 

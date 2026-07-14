@@ -6,18 +6,16 @@ import (
 	"testing"
 )
 
-// TestBeforeReverseCursor pins the id-keyed before= reverse keyset cursor
-// (specification section 7, the one bounded pagination exception): id-keyed
-// collections also take before=, a reverse cursor so log views page newest-first,
-// still keyed by the collection key, never by a clock. It proves the reverse page
-// is descending with a strict key < before bound; that before= rides only on
-// id-keyed collections (name- and composite-keyed collections and /q reject it);
-// that after= and before= are mutually exclusive (a page is forward or reverse,
-// never both); that the bound value parses per the key column's type, no clock
-// param involved; and that a reverse page continues from its last row's key just
-// like a forward one.
-//
-// spec: S07/before-reverse-cursor
+// TestBeforeReverseCursor pins the id-keyed before= reverse keyset cursor (the
+// one bounded pagination exception): id-keyed collections also take before=, a
+// reverse cursor so log views page newest-first, still keyed by the collection
+// key, never by a clock. It proves the reverse page is descending with a strict
+// key < before bound; that before= rides only on id-keyed collections (name-
+// and composite-keyed collections and /q reject it); that after= and before=
+// are mutually exclusive (a page is forward or reverse, never both); that the
+// bound value parses per the key column's type, no clock param involved; and
+// that a reverse page continues from its last row's key just like a forward
+// one.
 func TestBeforeReverseCursor(t *testing.T) {
 	runFields := map[string]string{"id": "bigint", "pipeline": "text", "state": "text"}
 

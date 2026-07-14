@@ -45,13 +45,11 @@ func newScriptedSupervisor(t *testing.T, inst *scriptedInstance) *embeddedSuperv
 }
 
 // TestEmbeddedEnsureInstalledStopFailureNeverStrands proves that when the managed
-// Postgres starts during install but the subsequent stop fails, the supervisor never
-// silently strands a running postgres subprocess: it retries the stop best-effort,
-// and if that also fails it retains the instance handle (so a later Stop can still
-// reach the process) and returns an error that names the orphan risk and its
-// remediation (specification section 2: managed Postgres "stopped on shutdown").
-//
-// spec: S02/managed-pg-subprocess-lifecycle
+// Postgres starts during install but the subsequent stop fails, the supervisor
+// never silently strands a running postgres subprocess: it retries the stop
+// best-effort, and if that also fails it retains the instance handle (so a later
+// Stop can still reach the process) and returns an error that names the orphan risk
+// and its remediation (managed Postgres stopped on shutdown).
 func TestEmbeddedEnsureInstalledStopFailureNeverStrands(t *testing.T) {
 	boom := errors.New("pg_ctl stop failed")
 

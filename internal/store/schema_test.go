@@ -10,16 +10,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// metaRoster is the exact twenty-table roster of the meta control-plane
-// database (specification section 4). The order is the spec's own listing order,
-// which is also the create-if-missing emission order. engine_key follows
+// metaRoster is the exact twenty-table roster of the meta control-plane database.
+// The order is the create-if-missing emission order. engine_key follows
 // journal_checkpoints: the engine-owned ed25519 signing key moved from a
-// per-database GUC into this single-row meta table (devdebt 2026-07-10 spec delta).
-// read_pool_credential follows engine_key: the engine-owned shared read-pool login
-// secret, persisted create-once so a restart or HA standby reuses one stable
-// credential (devdebt 2026-07-10 E13.7 follow-up spec delta). leadership follows it:
-// the leader's advertised address, a single-row engine-owned table a standby reads
-// to name the leader for retargeting (devdebt leader-advertisement spec delta).
+// per-database GUC into this single-row meta table. read_pool_credential follows
+// engine_key: the engine-owned shared read-pool login secret, persisted
+// create-once so a restart or HA standby reuses one stable credential. leadership
+// follows it: the leader's advertised address, a single-row engine-owned table a
+// standby reads to name the leader for retargeting.
 var metaRoster = []string{
 	"pipelines",
 	"dependencies",
@@ -43,9 +41,8 @@ var metaRoster = []string{
 	"migrations",
 }
 
-// specFKEdges is the exact foreign-key edge list of the meta schema, transcribed
-// from the erDiagram at specification section 4 (doc line ~212). Every edge is
-// "child.column->parent.column"; the set must match the model's edges exactly,
+// specFKEdges is the exact foreign-key edge list of the meta schema. Every edge
+// is "child.column->parent.column"; the set must match the model's edges exactly,
 // no more and no fewer.
 var specFKEdges = []string{
 	"runs.pipeline->pipelines.name",
@@ -82,8 +79,6 @@ func edgeSet(s store.Schema) map[string]bool {
 // upstream_run_id is FK-free, resolving to a run or its archival summary), with
 // pipelines as a zero-out-degree root, runs as the history root, and lanes,
 // migrations, run_summaries, and journal_checkpoints carrying no FKs to the rest.
-//
-// spec: S04/fk-graph-matches-spec
 func TestMetaFKGraphMatchesSpec(t *testing.T) {
 	s := store.MetaSchema()
 	got := edgeSet(s)
@@ -95,18 +90,18 @@ func TestMetaFKGraphMatchesSpec(t *testing.T) {
 
 	for e := range want {
 		if !got[e] {
-			t.Errorf("meta FK graph is missing the spec edge %q", e)
+			t.Errorf("meta FK graph is missing the expected edge %q", e)
 		}
 	}
 	for e := range got {
 		if !want[e] {
-			t.Errorf("meta FK graph has the edge %q, which is not in the spec graph", e)
+			t.Errorf("meta FK graph has the edge %q, which is not in the expected graph", e)
 		}
 	}
 
-	// The named standalone tables carry no FKs (specification section 4:
-	// migrations, run_summaries, journal_checkpoints, and lanes stand apart;
-	// lanes references pipelines by name, never FK).
+	// The named standalone tables carry no FKs (migrations, run_summaries,
+	// journal_checkpoints, and lanes stand apart; lanes references pipelines by
+	// name, never FK).
 	for _, name := range []string{"lanes", "migrations", "run_summaries", "journal_checkpoints"} {
 		tbl := tableByName(t, s, name)
 		if len(tbl.ForeignKeys) != 0 {
@@ -129,8 +124,6 @@ func TestMetaFKGraphMatchesSpec(t *testing.T) {
 // TestMetaOrderingIdentityNeverClock proves every meta ordering key is a monotonic
 // bigint identity column, recorded_at is an opaque non-ordering text audit string,
 // and no meta column is a clock type used for ordering.
-//
-// spec: S04/ordering-identity-never-clock
 func TestMetaOrderingIdentityNeverClock(t *testing.T) {
 	s := store.MetaSchema()
 
@@ -156,8 +149,8 @@ func TestMetaOrderingIdentityNeverClock(t *testing.T) {
 			if c.Name == "recorded_at" && c.Type != "text" {
 				t.Errorf("%s.recorded_at type = %q, want text (opaque non-ordering audit string)", tbl.Name, c.Type)
 			}
-			// No meta column is a timestamp/timestamptz: ordering is identity, never
-			// a clock (specification section 4).
+			// No meta column is a timestamp/timestamptz: ordering is identity,
+			// never a clock.
 			if strings.Contains(c.Type, "timestamp") {
 				t.Errorf("%s.%s is a clock type %q; meta ordering is bigint identity, never a clock", tbl.Name, c.Name, c.Type)
 			}
@@ -172,8 +165,6 @@ func TestMetaOrderingIdentityNeverClock(t *testing.T) {
 // TestMetaRenderedDDLGolden pins the rendered meta DDL byte-for-byte: the embedded
 // create-if-missing schema is a deterministic artifact, so a golden diff is a
 // contract diff. Every table renders CREATE TABLE IF NOT EXISTS.
-//
-// spec: S04/meta-ddl-create-if-missing
 func TestMetaRenderedDDLGolden(t *testing.T) {
 	s := store.MetaSchema()
 	stmts := s.DDL()
@@ -188,12 +179,10 @@ func TestMetaRenderedDDLGolden(t *testing.T) {
 }
 
 // TestLeadershipAdvertisementTable proves the leadership table is the single-row,
-// engine-owned home of the leader's advertised address (specification section 4,
-// leadership Q/A): id pinned to 1, an advertised_addr text column, an opaque
-// recorded_at audit string, and no foreign keys (it stands alone, like engine_key).
-// This is the meta home a standby reads to name the leader for retargeting.
-//
-// spec: S04/leadership-advertisement-table
+// engine-owned home of the leader's advertised address: id pinned to 1, an
+// advertised_addr text column, an opaque recorded_at audit string, and no foreign
+// keys (it stands alone, like engine_key). This is the meta home a standby reads
+// to name the leader for retargeting.
 func TestLeadershipAdvertisementTable(t *testing.T) {
 	s := store.MetaSchema()
 	tbl := tableByName(t, s, "leadership")
@@ -213,7 +202,7 @@ func TestLeadershipAdvertisementTable(t *testing.T) {
 	}
 
 	// It carries the advertised address as text and an opaque recorded_at audit
-	// string (never a clock -- ordering identity never clock, specification section 4).
+	// string (never a clock -- ordering identity never clock).
 	addr := columnByName(t, tbl, "advertised_addr")
 	if addr.Type != "text" {
 		t.Errorf("leadership.advertised_addr type = %q, want text", addr.Type)

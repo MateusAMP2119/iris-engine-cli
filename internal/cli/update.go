@@ -24,8 +24,8 @@ type updateResult struct {
 }
 
 // updateCmd builds `iris update`: a root lifecycle verb (self-replace of the
-// installed iris binary with the latest GitHub release, specification section 8).
-// It is daemonless (it touches no daemon); it is the counterpart of the root
+// installed iris binary with the latest GitHub release). It is daemonless (it
+// touches no daemon); it is the counterpart of the root
 // `iris uninstall` and is distinct from `iris engine install`/`uninstall`, which
 // manage engine state.
 func (a *app) updateCmd() *cobra.Command {
@@ -39,8 +39,8 @@ func (a *app) updateCmd() *cobra.Command {
 }
 
 // updateSelf is the handler for `iris update`: a daemonless self-replace of the
-// installed binary with the latest GitHub release (specification section 8). It
-// resolves the latest release tag, refuses on a dev build, reports
+// installed binary with the latest GitHub release. It resolves the latest
+// release tag, refuses on a dev build, reports
 // already-up-to-date without touching the binary when the tag matches, and
 // otherwise downloads, checksum-verifies, and atomically replaces the running
 // executable. Any failure is operation-failed (exit 4); a dev build and a

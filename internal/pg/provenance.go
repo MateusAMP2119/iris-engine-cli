@@ -4,7 +4,7 @@ import "sort"
 
 // This file owns the pure provenance walk: the query logic behind
 // `iris data provenance <schema.table> <pk>` and the read model behind
-// GET /provenance/{schema}/{table}/{pk} (specification sections 4 and 14).
+// GET /provenance/{schema}/{table}/{pk}.
 // The walk is three indexed lookups on plain relational tables -- no graph
 // store, no extension -- modeled here entirely over in-memory fixtures so
 // every rule is unit-testable and the live wiring stays a dumb reader:
@@ -13,31 +13,26 @@ import "sort"
 //     row's stamps; the latest SURVIVING stamp names the current author
 //     (a wiped write is no longer in the row's value; a skipped one is),
 //     and wiped layers stay listed, never hidden. The full list is the
-//     layered write history (S14/provenance-row-to-run,
-//     S14/provenance-current-author-surviving).
+//     layered write history.
 //
 //  2. Run -> facts. The run id resolves to pipeline, state, artifact hash,
 //     declaration checksum, and the snapshot pin, from the live run row or,
 //     once the row is pruned, from the archival summary -- same facts,
-//     equally true (S14/provenance-run-facts-summary-fallback,
-//     S03/provenance-survives-pruning).
+//     equally true.
 //
 //  3. Run -> ancestry. run_inputs is walked upward, one edge per consumed
 //     upstream (fan-in = several edges), at depth 1 by default, with full
 //     recursive ancestry available from a single walk -- live SQL: one
 //     WITH RECURSIVE statement over run_inputs, acyclic by apply-time
 //     validation. A pruned run's own ledger rows are gone; its parents come
-//     from the summary's consumed-upstream list, so lineage never dangles
-//     (S14/provenance-ancestry-recursive).
+//     from the summary's consumed-upstream list, so lineage never dangles.
 //
 // The walk returns lineage only -- stamps, run facts, ancestry edges -- and
 // never a row image: Stamp is the image-free projection of a journal entry,
-// and no type in the report graph carries a pre-image field
-// (S14/provenance-lineage-never-images).
+// and no type in the report graph carries a pre-image field.
 
 // DefaultAncestryDepth is how far the ancestry walk climbs when the caller
-// does not say: one level, the run's directly consumed upstreams
-// (specification section 14, "depth 1 default").
+// does not say: one level, the run's directly consumed upstreams.
 const DefaultAncestryDepth = 1
 
 // FullAncestry asks the ancestry walk for the whole upward DAG in one call:
@@ -95,8 +90,8 @@ func CurrentAuthor(stamps []Stamp) (Stamp, bool) {
 	return best, ok
 }
 
-// SnapshotPin is the three-value pin naming a run's input state
-// (specification section 14): the data database's LSN and journal high id at
+// SnapshotPin is the three-value pin naming a run's input state: the data
+// database's LSN and journal high id at
 // dispatch, and the journal high id at terminal transition. Nil models SQL
 // NULL (e.g. a run pinned before its terminal transition has no ceiling).
 type SnapshotPin struct {
@@ -109,7 +104,7 @@ type SnapshotPin struct {
 }
 
 // RunRecord is the live runs-row projection the walk reads: exactly the
-// fields lookup two returns (specification section 4, runs). Fields the walk
+// fields lookup two returns from runs. Fields the walk
 // never returns (handle, log_ref, exit_code, ...) are omitted: this is the
 // provenance projection of a run row, not a second schema.
 type RunRecord struct {
@@ -128,7 +123,7 @@ type RunRecord struct {
 }
 
 // ArchivalSummary is the run_summaries projection the walk falls back to once
-// a run row is pruned (specification section 4, run_summaries): the same
+// a run row is pruned: the same
 // facts as RunRecord plus the consumed-upstream list the pruner copied out of
 // run_inputs, so ancestry never dangles.
 type ArchivalSummary struct {
@@ -341,10 +336,9 @@ func (l Lineage) Descendants(root int64, depth int) []AncestryEdge {
 }
 
 // RenderAncestryTrace returns the single WITH RECURSIVE statement that
-// answers full ancestry live (specification section 14: "full ancestry one
-// WITH RECURSIVE"; surfaced as `iris run show <run> --trace`). One statement,
-// parameterized on the root run id ($1), walking run_inputs upward over its
-// primary key; the graph is acyclic by apply-time validation. The model
+// answers full ancestry live (surfaced as `iris run show <run> --trace`). One
+// statement, parameterized on the root run id ($1), walking run_inputs upward
+// over its primary key; the graph is acyclic by apply-time validation. The model
 // (Lineage.Ancestry) and this rendering answer identically for surviving
 // runs; the wiring task executes it against meta.
 func RenderAncestryTrace() string {

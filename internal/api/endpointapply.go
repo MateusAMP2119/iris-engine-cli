@@ -7,22 +7,22 @@ import (
 	"net/http"
 )
 
-// This file is the control-plane endpoint-apply surface of the daemon
-// (specification section 7): POST /endpoint/apply, the route `iris endpoint apply`
-// drives. Publishing an endpoint is a control-plane mutation -- it prepare-verifies
-// the derived SQL against the data database, persists the compiled shapes to meta,
-// and swaps them into the live serving registry -- so the mux's existing leader
-// gate rejects it on a standby with not_leader guidance, and its scope is control.
-// On the leader it runs the injected EndpointControlHandler, which the daemon wires
-// to the workspace endpoint discovery and dispatch's endpoint applier.
+// This file is the control-plane endpoint-apply surface of the daemon: POST
+// /endpoint/apply, the route `iris endpoint apply` drives. Publishing an
+// endpoint is a control-plane mutation -- it prepare-verifies the derived SQL
+// against the data database, persists the compiled shapes to meta, and swaps
+// them into the live serving registry -- so the mux's existing leader gate
+// rejects it on a standby with not_leader guidance, and its scope is control.
+// On the leader it runs the injected EndpointControlHandler, which the daemon
+// wires to the workspace endpoint discovery and dispatch's endpoint applier.
 //
 // api stays a leaf: it defines the seam and the plain request/result shapes but
 // reaches nothing up the stack. The daemon supplies the handler.
 
-// EndpointApplyRequest is the body of a POST /endpoint/apply: an optional endpoint
-// name to publish just that one, or empty to publish every endpoint declared under
-// the leader's workspace endpoints/ tree (specification section 7). The CLI sends
-// the name; the leader discovers and compiles from its own workspace.
+// EndpointApplyRequest is the body of a POST /endpoint/apply: an optional
+// endpoint name to publish just that one, or empty to publish every endpoint
+// declared under the leader's workspace endpoints/ tree. The CLI sends the
+// name; the leader discovers and compiles from its own workspace.
 type EndpointApplyRequest struct {
 	// Name is the single endpoint to publish, or empty to publish all declared ones.
 	Name string `json:"name,omitempty"`
@@ -72,7 +72,7 @@ func (noEndpointControl) ApplyEndpoints(context.Context, EndpointApplyRequest) (
 }
 
 // serveEndpointApply handles POST /endpoint/apply: decode the request, run the
-// leader's endpoint apply, and render the section-7 envelope. The leader gate ran
+// leader's endpoint apply, and render the data envelope. The leader gate ran
 // already in ServeHTTP; a malformed body is 400, an operation failure 422, an
 // internal fault 500.
 func (m *mux) serveEndpointApply(w http.ResponseWriter, r *http.Request) {

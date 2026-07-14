@@ -13,7 +13,7 @@ import (
 )
 
 // cliErrEnvelope is the --json error document the CLI emits: the read-API error
-// envelope shape of specification section 7.
+// envelope shape.
 type cliErrEnvelope struct {
 	Error struct {
 		Code    string `json:"code"`
@@ -21,8 +21,8 @@ type cliErrEnvelope struct {
 	} `json:"error"`
 }
 
-// exitCategories is the closed set of specification section 8 exit codes. The
-// binary never emits a code outside it (in particular never cobra's default 1).
+// exitCategories is the closed set of exit codes. The binary never emits a code
+// outside it (in particular never cobra's default 1).
 var exitCategories = map[int]bool{0: true, 2: true, 3: true, 4: true, 5: true, 6: true}
 
 // leafCommands is every leaf command of the tree, as argument paths.
@@ -73,14 +73,13 @@ func allInvocations() [][]string {
 }
 
 // TestCLIExitCodesAndJSON drives the real iris binary and proves the exit-code
-// and --json output contracts of specification section 8 against it: categorical
-// exit codes, no-daemon exit 3 with start guidance, and the single-JSON envelope
-// on stdout under --json for leaves, group nodes, and the root.
+// and --json output contracts against it: categorical exit codes, no-daemon
+// exit 3 with start guidance, and the single-JSON envelope on stdout under
+// --json for leaves, group nodes, and the root.
 func TestCLIExitCodesAndJSON(t *testing.T) {
 	bin := Build(t)
 
-	// spec: S08/exit-code-categories
-	t.Run("S08/exit-code-categories", func(t *testing.T) {
+	t.Run("exit-code-categories", func(t *testing.T) {
 		// 0 success: bare invocation prints help and exits clean.
 		bin.Run(t, RunOptions{}).RequireExit(t, 0)
 		// 2 usage: an unknown command, a required argument omitted, and a bare
@@ -100,14 +99,13 @@ func TestCLIExitCodesAndJSON(t *testing.T) {
 		for _, inv := range allInvocations() {
 			res := bin.Run(t, RunOptions{Args: inv})
 			if !exitCategories[res.ExitCode] {
-				t.Errorf("iris %s exited %d, outside the specification section 8 categories",
+				t.Errorf("iris %s exited %d, outside the exit-code categories",
 					strings.Join(inv, " "), res.ExitCode)
 			}
 		}
 	})
 
-	// spec: S08/exit3-no-daemon-guidance
-	t.Run("S08/exit3-no-daemon-guidance", func(t *testing.T) {
+	t.Run("exit3-no-daemon-guidance", func(t *testing.T) {
 		// Human mode: guidance to start the engine on stderr.
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "list"}})
 		res.RequireExit(t, 3)
@@ -124,8 +122,7 @@ func TestCLIExitCodesAndJSON(t *testing.T) {
 		}
 	})
 
-	// spec: S08/json-single-envelope-stdout
-	t.Run("S08/json-single-envelope-stdout", func(t *testing.T) {
+	t.Run("json-single-envelope-stdout", func(t *testing.T) {
 		// --json on a leaf: exactly one JSON document on stdout (DecodeJSON enforces
 		// one and only one), carrying the error envelope with code and message.
 		res := bin.Run(t, RunOptions{Args: []string{"--json", "pipeline", "list"}})
@@ -181,17 +178,15 @@ func TestCLIExitCodesAndJSON(t *testing.T) {
 
 // TestCLIContractEverywhere sweeps every node -- the bare root, every group node,
 // and every leaf -- under --json and proves the two invariants of the CLI
-// contract hold for all of them: the exit code is a specification section 8
-// category, and stdout is exactly one JSON document (never human help text).
-//
-// spec: S13/exit-json-contract-everywhere
+// contract hold for all of them: the exit code is one of the closed exit-code
+// categories, and stdout is exactly one JSON document (never human help text).
 func TestCLIContractEverywhere(t *testing.T) {
 	bin := Build(t)
 	for _, inv := range allInvocations() {
 		args := append([]string{"--json"}, inv...)
 		res := bin.Run(t, RunOptions{Args: args})
 		if !exitCategories[res.ExitCode] {
-			t.Errorf("iris %s exited %d, outside the specification section 8 categories",
+			t.Errorf("iris %s exited %d, outside the exit-code categories",
 				strings.Join(args, " "), res.ExitCode)
 		}
 		var doc any
@@ -201,19 +196,16 @@ func TestCLIContractEverywhere(t *testing.T) {
 
 // TestReadSurfacesCLIVsAPI proves at the conformance tier (real binary + live
 // daemon + real Postgres) that CLI readouts and the corresponding API routes
-// serve the same curated views (S07/cli-api-same-views). The detailed parity
-// for every surface (including provenance under read PAT, stats with read PAT)
-// is also covered by the in-process integration parity tests; this pins the
-// end-to-end contract with the shipped surfaces.
-//
-// spec: S07/cli-api-same-views
+// serve the same curated views. The detailed parity for every surface (including
+// provenance under read PAT, stats with read PAT) is also covered by the
+// in-process integration parity tests; this pins the end-to-end contract with the
+// shipped surfaces.
 func TestReadSurfacesCLIVsAPI(t *testing.T) {
-	t.Run("S07/cli-api-same-views", func(t *testing.T) {
-		// The contract is claimed here at conformance tier. A fuller sweep that
-		// starts a daemon, exercises reads via binary --json and direct socket
-		// HTTP, then asserts data equality, lives in the read parity work.
-		// For this gate pass we ensure the leaf "data provenance" participates
-		// in the command matrix and the surfaces are wired.
+	t.Run("cli-api-same-views", func(t *testing.T) {
+		// A fuller sweep that starts a daemon, exercises reads via binary --json
+		// and direct socket HTTP, then asserts data equality, lives in the read
+		// parity work. Here we ensure the leaf "data provenance" participates in
+		// the command matrix and the surfaces are wired.
 		bin := Build(t)
 		// Bare invocation of a read command without daemon yields exit 3 (no daemon),
 		// proving it is a daemon-touching read (not a local stub).
@@ -224,25 +216,22 @@ func TestReadSurfacesCLIVsAPI(t *testing.T) {
 
 // TestProvenanceCLIReadout drives the shipped binary against a live daemon and
 // real Postgres and proves the human-readable `iris data provenance
-// <schema.table> <pk>` readout of specification section 14: after a run writes a
-// stamped row, the readout names the writing run and its state, the built binary
-// (artifact hash), the declaration checksum, and the consumed upstream run
-// (S14/provenance-cli-readout).
+// <schema.table> <pk>` readout: after a run writes a stamped row, the readout
+// names the writing run and its state, the built binary (artifact hash), the
+// declaration checksum, and the consumed upstream run.
 //
 // A row is written through the real capture path (a connection carrying the
 // run's iris.run_id, exactly as the engine injects it at spawn, so the live
 // capture trigger stamps the journal in the writer's own transaction), and the
 // writing/upstream runs are recorded in meta as a completed run records them.
 // The provenance walk then resolves the stamp -> run facts -> ancestry, and the
-// CLI renders the section-14 readout. Attribution rides the injected connection
+// CLI renders the readout. Attribution rides the injected connection
 // rather than a spawned subprocess because the per-pipeline scoped connection for
 // manual runs is not yet wired (E04.4); the golden uuid analytics.orders is used
 // (not a private bigint table) so the shared data database's schema stays
 // consistent with the neighbouring lineage conformance test.
-//
-// spec: S14/provenance-cli-readout
 func TestProvenanceCLIReadout(t *testing.T) {
-	t.Run("S14/provenance-cli-readout", func(t *testing.T) {
+	t.Run("provenance-cli-readout", func(t *testing.T) {
 		// Shared-cluster isolation: this test provisions the golden analytics.orders
 		// (id uuid, customer_id uuid, amount) and inserts customer_id. On the CI lane a
 		// prior test may have left an analytics.orders of a different shape in the shared
@@ -344,8 +333,8 @@ func TestProvenanceCLIReadout(t *testing.T) {
 			t.Fatalf("record consumption edge: %v", err)
 		}
 
-		// The human-readable readout (specification section 14): writing run and
-		// state, artifact, declaration, and the consumed upstream edge.
+		// The human-readable readout: writing run and state, artifact,
+		// declaration, and the consumed upstream edge.
 		res := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", pk}, Dir: ws})
 		if res.ExitCode != 0 {
 			t.Fatalf("data provenance exited %d\nstdout:\n%s\nstderr:\n%s", res.ExitCode, res.Stdout, res.Stderr)

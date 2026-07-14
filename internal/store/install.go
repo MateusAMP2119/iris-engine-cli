@@ -8,14 +8,14 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// This file holds the live meta connections `iris engine install` bootstraps over,
-// the pgx-backed seams the daemon composes into BootstrapEngine (specification
-// section 4). The daemon never imports pgx (specification section 10), so the live
-// probe / CREATE DATABASE / control-table connections live here, in store, and the
-// daemon drives them through the store.Execer seam its install-sequence test proves
-// with recording fakes. The recording fakes stand in at integration tier; these are
-// exercised against a real cluster at conformance tier (the one tier with a live
-// database), the single place the bootstrap DDL meets a real catalog.
+// This file holds the live meta connections `iris engine install` bootstraps
+// over, the pgx-backed seams the daemon composes into BootstrapEngine. The daemon
+// never imports pgx, so the live probe / CREATE DATABASE / control-table
+// connections live here, in store, and the daemon drives them through the
+// store.Execer seam its install-sequence test proves with recording fakes. The
+// recording fakes stand in at integration tier; these are exercised against a
+// real cluster at conformance tier (the one tier with a live database), the
+// single place the bootstrap DDL meets a real catalog.
 
 // InstallConns are the live pgx connections the meta bootstrap of `iris engine
 // install` rides: an admin/maintenance connection for the meta-existence probe and

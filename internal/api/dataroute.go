@@ -9,21 +9,20 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the raw /data/{schema}/{table} route of specification section
-// 7: the ad-hoc debugging surface over the declared tables -- column
-// projection, eq/range filters, keyset paging by the table PK -- executing
-// through the same shared read pool and role mechanics as /q. The route never
-// assembles SQL from a request: the statement is engine-assembled per shape
-// (table, projection, and the set of filtered columns) from validated
-// identifiers only, referencing no column beyond what the request itself
-// addresses, so Postgres alone decides what the caller's role may read (a
-// clause on an unaddressed column would drag its grant into every read).
-// Disposable rows are served like any other: no predicate here or anywhere on
-// the surface filters them out.
+// This file is the raw /data/{schema}/{table} route: the ad-hoc debugging
+// surface over the declared tables -- column projection, eq/range filters,
+// keyset paging by the table PK -- executing through the same shared read pool
+// and role mechanics as /q. The route never assembles SQL from a request: the
+// statement is engine-assembled per shape (table, projection, and the set of
+// filtered columns) from validated identifiers only, referencing no column
+// beyond what the request itself addresses, so Postgres alone decides what the
+// caller's role may read (a clause on an unaddressed column would drag its
+// grant into every read). Disposable rows are served like any other: no
+// predicate here or anywhere on the surface filters them out.
 
 // DataShape is one declared table as the /data route serves it: the ordered
-// declared columns with their resolved Postgres types (the closed section 5
-// mapping) and the primary key that keys the route's keyset paging.
+// declared columns with their resolved Postgres types (the closed type mapping)
+// and the primary key that keys the route's keyset paging.
 type DataShape struct {
 	// Schema and Table name the declared source.
 	Schema string
@@ -55,13 +54,13 @@ func WithDataSource(src DataSource) MuxOption {
 	}
 }
 
-// serveData handles GET /data/{schema}/{table} (specification section 7).
-// With either seam unwired it answers the E09.5 internal-fault envelope. Wired,
-// it resolves the declared shape (404 for an undeclared table), parses the
-// projection and the eq/range wire grammar (400 naming a refused param),
-// assembles the fixed statement from validated identifiers, and executes it
-// through the read pool as the calling PAT's role -- a grant Postgres refuses
-// is a 403 naming the addressed table, never the fields.
+// serveData handles GET /data/{schema}/{table}. With either seam unwired it
+// answers the E09.5 internal-fault envelope. Wired, it resolves the declared
+// shape (404 for an undeclared table), parses the projection and the eq/range
+// wire grammar (400 naming a refused param), assembles the fixed statement from
+// validated identifiers, and executes it through the read pool as the calling
+// PAT's role -- a grant Postgres refuses is a 403 naming the addressed table,
+// never the fields.
 func (m *mux) serveData(w http.ResponseWriter, r *http.Request, schema, table string) {
 	if m.datasrc == nil || m.readexec == nil {
 		serveUnwiredRead(w, r, "data")
@@ -147,12 +146,12 @@ func writeDataFault(w http.ResponseWriter, shape *DataShape, err error) {
 	}
 }
 
-// dataProjection resolves the route's column projection (specification section
-// 7): absent, the full declared column list in declaration order; present,
-// columns= is one comma-separated list of declared column names, served in
-// caller order. The projection must include every primary-key column -- the PK
-// is the route's paging key, and a page without its key cannot continue -- and
-// an unknown, repeated, or empty name is a 400 naming the param.
+// dataProjection resolves the route's column projection: absent, the full
+// declared column list in declaration order; present, columns= is one
+// comma-separated list of declared column names, served in caller order. The
+// projection must include every primary-key column -- the PK is the route's
+// paging key, and a page without its key cannot continue -- and an unknown,
+// repeated, or empty name is a 400 naming the param.
 func dataProjection(shape *DataShape, q url.Values) ([]string, error) {
 	vs, ok := q["columns"]
 	if !ok {

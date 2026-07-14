@@ -5,29 +5,29 @@ import (
 	"fmt"
 )
 
-// This file is the depends_on eligibility gate and its consumption decision
-// (specification sections 1, 3, 6.1 and 6.2). depends_on is a data gate, not an
-// order: it makes a downstream pipeline eligible only on an upstream's output and
-// never sequences the two -- ordering is the composer's job alone (section 6.1). The
-// gate here is a pure decision at the dependent's composer-assigned turn: for each
-// depends_on edge it reads the upstream's most recent run and the run_inputs
-// already-consumed check, produces the per-edge verdict from a closed set, and
-// composes the pass decision (run, consuming one upstream run per edge, or skip,
-// minting no run row). It reads only the upstream's LATEST run -- older successes are
-// superseded, not queued -- holds no cursor or watermark of its own, and carries no
-// walk-position or lane field, so it can neither reorder the walk nor turn a
-// cross-lane reference into a serial ordering.
+// This file is the depends_on eligibility gate and its consumption decision.
+// depends_on is a data gate, not an order: it makes a downstream pipeline eligible
+// only on an upstream's output and never sequences the two -- ordering is the
+// composer's job alone. The gate here is a pure decision at the dependent's
+// composer-assigned turn: for each depends_on edge it reads the upstream's most
+// recent run and the run_inputs already-consumed check, produces the per-edge verdict
+// from a closed set, and composes the pass decision (run, consuming one upstream run
+// per edge, or skip, minting no run row). It reads only the
+// upstream's LATEST run -- older successes are superseded, not queued -- holds no
+// cursor or watermark of its own, and carries no walk-position or lane field, so it
+// can neither reorder the walk nor turn a cross-lane reference into a serial
+// ordering.
 //
 // The consumption write itself is not here: on an open gate the dispatcher feeds the
 // decision's Consume list to store.Writer.CreateRun, which records one run_inputs row
 // per consumed upstream in the same atomic run-create transaction, written once at
-// run start and never mutated (specification section 4). This file owns the decision
-// and the 1:1 recording rule; CreateRun owns the write.
+// run start and never mutated. This file owns the decision and the 1:1 recording
+// rule; CreateRun owns the write.
 
 // UpstreamState is the disposition of an upstream's most recent run -- the only run
-// the gate reads (specification section 6.2: "the gate reads only the upstream's
-// latest run"). Older runs are superseded, never buffered, so this single latest
-// disposition, not a backlog, is all an edge carries.
+// the gate reads ("the gate reads only the upstream's latest run"). Older runs are
+// superseded, never buffered, so this single latest disposition, not a backlog, is
+// all an edge carries.
 type UpstreamState int
 
 // The upstream-latest-run dispositions.
@@ -59,19 +59,18 @@ func (s UpstreamState) String() string {
 }
 
 // Verdict is one edge's gate disposition: the closed set the gate ledger renders in
-// iris pipeline show and scripts read through --json (specification section 6.2:
-// open, up_to_date, pending, poisoned). The set is closed: a value outside it is a
-// bug, never a default.
+// iris pipeline show and scripts read through --json (open, up_to_date, pending,
+// poisoned). The set is closed: a value outside it is a bug, never a default.
 type Verdict int
 
-// The gate verdicts (the closed set of specification section 6.2).
+// The gate verdicts (a closed set).
 const (
 	// VerdictPending is an edge awaiting an upstream success: the upstream has no run
 	// yet, its most recent run is still in flight, or -- for a newly added edge -- its
 	// most recent success predates the edge and is history the edge never awaited, so
-	// the edge awaits the upstream's next success (specification section 6.2: "new
-	// edges await the next success from pass one, never history"). It is the zero
-	// value: an unresolved edge defaults to awaiting.
+	// the edge awaits the upstream's next success ("new edges await the next success
+	// from pass one, never history"). It is the zero value: an unresolved edge defaults
+	// to awaiting.
 	VerdictPending Verdict = iota
 	// VerdictOpen is an edge whose upstream's most recent run is an awaited success the
 	// dependent has not yet consumed: the gate opens and the dependent records exactly
@@ -87,7 +86,7 @@ const (
 	VerdictPoisoned
 )
 
-// String renders the verdict as the ledger/--json token (specification section 6.2).
+// String renders the verdict as the ledger/--json token.
 func (v Verdict) String() string {
 	switch v {
 	case VerdictPending:
@@ -111,7 +110,7 @@ func (v Verdict) String() string {
 //
 // An Edge has no lane, order, or walk-position field: the gate decision is a function
 // of upstream output alone, so a cross-lane edge gates data without imposing any
-// serial ordering between the lanes (specification sections 3 and 6.1).
+// serial ordering between the lanes.
 type Edge struct {
 	// Upstream is the upstream pipeline's name (the depends_on target A).
 	Upstream string
@@ -123,12 +122,12 @@ type Edge struct {
 	// AwaitedFrom is the greatest upstream run id this edge does NOT await: the
 	// upstream's run tip at the moment the edge was established. A run with id greater
 	// than AwaitedFrom was minted while the edge existed and is awaited; a run with id
-	// at or below it predates the edge and is history the edge never awaited
-	// (specification section 6.2: "new edges await the next success from pass one,
-	// never history"). It is zero for an edge established before the upstream produced
-	// any run -- then every run is awaited. It is a per-pass, per-edge input set once
-	// at edge establishment and never advanced, not a mutable consumer cursor: what
-	// advances is the run_inputs already-consumed check, derived on read, not stored.
+	// at or below it predates the edge and is history the edge never awaited ("new edges
+	// await the next success from pass one, never history"). It is zero for an edge
+	// established before the upstream produced any run -- then every run is awaited. It
+	// is a per-pass, per-edge input set once at edge establishment and never advanced,
+	// not a mutable consumer cursor: what advances is the run_inputs already-consumed
+	// check, derived on read, not stored.
 	AwaitedFrom int64
 }
 
@@ -137,9 +136,9 @@ type Edge struct {
 func (e Edge) awaited() bool { return e.LatestRunID > e.AwaitedFrom }
 
 // EdgeVerdict is one row of the gate ledger: the upstream, its resolved verdict, and
-// the id of the upstream's most recent run the verdict was computed against
-// (specification section 6.2 read surface -- per edge, the upstream's latest run, the
-// already-consumed check, and a verdict).
+// the id of the upstream's most recent run the verdict was computed against. That is
+// the whole per-edge read surface -- the upstream's latest run, the already-consumed
+// check, and a verdict.
 type EdgeVerdict struct {
 	// Upstream is the upstream pipeline's name.
 	Upstream string
@@ -149,15 +148,14 @@ type EdgeVerdict struct {
 	LatestRunID int64
 }
 
-// Decision is the dependent's gate outcome for one composer pass: whether it runs and,
-// when it does, the upstream runs it consumes -- one per edge, fed to CreateRun and
-// recorded 1:1 in run_inputs at run start. A skip mints no run row: absence is the
-// record, explained by the per-edge Ledger (specification section 6.2).
+// Decision is the dependent's gate outcome for one composer pass: whether it runs
+// and, when it does, the upstream runs it consumes -- one per edge, fed to CreateRun
+// and recorded 1:1 in run_inputs at run start. A skip mints no run row: absence is
+// the record, explained by the per-edge Ledger.
 //
 // Decision deliberately carries no walk-position, order, or lane field. The gate
 // decides run-or-skip at the pipeline's composer-assigned turn and returns only that:
-// it never reorders the walk and never turns a cross-lane edge into serial ordering
-// (specification sections 6.1 and 3).
+// it never reorders the walk and never turns a cross-lane edge into serial ordering.
 type Decision struct {
 	// Run reports whether the dependent runs this pass.
 	Run bool
@@ -172,11 +170,11 @@ type Decision struct {
 	Ledger []EdgeVerdict
 }
 
-// ConsumedReader answers the gate's already-consumed check against run_inputs
-// (specification sections 4 and 6.2): has the dependent already consumed a given
-// upstream run? It is a run_inputs lookup, never a mutable cursor -- the gate holds no
-// watermark state, and this read is where "has the latest success been consumed" is
-// resolved on each pass. A meta-backed implementation and a fake both satisfy it.
+// ConsumedReader answers the gate's already-consumed check against run_inputs: has
+// the dependent already consumed a given upstream run? It is a run_inputs lookup,
+// never a mutable cursor -- the gate holds no watermark state, and this read is where
+// "has the latest success been consumed" is resolved on each pass. A meta-backed
+// implementation and a fake both satisfy it.
 type ConsumedReader interface {
 	// Consumed reports whether dependent has a run_inputs row recording upstreamRunID
 	// as one of its consumed upstream runs.
@@ -186,8 +184,7 @@ type ConsumedReader interface {
 // Gate resolves a dependent's depends_on gate by pairing the pure decision with the
 // run_inputs already-consumed check. It holds only the ConsumedReader seam -- no
 // cursor, watermark, or per-consumer position of its own -- so the sole state the
-// consumed check consults is run_inputs (specification section 6.2: no mutable
-// cursor).
+// consumed check consults is run_inputs (no mutable cursor).
 type Gate struct {
 	reader ConsumedReader
 }
@@ -249,11 +246,11 @@ func evaluateEdge(e Edge, consumed bool) Verdict {
 	}
 }
 
-// Decide is the pure gate core: it resolves each edge's verdict against the upstream's
-// most recent run and the already-consumed flags, then composes the pass decision. It
-// is pure -- no I/O -- and a function of its inputs alone, so the same edges yield the
-// same decision at any turn, in any lane; it carries no walk position, so it can
-// neither reorder the walk nor sequence lanes (specification sections 6.1, 3, 6.2).
+// Decide is the pure gate core: it resolves each edge's verdict against the
+// upstream's most recent run and the already-consumed flags, then composes the pass
+// decision. It is pure -- no I/O -- and a function of its inputs alone, so the same
+// edges yield the same decision at any turn, in any lane; it carries no walk
+// position, so it can neither reorder the walk nor sequence lanes.
 //
 // A pipeline with no depends_on edges is ungated: it runs every pass on composer order
 // alone. Otherwise the dependent runs only when every edge resolves to an available

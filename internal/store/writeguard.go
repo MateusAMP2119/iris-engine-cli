@@ -8,18 +8,18 @@ import (
 
 // This file is the lock-guarded meta write connection: the enforcement of the
 // failover single-writer rule that meta writes are never issued over a session
-// that has not re-acquired the leader lock (specification section 15). On the live
-// path the rule is physical -- the single write connection IS the lock-holding
-// session (client.go), so a dead session fails its writes at Postgres -- but
-// physics alone does not refuse a write issued before the lock is acquired, or one
-// racing a demotion. LockGuardedConn closes that: it wraps the write connection
-// and consults the leader lock before EVERY statement, refusing with
-// ErrNoLeaderLock unless this session currently holds the lock. A deposed leader's
-// session never re-acquires (re-acquisition happens on a fresh session, the spec's
-// "re-enters standby on a fresh session"), so its guard refuses forever: across a
-// failover there is no second writer and no overlapping run. The same guard runs
-// over the meta-store fake, which is how the rule is proven at integration tier
-// with no live Postgres (specification section 16).
+// that has not re-acquired the leader lock. On the live path the rule is physical
+// -- the single write connection IS the lock-holding session (client.go), so a
+// dead session fails its writes at Postgres -- but physics alone does not refuse
+// a write issued before the lock is acquired, or one racing a demotion.
+// LockGuardedConn closes that: it wraps the write connection and consults the
+// leader lock before EVERY statement, refusing with ErrNoLeaderLock unless this
+// session currently holds the lock. A deposed leader's session never re-acquires
+// (re-acquisition happens only on a fresh session), so its guard refuses forever:
+// across a failover there is no
+// second writer and no overlapping run. The same guard runs over the meta-store
+// fake, which is how the rule is proven at integration tier with no live
+// Postgres.
 
 // ErrNoLeaderLock is returned when a meta write is refused because the session it
 // would ride does not currently hold the leader lock: the session never acquired

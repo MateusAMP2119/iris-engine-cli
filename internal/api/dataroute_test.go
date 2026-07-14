@@ -17,13 +17,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file proves the raw /data route of specification section 7 at the mux
-// tier with a recording executor fake (integration, no live Postgres): column
-// projection, eq/range filters, keyset paging by the table PK, the strict wire
-// grammar, and the guarantee that no data-surface route filters disposable rows
-// out. The executor records exactly the fixed statement text, the bound args,
-// and the execution role it was handed, so every assertion is about what would
-// reach the shared read pool.
+// This file proves the raw /data route at the mux tier with a recording
+// executor fake (integration, no live Postgres): column projection, eq/range
+// filters, keyset paging by the table PK, the strict wire grammar, and the
+// guarantee that no data-surface route filters disposable rows out. The
+// executor records exactly the fixed statement text, the bound args, and the
+// execution role it was handed, so every assertion is about what would reach
+// the shared read pool.
 
 // recordedRead is one executor call: the execution identity and the exact
 // statement the route handed the pool seam.
@@ -144,14 +144,12 @@ func containsArg(args []any, want any) bool {
 	return false
 }
 
-// TestDataRawRoute proves /data/{schema}/{table} of specification section 7:
-// ad-hoc reads with column projection, eq and range filters bound as params
-// into one fixed statement, keyset paging by the table PK, and the strict wire
-// grammar and status matrix around them.
-//
-// spec: S07/data-raw-route
+// TestDataRawRoute proves /data/{schema}/{table}: ad-hoc reads with column
+// projection, eq and range filters bound as params into one fixed statement,
+// keyset paging by the table PK, and the strict wire grammar and status matrix
+// around them.
 func TestDataRawRoute(t *testing.T) {
-	t.Run("S07/data-raw-route", func(t *testing.T) {
+	t.Run("data-raw-route", func(t *testing.T) {
 		alice := dataPAT("a1", "iris_pat_r_alice")
 
 		t.Run("serves the declared projection by default, ordered by the PK", func(t *testing.T) {
@@ -296,14 +294,12 @@ func TestDataRawRoute(t *testing.T) {
 	})
 }
 
-// TestDisposableRowsVisible proves the disposable-rows caveat of specification
-// section 7: data-surface reads return disposable rows unfiltered -- no route
-// adds a predicate to hide them, and every row the executor serves reaches the
-// wire untouched, on /data and /q alike.
-//
-// spec: S07/disposable-rows-visible
+// TestDisposableRowsVisible proves the disposable-rows caveat: data-surface
+// reads return disposable rows unfiltered -- no route adds a predicate to hide
+// them, and every row the executor serves reaches the wire untouched, on /data
+// and /q alike.
 func TestDisposableRowsVisible(t *testing.T) {
-	t.Run("S07/disposable-rows-visible", func(t *testing.T) {
+	t.Run("disposable-rows-visible", func(t *testing.T) {
 		alice := dataPAT("a1", "iris_pat_r_alice")
 		// Three rows, of which two are un-promoted disposable workspace rows in
 		// the journal's eyes. The data surface cannot tell and must not try.

@@ -100,10 +100,8 @@ func waitForCheckpoints(ctx context.Context, t *testing.T, metaConn *pgx.Conn, n
 // tiny journal_partition_rows, a run whose writes cross the threshold while it is
 // still running causes no seal until the run reaches a terminal state; the run's
 // journal window stays wholly inside one sealed partition.
-//
-// spec: S13/seal-waits-for-inflight-run
 func TestSealWaitsForInflightRun(t *testing.T) {
-	t.Run("S13/seal-waits-for-inflight-run", func(t *testing.T) {
+	t.Run("seal-waits-for-inflight-run", func(t *testing.T) {
 		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
@@ -199,7 +197,7 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 		var ncpDuring int
 		_ = metaConn.QueryRow(ctx, "SELECT count(*) FROM journal_checkpoints").Scan(&ncpDuring)
 		if ncpDuring != 0 {
-			t.Errorf("checkpoint cut while run %d still in flight; seal did not wait for the in-flight run (S13/seal-waits-for-inflight-run)", runID)
+			t.Errorf("checkpoint cut while run %d still in flight; seal did not wait for the in-flight run", runID)
 		}
 
 		var res Result
@@ -213,7 +211,7 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 		var ceiling int64
 		_ = metaConn.QueryRow(ctx, "SELECT COALESCE(journal_ceiling,0) FROM runs WHERE id=$1", runID).Scan(&ceiling)
 		if ceiling == 0 {
-			t.Fatalf("run %d has no journal_ceiling after terminal; seal step did not record window (S13/seal-waits-for-inflight-run)", runID)
+			t.Fatalf("run %d has no journal_ceiling after terminal; seal step did not record window", runID)
 		}
 
 		// After the run finished, the resident partition is due (10 rows > threshold 5)
@@ -222,21 +220,21 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 		// [floor, ceiling], proving the window was never split.
 		cps := waitForCheckpoints(ctx, t, metaConn, 1, 10*time.Second)
 		if len(cps) == 0 {
-			t.Fatalf("no journal_checkpoints after crossing threshold with the run terminal; sealing did not occur (S13/seal-waits-for-inflight-run)")
+			t.Fatalf("no journal_checkpoints after crossing threshold with the run terminal; sealing did not occur")
 		}
 		var floor int64
 		_ = metaConn.QueryRow(ctx, "SELECT COALESCE(journal_floor,0) FROM runs WHERE id=$1", runID).Scan(&floor)
 		coversWindow := false
 		for _, c := range cps {
 			if c.idTo > floor && c.idTo < ceiling {
-				t.Errorf("checkpoint id_to=%d falls inside run %d window (%d,%d]; seal split the window (S13/seal-waits-for-inflight-run)", c.idTo, runID, floor, ceiling)
+				t.Errorf("checkpoint id_to=%d falls inside run %d window (%d,%d]; seal split the window", c.idTo, runID, floor, ceiling)
 			}
 			if c.idFrom <= ceiling && c.idTo >= ceiling {
 				coversWindow = true
 			}
 		}
 		if !coversWindow {
-			t.Errorf("no checkpoint covers run %d ceiling %d; the sealed partition does not hold the whole window (S13/seal-waits-for-inflight-run)", runID, ceiling)
+			t.Errorf("no checkpoint covers run %d ceiling %d; the sealed partition does not hold the whole window", runID, ceiling)
 		}
 
 		// The checkpoint the seal cut carries a real signature over its digest, which
@@ -244,11 +242,11 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 		key := engineKeyFromMeta(ctx, t, ws)
 		for _, c := range cps {
 			if len(c.signature) == 0 {
-				t.Errorf("checkpoint seq %d has no signature (S13/seal-waits-for-inflight-run)", c.seq)
+				t.Errorf("checkpoint seq %d has no signature", c.seq)
 				continue
 			}
 			if !key.VerifyDigest(c.digest, c.signature) {
-				t.Errorf("checkpoint seq %d signature does not verify against the engine key (S13/seal-waits-for-inflight-run)", c.seq)
+				t.Errorf("checkpoint seq %d signature does not verify against the engine key", c.seq)
 			}
 		}
 	})
@@ -257,10 +255,8 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 // TestSealCompactionDropsConsumed proves that after sealing, compaction nulls
 // released pre-images and folds duplicate (schema,table,row_pk,run_id) stamps to
 // the latest op, while each run's exact write set survives.
-//
-// spec: S13/seal-compaction-drops-consumed
 func TestSealCompactionDropsConsumed(t *testing.T) {
-	t.Run("S13/seal-compaction-drops-consumed", func(t *testing.T) {
+	t.Run("seal-compaction-drops-consumed", func(t *testing.T) {
 		const (
 			superuser = "postgres"
 			superpw   = "superpw"
@@ -321,7 +317,7 @@ func TestSealCompactionDropsConsumed(t *testing.T) {
 
 		// Drive compaction exactly as seal would on the range (0 upper = open tail).
 		if cerr := client.CompactJournalRange(ctx, 0, 0); cerr != nil {
-			t.Fatalf("CompactJournalRange: %v (S13/seal-compaction-drops-consumed)", cerr)
+			t.Fatalf("CompactJournalRange: %v", cerr)
 		}
 
 		// After sealing compacts: released pre-images nulled, duplicate stamps folded
@@ -330,7 +326,7 @@ func TestSealCompactionDropsConsumed(t *testing.T) {
 		var pre int
 		_ = conn.QueryRow(ctx, "SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND pre_image IS NOT NULL", run).Scan(&pre)
 		if pre != 0 {
-			t.Errorf("expected released pre-images nulled after compaction, got %d (S13/seal-compaction-drops-consumed)", pre)
+			t.Errorf("expected released pre-images nulled after compaction, got %d", pre)
 		}
 		var rows int
 		var op string
@@ -338,10 +334,10 @@ func TestSealCompactionDropsConsumed(t *testing.T) {
 			t.Fatalf("read folded row: %v", err)
 		}
 		if rows != 1 {
-			t.Errorf("expected duplicate stamps folded to 1 per (s,t,pk,run), got %d (S13/seal-compaction-drops-consumed)", rows)
+			t.Errorf("expected duplicate stamps folded to 1 per (s,t,pk,run), got %d", rows)
 		}
 		if op != "update" {
-			t.Errorf("folded stamp op = %q, want the latest op (update) (S13/seal-compaction-drops-consumed)", op)
+			t.Errorf("folded stamp op = %q, want the latest op (update)", op)
 		}
 	})
 }
@@ -351,10 +347,8 @@ func TestSealCompactionDropsConsumed(t *testing.T) {
 // exported object), and once further writes cross the threshold the partition seals
 // -- exported to the object store under its checkpoint digest as a valid archive,
 // its rows dropped from Postgres.
-//
-// spec: S13/sealed-partition-exports-drops
 func TestSealedPartitionExportsDrops(t *testing.T) {
-	t.Run("S13/sealed-partition-exports-drops", func(t *testing.T) {
+	t.Run("sealed-partition-exports-drops", func(t *testing.T) {
 		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
@@ -419,10 +413,10 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		var ncp int
 		_ = metaConn.QueryRow(ctx, "SELECT count(*) FROM journal_checkpoints").Scan(&ncp)
 		if ncp != 0 {
-			t.Errorf("below-threshold run sealed: %d checkpoints, want 0 (threshold gating, S13/sealed-partition-exports-drops)", ncp)
+			t.Errorf("below-threshold run sealed: %d checkpoints, want 0 (threshold gating)", ncp)
 		}
 		if entries, _ := os.ReadDir(objects); len(entries) != 0 {
-			t.Errorf("below-threshold run exported %d objects, want 0 (S13/sealed-partition-exports-drops)", len(entries))
+			t.Errorf("below-threshold run exported %d objects, want 0", len(entries))
 		}
 
 		// Phase 2: cross the threshold. Two more rows (4 resident >= 3) then a terminal
@@ -437,7 +431,7 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 
 		cps := waitForCheckpoints(ctx, t, metaConn, 1, 10*time.Second)
 		if len(cps) == 0 {
-			t.Fatalf("above-threshold run did not seal: no checkpoint (S13/sealed-partition-exports-drops)")
+			t.Fatalf("above-threshold run did not seal: no checkpoint")
 		}
 		cp := cps[len(cps)-1]
 
@@ -447,17 +441,17 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		objPath := filepath.Join(objects, fmt.Sprintf("%x", cp.digest))
 		hdr, archRows, err := archive.Read(objPath)
 		if err != nil {
-			t.Fatalf("read exported partition object %s: %v (S13/sealed-partition-exports-drops)", objPath, err)
+			t.Fatalf("read exported partition object %s: %v", objPath, err)
 		}
 		if string(hdr.Digest) != string(cp.digest) {
-			t.Errorf("exported object digest %x != checkpoint digest %x (S13/sealed-partition-exports-drops)", hdr.Digest, cp.digest)
+			t.Errorf("exported object digest %x != checkpoint digest %x", hdr.Digest, cp.digest)
 		}
 		if string(store.ComputeDigest(archRows)) != string(cp.digest) {
-			t.Errorf("digest over exported rows does not match the checkpoint digest (S13/sealed-partition-exports-drops)")
+			t.Errorf("digest over exported rows does not match the checkpoint digest")
 		}
 		key := engineKeyFromMeta(ctx, t, ws)
 		if !key.VerifyDigest(hdr.Digest, hdr.Signature) {
-			t.Errorf("exported partition signature does not verify against the engine key (S13/sealed-partition-exports-drops)")
+			t.Errorf("exported partition signature does not verify against the engine key")
 		}
 
 		// The sealed rows are dropped from the resident journal: the sealed id range is
@@ -466,10 +460,10 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		var residentInRange int
 		_ = dataConn.QueryRow(ctx, "SELECT count(*) FROM public.data_journal WHERE id >= $1 AND id <= $2", cp.idFrom, cp.idTo).Scan(&residentInRange)
 		if residentInRange != 0 {
-			t.Errorf("sealed id range [%d,%d] still resident in Postgres (%d rows); partition not dropped (S13/sealed-partition-exports-drops)", cp.idFrom, cp.idTo, residentInRange)
+			t.Errorf("sealed id range [%d,%d] still resident in Postgres (%d rows); partition not dropped", cp.idFrom, cp.idTo, residentInRange)
 		}
 		if cp.location != "archived" {
-			t.Errorf("checkpoint location = %q, want archived after export+drop (S13/sealed-partition-exports-drops)", cp.location)
+			t.Errorf("checkpoint location = %q, want archived after export+drop", cp.location)
 		}
 	})
 }
@@ -478,10 +472,8 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 // journal_checkpoints rows form a valid chain: each digest signs and verifies
 // against the engine key, each digest matches its exported partition bytes, and the
 // second checkpoint's parent_digest chains to the first.
-//
-// spec: S13/checkpoint-chain-validates
 func TestCheckpointChainValidates(t *testing.T) {
-	t.Run("S13/checkpoint-chain-validates", func(t *testing.T) {
+	t.Run("checkpoint-chain-validates", func(t *testing.T) {
 		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
@@ -545,13 +537,13 @@ func TestCheckpointChainValidates(t *testing.T) {
 			}
 			bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "ckpt"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 			if cps := waitForCheckpoints(ctx, t, metaConn, pass+1, 10*time.Second); len(cps) < pass+1 {
-				t.Fatalf("after pass %d: %d checkpoints, want at least %d (S13/checkpoint-chain-validates)", pass, len(cps), pass+1)
+				t.Fatalf("after pass %d: %d checkpoints, want at least %d", pass, len(cps), pass+1)
 			}
 		}
 
 		cps := readCheckpoints(ctx, t, metaConn)
 		if len(cps) < 2 {
-			t.Fatalf("want at least 2 checkpoints for a chain, got %d (S13/checkpoint-chain-validates)", len(cps))
+			t.Fatalf("want at least 2 checkpoints for a chain, got %d", len(cps))
 		}
 
 		key := engineKeyFromMeta(ctx, t, ws)
@@ -561,15 +553,15 @@ func TestCheckpointChainValidates(t *testing.T) {
 		// matches the exported partition bytes (offline-verifiable).
 		for _, c := range cps {
 			if !key.VerifyDigest(c.digest, c.signature) {
-				t.Errorf("checkpoint seq %d signature does not verify against the engine key (S13/checkpoint-chain-validates)", c.seq)
+				t.Errorf("checkpoint seq %d signature does not verify against the engine key", c.seq)
 			}
 			_, archRows, rerr := archive.Read(filepath.Join(objects, fmt.Sprintf("%x", c.digest)))
 			if rerr != nil {
-				t.Errorf("read exported object for checkpoint seq %d: %v (S13/checkpoint-chain-validates)", c.seq, rerr)
+				t.Errorf("read exported object for checkpoint seq %d: %v", c.seq, rerr)
 				continue
 			}
 			if string(store.ComputeDigest(archRows)) != string(c.digest) {
-				t.Errorf("checkpoint seq %d digest does not match its exported bytes (S13/checkpoint-chain-validates)", c.seq)
+				t.Errorf("checkpoint seq %d digest does not match its exported bytes", c.seq)
 			}
 		}
 
@@ -577,7 +569,7 @@ func TestCheckpointChainValidates(t *testing.T) {
 		// store.ValidateChain accepts the chain against the engine public key (the
 		// offline auditor's check).
 		if string(cps[1].parent) != string(cps[0].digest) {
-			t.Errorf("checkpoint seq %d parent %x does not chain to prior digest %x (S13/checkpoint-chain-validates)", cps[1].seq, cps[1].parent, cps[0].digest)
+			t.Errorf("checkpoint seq %d parent %x does not chain to prior digest %x", cps[1].seq, cps[1].parent, cps[0].digest)
 		}
 		chain := make([]store.CheckpointRow, 0, len(cps))
 		for _, c := range cps {
@@ -587,7 +579,7 @@ func TestCheckpointChainValidates(t *testing.T) {
 			})
 		}
 		if err := store.ValidateChain(chain, key.Public()); err != nil {
-			t.Errorf("checkpoint chain does not validate against the engine public key: %v (S13/checkpoint-chain-validates)", err)
+			t.Errorf("checkpoint chain does not validate against the engine public key: %v", err)
 		}
 	})
 }
@@ -599,10 +591,8 @@ func TestCheckpointChainValidates(t *testing.T) {
 // before the restart and one cut after it. Tamper-evidence therefore survives a
 // failover/restart: both checkpoints verify against one stable key and the second
 // chains to the first.
-//
-// spec: S14/engine-key-stable-across-restart
 func TestEngineKeyStableAcrossRestart(t *testing.T) {
-	t.Run("S14/engine-key-stable-across-restart", func(t *testing.T) {
+	t.Run("engine-key-stable-across-restart", func(t *testing.T) {
 		freshDatabases(t)
 		bin := Build(t)
 		ws := shortWorkspace(t)
@@ -680,7 +670,7 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 		seal(300)
 		if cps := waitForCheckpoints(ctx, t, metaConn, 1, 15*time.Second); len(cps) < 1 {
 			_ = metaConn.Close(ctx)
-			t.Fatalf("no checkpoint before restart (S14/engine-key-stable-across-restart)")
+			t.Fatalf("no checkpoint before restart")
 		}
 		_ = metaConn.Close(ctx)
 
@@ -696,7 +686,7 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 
 		key2 := engineKeyFromMeta(ctx, t, ws)
 		if key2.PublicBase64() != key1.PublicBase64() {
-			t.Fatalf("engine key changed across daemon restart: %q -> %q; HA requires a stable key read from the shared meta database (S14/engine-key-stable-across-restart)",
+			t.Fatalf("engine key changed across daemon restart: %q -> %q; HA requires a stable key read from the shared meta database",
 				key1.PublicBase64(), key2.PublicBase64())
 		}
 
@@ -709,7 +699,7 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 		defer func() { _ = metaConn2.Close(ctx) }()
 		cps := waitForCheckpoints(ctx, t, metaConn2, 2, 15*time.Second)
 		if len(cps) < 2 {
-			t.Fatalf("want 2 checkpoints spanning the restart, got %d (S14/engine-key-stable-across-restart)", len(cps))
+			t.Fatalf("want 2 checkpoints spanning the restart, got %d", len(cps))
 		}
 
 		// Both checkpoints -- one before, one after the restart -- verify against the
@@ -717,11 +707,11 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 		// process restart with a key that never touched a shared filesystem.
 		for _, c := range cps {
 			if !key1.VerifyDigest(c.digest, c.signature) {
-				t.Errorf("checkpoint seq %d signature does not verify against the stable engine key (S14/engine-key-stable-across-restart)", c.seq)
+				t.Errorf("checkpoint seq %d signature does not verify against the stable engine key", c.seq)
 			}
 		}
 		if string(cps[1].parent) != string(cps[0].digest) {
-			t.Errorf("post-restart checkpoint parent %x does not chain to the pre-restart digest %x (S14/engine-key-stable-across-restart)", cps[1].parent, cps[0].digest)
+			t.Errorf("post-restart checkpoint parent %x does not chain to the pre-restart digest %x", cps[1].parent, cps[0].digest)
 		}
 		chain := make([]store.CheckpointRow, 0, len(cps))
 		for _, c := range cps {
@@ -731,7 +721,7 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 			})
 		}
 		if err := store.ValidateChain(chain, key1.Public()); err != nil {
-			t.Errorf("checkpoint chain spanning the restart does not validate against the stable key: %v (S14/engine-key-stable-across-restart)", err)
+			t.Errorf("checkpoint chain spanning the restart does not validate against the stable key: %v", err)
 		}
 	})
 }

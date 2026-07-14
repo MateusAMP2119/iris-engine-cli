@@ -24,7 +24,7 @@ import (
 
 // This file proves the read surface and its physical enforcement on a declared
 // endpoint, end to end against the shipped binary, a running daemon, and real
-// Postgres (specification section 7, acceptance step 7). It drives the documented
+// Postgres (acceptance step 7). It drives the documented
 // CLI commands -- `iris declare apply` (provisions the source table), `iris endpoint
 // apply` (publishes the endpoint), `iris pat create --scope data --endpoint ...`
 // (mints a data PAT and captures its show-once token) -- then reads over the TCP
@@ -64,10 +64,7 @@ type readEnvelope struct {
 }
 
 // TestEndpointReadsAndGrants stands up the end-to-end read surface and proves both
-// E13.7 contracts against a real cluster and the real binary.
-//
-// spec: S13/data-pat-reads-endpoint
-// spec: S13/ungranted-field-fails-postgres
+// read-surface enforcement contracts against a real cluster and the real binary.
 func TestEndpointReadsAndGrants(t *testing.T) {
 	env := startOrdersEndpointEnv(t)
 
@@ -75,7 +72,7 @@ func TestEndpointReadsAndGrants(t *testing.T) {
 	// that endpoint's source fields (id, customer_id, amount). status is never granted.
 	token := mintEndpointPAT(t, env, "orders_by_customer")
 
-	t.Run("S13/data-pat-reads-endpoint", func(t *testing.T) {
+	t.Run("data-pat-reads-endpoint", func(t *testing.T) {
 		// The declared /q surface: the endpoint whose every referenced column the PAT
 		// holds serves rows as the PAT's role, over TCP with the Bearer token.
 		code, env2 := env.tcpGet(t, "/q/orders_by_customer", token)
@@ -96,7 +93,7 @@ func TestEndpointReadsAndGrants(t *testing.T) {
 		}
 	})
 
-	t.Run("S13/ungranted-field-fails-postgres", func(t *testing.T) {
+	t.Run("ungranted-field-fails-postgres", func(t *testing.T) {
 		// The declared /q surface: an endpoint projecting status (ungranted) is refused
 		// by Postgres itself and surfaced as a 403 that names the endpoint, never the
 		// missing field.

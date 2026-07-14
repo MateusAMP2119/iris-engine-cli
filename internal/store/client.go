@@ -12,30 +12,28 @@ import (
 )
 
 // This file is the live meta client: the one place store turns the daemon-owned
-// admin DSN into real connections (specification sections 2, 9, and 10). It owns
-// two connection kinds, the split the spec draws:
+// admin DSN into real connections. It owns two connection kinds:
 //
 //   - one session-pinned *pgx.Conn -- the leader's single session. It carries the
 //     leader-election advisory lock AND the single-writer meta path, so every meta
-//     write rides the exact session that holds the lock (specification section 15:
-//     "meta writes never ride a session that has not re-acquired the lock").
+//     write rides the exact session that holds the lock.
 //   - a *pgxpool.Pool -- readers, plain MVCC, no session pinning, no busy-retry.
 //
 // This is the sole entry point the daemon calls; the daemon never imports pgx, so
-// store stays the only meta database client (specification section 10). It is
-// exercised against a real Postgres at conformance tier (the one tier with a live
-// database); the seams it composes (leader lock, reader, writer) are proven with
-// fakes at integration tier.
+// store stays the only meta database client. It is exercised against a real
+// Postgres at conformance tier (the one tier with a live database); the seams it
+// composes (leader lock, reader, writer) are proven with fakes at integration
+// tier.
 
 // Client is the live meta client: the leader's session (lock + writes) and the
 // reader pool, all derived from the one admin DSN. Build it with Connect and tear
 // it down with Close.
 type Client struct {
-	// adminDSN is the admin-derived connection string the leader session and reader
-	// pool are opened from; retained so a demoted daemon can mint a FRESH leader
-	// session (a new session-pinned connection carrying a new advisory-lock handle
-	// and lock-guarded writer) to re-enter standby -- a dead session can never
-	// re-acquire the lock (specification section 15).
+	// adminDSN is the admin-derived connection string the leader session and
+	// reader pool are opened from; retained so a demoted daemon can mint a FRESH
+	// leader session (a new session-pinned connection carrying a new
+	// advisory-lock handle and lock-guarded writer) to re-enter standby -- a dead
+	// session can never re-acquire the lock.
 	adminDSN string
 
 	// mu guards session across a fresh-session renewal: NewLeaderSession swaps in a
@@ -116,12 +114,12 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 	}, nil
 }
 
-// openLeaderSession opens a fresh session-pinned connection on the meta database and
-// builds the leader lock and the lock-guarded write connection over it: the leader's
-// single session, carrying BOTH the advisory lock and the single-writer meta path, so
-// every meta write rides the exact session that holds the lock (specification section
-// 15). It is the one construction Connect and NewLeaderSession share, so a first
-// election and a post-demotion re-entry open identical sessions. On any error it closes
+// openLeaderSession opens a fresh session-pinned connection on the meta database
+// and builds the leader lock and the lock-guarded write connection over it: the
+// leader's single session, carrying BOTH the advisory lock and the single-writer
+// meta path, so every meta write rides the exact session that holds the lock. It
+// is the one construction Connect and NewLeaderSession share, so a first election
+// and a post-demotion re-entry open identical sessions. On any error it closes
 // the connection it opened, leaking nothing.
 func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLeaderLock, MetaWriteConn, error) {
 	metaCfg, err := metaConnConfig(adminDSN)
@@ -139,11 +137,11 @@ func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLea
 		return nil, nil, nil, err
 	}
 
-	// The write connection is the SAME session the leader lock is pinned to, and it
-	// is lock-guarded: every meta write first checks that this session currently
-	// holds the leader lock, so a write is never issued over a session that has not
-	// re-acquired it (specification section 15) -- not before election, and not
-	// after a demotion.
+	// The write connection is the SAME session the leader lock is pinned to, and
+	// it is lock-guarded: every meta write first checks that this session
+	// currently holds the leader lock, so a write is never issued over a session
+	// that has not re-acquired it -- not before election, and not after a
+	// demotion.
 	writer, err := NewLockGuardedConn(lock, &pgxWriteConn{conn: session})
 	if err != nil {
 		_ = session.Close(ctx)
@@ -153,13 +151,13 @@ func openLeaderSession(ctx context.Context, adminDSN string) (*pgx.Conn, *PgxLea
 }
 
 // NewLeaderSession mints a FRESH leader session for standby re-entry after a
-// self-demotion (specification section 15): a NEW session-pinned connection carrying a
-// new advisory-lock handle and its lock-guarded write connection. A demoted daemon's
-// old session is dead -- it can never re-acquire the lock and its write guard refuses
-// forever -- so re-contending requires a genuinely new session, which is exactly what
-// this returns. The client tracks the new connection so Close tears down the live
-// session, not the dead one. The reader pool is untouched (reads never block behind the
-// lock, so they survive a demotion).
+// self-demotion: a NEW session-pinned connection carrying a new advisory-lock
+// handle and its lock-guarded write connection. A demoted daemon's old session is
+// dead -- it can never re-acquire the lock and its write guard refuses forever --
+// so re-contending requires a genuinely new session, which is exactly what this
+// returns. The client tracks the new connection so Close tears down the live
+// session, not the dead one. The reader pool is untouched (reads never block
+// behind the lock, so they survive a demotion).
 func (c *Client) NewLeaderSession(ctx context.Context) (LeaderLock, MetaWriteConn, error) {
 	session, lock, writer, err := openLeaderSession(ctx, c.adminDSN)
 	if err != nil {

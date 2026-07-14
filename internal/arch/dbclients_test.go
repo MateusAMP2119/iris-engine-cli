@@ -4,16 +4,14 @@ import (
 	"testing"
 )
 
-// TestStorePgSoleDBClients proves the specification section 10 invariant that
-// store (meta) and pg (data) are the only database clients: no other shipped
-// package -- archive included -- may open a third path by importing the pgx
-// driver. archive reuses store and pg; it never holds pgx itself. The check is
-// the static proxy for "two clients, two databases, never crossed"; the meta-vs-
-// data DSN split is proven at conformance tier elsewhere. Synthetic graphs plant
-// a pgx import in packages that must not have one, then the real repo (which has
-// no pgx import at all yet) must be clean.
-//
-// spec: S10/store-pg-sole-db-clients
+// TestStorePgSoleDBClients proves the invariant that store (meta) and pg (data)
+// are the only database clients: no other shipped package -- archive included --
+// may open a third path by importing the pgx driver. archive reuses store and pg;
+// it never holds pgx itself. The check is the static proxy for "two clients, two
+// databases, never crossed"; the meta-vs-data DSN split is proven in the
+// conformance suite elsewhere. Synthetic graphs plant a pgx import in packages
+// that must not have one, then the real repo (which has no pgx import at all yet)
+// must be clean.
 func TestStorePgSoleDBClients(t *testing.T) {
 	t.Run("store and pg may import pgx", func(t *testing.T) {
 		g := synthGraph(

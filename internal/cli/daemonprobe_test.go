@@ -53,8 +53,7 @@ func startInProcess(t *testing.T, srv *daemon.Server) {
 // and an https:// probe against a plain daemon fails fast (exit 3) rather than
 // silently reporting no-daemon while the daemon is up.
 func TestDaemonProbeSchemeAware(t *testing.T) {
-	// spec: S02/tls-when-certs-given
-	t.Run("S02/tls-when-certs-given", func(t *testing.T) {
+	t.Run("tls-when-certs-given", func(t *testing.T) {
 		certFile, keyFile, pool := selfSignedCert(t)
 
 		t.Run("https host reaches a TLS daemon", func(t *testing.T) {

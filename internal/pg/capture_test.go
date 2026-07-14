@@ -30,8 +30,6 @@ func captureInstallDDL(plan pg.ProvisionPlan) []string {
 // one INSERT...SELECT per fired statement -- a 10M-row load fires one trigger, not
 // 10M -- and only ever inserts on the hot write path: nothing is partitioned,
 // sealed, or archived inline.
-//
-// spec: S04/statement-triggers-one-insert
 func TestCaptureStatementLevelOneInsert(t *testing.T) {
 	// The trigger bindings are FOR EACH STATEMENT (never FOR EACH ROW) and carry a
 	// REFERENCING transition-table clause, the set-based capture seam.
@@ -80,8 +78,6 @@ func TestCaptureStatementLevelOneInsert(t *testing.T) {
 // set on every declared table unconditionally: every table in the plan carries its
 // three per-operation triggers, and there is no declaration field a table could set
 // to opt out.
-//
-// spec: S03/capture-triggers-always-on
 func TestCaptureTriggersAlwaysOn(t *testing.T) {
 	tables := discoverGoldenSchemas(t)
 	plan, err := pg.PlanProvision(tables, emptyLive(), freshLedgers(tables))
@@ -106,8 +102,6 @@ func TestCaptureTriggersAlwaysOn(t *testing.T) {
 // TestCaptureNoOptOut proves capture is always on for every pipeline and role: no
 // configuration setting disables it, and provisioning installs the triggers on a
 // declared table regardless of any input.
-//
-// spec: S14/capture-no-opt-out
 func TestCaptureNoOptOut(t *testing.T) {
 	// No configuration knob disables capture: neither the resolved settings nor any
 	// configuration layer carries a capture toggle.
@@ -146,8 +140,6 @@ func assertNoCaptureField(t *testing.T, typ reflect.Type, what string) {
 // a declared table: the capture-install DDL (the iris schema, the capture function,
 // and the per-table triggers) issues no ALTER TABLE / ADD COLUMN, so table.yaml
 // remains the sole authority for the table's shape.
-//
-// spec: S03/capture-adds-no-columns
 func TestCaptureAddsNoColumns(t *testing.T) {
 	tables := discoverGoldenSchemas(t)
 	plan, err := pg.PlanProvision(tables, emptyLive(), freshLedgers(tables))
@@ -181,8 +173,6 @@ func TestCaptureAddsNoColumns(t *testing.T) {
 // TestStampNeverUserColumn proves run attribution lives only in data_journal: the
 // pg_role and run_id stamp columns exist in the journal DDL but the engine-emitted
 // DDL for a declared table (its create plus its capture triggers) never adds them.
-//
-// spec: S14/stamp-never-user-column
 func TestStampNeverUserColumn(t *testing.T) {
 	ctx := context.Background()
 
@@ -231,8 +221,6 @@ func TestStampNeverUserColumn(t *testing.T) {
 // applying a plan that must create the journal emits the partitioned journal exactly
 // once (parent, its open tail partition, and the select grant) and a capture trigger
 // on every declared table.
-//
-// spec: S05/provision-ensures-capture
 func TestProvisionEnsuresCaptureFull(t *testing.T) {
 	ctx := context.Background()
 	tables := discoverGoldenSchemas(t)

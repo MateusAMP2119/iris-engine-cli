@@ -9,16 +9,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file proves the E09.5 route-mux half of the read API (specification
-// section 7): the fixed engine-state route roster (the meta-roster routes with
-// their item sub-routes plus the E14 graph and triage routes), all GET; the
-// role report on GET /healthz and GET /leader; and the per-route scope checks
-// with the 403 split between the engine-state and data surfaces.
+// This file proves the E09.5 route-mux half of the read API: the fixed
+// engine-state route roster (the meta-roster routes with their item sub-routes
+// plus the E14 graph and triage routes), all GET; the role report on GET
+// /healthz and GET /leader; and the per-route scope checks with the 403 split
+// between the engine-state and data surfaces.
 
-// engineStateRoutes is the fixed engine-state roster (specification section 7),
-// each pattern instantiated with sample path params: the meta-roster collection
-// and item routes plus the graph and triage routes owned by E14. Every one is
-// GET-only and lives on the read (engine-state) scope.
+// engineStateRoutes is the fixed engine-state roster, each pattern instantiated
+// with sample path params: the meta-roster collection and item routes plus the
+// graph and triage routes owned by E14. Every one is GET-only and lives on the
+// read (engine-state) scope.
 var engineStateRoutes = []string{
 	"/pipelines",
 	"/pipelines/load_orders",
@@ -38,8 +38,8 @@ var engineStateRoutes = []string{
 	"/provenance/analytics/orders/123",
 }
 
-// dataRoutes is the data surface (specification section 7): raw table reads and
-// declared endpoints, GET-only, on the data scope.
+// dataRoutes is the data surface: raw table reads and declared endpoints,
+// GET-only, on the data scope.
 var dataRoutes = []string{
 	"/data/analytics/orders",
 	"/q/orders_by_customer",
@@ -70,14 +70,12 @@ func get(t *testing.T, h http.Handler, method, path string) (int, jsonEnvelope, 
 }
 
 // TestEngineStateRouteRoster proves the engine-state surface serves exactly the
-// meta-roster routes with their item sub-routes, all GET, plus the E14 graph and
-// triage routes (specification section 7): every roster route is mounted (never
-// 404, never 405 on GET), every non-GET method on a roster route is 405
-// method_not_allowed, and everything outside the roster is 404 not_found.
-//
-// spec: S07/engine-state-route-roster
+// meta-roster routes with their item sub-routes, all GET, plus the E14 graph
+// and triage routes: every roster route is mounted (never 404, never 405 on
+// GET), every non-GET method on a roster route is 405 method_not_allowed, and
+// everything outside the roster is 404 not_found.
 func TestEngineStateRouteRoster(t *testing.T) {
-	t.Run("S07/engine-state-route-roster", func(t *testing.T) {
+	t.Run("engine-state-route-roster", func(t *testing.T) {
 		mux := leaderMux()
 
 		t.Run("every roster route is mounted and answers GET", func(t *testing.T) {
@@ -156,12 +154,10 @@ func TestEngineStateRouteRoster(t *testing.T) {
 }
 
 // TestHealthzLeaderReportRole proves GET /healthz and GET /leader report the
-// node's current leadership role on both a leader and a standby (specification
-// sections 7 and 15: "GET /healthz / GET /leader report role on both").
-//
-// spec: S07/healthz-leader-report-role
+// node's current leadership role on both a leader and a standby ("GET /healthz
+// / GET /leader report role on both").
 func TestHealthzLeaderReportRole(t *testing.T) {
-	t.Run("S07/healthz-leader-report-role", func(t *testing.T) {
+	t.Run("healthz-leader-report-role", func(t *testing.T) {
 		for _, tc := range []struct {
 			name       string
 			set        func(*api.RoleState)

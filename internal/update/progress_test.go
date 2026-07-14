@@ -12,8 +12,6 @@ import (
 // four stages, in order, over a real replace against a local release server:
 // resolve, download, verify, replace. A nil hook (the default) stays silent, and
 // an up-to-date run emits no stages because it returns before any download.
-//
-// spec: S08/update-progress-stages
 func TestUpdateProgressStages(t *testing.T) {
 	t.Run("update fires resolve, download, verify, replace in order", func(t *testing.T) {
 		dir := t.TempDir()

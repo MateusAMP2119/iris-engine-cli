@@ -18,8 +18,6 @@ func runsStrPtr(s string) *string { return &s }
 // because an upstream was -- maps to the one dead_lettered state and parks in the
 // dead-letter worklist under its own reason. A three-way non-success set collapsing
 // to one terminal state is exactly the "single non-success terminal state" invariant.
-//
-// spec: S01/dead-letter-single-terminal
 func TestClassifyEnding(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -50,8 +48,6 @@ func TestClassifyEnding(t *testing.T) {
 // TestClassifyEndingRejectsUnknown proves the classifier is closed: an ending that
 // is not one of the three non-success kinds is rejected loudly rather than silently
 // mapped to some default terminal state.
-//
-// spec: S01/dead-letter-single-terminal
 func TestClassifyEndingRejectsUnknown(t *testing.T) {
 	if _, _, err := store.ClassifyEnding(store.RunEnding("succeeded")); err == nil {
 		t.Fatal("ClassifyEnding of an out-of-set ending = nil error, want a rejection")
@@ -107,8 +103,6 @@ const (
 // stamps all three in one atomic run-create transaction -- the runs row carrying the
 // declaration checksum and artifact hash, and one run_inputs row per consumed
 // upstream run id, committed together with the runs insert.
-//
-// spec: S03/run-records-hashes
 func TestCreateRunRecordsHashes(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -143,8 +137,6 @@ func TestCreateRunRecordsHashes(t *testing.T) {
 // artifact_hash as SQL NULL: with no built artifact, the write path binds an untyped
 // nil (not a typed nil pointer, which pgx would reject), so the column is NULL rather
 // than an empty or zero hash.
-//
-// spec: S04/dev-run-null-artifact-hash
 func TestCreateRunDevRunNullArtifactHash(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -159,12 +151,10 @@ func TestCreateRunDevRunNullArtifactHash(t *testing.T) {
 	}
 }
 
-// TestRunsTableShape proves the runs table model matches the specification (section
-// 4) column-for-column and constraint-for-constraint, and that the run-create write
-// path stamps only columns the model declares. The model is the single source the
+// TestRunsTableShape proves the runs table model's shape column-for-column and
+// constraint-for-constraint, and that the run-create write path stamps only
+// columns the model declares. The model is the single source the
 // DDL renders from, so a shape assertion here is a DDL-shape assertion.
-//
-// spec: S04/runs-table-shape
 func TestRunsTableShape(t *testing.T) {
 	runs := tableByName(t, store.MetaSchema(), "runs")
 
@@ -177,8 +167,8 @@ func TestRunsTableShape(t *testing.T) {
 		t.Errorf("runs primary key = %v, want [id]", runs.PrimaryKey)
 	}
 
-	// The nullable columns (section 4): everything but the identity, pipeline, state,
-	// cause, declaration_checksum, and recorded_at is nullable.
+	// The nullable columns: everything but the identity, pipeline, state, cause,
+	// declaration_checksum, and recorded_at is nullable.
 	nullable := map[string]bool{
 		"replayed_from": true, "exit_code": true, "handle": true,
 		"artifact_hash": true, "log_ref": true, "snapshot_lsn": true,

@@ -23,19 +23,17 @@ import (
 // through the live pg path, then connects to the cluster AS a non-owner login
 // role to prove one enforcement contract against the live database:
 //
-//   - S04/journal-select-only: every engine role may SELECT public.data_journal
-//     (the grant is TO PUBLIC, so present and future roles read it), and no
-//     non-owner role may write it -- an INSERT as the non-owner fails at Postgres
-//     with insufficient_privilege. The journal's owner (as its capture triggers
-//     do) writes it, proving the table is functional and the restriction is a
-//     privilege boundary, not a broken table.
+//   - Every engine role may SELECT public.data_journal (the grant is TO PUBLIC,
+//     so present and future roles read it), and no non-owner role may write it --
+//     an INSERT as the non-owner fails at Postgres with insufficient_privilege.
+//     The journal's owner (as its capture triggers do) writes it, proving the
+//     table is functional and the restriction is a privilege boundary, not a
+//     broken table.
 //
 // It drives the pg journal DDL directly against the live cluster (the
 // external_data_db conformance pattern) rather than the CLI, so the leg proves the
 // DDL the engine issues, enforced by a real Postgres. The managed embedded-postgres
 // runtime is cached after the first run; the leg reports its own wall time.
-//
-// spec: S04/journal-select-only
 func TestJournalSelectOnly(t *testing.T) {
 	start := time.Now()
 	t.Cleanup(func() { t.Logf("journal select-only conformance leg: %s", time.Since(start).Round(time.Millisecond)) })

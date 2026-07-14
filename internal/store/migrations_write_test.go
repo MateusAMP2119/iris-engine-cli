@@ -26,14 +26,12 @@ func (c *recordingMigrationConn) Exec(_ context.Context, sql string, args ...any
 
 // TestMigrationsLedgerShape proves the migrations ledger keys its rows by
 // (schema, table, migration_id) and carries the parent, checksum, and applied_seq
-// columns: the applied-migration ledger of specification section 4. The applied_seq
-// is a monotonic bigint identity assigned by meta, never a clock. The write path
+// columns: the applied-migration ledger. The applied_seq is a monotonic bigint
+// identity assigned by meta, never a clock. The write path
 // (RecordMigrationHead) binds exactly the three key columns plus parent and
 // checksum, leaving applied_seq to meta.
-//
-// spec: S04/migrations-ledger-shape
 func TestMigrationsLedgerShape(t *testing.T) {
-	t.Run("S04/migrations-ledger-shape", func(t *testing.T) {
+	t.Run("migrations-ledger-shape", func(t *testing.T) {
 		tbl := migrationsTable(t)
 
 		// Keyed by (schema, table, migration_id).
@@ -94,15 +92,13 @@ func TestMigrationsLedgerShape(t *testing.T) {
 	})
 }
 
-// TestRecordMigrationHead proves applying a table migration inserts one migrations
-// row so the table's applied head is durably recorded for ledger-versus-disk drift
-// detection (specification section 4). The insert is a single statement (atomic),
-// binds the head's key and ledger columns in order, and represents the create head
-// (empty parent) as SQL NULL rather than an empty string.
-//
-// spec: S04/migrations-record-applied-head
+// TestRecordMigrationHead proves applying a table migration inserts one
+// migrations row so the table's applied head is durably recorded for
+// ledger-versus-disk drift detection. The insert is a single statement (atomic),
+// binds the head's key and ledger columns in order, and represents the create
+// head (empty parent) as SQL NULL rather than an empty string.
 func TestRecordMigrationHead(t *testing.T) {
-	t.Run("S04/migrations-record-applied-head", func(t *testing.T) {
+	t.Run("migrations-record-applied-head", func(t *testing.T) {
 		conn := &recordingMigrationConn{}
 		w := store.NewWriter(conn)
 

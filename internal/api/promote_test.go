@@ -37,11 +37,9 @@ func postPromote(t *testing.T, h api.PromoteHandler, body []byte) *httptest.Resp
 }
 
 // TestPromoteRouteRefusesUnbuilt proves POST /pipeline/promote renders the
-// built gate's refusal as an operation failure (specification sections 5, 7,
-// and 8): a promote refused because the pipeline is not in built state is 422
-// operation_failed carrying the daemon's reason, never a silent success.
-//
-// spec: S05/promote-gated-on-built
+// built gate's refusal as an operation failure: a promote refused because the
+// pipeline is not in built state is 422 operation_failed carrying the daemon's
+// reason, never a silent success.
 func TestPromoteRouteRefusesUnbuilt(t *testing.T) {
 	body, err := json.Marshal(api.PipelinePromoteRequest{Pipeline: "etl"})
 	if err != nil {
@@ -67,12 +65,8 @@ func TestPromoteRouteRefusesUnbuilt(t *testing.T) {
 
 // TestPromoteRouteReportsFlipAndWarnings proves a successful POST
 // /pipeline/promote reports the flipped data mode and carries any repeated
-// cross-mode read warnings in the section-7 data envelope (specification
-// section 5: the warning rides the JSON surface, promote repeats it while the
-// upstream stays disposable).
-//
-// spec: S05/promote-flips-data-mode
-// spec: S05/promote-repeats-cross-mode-warning
+// cross-mode read warnings in the data envelope (the warning rides the JSON
+// surface, promote repeats it while the upstream stays disposable).
 func TestPromoteRouteReportsFlipAndWarnings(t *testing.T) {
 	body, err := json.Marshal(api.PipelinePromoteRequest{Pipeline: "etl"})
 	if err != nil {

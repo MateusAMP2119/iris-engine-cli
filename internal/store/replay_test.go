@@ -11,17 +11,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// TestReplayRunMintsFreshRunAndExitsWorklist proves the replay write (specification
-// section 6.2): a replay mints a FRESH run on current data through the normal run
-// path -- state queued, cause replay, replayed_from set to the replaced dead-lettered
-// run -- and REMOVES the replaced run's dead_letters worklist row, both in ONE atomic
-// transaction (a single CTE). The replacement mints, so the worklist exits together
-// with the mint; there is no window where the replaced entry lingers beside its fresh
-// replacement, and none where a fresh run exists without the replaced entry cleared.
-// The fresh run carries a new meta-assigned identity id, so it becomes the pipeline's
-// most recent run.
-//
-// spec: S06.2/replay-fresh-run-record
+// TestReplayRunMintsFreshRunAndExitsWorklist proves the replay write: a replay
+// mints a FRESH run on current data through the normal run path -- state queued,
+// cause replay, replayed_from set to the replaced dead-lettered run -- and
+// REMOVES the replaced run's dead_letters worklist row, both in ONE atomic
+// transaction (a single CTE). The replacement mints, so the worklist exits
+// together with the mint; there is no window where the replaced entry lingers
+// beside its fresh replacement, and none where a fresh run exists without the
+// replaced entry cleared. The fresh run carries a new meta-assigned identity id,
+// so it becomes the pipeline's most recent run.
 func TestReplayRunMintsFreshRunAndExitsWorklist(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)
@@ -96,8 +94,6 @@ func TestReplayRunMintsFreshRunAndExitsWorklist(t *testing.T) {
 // meta failure rolls the whole CTE back, so a failed replay leaves neither a fresh run
 // without its worklist removal nor a removed entry without its replacement. The single
 // writer fails loudly rather than splitting the change across un-atomic Execs.
-//
-// spec: S06.2/replay-fresh-run-record
 func TestReplayRunAtomicRollback(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	sentinel := errors.New("meta write failed")
@@ -129,8 +125,6 @@ func TestReplayRunAtomicRollback(t *testing.T) {
 // TestReplayRunDevRunNullArtifact proves a dev-run replay records a null artifact
 // hash (nil ArtifactHash -> SQL NULL), mirroring CreateRun: replay is a fresh run
 // through the normal path, so a dev pipeline's replacement carries no binary hash.
-//
-// spec: S06.2/replay-fresh-run-record
 func TestReplayRunDevRunNullArtifact(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

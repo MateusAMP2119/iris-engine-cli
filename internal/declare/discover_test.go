@@ -11,7 +11,7 @@ import (
 // discovers lane composers, pipeline declarations with their single script, and
 // table schemas from their canonical locations.
 func TestWorkspaceTreeDiscovery(t *testing.T) {
-	t.Run("S10/workspace-tree-discovery", func(t *testing.T) {
+	t.Run("workspace-tree-discovery", func(t *testing.T) {
 		ws, err := declare.DiscoverWorkspace(fixtures.WorkspaceGolden())
 		if err != nil {
 			t.Fatalf("golden workspace discovery failed: %v", err)
@@ -73,14 +73,12 @@ func TestWorkspaceTreeDiscovery(t *testing.T) {
 	})
 }
 
-// TestSampleWorkspaceShape pins the golden sample workspace shape exactly as
-// described in the specification (two tables, three single-script pipelines
-// under one ingest lane with its composer order, one read endpoint) plus the
-// declared reads/writes on extract_orders and load_orders.
-//
-// spec: S13/sample-workspace-shape
+// TestSampleWorkspaceShape pins the golden sample workspace shape exactly: two
+// tables, three single-script pipelines under one ingest lane with its composer
+// order, one read endpoint, plus the declared reads/writes on extract_orders and
+// load_orders.
 func TestSampleWorkspaceShape(t *testing.T) {
-	t.Run("S13/sample-workspace-shape", func(t *testing.T) {
+	t.Run("sample-workspace-shape", func(t *testing.T) {
 		root := fixtures.WorkspaceGolden()
 
 		ws, err := declare.DiscoverWorkspace(root)

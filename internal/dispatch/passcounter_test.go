@@ -6,15 +6,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 )
 
-// TestPassCounter proves the per-lane loop pass counter's mechanics: the hook
-// counts completed lane passes per lane (a clock-free count, incremented once per
-// PassReport), Counts returns a defensive copy, and Reset zeroes every lane --
-// the primitive the daemon holds per leadership term (specification section 11:
-// "loop passes completed since daemon start (a leader-held runtime counter,
-// reset on restart and leader change)"). The daemon-side term wiring is proven
-// in internal/daemon.
-//
-// spec: S11/lane-pass-counter-reset
+// TestPassCounter proves the per-lane loop pass counter's mechanics: the hook counts
+// completed lane passes per lane (a clock-free count, incremented once per
+// PassReport), Counts returns a defensive copy, and Reset zeroes every lane -- the
+// primitive the daemon holds per leadership term ("loop passes completed since daemon
+// start (a leader-held runtime counter, reset on restart and leader change)"). The
+// daemon-side term wiring is proven in internal/daemon.
 func TestPassCounter(t *testing.T) {
 	pc := dispatch.NewPassCounter()
 	hook := pc.Hook()

@@ -38,14 +38,12 @@ func startReplayStub(t *testing.T, sock string, status int, body any) {
 	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
 }
 
-// TestDeadletterReplayExit5 proves the dead-lettering-replay exit contract
-// (specification sections 6.2 and 8): `iris deadletter replay` exits 5 when the
-// leader reports a replay whose fresh run dead-lettered again, exits 0 for a clean
+// TestDeadletterReplayExit5 proves the dead-lettering-replay exit contract:
+// `iris deadletter replay` exits 5 when the leader reports a replay whose fresh
+// run dead-lettered again, exits 0 for a clean
 // replay, requires a scope (bare is a usage error, exit 2), and reports exit 6 when
 // the daemon is not the leader. The re-dead-lettered run (chained to the original via
 // replayed_from) is what drives exit 5.
-//
-// spec: S06.2/failed-replay-chains-entry
 func TestDeadletterReplayExit5(t *testing.T) {
 	// Isolate the ambient IRIS_* config so --socket is authoritative: a real
 	// IRIS_HOST in the environment would otherwise win over the flag socket

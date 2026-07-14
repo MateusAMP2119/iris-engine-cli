@@ -17,8 +17,8 @@ import (
 
 // TestPayloadTiersAndModes is the end-to-end proof that capture is unconditional
 // across data modes while the payload TIER is mode-aware: a full pre-image only where
-// undo can spend it, a slim stamp everywhere else (specification sections 4, 12 and
-// 14). It stands up one real Postgres cluster the engine has never touched, provisions
+// undo can spend it, a slim stamp everywhere else. It stands up one real Postgres
+// cluster the engine has never touched, provisions
 // the partitioned journal and the real iris.capture() function through the live pg
 // path, declares a user table with the three per-operation capture triggers, and mints
 // a dedicated pipeline writer role. Each subtest drives writes AS that role over a
@@ -26,7 +26,7 @@ import (
 // and the write's wipe-eligibility (the per-session iris.wipe_eligible setting the
 // trigger reads in-transaction), then asserts the live journal.
 //
-// The three legs, one per contract:
+// The three legs, one per subtest:
 //
 //   - capture-regardless-of-mode: a disposable (wipe-eligible) run and a permanent
 //     (born-promoted) run each land exactly one journal row per write -- capture is on
@@ -152,8 +152,7 @@ func TestPayloadTiersAndModes(t *testing.T) {
 		return conn
 	}
 
-	// spec: S12/capture-regardless-of-mode
-	t.Run("S12/capture-regardless-of-mode", func(t *testing.T) {
+	t.Run("capture-regardless-of-mode", func(t *testing.T) {
 		// A disposable (wipe-eligible) run: insert then update its own row.
 		const dispRun int64 = 82001
 		dc := connFor(t, dispRun, true)
@@ -178,8 +177,7 @@ func TestPayloadTiersAndModes(t *testing.T) {
 			"SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND op='update' AND pre_image IS NULL AND undo='promoted'", permRun)
 	})
 
-	// spec: S04/pre-image-wipe-eligible-only
-	t.Run("S04/pre-image-wipe-eligible-only", func(t *testing.T) {
+	t.Run("pre-image-wipe-eligible-only", func(t *testing.T) {
 		// A prior run seeds the rows the disposable run will update and delete, so each
 		// (run, row_pk) the assertions read carries exactly one stamp.
 		const seedRun int64 = 82003
@@ -221,8 +219,7 @@ func TestPayloadTiersAndModes(t *testing.T) {
 			"SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND undo='promoted'", permRun)
 	})
 
-	// spec: S14/preimage-only-where-undo
-	t.Run("S14/preimage-only-where-undo", func(t *testing.T) {
+	t.Run("preimage-only-where-undo", func(t *testing.T) {
 		const (
 			dispRun int64 = 82005
 			permRun int64 = 82006

@@ -46,13 +46,10 @@ func goroutineID() uint64 {
 
 // TestDispatcherSoleMetaWriter proves the single-writer meta path: every meta write
 // is submitted to one Dispatcher and executed serially on its one goroutine, so no
-// two writes overlap and no write reaches meta except through the dispatcher
-// (specification section 6.1: the dispatcher is a single goroutine, the sole meta
-// writer).
-//
-// spec: S06.1/dispatcher-sole-meta-writer
+// two writes overlap and no write reaches meta except through the dispatcher (the
+// dispatcher is a single goroutine, the sole meta writer).
 func TestDispatcherSoleMetaWriter(t *testing.T) {
-	t.Run("S06.1/dispatcher-sole-meta-writer", func(t *testing.T) {
+	t.Run("dispatcher-sole-meta-writer", func(t *testing.T) {
 		conn := &recordingWriteConn{}
 		d := dispatch.New(conn)
 		ctx := context.Background()

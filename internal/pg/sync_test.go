@@ -102,8 +102,6 @@ func ordersLedgerHead0001() pg.LedgerView {
 // desired head against the ledger, yields an engine-written migration file that
 // represents exactly that diff, and that appending it never rewrites an existing
 // ledger file (the ledger is immutable).
-//
-// spec: S03/table-yaml-diff-writes-ledger
 func TestPlanLedgerSyncWritesImmutableFile(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(ordersWithStatusYAML)
@@ -126,7 +124,7 @@ func TestPlanLedgerSyncWritesImmutableFile(t *testing.T) {
 	if m.Head.Checksum != declare.ChecksumTableYAML(raw) {
 		t.Errorf("migration checksum = %q, want the checksum of table.yaml at this revision", m.Head.Checksum)
 	}
-	// The file bytes are exactly the section 5 migration file for this diff.
+	// The file bytes are exactly the migration file for this diff.
 	golden.Assert(t, m.Contents, filepath.Join("testdata", "0002_add_status.yaml"))
 
 	// Applying the plan writes the file under the table folder's migrations/ dir.
@@ -193,8 +191,6 @@ func TestPlanLedgerSyncWritesImmutableFile(t *testing.T) {
 // TestLedgerDriftAdditiveGeneratesMigration proves an additive gap between
 // table.yaml and the ledger generates the next numbered migration file and advances
 // the ledger head, while a removed column (non-additive) is refused.
-//
-// spec: S05/ledger-drift-additive-generates-migration
 func TestLedgerDriftAdditiveGeneratesMigration(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(ordersWithStatusYAML)
@@ -242,8 +238,6 @@ columns:
 // TestMigrationSyncAppendsAndAlters proves a sync pass walks each table folder,
 // diffs table.yaml against the ledger head, appends one immutable migration file
 // per additive delta, and runs the corresponding ADD COLUMN ALTER.
-//
-// spec: S05/migration-sync-appends-and-alters
 func TestMigrationSyncAppendsAndAlters(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -329,8 +323,6 @@ columns:
 // TestMigrationDryRunTouchesNothing proves a --dry-run sync prints the intended
 // ALTERs and migration files but executes no DDL and writes no files: the plan is
 // rendered without invoking any executor.
-//
-// spec: S05/migration-dry-run-touches-nothing
 func TestMigrationDryRunTouchesNothing(t *testing.T) {
 	raw := []byte(ordersWithStatusYAML)
 	plan, err := pg.PlanLedgerSync(parseTable(t, ordersWithStatusYAML), raw, ordersLedgerHead0001())
@@ -365,8 +357,6 @@ func TestMigrationDryRunTouchesNothing(t *testing.T) {
 // TestSchemaDriftMissingColumnAutofix proves a column present in the declared head
 // but missing live is classified additive and auto-fixed with ADD COLUMN, while an
 // extra live column (non-additive) is refused.
-//
-// spec: S05/schema-drift-missing-column-autofix
 func TestSchemaDriftMissingColumnAutofix(t *testing.T) {
 	ctx := context.Background()
 	declared := parseTable(t, ordersWithStatusYAML)
@@ -426,8 +416,6 @@ func TestSchemaDriftMissingColumnAutofix(t *testing.T) {
 // table is classified additive and auto-fixed, like a missing column: the sync runs
 // the create-trigger DDL through the pg seam (E06.2 owns the trigger's PL/pgSQL
 // body; here the sync emits the CREATE TRIGGER statement that installs it).
-//
-// spec: S05/missing-capture-trigger-autofix
 func TestMissingCaptureTriggerAutofix(t *testing.T) {
 	ctx := context.Background()
 	declared := parseTable(t, ordersWithStatusYAML)
@@ -458,7 +446,7 @@ func TestMissingCaptureTriggerAutofix(t *testing.T) {
 		}
 	}
 
-	// The trigger fixes render the section 4 statement-level transition-table
+	// The trigger fixes render the statement-level transition-table
 	// CREATE TRIGGER shape, applied through the pg seam.
 	rec := pgtest.New()
 	if err := plan.Apply(ctx, pg.NewDirMigrationSink(t.TempDir()), rec, &recordingLedger{}); err != nil {
@@ -476,10 +464,7 @@ func TestMissingCaptureTriggerAutofix(t *testing.T) {
 // body, and these are the CREATE TRIGGER statements that bind it to a declared
 // table. Postgres transition tables are per-operation, so the set is three triggers
 // (INSERT with NEW TABLE, UPDATE with OLD and NEW TABLE, DELETE with OLD TABLE), one
-// INSERT...SELECT per statement (specification section 4). A golden diff is a
-// contract diff.
-//
-// spec: S05/missing-capture-trigger-autofix
+// INSERT...SELECT per statement. A golden diff is a contract diff.
 func TestRenderCaptureTriggers(t *testing.T) {
 	stmts := pg.RenderCaptureTriggers("analytics", "orders")
 	if len(stmts) != 3 {

@@ -9,20 +9,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// This file is the meta persistence of the engine's shared read-pool login secret
-// (specification section 4, read_pool_credential Q/A; the E13.7 follow-up spec
-// delta). The shared iris_engine_read login is the one identity the read pool
+// This file is the meta persistence of the engine's shared read-pool login
+// secret. The shared iris_engine_read login is the one identity the read pool
 // connects as on every node; its password used to be minted fresh on EVERY daemon
 // start and the login re-ALTERed to it, so with two daemons on one data cluster
-// (an HA standby, or a restart racing a live leader) the last starter's secret won
-// and an earlier node's pool then failed to authenticate.
+// (an HA standby, or a restart racing a live leader) the last starter's secret
+// won and an earlier node's pool then failed to authenticate.
 //
 // The fix mirrors the engine_key model (internal/store/enginekey.go): the secret
 // lives in a single-row engine-owned meta table (id pinned to 1), minted create-
 // once (INSERT ... ON CONFLICT DO NOTHING + read-back, so two daemons converge on
 // ONE secret), and every daemon start reads the stored secret back rather than
 // minting a fresh one. The shared meta database standbys already read gives HA
-// superuser-free: a restart or failover leader reuses the same read-pool credential.
+// superuser-free: a restart or failover leader reuses the same read-pool
+// credential.
 //
 // The credential ride is a bootstrap-provisioning meta write on the reader pool, not
 // a workload write through the single leader writer: it runs on every node before
@@ -99,13 +99,13 @@ func (m *pgxReadPoolCredMeta) mintReadPoolCredential(ctx context.Context, candid
 }
 
 // EnsureReadPoolCredential returns the engine's shared read-pool login secret,
-// minting and persisting it create-once when absent (specification section 4,
-// read_pool_credential). It is concurrent-daemon safe: two daemons starting against
-// one cluster converge on one secret, and a restart or HA standby reuses the stored
-// secret rather than re-minting and resetting the shared login's password. The
-// caller (the daemon read-pool open) sets the login's password to the returned
-// secret; because every node ALTERs to the SAME persisted secret, no start ever
-// invalidates another node's live pool credential.
+// minting and persisting it create-once when absent (read_pool_credential). It is
+// concurrent-daemon safe: two daemons starting against one cluster converge on
+// one secret, and a restart or HA standby reuses the stored secret rather than
+// re-minting and resetting the shared login's password. The caller (the daemon
+// read-pool open) sets the login's password to the returned secret; because every
+// node ALTERs to the SAME persisted secret, no start ever invalidates another
+// node's live pool credential.
 func (c *Client) EnsureReadPoolCredential(ctx context.Context) (Secret, error) {
 	return ensureReadPoolCredential(ctx, &pgxReadPoolCredMeta{pool: c.pool}, GenerateSecret)
 }

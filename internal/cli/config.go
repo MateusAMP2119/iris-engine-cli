@@ -10,9 +10,9 @@ import (
 )
 
 // resolveTarget resolves an invocation's engine/connection settings through the
-// configuration precedence of specification section 8: the global
-// --socket/--host/--token flags override the IRIS_* environment, which overrides
-// an optional .iris/iris.toml under the workspace, which overrides the built-in
+// configuration precedence: the global --socket/--host/--token flags override
+// the IRIS_* environment, which overrides an optional .iris/iris.toml under the
+// workspace, which overrides the built-in
 // defaults (the local socket + managed Postgres of the zero-config path). Full
 // consumption -- actually dialing the resolved target -- arrives with the daemon
 // client in E02/E03; today the exit-3 dial path resolves through it so the
@@ -67,7 +67,7 @@ func flagLayer(cmd *cobra.Command) config.Layer {
 	}
 	// The daemon-scoped flags live only on `engine start`; on any other command
 	// the Lookup misses and contributes nothing. They configure the running engine
-	// the daemon starts (specification section 8).
+	// the daemon starts.
 	if v, ok := changedString(cmd, "pg-dsn"); ok {
 		l.PgDSN = &v
 	}

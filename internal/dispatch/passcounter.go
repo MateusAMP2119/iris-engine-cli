@@ -2,14 +2,14 @@ package dispatch
 
 import "sync"
 
-// This file is the per-lane loop pass counter (specification section 11): "loop
-// passes completed since daemon start (a leader-held runtime counter, reset on
-// restart and leader change)". It is deliberately process memory, never a meta
-// row -- the count is a property of the current leader's runtime, so a daemon
-// restart resets it by construction (a fresh process constructs a fresh
-// counter), and the daemon resets it explicitly when it wins a leadership term
-// (internal/daemon), so a re-elected leader never resumes a previous term's
-// counts. Clock-free: a count of completed passes, never a duration or a rate.
+// This file is the per-lane loop pass counter: "loop passes completed since daemon
+// start (a leader-held runtime counter, reset on restart and leader change)". It is
+// deliberately process memory, never a meta row -- the count is a property of the
+// current leader's runtime, so a daemon restart resets it by construction (a fresh
+// process constructs a fresh counter), and the daemon resets it explicitly when it
+// wins a leadership term (internal/daemon), so a re-elected leader never resumes a
+// previous term's counts. Clock-free: a count of completed passes, never a duration
+// or a rate.
 
 // PassCounter counts completed lane passes per lane. It is safe for concurrent
 // use: the lane loop's per-lane goroutines increment it through Hook while the

@@ -16,8 +16,6 @@ import (
 // rotates on the next write. This pins the crash path a naive rotator hits --
 // nulling the active file on close, then re-entering rotate() and closing a nil
 // file on the very next log line after a transient disk error.
-//
-// spec: S02/daemon-log-rotation
 func TestSizeRotatorRecoversFromRotationFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "daemon.log")

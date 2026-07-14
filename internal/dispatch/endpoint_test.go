@@ -12,18 +12,17 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the dispatch half of the endpoint apply lifecycle
-// (specification section 7): iris endpoint apply prepare-verifies the derived
-// SQL against the data database and persists to endpoints + endpoint_filters
-// atomically through the single meta writer, all-or-nothing; and the lifecycle
-// runs independently of declare apply and declare destroy. Every write rides a
-// real Dispatcher over a recording fake -- no live Postgres -- so a test
-// asserts the exact write set, its transaction grouping, and that a failed
-// verify or a rolled-back commit changes nothing, neither meta nor the live
-// serving registry.
+// This file proves the dispatch half of the endpoint apply lifecycle: iris endpoint
+// apply prepare-verifies the derived SQL against the data database and persists to
+// endpoints + endpoint_filters atomically through the single meta writer,
+// all-or-nothing; and the lifecycle runs independently of declare apply and declare
+// destroy. Every write rides a real Dispatcher over a recording fake -- no live
+// Postgres -- so a test asserts the exact write set, its transaction grouping, and
+// that a failed verify or a rolled-back commit changes nothing, neither meta nor the
+// live serving registry.
 
-// ordersByCustomerYAML is the canonical spec-section-7 endpoint, compiled
-// against the analytics.orders source below.
+// ordersByCustomerYAML is the canonical endpoint, compiled against the
+// analytics.orders source below.
 const ordersByCustomerYAML = `endpoint: orders_by_customer
 source: analytics.orders
 fields: [id, customer_id, amount]
@@ -131,14 +130,11 @@ func newEndpointHarness(t *testing.T) endpointHarness {
 }
 
 // TestEndpointApplyVerifyPersist proves iris endpoint apply prepare-verifies the
-// derived SQL against the data database and persists to endpoints +
-// endpoint_filters atomically, all-or-nothing (specification section 7): the
-// verifier sees each endpoint's one derived statement before any write, the
-// whole apply commits as exactly one meta transaction (shape row plus filter
-// rows, multi-endpoint applies included), and a verify failure or a rolled-back
-// commit leaves meta untouched and publishes nothing.
-//
-// spec: S07/endpoint-apply-verify-persist
+// derived SQL against the data database and persists to endpoints + endpoint_filters
+// atomically, all-or-nothing: the verifier sees each endpoint's one derived statement
+// before any write, the whole apply commits as exactly one meta transaction (shape
+// row plus filter rows, multi-endpoint applies included), and a verify failure or a
+// rolled-back commit leaves meta untouched and publishes nothing.
 func TestEndpointApplyVerifyPersist(t *testing.T) {
 	ctx := context.Background()
 
@@ -248,13 +244,10 @@ func TestEndpointApplyVerifyPersist(t *testing.T) {
 
 // TestEndpointLifecycleIndependent proves iris endpoint apply and iris endpoint
 // remove publish and retire endpoints independently of declare apply, and that
-// declare destroy leaves tables and endpoints standing (specification section
-// 7): an endpoint applies against an empty workload registry and touches no
-// workload table, remove retires only the endpoint rows, and a pipeline destroy
-// issues no endpoint delete and never drops a table -- the applied endpoint
-// keeps serving.
-//
-// spec: S07/endpoint-lifecycle-independent
+// declare destroy leaves tables and endpoints standing: an endpoint applies against
+// an empty workload registry and touches no workload table, remove retires only the
+// endpoint rows, and a pipeline destroy issues no endpoint delete and never drops a
+// table -- the applied endpoint keeps serving.
 func TestEndpointLifecycleIndependent(t *testing.T) {
 	ctx := context.Background()
 

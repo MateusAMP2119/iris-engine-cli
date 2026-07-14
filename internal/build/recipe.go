@@ -1,6 +1,6 @@
 // Package build holds the engine's build decision logic: which toolchain a
 // pipeline builds with, chosen from the pipeline's declared run vector and from
-// nothing else (specification sections 1, 3, and 9).
+// nothing else.
 //
 // The model is deliberately small and closed:
 //
@@ -15,10 +15,10 @@
 //     with no pinned recipe fails with an "unsupported runtime" error until a
 //     recipe is added to the pinned set.
 //
-// This package is a leaf (specification section 10): pure decision logic with no
-// Iris dependencies and no I/O. Actually invoking a recipe's toolchain -- running
-// go build, PyInstaller, or pkg and recording the produced binary's content hash
-// and bytes -- is the build execution path's job, not this package's.
+// This package is a leaf: pure decision logic with no Iris dependencies and no
+// I/O. Actually invoking a recipe's toolchain -- running go build, PyInstaller,
+// or pkg and recording the produced binary's content hash and bytes -- is the
+// build execution path's job, not this package's.
 package build
 
 import (
@@ -32,7 +32,7 @@ import (
 // build recipe.
 type Runtime string
 
-// The supported runtimes (the pinned-recipe roster of specification section 9).
+// The supported runtimes: the pinned-recipe roster.
 const (
 	// RuntimeGo is a Go pipeline (dev run through the go tool, e.g. go run main.go).
 	RuntimeGo Runtime = "go"
@@ -42,9 +42,9 @@ const (
 	RuntimeNode Runtime = "node"
 )
 
-// The pinned toolchains, one per runtime and never a menu (specification
-// section 9). These are stable identifiers of the engine's choice; the build
-// execution path owns turning them into real tool invocations.
+// The pinned toolchains, one per runtime and never a menu. These are stable
+// identifiers of the engine's choice; the build execution path owns turning them
+// into real tool invocations.
 const (
 	// ToolchainGoBuild builds a Go pipeline via the native go build.
 	ToolchainGoBuild = "go build"
@@ -67,8 +67,8 @@ type Recipe struct {
 }
 
 // pinnedRecipes is the closed recipe set: exactly one recipe per supported
-// runtime (specification section 9, "one pinned recipe per language, never a
-// menu"). Adding a runtime means adding its one row here.
+// runtime -- one pinned recipe per language, never a menu. Adding a runtime
+// means adding its one row here.
 var pinnedRecipes = map[Runtime]Recipe{
 	RuntimeGo:     {Runtime: RuntimeGo, Toolchain: ToolchainGoBuild},
 	RuntimePython: {Runtime: RuntimePython, Toolchain: ToolchainPyInstallerOneFile},
@@ -90,9 +90,9 @@ var interpreterRuntimes = []struct {
 }
 
 // InferRuntime infers a pipeline's runtime from its declared run vector, the
-// only input the inference consults (specification section 3: no language or
-// build field exists). The interpreter position (argv[0]) decides; a runtime
-// outside the pinned set is an "unsupported runtime" error.
+// only input the inference consults: no language or build field exists. The
+// interpreter position (argv[0]) decides; a runtime outside the pinned set is an
+// "unsupported runtime" error.
 func InferRuntime(run []string) (Runtime, error) {
 	if len(run) == 0 {
 		return "", fmt.Errorf("build: empty run vector; the run command names the runtime and there is nothing to infer from")
@@ -106,10 +106,9 @@ func InferRuntime(run []string) (Runtime, error) {
 	return "", fmt.Errorf("build: unsupported runtime %q: no pinned build recipe (supported: go, node, python)", interp)
 }
 
-// PinnedRecipe returns the one pinned recipe for a runtime (specification
-// section 9). There is no menu of alternatives: a supported runtime has exactly
-// one recipe, and a runtime outside the pinned set is an "unsupported runtime"
-// error.
+// PinnedRecipe returns the one pinned recipe for a runtime. There is no menu of
+// alternatives: a supported runtime has exactly one recipe, and a runtime
+// outside the pinned set is an "unsupported runtime" error.
 func PinnedRecipe(rt Runtime) (Recipe, error) {
 	r, ok := pinnedRecipes[rt]
 	if !ok {
@@ -121,7 +120,7 @@ func PinnedRecipe(rt Runtime) (Recipe, error) {
 // InferRecipe infers a pipeline's build recipe from its declared run vector:
 // the runtime from the interpreter position, then that runtime's one pinned
 // recipe. This is the whole recipe decision -- the choice is the engine's,
-// driven by run alone, never declared (specification sections 1 and 9).
+// driven by run alone, never declared.
 func InferRecipe(run []string) (Recipe, error) {
 	rt, err := InferRuntime(run)
 	if err != nil {

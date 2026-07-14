@@ -44,8 +44,8 @@ func ensurePython(t *testing.T) {
 // All assertions are at conformance tier against the real binary, a live daemon (with
 // the wired lane loop), and real Postgres.
 //
-// Each subtest claims its contract via the subtest name (and a // spec: marker) and
-// freshens the shared cluster first so one scenario's failures never poison the next.
+// Each subtest freshens the shared cluster first so one scenario's failures never
+// poison the next.
 func TestGoldenLaneRunsAndFailures(t *testing.T) {
 	// setupLane freshens the databases, brings up a leader on a fresh golden workspace,
 	// and returns the workspace plus a cleanup that stops the daemon. The caller writes
@@ -173,8 +173,7 @@ if __name__ == "__main__": main()
 `, schema, table)
 	}
 
-	// spec: S13/dev-run-rows-journaled
-	t.Run("S13/dev-run-rows-journaled", func(t *testing.T) {
+	t.Run("dev-run-rows-journaled", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		writeScript(t, ws, "extract_orders", writerScript("raw", "orders_staging"))
@@ -198,10 +197,10 @@ if __name__ == "__main__": main()
 		_ = dconn.QueryRow(context.Background(), "SELECT count(*) FROM raw.orders_staging").Scan(&rawC)
 		_ = dconn.QueryRow(context.Background(), "SELECT count(*) FROM analytics.orders").Scan(&anaC)
 		if rawC == 0 {
-			t.Errorf("raw.orders_staging rows after dev lane run = 0; want >0 (S13/dev-run-rows-journaled)")
+			t.Errorf("raw.orders_staging rows after dev lane run = 0; want >0")
 		}
 		if anaC == 0 {
-			t.Errorf("analytics.orders rows after dev lane run = 0; want >0 (S13/dev-run-rows-journaled)")
+			t.Errorf("analytics.orders rows after dev lane run = 0; want >0")
 		}
 		// The rows must be recorded in the data journal, attributed to their run.
 		var jExtract, jLoad int
@@ -212,8 +211,7 @@ if __name__ == "__main__": main()
 		}
 	})
 
-	// spec: S13/per-pipeline-watermark
-	t.Run("S13/per-pipeline-watermark", func(t *testing.T) {
+	t.Run("per-pipeline-watermark", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		writeScript(t, ws, "extract_orders", noopScript)
@@ -234,8 +232,7 @@ if __name__ == "__main__": main()
 		}
 	})
 
-	// spec: S13/idle-lane-chains-noop-passes
-	t.Run("S13/idle-lane-chains-noop-passes", func(t *testing.T) {
+	t.Run("idle-lane-chains-noop-passes", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		writeScript(t, ws, "extract_orders", noopScript)
@@ -260,8 +257,7 @@ if __name__ == "__main__": main()
 		}
 	})
 
-	// spec: S13/failure-propagates-composer-runs
-	t.Run("S13/failure-propagates-composer-runs", func(t *testing.T) {
+	t.Run("failure-propagates-composer-runs", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		// extract fails; reset is composer-only (no dependency); load depends_on extract.
@@ -298,8 +294,7 @@ if __name__ == "__main__": main()
 		}
 	})
 
-	// spec: S13/run-cancel-lane-proceeds
-	t.Run("S13/run-cancel-lane-proceeds", func(t *testing.T) {
+	t.Run("run-cancel-lane-proceeds", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		// reset_counters (middle of composer order) hangs, holding its lane; load waits

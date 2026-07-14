@@ -105,8 +105,6 @@ func testUpdater(srv *httptest.Server, execPath string) *Updater {
 // downloads the archive and checksums.txt, verifies the archive SHA-256, extracts
 // the iris member, and atomically replaces the running executable with the
 // fetched bytes at mode 0755.
-//
-// spec: S08/update-verified-atomic-replace
 func TestUpdateVerifiedAtomicReplace(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "iris")
@@ -147,10 +145,8 @@ func TestUpdateVerifiedAtomicReplace(t *testing.T) {
 // when the resolved latest tag equals the running version, Run reports
 // StatusUpToDate and downloads nothing -- neither the archive nor checksums.txt
 // endpoint is hit -- so the running binary is never touched. This exercises the
-// contract's substance (the real tag==current decision), not just the CLI
-// rendering of an injected outcome.
-//
-// spec: S08/update-tag-equals-up-to-date
+// real tag==current decision inside Run, not just the CLI rendering of an
+// injected outcome.
 func TestUpdateUpToDateNoDownload(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "iris")
@@ -187,8 +183,6 @@ func TestUpdateUpToDateNoDownload(t *testing.T) {
 // TestUpdateChecksumMismatchAborts proves an archive whose SHA-256 does not match
 // its checksums.txt line aborts the update with an error and never touches the
 // running executable: the on-disk binary keeps its original bytes and mode.
-//
-// spec: S08/update-checksum-mismatch-aborts
 func TestUpdateChecksumMismatchAborts(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "iris")
@@ -217,8 +211,6 @@ func TestUpdateChecksumMismatchAborts(t *testing.T) {
 // before any network or filesystem I/O: Run on a "dev" build returns a
 // *DevBuildError carrying installer guidance, with a client that would fail if it
 // were ever used, so no request is made.
-//
-// spec: S08/update-dev-build-refuses
 func TestUpdateDevBuildRefusesInPackage(t *testing.T) {
 	u := &Updater{
 		baseURL: "http://127.0.0.1:0", // never dialed: the dev guard returns first

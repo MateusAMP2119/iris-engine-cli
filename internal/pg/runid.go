@@ -6,10 +6,10 @@ import (
 )
 
 // This file owns the mechanism by which a run's id rides the data connection Iris
-// injects into it at spawn (specification section 4: "run id rides the injected
-// connection (per-session setting at spawn), trigger-read in-transaction; no row keyed
-// to a role without a run"). The capture trigger (capture.go) reads the per-session
-// setting current_setting('iris.run_id') in-transaction to attribute every captured
+// injects into it at spawn: a per-session setting, applied at spawn and trigger-read
+// in-transaction, so no journal row is ever keyed to a role without a run. The capture
+// trigger (capture.go) reads the per-session setting current_setting('iris.run_id')
+// in-transaction to attribute every captured
 // write to its run; this is the write side of that read. It sets the setting on the
 // connection itself -- not through the run's own (arbitrary, author-supplied) code --
 // so attribution cannot be forgotten or forged: the setting rides the DSN's libpq

@@ -15,10 +15,8 @@ import (
 // TOCTOU a read-then-write would leave). Both databases in a managed cluster are
 // keyed by this single credential, so a split here would leave losers unable to
 // reconnect.
-//
-// spec: S02/one-leader-sole-dispatcher
 func TestResolveManagedPasswordRaceConverges(t *testing.T) {
-	t.Run("S02/one-leader-sole-dispatcher", func(t *testing.T) {
+	t.Run("one-leader-sole-dispatcher", func(t *testing.T) {
 		dir := t.TempDir()
 		const candidates = 12
 

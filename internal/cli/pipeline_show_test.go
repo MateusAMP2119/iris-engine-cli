@@ -76,15 +76,14 @@ func seededShowFake(t *testing.T) *storetest.ShowFake {
 
 // TestPipelineShowReadout proves `iris pipeline show` reports the pipeline's
 // resolved declaration, its role and grants, its recent runs, and the gate ledger
-// with the per-edge verdict from the closed set (specification sections 6.2, 8,
-// and 11), through the real mux route over a unix socket with no live Postgres.
+// with the per-edge verdict from the closed set, through the real mux route over
+// a unix socket with no live Postgres.
 func TestPipelineShowReadout(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	// spec: S11/pipeline-show-readout
-	t.Run("S11/pipeline-show-readout", func(t *testing.T) {
+	t.Run("pipeline-show-readout", func(t *testing.T) {
 		sock := shortSocket(t)
 		startShowDaemon(t, sock, seededShowFake(t))
 
@@ -166,7 +165,6 @@ func TestPipelineShowReadout(t *testing.T) {
 	})
 
 	t.Run("unregistered pipeline is operation-failed", func(t *testing.T) {
-		// spec: S11/pipeline-show-readout
 		sock := shortSocket(t)
 		startShowDaemon(t, sock, storetest.NewShow())
 
@@ -181,7 +179,6 @@ func TestPipelineShowReadout(t *testing.T) {
 	})
 
 	t.Run("no daemon reachable exits 3", func(t *testing.T) {
-		// spec: S11/pipeline-show-readout
 		sock := shortSocket(t) // nothing listening
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"--socket", sock, "pipeline", "show", "transform"})
@@ -191,18 +188,16 @@ func TestPipelineShowReadout(t *testing.T) {
 	})
 }
 
-// TestGateLedgerInPipelineShow claims the S06.2 contract for the gate ledger
-// surface: it reports per-edge the upstream latest, consumed check, verdict
-// from closed set; the show is pure read (no meta writes); --json makes
-// verdicts script-readable. Uses the in-proc daemon + meta fake (integration
-// tier, no live PG).
+// TestGateLedgerInPipelineShow proves the gate ledger surface: it reports
+// per-edge the upstream latest, consumed check, verdict from closed set; the
+// show is pure read (no meta writes); --json makes verdicts script-readable.
+// Uses the in-proc daemon + meta fake (no live PG).
 func TestGateLedgerInPipelineShow(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	// spec: S06.2/gate-ledger-in-pipeline-show
-	t.Run("S06.2/gate-ledger-in-pipeline-show", func(t *testing.T) {
+	t.Run("gate-ledger-in-pipeline-show", func(t *testing.T) {
 		sock := shortSocket(t)
 		f := seededShowFake(t)
 		startShowDaemon(t, sock, f)

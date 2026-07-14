@@ -7,16 +7,16 @@ import (
 	"net/http"
 )
 
-// This file is the control-plane PAT-mint surface of the daemon (specification
-// sections 4 and 7): POST /pat/create, the route `iris pat create` drives. Minting
-// and persisting a PAT are meta writes (the pats/pat_scopes rows and, for a data
-// PAT, its read role and grants) plus a data-database role provisioning, so it is a
-// leader-only control-plane mutation: the mux's leader gate rejects it on a standby
-// with not_leader guidance, and its scope is control. On the leader it runs the
-// injected PATMintHandler, which the daemon wires to the mint orchestrator (mint
-// token, expand grants, provision the read role, persist, return the show-once
-// token). The raw token is in the response exactly once; the leader/CLI print it
-// and it is never recoverable.
+// This file is the control-plane PAT-mint surface of the daemon: POST
+// /pat/create, the route `iris pat create` drives. Minting and persisting a PAT
+// are meta writes (the pats/pat_scopes rows and, for a data PAT, its read role
+// and grants) plus a data-database role provisioning, so it is a leader-only
+// control-plane mutation: the mux's leader gate rejects it on a standby with
+// not_leader guidance, and its scope is control. On the leader it runs the
+// injected PATMintHandler, which the daemon wires to the mint orchestrator
+// (mint token, expand grants, provision the read role, persist, return the
+// show-once token). The raw token is in the response exactly once; the
+// leader/CLI print it and it is never recoverable.
 
 // PATCreateRequest is the body of a POST /pat/create: the requested scope set, an
 // optional label, and the data-PAT read grant specs (--read and --endpoint). The
@@ -86,9 +86,9 @@ func (noPATMint) CreatePAT(context.Context, PATCreateRequest) (PATCreateResult, 
 }
 
 // servePATCreate handles POST /pat/create: decode the request, run the leader's
-// mint, and render the section-7 envelope carrying the show-once token. The leader
-// gate ran already in ServeHTTP; a malformed body is 400, an operation failure 422,
-// an internal fault 500.
+// mint, and render the data envelope carrying the show-once token. The leader
+// gate ran already in ServeHTTP; a malformed body is 400, an operation failure
+// 422, an internal fault 500.
 func (m *mux) servePATCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, string(CodeMethodNotAllowed), "POST "+r.URL.Path+" only")

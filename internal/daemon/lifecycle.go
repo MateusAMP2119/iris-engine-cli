@@ -20,12 +20,12 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's foreground/detached lifecycle at the process edge
-// (specification section 2): a foreground daemon (Run) that serves the listeners
-// and blocks until signalled; the detach re-exec (Detach) that backgrounds a
-// session-leader copy of the binary with its output redirected to the daemon
-// log; and the minimal stop (StopDaemon) that signals a detached daemon by its
-// recorded pid. The listener wiring is server.go; this owns only the lifecycle.
+// This file is the daemon's foreground/detached lifecycle at the process edge: a
+// foreground daemon (Run) that serves the listeners and blocks until signalled; the
+// detach re-exec (Detach) that backgrounds a session-leader copy of the binary with
+// its output redirected to the daemon log; and the minimal stop (StopDaemon) that
+// signals a detached daemon by its recorded pid. The listener wiring is server.go;
+// this owns only the lifecycle.
 
 // DaemonizedEnv marks the re-exec'd child of a `--detach` start: the child sees
 // it set and runs in the foreground (attached to its new session), so a detach
@@ -43,10 +43,10 @@ const detachReadyPollBackoff = 200 * time.Millisecond
 // liveness poll, not a second grace period.
 const killConfirmTimeout = 2 * time.Second
 
-// ErrManagedNotInstalled is returned by Run when the engine runs in managed-
-// Postgres mode but the managed build has not been installed yet. `iris engine
-// start` maps it to a fail-fast with install guidance (specification section 2:
-// managed mode needs `iris engine install` first).
+// ErrManagedNotInstalled is returned by Run when the engine runs in
+// managed-Postgres mode but the managed build has not been installed yet. `iris
+// engine start` maps it to a fail-fast with install guidance (managed mode needs
+// `iris engine install` first).
 var ErrManagedNotInstalled = errors.New("daemon: the engine's managed Postgres is not installed; run \"iris engine install\" first")
 
 // IsManagedInstalled reports whether the managed Postgres has been installed for
@@ -63,8 +63,8 @@ func IsManagedInstalled(s config.Settings) bool {
 // control/read API on the always-on unix socket and, when configured, the PAT-gated
 // TCP listener, runs leader election, records the pidfile, logs a ready line, and
 // blocks until ctx is cancelled (SIGTERM/SIGINT), then shuts down gracefully
-// (specification section 2: foreground default, streaming). In managed mode it fails
-// fast when the managed Postgres is not installed.
+// (foreground default, streaming). In managed mode it fails fast when the managed
+// Postgres is not installed.
 //
 // Election runs alongside the listeners: the candidate contends for the leader
 // advisory lock on a session-pinned meta connection, becomes the sole dispatcher on
@@ -129,12 +129,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// socket lives under <workspace>/.iris), so its working directory is that tree.
 	// (No re-resolve or re-check: the early check already refused lacking trees.)
 
-	// The declared read surface (specification section 7): the shared read pool on
-	// the data database, the live endpoint registry, and the declared-table shape
-	// source. The read pool connects as the engine's own least-privilege read-pool
-	// login, which holds no table grants of its own -- every data-surface read runs
-	// as the calling PAT's role, assumed via SET ROLE, so the pool login is a
-	// connection identity only.
+	// The declared read surface: the shared read pool on the data database, the live
+	// endpoint registry, and the declared-table shape source. The read pool connects
+	// as the engine's own least-privilege read-pool login, which holds no table grants
+	// of its own -- every data-surface read runs as the calling PAT's role, assumed
+	// via SET ROLE, so the pool login is a connection identity only.
 	//
 	// The read-pool credential is persisted create-once in engine-owned meta
 	// (read_pool_credential, mirroring engine_key): every daemon start reads the ONE
@@ -171,12 +170,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	endpointRegistry := dispatch.NewEndpointRegistry()
 
 	// Reload the persisted endpoints into the live registry before serving, so a
-	// restart or failover serves every applied endpoint with no re-apply
-	// (specification section 7). The in-memory registry is empty each process start;
-	// the endpoints/endpoint_filters meta rows are the truth of what was applied. This
-	// runs on every node (the read pool serves /q from any node) and is best-effort:
-	// a reload fault is logged, never fatal -- the control plane must serve even if a
-	// read-surface reload snags.
+	// restart or failover serves every applied endpoint with no re-apply. The
+	// in-memory registry is empty each process start; the endpoints/endpoint_filters
+	// meta rows are the truth of what was applied. This runs on every node (the read
+	// pool serves /q from any node) and is best-effort: a reload fault is logged,
+	// never fatal -- the control plane must serve even if a read-surface reload snags.
 	if err := reloadEndpoints(ctx, client.EndpointReader(), endpointRegistry, workspace, logger); err != nil {
 		logger.Warn("iris daemon: reload persisted endpoints", "err", err)
 	}
@@ -213,10 +211,10 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	promos := newPromotePlane(logger)
 
 	// The daemon's in-flight run registry: the production InflightKiller the
-	// self-demotion kill acts through (specification section 15). Both the manual
-	// orchestrator and the perpetual lane loop track each live run's process group in
-	// this ONE registry, so a demotion (lost meta session) kills the daemon's own
-	// in-flight runs -- manual and lane alike -- at once, writing nothing to meta.
+	// self-demotion kill acts through. Both the manual orchestrator and the perpetual
+	// lane loop track each live run's process group in this ONE registry, so a
+	// demotion (lost meta session) kills the daemon's own in-flight runs -- manual and
+	// lane alike -- at once, writing nothing to meta.
 	inflight := newInflightRuns()
 
 	// The lane plane serves POST /run/cancel once this daemon leads: it reaches a
@@ -252,11 +250,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	pipelineShow := NewShowPlane(client.ShowReader(), logger)
 
 	// The E14 read-route planes serve the run-history, trace, and gate readouts on any
-	// node from the reader pool (specification section 7). The runs collection (GET
-	// /runs[?include=inputs], GET /runs/{id}) is the lineage rail `iris run list`
-	// draws; the run trace (GET /runs/{id}/trace) walks run_inputs ancestry up or
-	// descendants down; the pipeline gate (GET /pipelines/{name}/gate) is the
-	// depends_on gate ledger `iris pipeline show` prints, served standalone.
+	// node from the reader pool. The runs collection (GET /runs[?include=inputs], GET
+	// /runs/{id}) is the lineage rail `iris run list` draws; the run trace (GET
+	// /runs/{id}/trace) walks run_inputs ancestry up or descendants down; the pipeline
+	// gate (GET /pipelines/{name}/gate) is the depends_on gate ledger `iris pipeline
+	// show` prints, served standalone.
 	runs := newRunsPlane(client.RunLineageReader(), logger)
 	runTrace := newRunTracePlane(client.Reader(), logger)
 	pipelineGate := newPipelineGatePlane(client.ShowReader(), logger)
@@ -292,10 +290,10 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// winning, the leader runs startup crash reconciliation before any lane dispatch:
 	// it reads leftover run records through the plain-MVCC reader, best-effort
 	// SIGKILLs same-host survivors through the exec seam, and disposes of their runs
-	// through the single writer (specification section 2 crash recovery). A lost meta
-	// session self-demotes: dispatch stops, in-flight runs are killed (WithInflightKiller),
-	// and the daemon re-enters standby on a FRESH session (WithFreshSessions), so one
-	// process survives any number of demotions (specification section 15).
+	// through the single writer (crash recovery). A lost meta session self-demotes:
+	// dispatch stops, in-flight runs are killed (WithInflightKiller), and the daemon
+	// re-enters standby on a FRESH session (WithFreshSessions), so one process
+	// survives any number of demotions.
 	//
 	// The lane loop build closure composes the loop over the single dispatcher on
 	// winning leadership: the walk read, the depends_on gate, the fresh cause=loop
@@ -324,11 +322,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithFreshSessions(freshLeaderSession(ctx, client, logger)),
 		WithEndpointPlane(endpointCtl, endpointRegistry, data, workspace),
 		WithPATPlane(patMint, endpointRegistry, workspace),
-		// Leader advertisement (specification section 15): on winning the lock this
-		// candidate advertises its TCP listen address (empty when socket-only) into the
-		// leadership meta table, and while a standby it polls that table to name the live
-		// leader for retargeting (exit 6, GET /leader). srv.TCPAddr() is the resolved
-		// listen address (the real port even when the configured address used port 0).
+		// Leader advertisement: on winning the lock this candidate advertises its TCP
+		// listen address (empty when socket-only) into the leadership meta table, and
+		// while a standby it polls that table to name the live leader for retargeting
+		// (exit 6, GET /leader). srv.TCPAddr() is the resolved listen address (the real
+		// port even when the configured address used port 0).
 		WithLeaderAdvertiser(srv.TCPAddr()),
 		WithLeaderAddrReader(client.LeaderAddrReader()))
 	electDone := make(chan error, 1)
@@ -343,18 +341,18 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// the pidfile now -- promptly, before the election-lock release wait and the heavy
 	// deferred teardown (managed Postgres, connection pools) -- because it is the
 	// workspace liveness marker and a signalled daemon must disown it at once
-	// (specification section 2: graceful shutdown). It is removed exactly once here,
-	// not via defer: after Serve returns the socket is free, so a racing
-	// `iris engine start` may bind and record its own pid while this daemon finishes
-	// its slower teardown, and a deferred removal would then delete the successor's
-	// pidfile. RemovePIDFile treats an absent file as success, so this stays clean.
+	// (graceful shutdown). It is removed exactly once here, not via defer: after Serve
+	// returns the socket is free, so a racing `iris engine start` may bind and record
+	// its own pid while this daemon finishes its slower teardown, and a deferred
+	// removal would then delete the successor's pidfile. RemovePIDFile treats an
+	// absent file as success, so this stays clean.
 	if err := RemovePIDFile(s); err != nil {
 		logger.Warn("iris daemon shutdown: remove pidfile", "err", err)
 	}
 
-	// Record the graceful shutdown before the deferred managed-Postgres and
-	// connection teardown run, so daemon.log carries a shutdown line for either signal
-	// (specification section 2: graceful shutdown).
+	// Record the graceful shutdown before the deferred managed-Postgres and connection
+	// teardown run, so daemon.log carries a shutdown line for either signal (graceful
+	// shutdown).
 	logger.Info("iris daemon shut down", "socket", srv.SocketPath())
 
 	// Wait for the candidate to release the leader lock (and demote) before the
@@ -369,10 +367,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 // Detach re-execs the binary at exePath with childArgs as a background,
 // session-leading daemon whose stdout and stderr are redirected to the workspace
 // daemon log, then waits until the daemon's socket is reachable before returning
-// (specification section 2: -d detaches; the daemon survives the CLI's exit).
-// The child inherits DaemonizedEnv so it runs in the foreground of its new
-// session and never detaches again. The parent does not reap the child: it
-// outlives the CLI.
+// (-d detaches; the daemon survives the CLI's exit). The child inherits
+// DaemonizedEnv so it runs in the foreground of its new session and never detaches
+// again. The parent does not reap the child: it outlives the CLI.
 func Detach(ctx context.Context, s config.Settings, exePath string, childArgs []string) error {
 	logFile, err := OpenDaemonLog(s)
 	if err != nil {
@@ -404,9 +401,9 @@ func Detach(ctx context.Context, s config.Settings, exePath string, childArgs []
 }
 
 // StopDaemon signals the daemon with the given pid to shut down gracefully
-// (SIGTERM), waits until the process is gone, and escalates to SIGKILL if the
-// grace deadline (ctx) passes. It removes the pidfile once the daemon is gone
-// (specification section 2: engine stop stops a detached daemon).
+// (SIGTERM), waits until the process is gone, and escalates to SIGKILL if the grace
+// deadline (ctx) passes. It removes the pidfile once the daemon is gone (engine
+// stop stops a detached daemon).
 func StopDaemon(ctx context.Context, s config.Settings, pid int) error {
 	proc, err := os.FindProcess(pid)
 	if err != nil {

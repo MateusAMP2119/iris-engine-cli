@@ -1,10 +1,10 @@
 package daemon
 
 // Unit tests for the daemon's in-flight run registry, the production InflightKiller
-// the self-demotion kill acts through (specification section 15). The Candidate-level
-// contract (a lost session kills in-flight runs) is proven end to end over the store
-// fakes in failover_test.go; this covers the registry's own bookkeeping -- only tracked
-// runs are killed, an untracked (reaped) run is never a target.
+// the self-demotion kill acts through. The Candidate-level contract (a lost session
+// kills in-flight runs) is proven end to end over the store fakes in
+// failover_test.go; this covers the registry's own bookkeeping -- only tracked runs
+// are killed, an untracked (reaped) run is never a target.
 
 import (
 	"context"
@@ -28,8 +28,6 @@ func startTracked(t *testing.T, runner *exectest.Runner, program string) exec.Ha
 // TestInflightRunsKillsOnlyTracked proves the self-demotion kill reaches every tracked
 // run and no other: two tracked runs are both killed, and a run that was untracked
 // (reaped) before the demotion is not a kill target.
-//
-// spec: S15/self-demotion-on-session-loss
 func TestInflightRunsKillsOnlyTracked(t *testing.T) {
 	runner := exectest.New()
 	runner.Script("hang", exectest.Outcome{Block: true})

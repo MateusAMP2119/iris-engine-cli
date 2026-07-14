@@ -12,8 +12,7 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris workload show [<pipeline>]`
-// (specification section 8 and S08/workload-show-wiring-panel): the wiring
+// This file is the CLI side of `iris workload show [<pipeline>]`: the wiring
 // panel over the standing wiring. GET /workload (with optional ?pipeline= for
 // zoom). Under --json emits the data envelope; otherwise a human panel.
 // The panel never renders commit/lineage rails.

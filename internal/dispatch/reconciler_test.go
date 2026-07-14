@@ -131,17 +131,14 @@ func findDeadLetter(writes []metaWrite, id string) (metaWrite, bool) {
 // TestReconcilerSameHostRestartKills proves same-host restart reconciliation
 // best-effort SIGKILLs surviving process groups from their recorded handles BEFORE
 // disposing of their runs, and that a cross-host failover leader dead-letters
-// without killing (specification section 2 crash recovery). It drives the real
-// Reconciler over the real single-writer Dispatcher, with a fake reader, a fake
-// group killer, and a recording write connection -- no real process, no live
-// Postgres. The recorded run handle (runs.handle = the process-group id) is the
-// crash-recovery key the restart SIGKILLs each survivor by: a run with a recorded
-// handle is killed by exactly that pgid, one with no handle is not (specification
-// section 4: handle is the crash-recovery key).
-//
-// spec: S04/run-handle-crash-key
+// without killing. It drives the real Reconciler over the real single-writer
+// Dispatcher, with a fake reader, a fake group killer, and a recording write
+// connection -- no real process, no live Postgres. The recorded run handle
+// (runs.handle = the process-group id) is the crash-recovery key the restart SIGKILLs
+// each survivor by: a run with a recorded handle is killed by exactly that pgid, one
+// with no handle is not.
 func TestReconcilerSameHostRestartKills(t *testing.T) {
-	t.Run("S02/samehost-restart-kills", func(t *testing.T) {
+	t.Run("samehost-restart-kills", func(t *testing.T) {
 		t.Run("same-host restart kills survivors from recorded handles before disposal", func(t *testing.T) {
 			ctx := context.Background()
 			log := &actionLog{}

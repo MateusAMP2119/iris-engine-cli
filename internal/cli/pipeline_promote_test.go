@@ -46,12 +46,10 @@ func startPromoteDaemon(t *testing.T, h api.PromoteHandler) string {
 }
 
 // TestPipelinePromoteCommand proves `iris pipeline promote <name>` marks the
-// pipeline's data permanent only when the pipeline is built (specification
-// sections 1 and 8): a successful promote reports the permanent data mode and
-// exits 0; the daemon-side built-gate refusal for a source-only pipeline is
+// pipeline's data permanent only when the pipeline is built: a successful
+// promote reports the permanent data mode and exits 0; the daemon-side
+// built-gate refusal for a source-only pipeline is
 // operation-failed (exit 4) carrying the refusal, never a silent success.
-//
-// spec: S01/promote-requires-built
 func TestPipelinePromoteCommand(t *testing.T) {
 	t.Run("success reports the permanent data mode", func(t *testing.T) {
 		sock := startPromoteDaemon(t, fakePromoteHandler{
@@ -85,11 +83,9 @@ func TestPipelinePromoteCommand(t *testing.T) {
 
 // TestPipelinePromoteRepeatsWarning proves the promote command surfaces the
 // repeated cross-mode read warning while an upstream read dependency is still
-// disposable (specification section 5): human output prints the advisory to
+// disposable: human output prints the advisory to
 // stderr alongside the success, and under --json the warning rides the data
 // envelope -- the warning accompanies the outcome, never blocks it.
-//
-// spec: S05/promote-repeats-cross-mode-warning
 func TestPipelinePromoteRepeatsWarning(t *testing.T) {
 	handler := fakePromoteHandler{
 		res: api.PipelinePromoteResult{

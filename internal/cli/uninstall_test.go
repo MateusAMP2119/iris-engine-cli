@@ -29,11 +29,8 @@ func scratchExecutable(t *testing.T) string {
 // TestUninstallRootVerb proves `iris uninstall` is a top-level lifecycle verb: a
 // runnable root leaf, classified daemonless, carrying the destructive --yes/--force
 // gate and the inherited global flags, and never the --dry-run of declare.
-//
-// spec: S08/uninstall-root-verb
 func TestUninstallRootVerb(t *testing.T) {
-	// spec: S08/uninstall-root-verb
-	t.Run("S08/uninstall-root-verb", func(t *testing.T) {
+	t.Run("uninstall-root-verb", func(t *testing.T) {
 		root := testRoot()
 
 		cmd := find(root, "uninstall")
@@ -67,12 +64,10 @@ func TestUninstallRootVerb(t *testing.T) {
 // consent-required error (exit 4) and removes nothing; a declined interactive
 // prompt aborts cleanly (exit 0) with the "Aborted. Nothing removed." line and
 // removes nothing.
-//
-// spec: S08/uninstall-consent-gate
 func TestUninstallConsentGate(t *testing.T) {
 	clearTargetEnv(t)
 
-	t.Run("S08/uninstall-consent-gate", func(t *testing.T) {
+	t.Run("uninstall-consent-gate", func(t *testing.T) {
 		deadSock := shortSocket(t) // nothing listening: no daemon reachable
 
 		t.Run("non-interactive without --yes refuses", func(t *testing.T) {
@@ -112,12 +107,10 @@ func TestUninstallConsentGate(t *testing.T) {
 // live daemon on the resolved socket, `iris uninstall` refuses (exit 4) with
 // guidance to stop and uninstall the engine first, and removes nothing; --force
 // overrides the probe and removes the binary.
-//
-// spec: S08/uninstall-daemon-running-refused
 func TestUninstallDaemonRunningRefused(t *testing.T) {
 	clearTargetEnv(t)
 
-	t.Run("S08/uninstall-daemon-running-refused", func(t *testing.T) {
+	t.Run("uninstall-daemon-running-refused", func(t *testing.T) {
 		t.Run("reachable daemon refuses without --force", func(t *testing.T) {
 			sock := shortSocket(t)
 			srv := daemon.NewServer(config.Settings{Socket: sock}, api.NewMux())
@@ -165,12 +158,10 @@ func TestUninstallDaemonRunningRefused(t *testing.T) {
 // lines are printed (exit 0); a declined prompt leaves the file untouched; a
 // permission failure surfaces sudo/uninstaller guidance (exit 4); and --json
 // carries the outcome on one data envelope.
-//
-// spec: S08/uninstall-removes-executable
 func TestUninstallRemovesExecutable(t *testing.T) {
 	clearTargetEnv(t)
 
-	t.Run("S08/uninstall-removes-executable", func(t *testing.T) {
+	t.Run("uninstall-removes-executable", func(t *testing.T) {
 		deadSock := shortSocket(t)
 
 		t.Run("--yes removes and says goodbye", func(t *testing.T) {

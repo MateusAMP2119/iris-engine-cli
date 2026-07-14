@@ -6,11 +6,11 @@ import (
 	"net/http"
 )
 
-// This file is the daemon's provenance surface: GET /provenance/{schema}/{table}/{pk},
-// the row-level lineage readout that `iris data provenance <schema.table> <pk>` prints
-// (specification sections 7, 14). It returns the layered write history under the read
-// scope alone, carrying stamps with disposition (the full list, wiped layers listed)
-// and never row images (S07/provenance-route-lineage-only, S14/provenance-http-endpoint).
+// This file is the daemon's provenance surface: GET
+// /provenance/{schema}/{table}/{pk}, the row-level lineage readout that `iris
+// data provenance <schema.table> <pk>` prints. It returns the layered write
+// history under the read scope alone, carrying stamps with disposition (the
+// full list, wiped layers listed) and never row images.
 //
 // Like other read surfaces, api is a leaf: the seam and wire shapes only. The daemon
 // supplies the handler that fetches journal stamps (data db) + run facts and ancestry
@@ -93,7 +93,7 @@ func (m *mux) serveProvenance(w http.ResponseWriter, r *http.Request, schema, ta
 	payload, err := m.provenance.Provenance(r.Context(), schema, table, pk)
 	if err != nil {
 		// Distinguish not-found? For now internal maps missing data; handlers can
-		// return specific later. Per contracts, a row with stamps returns the layers.
+		// return specific later. A row with stamps returns the layers.
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

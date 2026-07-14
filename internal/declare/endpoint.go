@@ -13,7 +13,7 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// This file is the endpoint compile leaf of specification sections 7 and 10: a
+// This file is the endpoint compile leaf: a
 // declared read endpoint is one flat, shape-only YAML file at
 // endpoints/<name>.yaml (the sole folder-per-unit exception). It parses that
 // shape, validates the single-table projection and its filter/sort rules against
@@ -25,16 +25,16 @@ import (
 // statement out.
 
 // endpointsDirName is the canonical top-level directory holding the flat endpoint
-// files (specification section 10).
+// files.
 const endpointsDirName = "endpoints"
 
 // endpointFileExt is the required extension of an endpoint file: a declared read
 // endpoint is a YAML document.
 const endpointFileExt = ".yaml"
 
-// FilterOp is an endpoint filter's kind: the closed set the wire grammar admits
-// (specification section 7). A filter is either an equality match or a bounded
-// range; nothing else is a legal filter.
+// FilterOp is an endpoint filter's kind: the closed set the wire grammar admits.
+// A filter is either an equality match or a bounded range; nothing else is a
+// legal filter.
 type FilterOp string
 
 // The two endpoint filter kinds.
@@ -87,9 +87,9 @@ func (fl *filterList) UnmarshalYAML(b []byte) error {
 	return nil
 }
 
-// Endpoint is a parsed endpoint file: the flat, shape-only read surface of
-// specification section 7. It is single-table: one source, an explicit flat field
-// projection, filter params (each eq or range), and a keyset-pagination sort key.
+// Endpoint is a parsed endpoint file: the flat, shape-only read surface. It is
+// single-table: one source, an explicit flat field projection, filter params
+// (each eq or range), and a keyset-pagination sort key.
 type Endpoint struct {
 	// Name is the endpoint name; it must equal the file's basename.
 	Name string `yaml:"endpoint"`
@@ -120,7 +120,7 @@ const endpointFieldList = "endpoint, source, fields, filters, sort"
 var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // ParseEndpoint parses an endpoint file's bytes into an Endpoint and validates its
-// flat, single-table shape (specification section 7): the field whitelist (naming
+// flat, single-table shape: the field whitelist (naming
 // any offending key, so a join or aggregation is refused), the required fields
 // (endpoint, source, fields, sort), a dotted schema.table source, an eq-or-range
 // kind on every filter, and a bare-identifier projection (no computed fields). It
@@ -202,9 +202,9 @@ type DiscoveredEndpoint struct {
 }
 
 // LoadEndpointFile reads and parses one endpoint file, verifying it is a .yaml
-// file whose basename equals its endpoint: field (specification section 7:
-// filename = endpoint field). A basename disagreement is rejected naming both, so
-// a misfiled endpoint never applies under the wrong name.
+// file whose basename equals its endpoint: field (filename = endpoint field). A
+// basename disagreement is rejected naming both, so a misfiled endpoint never
+// applies under the wrong name.
 func LoadEndpointFile(path string) (*DiscoveredEndpoint, error) {
 	base := filepath.Base(path)
 	ext := filepath.Ext(base)
@@ -228,8 +228,8 @@ func LoadEndpointFile(path string) (*DiscoveredEndpoint, error) {
 }
 
 // DiscoverEndpoints walks a workspace's endpoints/ directory and returns its
-// declared read endpoints as flat, shape-only YAML files (specification sections 7
-// and 10): one file per endpoint at endpoints/<name>.yaml, filename = endpoint:
+// declared read endpoints as flat, shape-only YAML files: one file per endpoint
+// at endpoints/<name>.yaml, filename = endpoint:
 // field. An absent endpoints/ tree yields an empty result rather than an error; a
 // subdirectory under endpoints/ is rejected (the flat-file exception owns no
 // folders). Results are returned sorted by name for a deterministic order.
@@ -331,8 +331,8 @@ func TableIndex(tables []DiscoveredTable) map[string]*Table {
 }
 
 // CompileEndpoint validates a parsed endpoint against the declared schemas/ set
-// and derives its one deterministic parameterized SQL text (specification section
-// 7). It resolves the single dotted source against tables (keyed schema.table),
+// and derives its one deterministic parameterized SQL text.
+// It resolves the single dotted source against tables (keyed schema.table),
 // refusing the journal and the reserved public schema; requires every projected
 // field and filter param to be a source column; requires sort to be a unique
 // source column (keyset pagination); and emits one SELECT whose filter, keyset,

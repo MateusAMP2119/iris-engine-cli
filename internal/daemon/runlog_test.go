@@ -11,16 +11,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// TestPerRunLogLifecycle proves the per-run log lifecycle helpers (specification
-// section 2): each run's log is created unrotated under .iris/logs/ keyed by run
-// id (run-<id>.log), its reference is the value recorded in runs.log_ref, and it
-// is deleted when the run row is pruned. Run rows and pruning proper are E05's;
-// this builds and proves the log-file lifecycle mechanics (create / reference /
-// delete-on-prune) that the dispatcher and the pruner drive. The store fake
-// sources a real run id so the log is keyed exactly as the run row is.
+// TestPerRunLogLifecycle proves the per-run log lifecycle helpers: each run's log
+// is created unrotated under .iris/logs/ keyed by run id (run-<id>.log), its
+// reference is the value recorded in runs.log_ref, and it is deleted when the run
+// row is pruned. Run rows and pruning proper are E05's; this builds and proves the
+// log-file lifecycle mechanics (create / reference / delete-on-prune) that the
+// dispatcher and the pruner drive. The store fake sources a real run id so the log
+// is keyed exactly as the run row is.
 func TestPerRunLogLifecycle(t *testing.T) {
-	// spec: S02/per-run-log-lifecycle
-	t.Run("S02/per-run-log-lifecycle", func(t *testing.T) {
+	t.Run("per-run-log-lifecycle", func(t *testing.T) {
 		ws := t.TempDir()
 		s := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
 

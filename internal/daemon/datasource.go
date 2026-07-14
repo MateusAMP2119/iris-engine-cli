@@ -11,12 +11,12 @@ import (
 )
 
 // This file is the production api.DataSource: the declared-table shape lookup the
-// raw /data/{schema}/{table} route resolves requests against (specification section
-// 7). A shape is the declared columns in declaration order with their resolved
-// Postgres types (the closed section 5 mapping) plus the primary key that keys the
-// route's keyset paging -- pure declaration, no live-database read. The source of
-// truth is the leader's workspace schemas/ tree, the same tree provisioning
-// materializes, so the /data shape and the physical table always agree.
+// raw /data/{schema}/{table} route resolves requests against. A shape is the
+// declared columns in declaration order with their resolved Postgres types (the
+// closed type mapping) plus the primary key that keys the route's keyset paging --
+// pure declaration, no live-database read. The source of truth is the leader's
+// workspace schemas/ tree, the same tree provisioning materializes, so the /data
+// shape and the physical table always agree.
 //
 // The shapes are read from disk lazily and cached: the first request for any table
 // discovers the whole schemas/ tree once and every later request serves from the

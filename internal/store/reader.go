@@ -10,13 +10,11 @@ import (
 )
 
 // This file is the meta read path: plain Postgres MVCC connections, drawn from a
-// pool, with no busy-retry anywhere (specification section 2: "Readers: plain
-// Postgres connections, MVCC. No busy-retry anywhere."). Reads never contend with
-// the leader's single-writer path -- MVCC serves a consistent snapshot without
-// blocking, which is why any Postgres client can read meta while the daemon holds
-// the leader lock (the advisory lock guards leadership, not rows). A read that
-// fails surfaces its error at once; it is never re-attempted behind a retry or
-// backoff loop.
+// pool, with no busy-retry anywhere. Reads never contend with the leader's
+// single-writer path -- MVCC serves a consistent snapshot without blocking, which
+// is why any Postgres client can read meta while the daemon holds the leader lock
+// (the advisory lock guards leadership, not rows). A read that fails surfaces its
+// error at once; it is never re-attempted behind a retry or backoff loop.
 
 // Reader is the meta read seam: plain MVCC reads over a connection pool. A
 // pgx-pool-backed implementation and a fake both satisfy it. Reads are never

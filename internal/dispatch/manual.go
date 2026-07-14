@@ -8,19 +8,19 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the manual pipeline-run path: iris pipeline run <name> (specification
-// section 8). A manual run applies the depends_on gate EXACTLY like a loop pass -- the
-// same Gate.Evaluate/Decide (E05.5), no manual-only relaxation -- and, when the gate
-// opens, mints a run cause=manual that consumes the upstream successes it ran against,
-// one run_inputs row per edge (1:1). An ineligible gate mints no run and the CLI exits 4
-// with the reason; an awaited-upstream-dead-lettered gate poisons (failure propagates,
-// exit 5).
+// This file is the manual pipeline-run path: iris pipeline run <name>. A manual run
+// applies the depends_on gate EXACTLY like a loop pass -- the same
+// Gate.Evaluate/Decide (E05.5), no manual-only relaxation -- and, when the gate
+// opens, mints a run cause=manual that consumes the upstream successes it ran
+// against, one run_inputs row per edge (1:1). An ineligible gate mints no run and the
+// CLI exits 4 with the reason; an awaited-upstream-dead-lettered gate poisons
+// (failure propagates, exit 5).
 //
-// Routing follows lane membership (specification section 8: "queued as lane's next run
-// at current run boundary ... own-lane: immediate"). A lane member's run is QUEUED as
-// its lane's next run so same-lane serialization holds -- the lane runner starts it in
-// turn rather than the manual path starting it out of band -- while an own-lane pipeline
-// (its own anonymous lane, no same-lane member to serialize against) runs immediately.
+// Routing follows lane membership ("queued as lane's next run at current run
+// boundary ... own-lane: immediate"). A lane member's run is QUEUED as its lane's next
+// run so same-lane serialization holds -- the lane runner starts it in turn rather
+// than the manual path starting it out of band -- while an own-lane pipeline (its own
+// anonymous lane, no same-lane member to serialize against) runs immediately.
 //
 // The gate decision and record shape (classifyManual) are pure and unit-tested; the
 // routing over the queue/immediate seams is integration-tested with fakes. The daemon
@@ -120,12 +120,11 @@ func classifyManual(pipeline string, d Decision) ManualGate {
 }
 
 // ineligibilityReason renders why a manual run's gate did not open, from the gate
-// ledger, so exit 4 carries an actionable reason (specification section 8: ineligible
-// exit 4 + reason). Pending edges (awaiting an upstream success) are named first, since
-// they are the actionable blocker; failing that, up-to-date edges (nothing new since the
-// dependent last consumed) explain the skip. An empty ledger cannot reach here (an
-// ungated pipeline always runs), so it falls back to a generic reason rather than
-// panicking.
+// ledger, so exit 4 carries an actionable reason (ineligible exit 4 + reason).
+// Pending edges (awaiting an upstream success) are named first, since they are the
+// actionable blocker; failing that, up-to-date edges (nothing new since the dependent
+// last consumed) explain the skip. An empty ledger cannot reach here (an ungated
+// pipeline always runs), so it falls back to a generic reason rather than panicking.
 func ineligibilityReason(ledger []EdgeVerdict) string {
 	var pending, upToDate []string
 	for _, ev := range ledger {
@@ -147,8 +146,7 @@ func ineligibilityReason(ledger []EdgeVerdict) string {
 }
 
 // ManualRunState is the terminal outcome of a manual `iris pipeline run`, mapped by the
-// CLI to a specification section 8 exit code. It is the single result the CLI reads to
-// pick 0, 4, or 5.
+// CLI to an exit code. It is the single result the CLI reads to pick 0, 4, or 5.
 type ManualRunState int
 
 const (
@@ -193,8 +191,8 @@ type EdgeReader interface {
 }
 
 // LaneReader reads the persisted lane rows the manual router decides membership from
-// (specification section 4: lanes holds pipeline names). A meta-backed implementation
-// and a fake both satisfy it.
+// (lanes holds pipeline names). A meta-backed implementation and a fake both satisfy
+// it.
 type LaneReader interface {
 	// LaneRows returns every persisted (lane, pipeline, pos) row.
 	LaneRows(ctx context.Context) ([]LaneRow, error)
@@ -202,18 +200,17 @@ type LaneReader interface {
 
 // RunQueue enqueues a manual run as a lane's next run at the current run boundary so
 // same-lane serialization holds: the lane runner starts it in turn rather than the
-// manual path starting it out of band (specification section 8). A meta-backed
-// implementation (a queued run row the lane runner picks up) and a fake both satisfy it.
+// manual path starting it out of band. A meta-backed implementation (a queued run row
+// the lane runner picks up) and a fake both satisfy it.
 type RunQueue interface {
 	// Enqueue records rec (cause=manual) as lane's next run to start at the current run
 	// boundary.
 	Enqueue(ctx context.Context, lane string, rec store.RunRecord) error
 }
 
-// ImmediateRunner mints and runs an own-lane manual run at once, returning its terminal
-// disposition, since no same-lane member needs serializing (specification section 8:
-// own-lane runs immediately). A meta+exec-backed implementation and a fake both satisfy
-// it.
+// ImmediateRunner mints and runs an own-lane manual run at once, returning its
+// terminal disposition, since no same-lane member needs serializing (own-lane runs
+// immediately). A meta+exec-backed implementation and a fake both satisfy it.
 type ImmediateRunner interface {
 	// RunNow mints rec (cause=manual), starts the run, and blocks until it reaches a
 	// terminal state, returning that disposition.
@@ -299,12 +296,12 @@ func (r *ManualRunner) route(ctx context.Context, pipeline string, rec store.Run
 	return ManualRunSucceeded, "", nil
 }
 
-// laneMembership reports the lane a manual run of pipeline joins and whether pipeline is
-// a lane member. A pipeline named by a persisted lane row is that lane's member (a
+// laneMembership reports the lane a manual run of pipeline joins and whether pipeline
+// is a lane member. A pipeline named by a persisted lane row is that lane's member (a
 // composed lane persists rows only for two or more members, so a placed pipeline is
-// genuinely serialized against a peer); a pipeline named by no row is its own anonymous
-// lane (specification section 4), and its own lane's name is the pipeline's. It reads
-// the lane rows directly, consuming lane.go's LaneRow without rewriting BuildWalk.
+// genuinely serialized against a peer); a pipeline named by no row is its own
+// anonymous lane, and its own lane's name is the pipeline's. It reads the lane rows
+// directly, consuming lane.go's LaneRow without rewriting BuildWalk.
 func laneMembership(rows []LaneRow, pipeline string) (lane string, member bool) {
 	for _, row := range rows {
 		if row.Pipeline == pipeline {

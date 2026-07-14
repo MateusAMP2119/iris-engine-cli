@@ -8,7 +8,7 @@ import (
 )
 
 // The wipe unit tests exercise the pure wipe model over in-memory journal
-// fixtures (specification sections 5, 6.3 and 14): scope selection of open
+// fixtures: scope selection of open
 // disposable entries, reverse-order replay, the journal-internal conflict-skip
 // rule, retirement of every visited entry, pipeline narrowing, and the
 // cursor-with-data revert. No Postgres, no SQL: the plan is data; a later task
@@ -54,12 +54,10 @@ func revertEntryIDs(plan pg.WipePlan) []int64 {
 	return ids
 }
 
-// spec: S05/wipe-scope-rule
-//
-// Wipe scope selects exactly the journal entries written under disposable
-// data_mode that remain undo = open. Promotion flips a disposable pipeline's
-// open entries to promoted and permanent-mode writes are born promoted, so
-// undo = open is precisely "written under disposable data_mode, unreleased by
+// TestWipeScopeRule proves wipe scope selects exactly the journal entries written
+// under disposable data_mode that remain undo = open. Promotion flips a disposable
+// pipeline's open entries to promoted and permanent-mode writes are born promoted,
+// so undo = open is precisely "written under disposable data_mode, unreleased by
 // promotion". Promoted, wiped, and skipped entries are provenance memory only:
 // excluded from scope, and nothing re-arms them.
 func TestWipeScopeRule(t *testing.T) {
@@ -87,13 +85,12 @@ func TestWipeScopeRule(t *testing.T) {
 	}
 }
 
-// spec: S05/wipe-reverse-replay
-//
-// Wipe replays wipe-scope journal entries in reverse id order, deleting
-// disposable inserts and restoring pre-images for updates and deletes. Reverse
-// order is the mechanism that unwinds same-row stacking inside the scope: a row
-// inserted then updated by disposable runs first has its update's pre-image
-// restored, then the insert deleted, leaving no disposable residue.
+// TestWipeReverseReplay proves wipe replays wipe-scope journal entries in reverse
+// id order, deleting disposable inserts and restoring pre-images for updates and
+// deletes. Reverse order is the mechanism that unwinds same-row stacking inside
+// the scope: a row inserted then updated by disposable runs first has its
+// update's pre-image restored, then the insert deleted, leaving no disposable
+// residue.
 func TestWipeReverseReplay(t *testing.T) {
 	journal := []pg.JournalEntry{
 		{ID: 1, RunID: 42, Schema: "analytics", Table: "orders", RowPK: "r1", Op: pg.OpInsert, Undo: pg.UndoOpen},
@@ -123,10 +120,9 @@ func TestWipeReverseReplay(t *testing.T) {
 	}
 }
 
-// spec: S05/wipe-conflict-skip
-//
-// An open entry is conflict-skipped, its row left as-is, whenever any later
-// journal entry exists for the same (schema, table, row_pk) whose write is
+// TestWipeConflictSkip proves an open entry is conflict-skipped, its row left
+// as-is, whenever any later journal entry exists for the same (schema, table,
+// row_pk) whose write is
 // still in the row's value -- promoted, skipped, or open outside the wipe's
 // scope. There is no image comparison anywhere: the decision consumes only
 // journal rows (the model's API never receives a row image), and the report
@@ -227,10 +223,9 @@ func TestWipeConflictSkip(t *testing.T) {
 	}
 }
 
-// spec: S05/wipe-retires-all-visited
-//
-// Wipe retires every visited open entry: reverted ones to undo = wiped,
-// conflict-skipped ones to undo = skipped. The split keeps provenance decidable
+// TestWipeRetiresAllVisited proves wipe retires every visited open entry: reverted
+// ones to undo = wiped, conflict-skipped ones to undo = skipped. The split keeps
+// provenance decidable
 // (a skipped write is still in the row's value, a wiped one is not) and means
 // conflicts are reported once and never re-visited: a retired entry leaves the
 // wipe scope, so a second wipe finds nothing and reports nothing. The summary
@@ -265,10 +260,9 @@ func TestWipeRetiresAllVisited(t *testing.T) {
 	}
 }
 
-// spec: S05/wipe-pipeline-scope
-//
-// A named `iris workload wipe <pipeline>` narrows the wipe scope to that
-// pipeline's journal entries only, leaving other pipelines' open entries
+// TestWipePipelineScope proves a named `iris workload wipe <pipeline>` narrows the
+// wipe scope to that pipeline's journal entries only, leaving other pipelines'
+// open entries
 // untouched; bare invocation covers the whole wipe scope; and declare destroy's
 // data revert is exactly the narrowed form.
 func TestWipePipelineScope(t *testing.T) {
@@ -306,10 +300,9 @@ func TestWipePipelineScope(t *testing.T) {
 	}
 }
 
-// spec: S06.3/wipe-reverts-cursor-with-data
-//
-// Persistent pipeline state (the source cursor) lives in a declared table the
-// pipeline writes, so a run's cursor advance is a journaled write like any
+// TestWipeRevertsCursorWithData proves persistent pipeline state (the source
+// cursor) lives in a declared table the pipeline writes, so a run's cursor advance
+// is a journaled write like any
 // other. Wiping a disposable run rolls that cursor-advance write back together
 // with the run's data -- the same plan, the same replay, the same retirement --
 // restoring the pre-advance cursor value, so the next pass reprocesses exactly
@@ -351,15 +344,13 @@ func TestWipeRevertsCursorWithData(t *testing.T) {
 	}
 }
 
-// TestCompactCollapseRule proves the compaction collapse rule (specification
-// section 14): released pre-images (undo != open) are nulled, and duplicate
+// TestCompactCollapseRule proves the compaction collapse rule: released pre-images
+// (undo != open) are nulled, and duplicate
 // stamps per (schema, table, row_pk, run_id) collapse to the latest op while
 // every run's exact set of written rows survives exactly (different rows from
 // the same run are never dropped).
-//
-// spec: S14/compaction-collapse-rule
 func TestCompactCollapseRule(t *testing.T) {
-	t.Run("S14/compaction-collapse-rule", func(t *testing.T) {
+	t.Run("compaction-collapse-rule", func(t *testing.T) {
 		// A run wrote the same row twice (update then another), plus an insert
 		// on a different row; an old open pre-image on a promoted entry; and a
 		// released pre-image that must be nulled.
@@ -387,7 +378,7 @@ func TestCompactCollapseRule(t *testing.T) {
 		}
 	})
 
-	t.Run("S14/compaction-collapse-rule/nulls_released_preimages", func(t *testing.T) {
+	t.Run("compaction-collapse-rule/nulls_released_preimages", func(t *testing.T) {
 		journal := []pg.JournalEntry{
 			{ID: 10, RunID: 7, Schema: "a", Table: "b", RowPK: "k", Op: pg.OpUpdate, PreImage: `{"x":1}`, Undo: pg.UndoPromoted},
 			{ID: 11, RunID: 7, Schema: "a", Table: "b", RowPK: "k", Op: pg.OpUpdate, PreImage: `{"x":2}`, Undo: pg.UndoWiped},

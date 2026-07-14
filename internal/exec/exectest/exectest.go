@@ -3,7 +3,7 @@
 // maps to an Outcome that streams stdout/stderr to the seam's writers and either
 // exits with a code or blocks until cancelled. It lets dispatch tests start runs
 // in composer order, stream their output, and cancel a run mid-flight with no OS
-// process (S16/integration-fakes-interfaces).
+// process.
 //
 // This is test-support infrastructure imported only by _test.go files.
 package exectest

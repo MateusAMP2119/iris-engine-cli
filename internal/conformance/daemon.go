@@ -20,7 +20,7 @@ const socketDialTimeout = 10 * time.Second
 // socketPollBackoff caps the backoff between connection attempts while waiting
 // for a socket. Readiness is decided solely by a successful connection, never by
 // elapsed time: the backoff only keeps the poll from spinning, so this is not a
-// fixed sleep standing in for readiness (the S16 no-fixed-sleeps doctrine).
+// fixed sleep standing in for readiness (the no-fixed-sleeps doctrine).
 const socketPollBackoff = 200 * time.Millisecond
 
 // stopGrace is how long stop waits for a signalled daemon to exit on its own

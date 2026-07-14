@@ -18,12 +18,13 @@ import (
 const managedStartTimeout = 90 * time.Second
 
 // This file is the production Supervisor: the managed-Postgres subprocess backed by
-// fergusstrange/embedded-postgres (specification section 9). embedded-postgres
-// fetches a pinned, checksum-verified Postgres distribution and runs it via pg_ctl
-// as a child subprocess -- never linked into the engine binary, so the engine stays
-// a single cgo-free static executable. It is wrapped behind the Supervisor seam so
-// the daemon logic depends only on the interface: integration tests use a fake, and
-// only the conformance tier drives this real path (which downloads a real Postgres).
+// fergusstrange/embedded-postgres. embedded-postgres fetches a pinned,
+// checksum-verified Postgres distribution and runs it via pg_ctl as a child
+// subprocess -- never linked into the engine binary, so the engine stays a single
+// cgo-free static executable. It is wrapped behind the Supervisor seam so the
+// daemon logic depends only on the interface: integration tests use a fake, and
+// only the conformance tier drives this real path (which downloads a real
+// Postgres).
 
 // pinnedEmbeddedVersion is the exact embedded-postgres build the engine pins. Its
 // major must equal PinnedMajorVersion; the two are bumped together as a deliberate
@@ -61,13 +62,13 @@ type embeddedSupervisor struct {
 }
 
 // buildInstance builds an embedded-postgres instance configured to place its
-// binaries and data under the managed-Postgres directory (specification section 10),
-// pin the major version, and use the engine-minted superuser credential. Postgres
-// server output is discarded rather than written to the process's stdout/stderr, so
-// the CLI contract (stdout carries only command output) holds and the minted
-// credential can never ride Postgres logs into the CLI's streams. TCP beyond
-// localhost is enabled only when the config asks for it (standby topology);
-// otherwise the instance stays local.
+// binaries and data under the managed-Postgres directory, pin the major version,
+// and use the engine-minted superuser credential. Postgres server output is
+// discarded rather than written to the process's stdout/stderr, so the CLI contract
+// (stdout carries only command output) holds and the minted credential can never
+// ride Postgres logs into the CLI's streams. TCP beyond localhost is enabled only
+// when the config asks for it (standby topology); otherwise the instance stays
+// local.
 func (s *embeddedSupervisor) buildInstance() pgInstance {
 	cfg := embeddedpostgres.DefaultConfig().
 		Version(pinnedEmbeddedVersion).

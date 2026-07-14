@@ -6,15 +6,14 @@ import (
 )
 
 // This file holds the embedded meta schema: the twenty control tables of the
-// dedicated meta database (specification section 4), modeled as Go data that
-// renders deterministically to create-if-missing DDL and is directly assertable
-// for the roster, foreign-key graph, and identity-ordering contracts. The model
-// is the single source; the rendered DDL and the extracted FK graph are both
-// derived from it, so a golden diff is a contract diff.
+// dedicated meta database, modeled as Go data that renders deterministically to
+// create-if-missing DDL and is directly assertable for the roster, foreign-key
+// graph, and identity-ordering contracts. The model is the single source; the
+// rendered DDL and the extracted FK graph are both derived from it, so a golden
+// diff is a contract diff.
 
-// MetaDatabase is the fixed name of the dedicated meta control-plane database
-// (specification section 4: "control state in meta"). It is created in the same
-// cluster as the data database at bootstrap.
+// MetaDatabase is the fixed name of the dedicated meta control-plane database. It
+// is created in the same cluster as the data database at bootstrap.
 const MetaDatabase = "meta"
 
 // Column is one column in an engine table's schema model. Identity marks a
@@ -92,7 +91,7 @@ type Table struct {
 type Schema struct {
 	// Database is the database the tables live in.
 	Database string
-	// Tables are the schema's tables in spec roster order (runs precedes
+	// Tables are the schema's tables in roster order (runs precedes
 	// artifacts), the order the roster assertion pins. It is NOT a safe emission
 	// order: iterating it to issue DDL forward-references artifacts from runs and
 	// fails against real Postgres. Call DDL() for FK-safe (topologically ordered)
@@ -101,8 +100,8 @@ type Schema struct {
 }
 
 // reservedIdents are the column identifiers that must be double-quoted in DDL
-// because they collide with SQL keywords (specification section 4 names schema
-// and table columns on grants, migrations, and data_journal).
+// because they collide with SQL keywords (schema and table columns appear on
+// grants, migrations, and data_journal).
 var reservedIdents = map[string]bool{
 	"schema": true,
 	"table":  true,
@@ -206,7 +205,7 @@ func (t Table) IndexDDL() []string {
 // in dependency order -- a referenced table is always created before the table
 // whose foreign key references it -- so the sequence applies cleanly against a
 // real Postgres in one pass, with no forward references and no deferred ALTER.
-// The model's Tables slice keeps the spec roster order; only the emission order
+// The model's Tables slice keeps the roster order; only the emission order
 // is topologically sorted.
 func (s Schema) DDL() []string {
 	var out []string
@@ -220,7 +219,7 @@ func (s Schema) DDL() []string {
 // orderedTables returns the schema's tables in a stable topological order:
 // every table follows the tables its foreign keys reference (self-references are
 // ignored, as a self-FK resolves within the table's own CREATE statement). Among
-// tables whose dependencies are all satisfied, the earliest in spec roster order
+// tables whose dependencies are all satisfied, the earliest in roster order
 // wins, so the emission order is deterministic. A foreign-key graph is a DAG, so
 // the sort always completes; a defensive fallback emits any residual in roster
 // order rather than looping.
@@ -263,9 +262,8 @@ func dependenciesSatisfied(t Table, emitted map[string]bool) bool {
 	return true
 }
 
-// MetaSchema returns the meta control-plane schema: the twenty tables of
-// specification section 4, in the spec's own roster order. Roster order is not a
-// safe DDL emission order (runs precedes artifacts it references); DDL() emits in
+// MetaSchema returns the meta control-plane schema: the twenty tables, in roster
+// order. Roster order is not a safe DDL emission order (runs precedes artifacts it references); DDL() emits in
 // FK-dependency order instead. Ordering keys are monotonic bigint identity
 // columns; recorded_at is an opaque non-ordering text audit string throughout.
 func MetaSchema() Schema {
@@ -352,14 +350,15 @@ func MetaSchema() Schema {
 				},
 			},
 			// run_inputs: consumption ledger. Reverse-indexed on upstream_run_id.
-			// run_id (the downstream's own run) is a FK to runs.id, cascaded before the
-			// run in the prune. upstream_run_id is deliberately FK-free (precedent:
-			// data_journal.run_id): count-based retention (section 6.2, no reference pin)
-			// prunes an upstream run while a cross-pipeline downstream's ledger row
-			// survives, so it resolves to a live run OR its archival summary. A hard FK
-			// there could only block the prune (RESTRICT) or cascade-delete a surviving
-			// run's consumption record (erasing lineage, re-opening its gate), and the
-			// composite NOT NULL primary key forbids SET NULL.
+			// run_id (the downstream's own run) is a FK to runs.id, cascaded
+			// before the run in the prune. upstream_run_id is deliberately
+			// FK-free (precedent: data_journal.run_id): count-based retention
+			// prunes an upstream run while a cross-pipeline downstream's ledger
+			// row survives, so it resolves to a live run OR its archival summary.
+			// A hard FK there could only block the prune (RESTRICT) or
+			// cascade-delete a surviving run's consumption record (erasing
+			// lineage, re-opening its gate), and the composite NOT NULL primary
+			// key forbids SET NULL.
 			{
 				Name: "run_inputs",
 				Columns: []Column{
@@ -441,16 +440,17 @@ func MetaSchema() Schema {
 					{Column: "location", Values: []string{"resident", "archived"}},
 				},
 			},
-			// engine_key: the engine-owned ed25519 signing key (specification section 4,
-			// bootstrap Q/A: "private half in meta"). Single row, pinned to id = 1: minted
-			// once at install (INSERT ... ON CONFLICT DO NOTHING, create-once so two
-			// candidates converge on one key) and read back by the leader-side seal to sign
-			// the checkpoint chain. It lives in meta, not a per-database GUC (which needs
-			// SUPERUSER the external admin role lacks) and not a workspace file (which
-			// forces a shared filesystem for HA); the shared meta database standbys already
-			// read gives HA superuser-free. No grant renderer touches it -- pipeline,
-			// data-PAT, and read-pool roles are denied CONNECT on meta entirely
-			// (internal/pg/roles.go), so only the engine admin role reaches the private half.
+			// engine_key: the engine-owned ed25519 signing key. Single row,
+			// pinned to id = 1: minted once at install (INSERT ... ON CONFLICT DO
+			// NOTHING, create-once so two candidates converge on one key) and
+			// read back by the leader-side seal to sign the checkpoint chain. It
+			// lives in meta, not a per-database GUC (which needs SUPERUSER the
+			// external admin role lacks) and not a workspace file (which forces a
+			// shared filesystem for HA); the shared meta database standbys
+			// already read gives HA superuser-free. No grant renderer touches it
+			// -- pipeline, data-PAT, and read-pool roles are denied CONNECT on
+			// meta entirely (internal/pg/roles.go), so only the engine admin role
+			// reaches the private half.
 			{
 				Name: "engine_key",
 				Columns: []Column{
@@ -461,18 +461,20 @@ func MetaSchema() Schema {
 				PrimaryKey: []string{"id"},
 				RawChecks:  []string{"id = 1"},
 			},
-			// read_pool_credential: the engine-owned shared read-pool login secret
-			// (specification section 4; the devdebt 2026-07-10 E13.7 follow-up spec delta).
-			// Single row, id pinned to 1: secret (the base64url password of the shared
-			// iris_engine_read login) and created_at. Minted once at first daemon start
-			// (INSERT ... ON CONFLICT DO NOTHING, create-once so two daemons on one data
-			// cluster converge on ONE secret) and read back by every node's read-pool
-			// open; a restart or HA standby reuses the stored secret rather than minting a
-			// fresh one and resetting the shared login's password (last-starter-wins, which
-			// killed an earlier node's pool). It lives in meta, engine-admin-only like
-			// engine_key: no grant renderer touches it and every pipeline/data-PAT/read-pool
-			// role is denied CONNECT on meta, so the secret is unreachable to any caller.
-			// The shared meta database standbys already read gives HA superuser-free.
+			// read_pool_credential: the engine-owned shared read-pool login
+			// secret. Single row, id pinned to 1: secret (the base64url password
+			// of the shared
+			// iris_engine_read login) and created_at. Minted once at first daemon
+			// start (INSERT ... ON CONFLICT DO NOTHING, create-once so two daemons
+			// on one data cluster converge on ONE secret) and read back by every
+			// node's read-pool open; a restart or HA standby reuses the stored
+			// secret rather than minting a fresh one and resetting the shared
+			// login's password (last-starter-wins, which killed an earlier node's
+			// pool). It lives in meta, engine-admin-only like engine_key: no
+			// grant renderer touches it and every pipeline/data-PAT/read-pool
+			// role is denied CONNECT on meta, so the secret is unreachable to any
+			// caller. The shared meta database standbys already read gives HA
+			// superuser-free.
 			{
 				Name: "read_pool_credential",
 				Columns: []Column{
@@ -483,17 +485,18 @@ func MetaSchema() Schema {
 				PrimaryKey: []string{"id"},
 				RawChecks:  []string{"id = 1"},
 			},
-			// leadership: the leader's advertised address (specification section 4,
-			// leadership Q/A). Single row, pinned to id = 1: advertised_addr is the
-			// leader's TCP listen address -- what a standby names for retargeting (exit 6,
-			// GET /leader) and an operator passes to --host -- empty when the leader is
-			// socket-only. The leader upserts it through the single writer on winning the
-			// advisory lock and re-advertises each term, so a failover leader supersedes
-			// the prior address; a deposed leader writes nothing (its dead session cannot),
-			// so the row converges on the live leader. Standbys read it (shared meta, the
-			// HA model). It stands alone (no FKs, like engine_key), engine-owned: no grant
-			// renderer touches it, and every pipeline/data-PAT/read-pool role is denied
-			// CONNECT on meta. recorded_at is an opaque audit string, never a clock.
+			// leadership: the leader's advertised address. Single row, pinned to
+			// id = 1: advertised_addr is the leader's TCP listen address -- what
+			// a standby names for retargeting (exit 6, GET /leader) and an
+			// operator passes to --host -- empty when the leader is socket-only.
+			// The leader upserts it through the single writer on winning the
+			// advisory lock and re-advertises each term, so a failover leader
+			// supersedes the prior address; a deposed leader writes nothing (its
+			// dead session cannot), so the row converges on the live leader.
+			// Standbys read it (shared meta, the HA model). It stands alone (no
+			// FKs, like engine_key), engine-owned: no grant renderer touches it,
+			// and every pipeline/data-PAT/read-pool role is denied CONNECT on
+			// meta. recorded_at is an opaque audit string, never a clock.
 			{
 				Name: "leadership",
 				Columns: []Column{

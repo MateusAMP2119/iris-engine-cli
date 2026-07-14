@@ -23,8 +23,7 @@ type PipelineFolder struct {
 // declaration and single script. A pipeline is a folder named for the pipeline
 // containing iris-declare.yaml plus exactly one script, with no internal stage
 // structure (no subdirectories); the declaration must parse as a pipeline (not a
-// composer) and its name must match the folder name (specification sections 1
-// and 3).
+// composer) and its name must match the folder name.
 func ValidatePipelineFolder(dir string) (*PipelineFolder, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -72,8 +71,8 @@ func ValidatePipelineFolder(dir string) (*PipelineFolder, error) {
 	// Files named by the declaration's env_file are run-time secret inputs (read
 	// fresh each run, never stored), not the pipeline script: only the run: argv
 	// names the script. Exclude any that sit directly in the folder before the
-	// single-script count, so the golden sample's env_file demo (specification
-	// section 3) validates as one script beside its secrets file.
+	// single-script count, so the golden sample's env_file demo validates as one
+	// script beside its secrets file.
 	envInputs := envFileNames(decl.Pipeline.EnvFile)
 	var scripts []string
 	for _, name := range files {

@@ -44,8 +44,6 @@ func mintStored(t *testing.T, scopes []string, dataRole string, revoked bool) (p
 // TestStoreVerifierResolvesAuthority proves the TCP bearer-token verifier resolves a
 // valid token to its minted scopes and data read role: the argon2id verify succeeds
 // against the stored hash and the scope rows become the effective authority.
-//
-// spec: S04/pat-authority-scope-union
 func TestStoreVerifierResolvesAuthority(t *testing.T) {
 	tok, rec := mintStored(t, []string{"data", "read"}, "iris_pat_"+"deadbeef", false)
 	v := newStoreVerifier(fakePATReader{recs: map[string]store.PATAuth{rec.ID: rec}})
@@ -74,8 +72,6 @@ func TestStoreVerifierResolvesAuthority(t *testing.T) {
 // TestStoreVerifierRejectsUniformly proves every failed verification -- a malformed
 // token, an unknown prefix, a revoked PAT, and a wrong secret -- rejects the same
 // way, leaking nothing about which it was.
-//
-// spec: S07/pat-show-once-hash
 func TestStoreVerifierRejectsUniformly(t *testing.T) {
 	good, goodRec := mintStored(t, []string{"data"}, "iris_pat_r", false)
 	_, revokedRec := mintStored(t, []string{"data"}, "iris_pat_x", true)

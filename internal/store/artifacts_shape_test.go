@@ -7,17 +7,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestArtifactsRowIsIndex proves the artifacts table's shape contract
-// (specification section 4): content-addressed built binaries indexed by hash.
-// The DDL declares hash as the text primary key, a pipeline foreign key to
-// pipelines(name), size_bytes, and recorded_at -- and nothing else. A row is an
-// index entry: the binary's bytes live only in the object store under the hash,
-// never as a blob column in Postgres, so the table carries no bytea (or any
-// payload-capable) column at all. The DDL itself was seeded by E02.1; this test
-// locks its shape as the contract the build path and artifact retirement depend
-// on.
-//
-// spec: S04/artifacts-row-is-index
+// TestArtifactsRowIsIndex proves the artifacts table's shape contract:
+// content-addressed built binaries indexed by hash. The DDL declares hash as the
+// text primary key, a pipeline foreign key to pipelines(name), size_bytes, and
+// recorded_at -- and nothing else. A row is an index entry: the binary's bytes
+// live only in the object store under the hash, never as a blob column in
+// Postgres, so the table carries no bytea (or any payload-capable) column at all.
+// The DDL itself was seeded by E02.1; this test locks its shape as the contract
+// the build path and artifact retirement depend on.
 func TestArtifactsRowIsIndex(t *testing.T) {
 	s := store.MetaSchema()
 	a := tableByName(t, s, "artifacts")

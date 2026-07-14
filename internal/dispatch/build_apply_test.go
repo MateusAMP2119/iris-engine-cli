@@ -12,16 +12,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// TestApplyNeverBuilds proves declare apply never triggers a pipeline build
-// (specification section 1: "Build never folds into apply"); building happens only
-// via the explicit `iris pipeline build` path. The applier and the builder share
-// one dispatcher (the single meta writer) and one exec seam: a full pipeline apply
-// of a buildable (python) declaration invokes no toolchain, writes no artifacts
-// row, stores no object bytes, and registers the pipeline in artifact state
-// source -- then the same environment's explicit build, and only it, invokes the
-// toolchain once and records the artifact.
-//
-// spec: S01/apply-never-builds
+// TestApplyNeverBuilds proves declare apply never triggers a pipeline build ("Build
+// never folds into apply"); building happens only via the explicit `iris pipeline
+// build` path. The applier and the builder share one dispatcher (the single meta
+// writer) and one exec seam: a full pipeline apply of a buildable (python)
+// declaration invokes no toolchain, writes no artifacts row, stores no object bytes,
+// and registers the pipeline in artifact state source -- then the same environment's
+// explicit build, and only it, invokes the toolchain once and records the artifact.
 func TestApplyNeverBuilds(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	reg := storetest.NewRegistryFake()

@@ -15,18 +15,17 @@ import (
 )
 
 // This file is the run-start/cancel seam: the dispatcher-side glue that turns a
-// declared run into a started subprocess and records its lifecycle through the
-// single meta writer (specification section 1). Starting a run is a direct exec in
-// the pipeline folder, in its own process group, with the composed environment;
-// cancelling one kills that group and dead-letters the run as stopped, touching
-// nothing else. It never imposes a timeout: a run ends only by exiting on its own or
-// by explicit cancellation (specification section 6.3 clock doctrine).
+// declared run into a started subprocess and records its lifecycle through the single
+// meta writer. Starting a run is a direct exec in the pipeline folder, in its own
+// process group, with the composed environment; cancelling one kills that group and
+// dead-letters the run as stopped, touching nothing else. It never imposes a timeout:
+// a run ends only by exiting on its own or by explicit cancellation.
 
 // DBConnEnvVar is the environment variable through which the engine injects a run's
-// scoped database connection URL (specification section 1: env = inherited + declared
-// + injected scoped DB connection). It is the documented seam the real per-pipeline
-// scoped connection (E04.4) later populates; today StartRun injects RunSpec.DBURL
-// under this name so a run can already resolve its connection from a single place.
+// scoped database connection URL (env = inherited + declared + injected scoped DB
+// connection). It is the documented seam the real per-pipeline scoped connection
+// (E04.4) later populates; today StartRun injects RunSpec.DBURL under this name so a
+// run can already resolve its connection from a single place.
 const DBConnEnvVar = "IRIS_DB_URL"
 
 // ErrRunNotInFlight reports that no in-flight run has the given id: it has already
@@ -204,17 +203,16 @@ func (m *RunManager) CancelRun(ctx context.Context, runID string) error {
 	return nil
 }
 
-// KillInflight best-effort SIGKILLs every in-flight run's process group and
-// returns how many groups it signalled. It is the self-demotion kill
-// (specification section 15): a daemon that loses its meta session stops
-// dispatching and kills its in-flight runs at once. It deliberately writes NOTHING
-// to meta -- a deposed session cannot carry a meta write (the lock guard refuses a
-// session that has not re-acquired the leader lock), and the runs' records are the
-// NEW leader's to dead-letter during its startup reconciliation, which cannot
-// reach these processes across hosts; this kill is the deposed side's half of that
-// contract (S02/crosshost-failover-no-kill). An already-gone group is not an
-// error. The per-run reap goroutines StartRun launched observe each kill, close
-// the log sinks, and clear the in-flight table, exactly as a cancel would.
+// KillInflight best-effort SIGKILLs every in-flight run's process group and returns
+// how many groups it signalled. It is the self-demotion kill: a daemon that loses its
+// meta session stops dispatching and kills its in-flight runs at once. It
+// deliberately writes NOTHING to meta -- a deposed session cannot carry a meta write
+// (the lock guard refuses a session that has not re-acquired the leader lock), and
+// the runs' records are the NEW leader's to dead-letter during its startup
+// reconciliation, which cannot reach these processes across hosts; this kill is the
+// deposed side's half of that contract. An already-gone group is not an error. The
+// per-run reap goroutines StartRun launched observe each kill, close the log sinks,
+// and clear the in-flight table, exactly as a cancel would.
 func (m *RunManager) KillInflight() int {
 	m.mu.Lock()
 	handles := make([]exec.Handle, 0, len(m.inflight))
@@ -239,9 +237,8 @@ var ErrRunStateUnknown = errors.New("dispatch: unknown run state")
 // any other, or queued straight to succeeded).
 var ErrRunStateIllegal = errors.New("dispatch: illegal run state transition")
 
-// runStates is the closed set of run lifecycle states (specification section 1:
-// queued, running, succeeded, dead-lettered). A from or to value absent here is
-// out-of-enum and rejected.
+// runStates is the closed set of run lifecycle states (queued, running, succeeded,
+// dead-lettered). A from or to value absent here is out-of-enum and rejected.
 var runStates = map[store.RunState]bool{
 	store.RunQueued:       true,
 	store.RunRunning:      true,
@@ -288,13 +285,13 @@ func composeEnv(spec RunSpec) []string {
 	return env
 }
 
-// injectedDBURL is the scoped connection URL the run receives as IRIS_DB_URL, carrying
-// the run's id so the capture trigger attributes every write to it in-transaction
-// (specification section 4: the run id rides the injected connection as a per-session
-// setting at spawn). The id rides the DSN via pg.InjectRunID, the same mechanism the
-// capture path reads back with current_setting('iris.run_id'). A run id that is not a
-// bigint meta identity (only a synthetic non-numeric id, never a real run) leaves the
-// URL unchanged; the capture trigger then fails any such run's write loudly rather than
+// injectedDBURL is the scoped connection URL the run receives as IRIS_DB_URL,
+// carrying the run's id so the capture trigger attributes every write to it
+// in-transaction (the run id rides the injected connection as a per-session setting
+// at spawn). The id rides the DSN via pg.InjectRunID, the same mechanism the capture
+// path reads back with current_setting('iris.run_id'). A run id that is not a bigint
+// meta identity (only a synthetic non-numeric id, never a real run) leaves the URL
+// unchanged; the capture trigger then fails any such run's write loudly rather than
 // stamping an unattributed row -- fail-closed, never a silent unattributed write.
 func injectedDBURL(spec RunSpec) string {
 	id, err := strconv.ParseInt(spec.RunID, 10, 64)

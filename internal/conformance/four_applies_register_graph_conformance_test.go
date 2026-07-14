@@ -16,10 +16,8 @@ import (
 // single-file iris declare apply invocations, in the documented order (ingest
 // composer first, then extract_orders, reset_counters, load_orders), register
 // the full sample graph in meta and drive schema provisioning for each apply.
-//
-// spec: S13/four-applies-register-graph
 func TestFourAppliesRegisterGraph(t *testing.T) {
-	t.Run("S13/four-applies-register-graph", func(t *testing.T) {
+	t.Run("four-applies-register-graph", func(t *testing.T) {
 		// Freshen the shared external cluster first: FORCE-dropping meta/data evicts a
 		// prior test's lingering daemon sessions (including a still-held leader advisory
 		// lock), so this daemon elects promptly instead of timing out behind a stale leader.

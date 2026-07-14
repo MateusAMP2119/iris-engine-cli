@@ -8,10 +8,9 @@ import (
 	"strings"
 )
 
-// This file holds the dependency-allowlist and forbidden-anywhere checks
-// (specification section 9). The allowlist is an upper bound on direct
-// dependencies; the forbidden classes are banned anywhere in the module graph,
-// direct or indirect.
+// This file holds the dependency-allowlist and forbidden-anywhere checks. The
+// allowlist is an upper bound on direct dependencies; the forbidden classes are
+// banned anywhere in the module graph, direct or indirect.
 
 // LoadGoMod reads and parses the go.mod at path.
 func LoadGoMod(path string) (*GoMod, error) {
@@ -52,9 +51,9 @@ func LoadGoSum(path string) ([]string, error) {
 }
 
 // AllowedDirectDependency reports whether a direct-dependency module path is on
-// the specification section 9 allowlist: the pgx driver, cobra plus its own
-// flag-set library spf13/pflag (admitted for flag-set introspection, never as
-// an independent CLI framework), goccy/go-yaml, an argon2id provider
+// the allowlist: the pgx driver, cobra plus its own flag-set library spf13/pflag
+// (admitted for flag-set introspection, never as an independent CLI framework),
+// goccy/go-yaml, an argon2id provider
 // (github.com/alexedwards/argon2id or golang.org/x/crypto), and the
 // embedded-postgres supervisor. Everything else is off the allowlist; digests
 // and signatures use only stdlib hashing and crypto/ed25519, which are never
@@ -69,7 +68,7 @@ func AllowedDirectDependency(path string) bool {
 		"golang.org/x/crypto",
 		"github.com/fergusstrange/embedded-postgres",
 		// EXPERIMENT(clack-ceremony): raw terminal mode for the quickstart
-		// widgets. Needs a spec section 9 delta before this leaves the
+		// widgets. Needs a deliberate allowlist decision before this leaves the
 		// experiment branch.
 		"golang.org/x/term":
 		return true
@@ -87,7 +86,7 @@ func CheckDirectAllowlist(g *GoMod) []Violation {
 			vs = append(vs, Violation{
 				Kind:    KindDependencyAllowlist,
 				Subject: r.Path,
-				Detail:  "direct dependency is not on the specification section 9 allowlist",
+				Detail:  "direct dependency is not on the allowlist",
 			})
 		}
 	}

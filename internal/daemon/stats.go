@@ -11,13 +11,12 @@ import (
 )
 
 // This file is the daemon's stats plane: the api.StatsHandler behind GET /stats
-// (and therefore behind `iris engine stats` -- one route, one payload,
-// specification section 11). It composes the store's stats rollup (one
-// plain-MVCC snapshot of the meta reads) with the leader-held per-lane pass
-// counter and maps the rollup onto the wire payload field-for-field. It is a
-// read, served on any role: a standby answers with its own (zero) pass counts
-// because it has dispatched no passes -- the counter is the leader's runtime
-// state, never a meta row.
+// (and therefore behind `iris engine stats` -- one route, one payload). It composes
+// the store's stats rollup (one plain-MVCC snapshot of the meta reads) with the
+// leader-held per-lane pass counter and maps the rollup onto the wire payload
+// field-for-field. It is a read, served on any role: a standby answers with its own
+// (zero) pass counts because it has dispatched no passes -- the counter is the
+// leader's runtime state, never a meta row.
 
 // PassCountReader reads the per-lane loop pass counts: the leader-held runtime
 // counter (dispatch.PassCounter) satisfies it, and a nil reader reads all

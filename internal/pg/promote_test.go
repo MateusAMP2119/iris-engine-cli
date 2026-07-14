@@ -12,8 +12,8 @@ import (
 )
 
 // The promotion tests exercise the marker-only promotion model over in-memory
-// journal fixtures and the recording data-database fake (specification sections
-// 1, 5 and 12): promotion flips the pipeline's open journal entries to
+// journal fixtures and the recording data-database fake: promotion flips the
+// pipeline's open journal entries to
 // undo = promoted and flips its data_mode to permanent, and does NOTHING else --
 // no table row or journal entry is copied, moved, or deleted, capture and
 // provenance continue unchanged, and later wipes skip the released entries.
@@ -57,11 +57,9 @@ func undoOf(journal []pg.JournalEntry) map[int64]pg.UndoState {
 	return m
 }
 
-// spec: S01/promote-ends-wipe-eligibility
-//
-// Promotion removes the pipeline's data from wipe eligibility and changes
-// nothing else about the pipeline (specification section 1: "Promotion ends
-// wipe eligibility only"). After the promotion plan is applied, a wipe narrowed
+// TestPromoteEndsWipeEligibility proves promotion removes the pipeline's data from
+// wipe eligibility and changes nothing else about the pipeline: promotion ends wipe
+// eligibility only. After the promotion plan is applied, a wipe narrowed
 // to the promoted pipeline finds an empty scope and plans a total no-op, while
 // every other pipeline's wipe eligibility is untouched; the pipeline-level
 // outcome is exactly the data_mode flip to permanent -- whose sole meaning is
@@ -83,7 +81,7 @@ func TestPromoteEndsWipeEligibility(t *testing.T) {
 
 	// The pipeline-level change is the data_mode flip to permanent, whose whole
 	// meaning is wipe eligibility: permanent-mode writes are not wipe-eligible.
-	// Capture is untouched by the mode (S01/capture-covers-all-modes).
+	// Capture is untouched by the mode.
 	if plan.DataMode != declare.DataPermanent {
 		t.Errorf("plan.DataMode = %q, want %q", plan.DataMode, declare.DataPermanent)
 	}
@@ -123,14 +121,12 @@ func scopeEntryIDs(entries []pg.JournalEntry) []int64 {
 	return ids
 }
 
-// spec: S05/promotion-flips-open-to-promoted
-//
-// Promotion flips the pipeline's open journal entries to undo = promoted, and
-// subsequent wipes skip them (specification section 5: "flips the pipeline's
-// open entries to promoted (later wipes skip them)"). Proven both over the pure
-// model -- apply the plan, then PlanWipe never visits the released entries --
-// and over the live statement the executor issues through the data-database
-// seam: one guarded marker UPDATE, open entries of the pipeline's runs only.
+// TestPromotionFlipsOpenToPromoted proves promotion flips the pipeline's open
+// journal entries to undo = promoted, and subsequent wipes skip them. Proven both
+// over the pure model -- apply the plan, then PlanWipe never visits the released
+// entries -- and over the live statement the executor issues through the
+// data-database seam: one guarded marker UPDATE, open entries of the pipeline's
+// runs only.
 func TestPromotionFlipsOpenToPromoted(t *testing.T) {
 	journal, runPipeline := promotionFixture()
 
@@ -191,13 +187,11 @@ func TestPromotionFlipsOpenToPromoted(t *testing.T) {
 	}
 }
 
-// spec: S05/promotion-no-data-movement
-//
-// Promotion mutates only undo markers and data_mode: it copies, moves, or
-// deletes NO table rows or journal entries (specification section 5: "Nothing
-// copied, moved, or deleted; narrows what wipe may touch, forgets nothing").
-// Proven over the pure model -- the applied journal is the same journal, entry
-// for entry, with only undo flipped on the released entries -- and over the
+// TestPromotionNoDataMovement proves promotion mutates only undo markers and
+// data_mode: it copies, moves, or deletes NO table rows or journal entries. Nothing
+// is copied, moved, or deleted; promotion narrows what wipe may touch and forgets
+// nothing. Proven over the pure model -- the applied journal is the same journal,
+// entry for entry, with only undo flipped on the released entries -- and over the
 // live executor, whose entire emission is one journal-marker UPDATE: no INSERT,
 // DELETE, TRUNCATE, COPY, or DDL, and no statement against any declared table.
 func TestPromotionNoDataMovement(t *testing.T) {
@@ -268,11 +262,10 @@ func TestPromotionNoDataMovement(t *testing.T) {
 	}
 }
 
-// spec: S01/promote-capture-provenance-continue
-//
-// Capture and provenance continue unchanged after a pipeline's data is promoted
-// to permanent (specification section 1: "capture and provenance never stop").
-// Post-promotion writes still classify to a stamp for every operation (slim,
+// TestPromoteCaptureProvenanceContinue proves capture and provenance continue
+// unchanged after a pipeline's data is promoted to permanent: capture and
+// provenance never stop. Post-promotion writes still classify to a stamp for
+// every operation (slim,
 // born promoted -- the permanent tier), those stamps append to the same journal,
 // and a row's provenance stack reads continuously across the promotion boundary:
 // the pre-promotion layers survive (attribution intact) and the post-promotion

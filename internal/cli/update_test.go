@@ -16,8 +16,6 @@ import (
 // network or filesystem attempt (the dev guard returns before any I/O). The test
 // build is itself unstamped, so buildinfo.Version is "dev" and the real handler
 // drives the real refusal path with no injection.
-//
-// spec: S08/update-dev-build-refuses
 func TestUpdateDevBuildRefuses(t *testing.T) {
 	if buildinfo.Version != "dev" {
 		t.Skipf("build is stamped %q, not the unstamped dev default this path exercises", buildinfo.Version)
@@ -36,8 +34,6 @@ func TestUpdateDevBuildRefuses(t *testing.T) {
 // when the resolved latest tag equals the running version, without replacing
 // anything. The update engine is injected so the decision is exercised with no
 // network or filesystem I/O.
-//
-// spec: S08/update-tag-equals-up-to-date
 func TestUpdateUpToDate(t *testing.T) {
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)

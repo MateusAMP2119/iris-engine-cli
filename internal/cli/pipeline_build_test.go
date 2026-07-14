@@ -29,13 +29,11 @@ func (f fakeBuildHandler) BuildPipeline(_ context.Context, req api.PipelineBuild
 }
 
 // TestPipelineBuildCommand proves `iris pipeline build <name>` is the explicit
-// build entry point (specification sections 1 and 8): the command POSTs the build
-// mutation to the daemon's /pipeline/build route and reports the recorded content
+// build entry point: the command POSTs the build mutation to the daemon's
+// /pipeline/build route and reports the recorded content
 // hash on success (exit 0), so the executed bytes are identifiable from the
 // command's own output; a daemon-side build failure is operation-failed (exit 4),
 // never a silent success.
-//
-// spec: S01/build-single-binary-content-hash
 func TestPipelineBuildCommand(t *testing.T) {
 	const hash = "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33f0fdbc95d0dd47f3c5bc275"
 

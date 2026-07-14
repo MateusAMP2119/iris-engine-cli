@@ -13,11 +13,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
-// This file proves the remote tiering of destructive control operations over the
-// API surface (specification section 12): control-PAT + explicit confirm for
-// destructive routes, and leader-only acceptance. Tests use the mux directly
-// (the same handler the in-process daemon serves over unix and TCP sockets)
-// with injected role and control handler seams -- fakes, no live database.
+// This file proves the remote tiering of destructive control operations over
+// the API surface: control-PAT + explicit confirm for destructive routes, and
+// leader-only acceptance. Tests use the mux directly (the same handler the
+// in-process daemon serves over unix and TCP sockets) with injected role and
+// control handler seams -- fakes, no live database.
 
 // controlCall records an invocation of the control handler.
 type controlCall struct {
@@ -60,11 +60,8 @@ func postControlJSON(t *testing.T, h http.Handler, method, path string, a api.Au
 
 // TestAPIDestructiveConfirmAndLeader proves the two API contracts for destructive
 // ops over the control plane.
-//
-// spec: S12/api-destructive-control-pat-confirm-field
-// spec: S12/api-destructive-leader-only
 func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
-	t.Run("S12/api-destructive-control-pat-confirm-field", func(t *testing.T) {
+	t.Run("api-destructive-control-pat-confirm-field", func(t *testing.T) {
 		// A control authority (as a TCP control PAT would grant) must still supply
 		// explicit Confirm:true for /destroy; without it the handler must not be
 		// invoked and the request must be rejected as an operation failure.
@@ -81,11 +78,11 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 			t.Errorf("destroy without confirm status = %d, want 422 (op failed)", rec.Code)
 		}
 		if len(capCtl.calls) != 0 {
-			t.Errorf("destroy handler was invoked with Confirm=false; API must require explicit confirm for destructive ops (S12/api-destructive-control-pat-confirm-field)")
+			t.Errorf("destroy handler was invoked with Confirm=false; API must require explicit confirm for destructive ops")
 		}
 	})
 
-	t.Run("S12/api-destructive-leader-only", func(t *testing.T) {
+	t.Run("api-destructive-leader-only", func(t *testing.T) {
 		// Mutations on /destroy (and /apply) are accepted only when role is leader.
 		// A standby must reject with not_leader before reaching any control handler.
 		role := api.NewRoleState()
@@ -105,15 +102,13 @@ func TestAPIDestructiveConfirmAndLeader(t *testing.T) {
 			t.Errorf("standby destroy error code = %q, want %q", env.Error.Code, api.CodeNotLeader)
 		}
 		if len(capCtl.calls) != 0 {
-			t.Errorf("standby destroy invoked the control handler; leader-only gate must prevent it (S12/api-destructive-leader-only)")
+			t.Errorf("standby destroy invoked the control handler; leader-only gate must prevent it")
 		}
 	})
 }
 
 // TestDestroyRequiresConfirmEvenWithControlToken documents that a control-scoped
 // authority alone is not sufficient; the body must carry explicit confirm.
-//
-// spec: S12/api-destructive-control-pat-confirm-field
 func TestDestroyRequiresConfirmEvenWithControlToken(t *testing.T) {
 	role := api.NewRoleState()
 	role.SetLeader()
@@ -124,24 +119,22 @@ func TestDestroyRequiresConfirmEvenWithControlToken(t *testing.T) {
 
 	rec := postControlJSON(t, mux, http.MethodPost, "/destroy", ctl, api.ControlRequest{Path: "x/iris-declare.yaml", Confirm: false})
 	if rec.Code == http.StatusOK {
-		t.Errorf("destroy without confirm returned 200; expected refusal (S12/api-destructive-control-pat-confirm-field)")
+		t.Errorf("destroy without confirm returned 200; expected refusal")
 	}
 	for _, c := range capCtl.calls {
 		if c.path == "/destroy" && !c.req.Confirm {
-			t.Errorf("captured a !Confirm destroy call -- gate missing (S12/api-destructive-control-pat-confirm-field)")
+			t.Errorf("captured a !Confirm destroy call -- gate missing")
 		}
 	}
 	// control PAT + confirm must reach the handler (not be scope-rejected); with no real handler it yields internal/422, never 403.
 	recOK := postControlJSON(t, mux, http.MethodPost, "/destroy", ctl, api.ControlRequest{Path: "ok/iris-declare.yaml", Confirm: true})
 	if recOK.Code == http.StatusForbidden {
-		t.Errorf("control PAT + confirm got 403 on destroy; control scope must authorize the destructive (S12/api-destructive-control-pat-confirm-field)")
+		t.Errorf("control PAT + confirm got 403 on destroy; control scope must authorize the destructive")
 	}
 }
 
 // TestAPIDrainConfirmField proves the drain destructive op over API also
 // requires explicit confirm even with control authority (defense in depth).
-//
-// spec: S12/api-destructive-control-pat-confirm-field
 func TestAPIDrainConfirmField(t *testing.T) {
 	role := api.NewRoleState()
 	role.SetLeader()

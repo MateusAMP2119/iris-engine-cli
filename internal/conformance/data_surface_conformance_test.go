@@ -27,8 +27,8 @@ import (
 )
 
 // This file proves the data surface's physical enforcement contracts against a
-// real Postgres (specification section 7): the engine's own read-pool login
-// checks out shared-pool sessions, SET ROLEs to the data PAT's engine-managed
+// real Postgres: the engine's own read-pool login checks out shared-pool
+// sessions, SET ROLEs to the data PAT's engine-managed
 // NOLOGIN role, and Postgres itself -- not application code -- bounds every
 // read to the role's granted fields. /data serves the granted projection and
 // refuses the rest; /q on an endpoint whose source fields the caller lacks
@@ -99,12 +99,11 @@ func (m fixedShapes) DataShape(schema, table string) (*api.DataShape, bool) {
 // analytics.orders[id, amount], and serves the real api mux over the real
 // shared read pool to prove:
 //
-//   - S07/data-pat-reads-physically-bounded: /data reads within the granted
-//     fields succeed and reads touching an ungranted field are refused by
-//     Postgres itself (SQLSTATE 42501), surfaced as 403.
-//   - S07/q-forbidden-names-endpoint: /q on an endpoint whose source fields the
-//     caller's role lacks answers 403 forbidden naming the endpoint, never the
-//     missing fields.
+//   - /data reads within the granted fields succeed and reads touching an
+//     ungranted field are refused by Postgres itself (SQLSTATE 42501), surfaced
+//     as 403.
+//   - /q on an endpoint whose source fields the caller's role lacks answers 403
+//     forbidden naming the endpoint, never the missing fields.
 func TestDataSurfacePostgresEnforcement(t *testing.T) {
 	const (
 		superuser = "postgres"
@@ -247,8 +246,7 @@ sort: id
 		return res.StatusCode, env
 	}
 
-	// spec: S07/data-pat-reads-physically-bounded
-	t.Run("S07/data-pat-reads-physically-bounded", func(t *testing.T) {
+	t.Run("data-pat-reads-physically-bounded", func(t *testing.T) {
 		t.Run("a read within the granted fields succeeds as the PAT's role", func(t *testing.T) {
 			code, env := get(t, "/data/analytics/orders?columns=id,amount")
 			if code != http.StatusOK || env.Error != nil {
@@ -306,8 +304,7 @@ sort: id
 		})
 	})
 
-	// spec: S07/q-forbidden-names-endpoint
-	t.Run("S07/q-forbidden-names-endpoint", func(t *testing.T) {
+	t.Run("q-forbidden-names-endpoint", func(t *testing.T) {
 		t.Run("an endpoint inside the caller's grants serves rows as the caller's role", func(t *testing.T) {
 			code, env := get(t, "/q/orders_granted")
 			if code != http.StatusOK || env.Error != nil {

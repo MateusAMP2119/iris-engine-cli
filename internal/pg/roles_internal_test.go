@@ -8,15 +8,13 @@ import (
 )
 
 // TestRenderProvisionPipelineRoleGrantsCapture proves the pipeline-role provisioning
-// path grants capture reachability out of the box (specification section 4: capture is
-// always on, every role). A freshly provisioned least-privilege role must be able to
+// path grants capture reachability out of the box (capture is always on, for every
+// role). A freshly provisioned least-privilege role must be able to
 // reach the always-on iris.capture() function -- its write fires the per-table capture
 // trigger, which calls the function -- so provisioning issues USAGE on the iris schema
 // and EXECUTE on iris.capture() for every role, independent of any declared field
 // grant. These grants are what E06.2's capture-emission proof relied on as explicit
 // test setup before; now they ride provisioning.
-//
-// spec: S04/pipeline-role-reaches-capture
 func TestRenderProvisionPipelineRoleGrantsCapture(t *testing.T) {
 	role := PipelineRoleName("ingest")
 
@@ -74,8 +72,6 @@ func TestRenderProvisionPipelineRoleGrantsCapture(t *testing.T) {
 // role could reach is exactly none. The key living in meta -- which those roles cannot
 // even open a session on -- is what makes the meta-table store admin-only without any
 // engine_key-specific grant logic (devdebt 2026-07-10 spec delta).
-//
-// spec: S04/engine-key-in-meta-table
 func TestProvisionNeverGrantsEngineKey(t *testing.T) {
 	role := PipelineRoleName("ingest")
 	stmts, err := renderProvisionPipelineRole(RoleProvision{
@@ -116,10 +112,8 @@ func TestProvisionNeverGrantsEngineKey(t *testing.T) {
 // capture function is not yet installed still provisions successfully and the capture
 // EXECUTE grant resolves. Without this ensure, GRANT EXECUTE ON FUNCTION iris.capture()
 // fails with `schema "iris" does not exist` when role provisioning runs before capture
-// install (specification section 4: capture is always on, every role -- the role must
+// install (capture is always on, for every role -- the role must
 // be able to reach it out of the box).
-//
-// spec: S04/pipeline-role-reaches-capture
 func TestRenderProvisionPipelineRoleEnsuresCaptureSurface(t *testing.T) {
 	role := PipelineRoleName("ingest")
 	stmts, err := renderProvisionPipelineRole(RoleProvision{
@@ -154,8 +148,6 @@ func TestRenderProvisionPipelineRoleEnsuresCaptureSurface(t *testing.T) {
 // every repeat. The attributes are set at creation (allowed for a CREATEROLE admin, which
 // never grants an attribute it lacks) and the DO-block existence guard keeps a
 // re-provision idempotent.
-//
-// spec: S05/provision-idempotent
 func TestRenderProvisionPipelineRoleAttributesAtCreate(t *testing.T) {
 	role := PipelineRoleName("ingest")
 	stmts, err := renderProvisionPipelineRole(RoleProvision{
@@ -185,8 +177,6 @@ func TestRenderProvisionPipelineRoleAttributesAtCreate(t *testing.T) {
 // TestRenderCaptureReachabilityGrants proves the shared helper renders exactly the two
 // idempotent capture-reachability grants, with the role as a quoted identifier and the
 // engine-owned iris schema and iris.capture() function named.
-//
-// spec: S04/pipeline-role-reaches-capture
 func TestRenderCaptureReachabilityGrants(t *testing.T) {
 	got := RenderCaptureReachabilityGrants(`weird"role`)
 	want := []string{

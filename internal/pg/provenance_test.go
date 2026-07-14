@@ -10,7 +10,7 @@ import (
 )
 
 // The provenance tests exercise the `iris data provenance` three-lookup walk as
-// pure query logic over in-memory fixtures (specification sections 4 and 14):
+// pure query logic over in-memory fixtures:
 // row -> stamps via the journal's provenance key, run id -> run facts with the
 // archival-summary fallback, and recursive ancestry via run_inputs with the
 // summary's consumed-upstream list standing in once a run's own ledger rows are
@@ -31,8 +31,6 @@ var orderKey = pg.RowKey{Schema: "analytics", Table: "orders", RowPK: "9f3c"}
 // latest surviving stamp names the current authoring run, and the full list is
 // the layered write history. Stamps for other rows, tables, and schemas never
 // leak into the result.
-//
-// spec: S14/provenance-row-to-run
 func TestProvenanceRowToRun(t *testing.T) {
 	journal := []pg.JournalEntry{
 		{ID: 81, RunID: 39, Schema: "analytics", Table: "orders", RowPK: "9f3c", Op: pg.OpInsert, Undo: pg.UndoPromoted},
@@ -86,8 +84,6 @@ func TestProvenanceRowToRun(t *testing.T) {
 // non-wiped layer, a conflict-skipped write still counts as surviving (its
 // write is still in the row's value), and wiped layers stay listed in the
 // output, never hidden.
-//
-// spec: S14/provenance-current-author-surviving
 func TestProvenanceCurrentAuthorSurviving(t *testing.T) {
 	t.Run("newest wiped resolves to latest non-wiped layer", func(t *testing.T) {
 		journal := []pg.JournalEntry{
@@ -141,8 +137,6 @@ func TestProvenanceCurrentAuthorSurviving(t *testing.T) {
 // report's type graph carries no pre-image or row-image field at any depth, and
 // a walk over journal entries holding captured pre-images never echoes the
 // payload bytes anywhere in its output.
-//
-// spec: S14/provenance-lineage-never-images
 func TestProvenanceLineageNeverImages(t *testing.T) {
 	// Structural: no field named like an image anywhere in the report graph.
 	seen := map[reflect.Type]bool{}
@@ -201,8 +195,6 @@ func TestProvenanceLineageNeverImages(t *testing.T) {
 // snapshot pin from the live run row, and falls back to the archival summary --
 // same facts, FromSummary set -- once the run row has been pruned. A run id
 // known to neither tier resolves to nothing.
-//
-// spec: S14/provenance-run-facts-summary-fallback
 func TestProvenanceRunFactsSummaryFallback(t *testing.T) {
 	lineage := pg.Lineage{
 		Runs: []pg.RunRecord{
@@ -276,8 +268,6 @@ func TestProvenanceRunFactsSummaryFallback(t *testing.T) {
 // edges), at depth 1 by default, with full recursive ancestry available from a
 // single walk call and as a single WITH RECURSIVE statement over run_inputs. A
 // diamond ancestor is expanded once but stays listed once per consumer.
-//
-// spec: S14/provenance-ancestry-recursive
 func TestProvenanceAncestryRecursive(t *testing.T) {
 	lineage := pg.Lineage{
 		Inputs: []pg.RunInput{
@@ -348,8 +338,6 @@ func TestProvenanceAncestryRecursive(t *testing.T) {
 // declaration checksum and binary hash after the run rows are pruned: the
 // archival summary supplies the same facts, and ancestry falls back to the
 // summary's consumed-upstream list once the run's own run_inputs rows are gone.
-//
-// spec: S03/provenance-survives-pruning
 func TestProvenanceSurvivesPruning(t *testing.T) {
 	journal := []pg.JournalEntry{
 		{ID: 88, RunID: 42, Schema: "analytics", Table: "orders", RowPK: "9f3c", Op: pg.OpUpdate, Undo: pg.UndoPromoted},
@@ -408,12 +396,10 @@ func TestProvenanceSurvivesPruning(t *testing.T) {
 	}
 }
 
-// TestTraceUpDown claims S14 contract for run show --trace: walks run_inputs
+// TestTraceUpDown proves the walk behind run show --trace: it walks run_inputs
 // upward by default (Ancestry), downward with --down (Descendants), resolving
 // pruned runs via summaries at any depth. Reuses the engine's Lineage walk
 // (no new logic).
-//
-// spec: S14/trace-up-down
 func TestTraceUpDown(t *testing.T) {
 	// Build a small lineage: run 42 consumed 39; also a summary for pruned 50 consumed 42.
 	// So up from 42: 39 ; down from 42 reaches 50 ; down from 39 reaches 42.
@@ -429,8 +415,7 @@ func TestTraceUpDown(t *testing.T) {
 		},
 	}
 
-	// spec: S14/trace-up-down
-	t.Run("S14/trace-up-down", func(t *testing.T) {
+	t.Run("trace-up-down", func(t *testing.T) {
 		// upward default
 		up := lineage.Ancestry(42, 0)
 		if len(up) != 1 || up[0].UpstreamRunID != 39 {
@@ -470,10 +455,8 @@ func TestTraceUpDown(t *testing.T) {
 // ranges (from object-store files): a row's stamps are the same whether its
 // journal entries are served from the live table or reconstructed from sealed
 // archived partitions.
-//
-// spec: S14/provenance-spans-archive-boundary
 func TestProvenanceSpansArchiveBoundary(t *testing.T) {
-	t.Run("S14/provenance-spans-archive-boundary", func(t *testing.T) {
+	t.Run("provenance-spans-archive-boundary", func(t *testing.T) {
 		key := pg.RowKey{Schema: "analytics", Table: "orders", RowPK: "9f3c"}
 		// "Resident" slice as if read from data_journal for an id range.
 		resident := []pg.JournalEntry{

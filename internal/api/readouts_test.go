@@ -9,10 +9,10 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// readoutPayloads is every read-API readout document the epic's invariants close
-// over (specification section 11): the stats rollup, the engine-info readout, the
-// engine-inspect DDL dump, and the pipeline-show readout. The invariant tests walk
-// these types, so a field added to any readout is checked by construction.
+// readoutPayloads is every read-API readout document the epic's invariants
+// close over: the stats rollup, the engine-info readout, the engine-inspect DDL
+// dump, and the pipeline-show readout. The invariant tests walk these types, so
+// a field added to any readout is checked by construction.
 func readoutPayloads() map[string]reflect.Type {
 	return map[string]reflect.Type{
 		"stats":   reflect.TypeOf(api.StatsPayload{}),
@@ -54,14 +54,12 @@ func jsonName(f reflect.StructField) string {
 	return strings.ToLower(f.Name)
 }
 
-// TestUptimeSoleWallClock proves uptime in the engine-info readout is the engine's
-// one and only wall-clock readout, and display-only (specification section 11): the
-// InfoPayload's Uptime is a rendered string a caller cannot compute on -- never a
-// time.Time or a duration -- and no other field in any readout (stats, info,
-// inspect, show) is time-typed or clock-named. Everything else is a count, a
-// last-value, or identity.
-//
-// spec: S11/uptime-sole-wall-clock
+// TestUptimeSoleWallClock proves uptime in the engine-info readout is the
+// engine's one and only wall-clock readout, and display-only: the InfoPayload's
+// Uptime is a rendered string a caller cannot compute on -- never a time.Time
+// or a duration -- and no other field in any readout (stats, info, inspect,
+// show) is time-typed or clock-named. Everything else is a count, a last-value,
+// or identity.
 func TestUptimeSoleWallClock(t *testing.T) {
 	uptime, ok := reflect.TypeOf(api.InfoPayload{}).FieldByName("Uptime")
 	if !ok {
@@ -100,10 +98,8 @@ func TestUptimeSoleWallClock(t *testing.T) {
 
 // TestNoLivenessReadouts proves no readout -- stats, info, inspect, or pipeline
 // show -- carries a last-heartbeat or last-seen field: connection state is the
-// only liveness signal (specification section 11). The check walks every field of
-// every readout payload, so a liveness field added anywhere fails here.
-//
-// spec: S11/no-liveness-readouts
+// only liveness signal. The check walks every field of every readout payload,
+// so a liveness field added anywhere fails here.
 func TestNoLivenessReadouts(t *testing.T) {
 	livenessFragments := []string{"heartbeat", "last_seen", "lastseen", "seen", "liveness", "alive"}
 	for name, typ := range readoutPayloads() {

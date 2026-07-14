@@ -44,7 +44,6 @@ func readWorkspaceTOML(t *testing.T, dir string) config.TOML {
 // --token <pat>` verifies the pair against the live engine and records both in
 // the workspace's .iris/iris.toml (0600), reporting the engine's role.
 func TestEngineConnectRecords(t *testing.T) {
-	// spec: S08/engine-connect-verifies-then-records
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -78,7 +77,6 @@ func TestEngineConnectRecords(t *testing.T) {
 // TestEngineConnectJSON proves the --json surface: one data envelope carrying
 // the host, role, and config path -- and never the token.
 func TestEngineConnectJSON(t *testing.T) {
-	// spec: S08/engine-connect-verifies-then-records
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -109,7 +107,6 @@ func TestEngineConnectJSON(t *testing.T) {
 // TestEngineConnectTLS proves connect is scheme-aware like every TCP dial: an
 // https:// host verifies and records against a TLS-serving engine.
 func TestEngineConnectTLS(t *testing.T) {
-	// spec: S08/engine-connect-verifies-then-records
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -137,7 +134,6 @@ func TestEngineConnectTLS(t *testing.T) {
 // TestEngineConnectRejectedPAT proves a live engine rejecting the PAT is an
 // operation failure (exit 4) that names the fix and records nothing.
 func TestEngineConnectRejectedPAT(t *testing.T) {
-	// spec: S08/engine-connect-distinct-faults
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -174,7 +170,6 @@ func (v controlOnlyVerifier) VerifyToken(_ context.Context, tok string) (api.Aut
 // records nothing -- scopes do not imply each other, so a control-only PAT
 // cannot pass the read-gated probe.
 func TestEngineConnectMissingScope(t *testing.T) {
-	// spec: S08/engine-connect-distinct-faults
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -201,7 +196,6 @@ func TestEngineConnectMissingScope(t *testing.T) {
 // TestEngineConnectUnreachable proves an unreachable host is no-daemon (exit 3)
 // and records nothing.
 func TestEngineConnectUnreachable(t *testing.T) {
-	// spec: S08/engine-connect-distinct-faults
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -219,7 +213,6 @@ func TestEngineConnectUnreachable(t *testing.T) {
 // TestEngineConnectUsage proves the non-interactive missing-input paths are
 // usage errors (exit 2) naming what to pass.
 func TestEngineConnectUsage(t *testing.T) {
-	// spec: S08/engine-connect-interactive-prompts
 	clearTargetEnv(t)
 	t.Chdir(t.TempDir())
 
@@ -250,7 +243,6 @@ func TestEngineConnectUsage(t *testing.T) {
 // and neither host nor token supplied, connect asks for both through the
 // injectable seams -- the host as a plain line, the PAT as the hidden read.
 func TestEngineConnectPrompts(t *testing.T) {
-	// spec: S08/engine-connect-interactive-prompts
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)
@@ -288,7 +280,6 @@ func TestEngineConnectPrompts(t *testing.T) {
 // TestEngineConnectUpserts proves a re-connect rewrites host and token in an
 // existing iris.toml while every other line survives verbatim.
 func TestEngineConnectUpserts(t *testing.T) {
-	// spec: S08/iris-toml-upsert-preserves
 	clearTargetEnv(t)
 	ws := t.TempDir()
 	t.Chdir(ws)

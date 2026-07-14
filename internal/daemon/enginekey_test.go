@@ -46,10 +46,7 @@ func privBytesFromInsertDDL(t *testing.T, ddl string) []byte {
 // the engine_key INSERT statement stores yields the same public half the minting
 // side exposes, while the private material never renders through any formatting
 // path. This is the mechanism `iris engine info` stands on -- it shows the public
-// half of the key whose private half lives in the engine_key meta table
-// (specification section 4, bootstrap Q/A).
-//
-// spec: S04/engine-key-public-via-info
+// half of the key whose private half lives in the engine_key meta table.
 func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
 	k, err := daemon.MintEngineKey()
 	if err != nil {
@@ -98,8 +95,6 @@ func TestEngineKeyPublicHalfDerivedFromStoredPrivate(t *testing.T) {
 // is a single create-once INSERT into the engine_key meta table (ON CONFLICT DO
 // NOTHING), and that decoding rejects malformed material rather than silently
 // accepting it.
-//
-// spec: S04/install-bootstraps-engine
 func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
 	k1, err := daemon.MintEngineKey()
 	if err != nil {
@@ -145,20 +140,11 @@ func TestEngineKeyMintedFreshAndValidated(t *testing.T) {
 	}
 }
 
-// TestCheckpointSignatureAndChain proves the unit-tier contracts for ed25519
-// signatures over checkpoint digests, parent chaining, per-sealed production of
-// a checkpoint row, digest chaining on seal, and tamper detection
-// (specification sections 4 and 14).
-//
-// spec: S04/checkpoint-ed25519-signature
-// spec: S04/checkpoint-parent-chain
-// spec: S04/checkpoint-per-sealed-partition
-// spec: S14/checkpoint-digest-chain
-// spec: S14/chain-detects-tamper
+// TestCheckpointSignatureAndChain proves ed25519 signatures over checkpoint
+// digests, parent chaining, per-sealed production of a checkpoint row, digest
+// chaining on seal, and tamper detection.
 func TestCheckpointSignatureAndChain(t *testing.T) {
-	t.Run("S04/checkpoint-ed25519-signature", func(t *testing.T) {
-		// spec: S04/checkpoint-ed25519-signature
-		t.Log("CLAIM: S04/checkpoint-ed25519-signature executing")
+	t.Run("checkpoint-ed25519-signature", func(t *testing.T) {
 		k, err := daemon.MintEngineKey()
 		if err != nil {
 			t.Fatalf("mint: %v", err)
@@ -183,8 +169,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		}
 	})
 
-	t.Run("S04/checkpoint-parent-chain", func(t *testing.T) {
-		// spec: S04/checkpoint-parent-chain
+	t.Run("checkpoint-parent-chain", func(t *testing.T) {
 		cases := []struct {
 			name    string
 			prev    *store.CheckpointRow
@@ -208,7 +193,6 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		for _, c := range cases {
 			c := c
 			t.Run(c.name, func(t *testing.T) {
-				// spec: S04/checkpoint-parent-chain
 				gotParent := store.ParentFor(c.prev)
 				if c.prev != nil {
 					if !bytesEqual(gotParent, c.prev.Digest) {
@@ -229,8 +213,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		}
 	})
 
-	t.Run("S04/checkpoint-per-sealed-partition", func(t *testing.T) {
-		// spec: S04/checkpoint-per-sealed-partition
+	t.Run("checkpoint-per-sealed-partition", func(t *testing.T) {
 		// Table: sealing one partition always yields exactly one CheckpointRow
 		// with id_from/id_to and digest over the compacted rows (in id order).
 		cases := []struct {
@@ -245,7 +228,6 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		for _, c := range cases {
 			c := c
 			t.Run(c.name, func(t *testing.T) {
-				// spec: S04/checkpoint-per-sealed-partition
 				row := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, nil)
 				if row.IDFrom != c.idFrom || row.IDTo != c.idTo {
 					t.Error("id_from/id_to not set for sealed partition")
@@ -262,8 +244,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		}
 	})
 
-	t.Run("S14/checkpoint-digest-chain", func(t *testing.T) {
-		// spec: S14/checkpoint-digest-chain
+	t.Run("checkpoint-digest-chain", func(t *testing.T) {
 		k, _ := daemon.MintEngineKey()
 		cases := []struct {
 			name      string
@@ -278,7 +259,6 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		for i, c := range cases {
 			c := c
 			t.Run(c.name, func(t *testing.T) {
-				// spec: S14/checkpoint-digest-chain
 				d := store.ComputeDigest(c.compacted)
 				cp := store.CheckpointForSealed(c.idFrom, c.idTo, c.compacted, prev)
 				cp.Seq = int64(i + 1)
@@ -298,8 +278,7 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		}
 	})
 
-	t.Run("S14/chain-detects-tamper", func(t *testing.T) {
-		// spec: S14/chain-detects-tamper
+	t.Run("chain-detects-tamper", func(t *testing.T) {
 		k, _ := daemon.MintEngineKey()
 		d1 := store.ComputeDigest([][]byte{[]byte("a")})
 		cp1 := store.CheckpointRow{Seq: 1, Digest: d1, Signature: mustSign(t, k, d1)}
@@ -323,7 +302,6 @@ func TestCheckpointSignatureAndChain(t *testing.T) {
 		for _, c := range cases {
 			c := c
 			t.Run(c.name, func(t *testing.T) {
-				// spec: S14/chain-detects-tamper
 				if err := store.ValidateChain(c.chain, k.Public()); (err != nil) != c.wantErr {
 					t.Errorf("ValidateChain error = %v, wantErr=%v (tamper or loss must fail visibly)", err, c.wantErr)
 				}

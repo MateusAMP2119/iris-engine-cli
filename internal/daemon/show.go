@@ -13,15 +13,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's pipeline-show plane: the api.PipelineShowHandler
-// behind GET /pipeline/show (and therefore behind `iris pipeline show` -- one
-// route, one payload, specification sections 6.2, 8 and 11). It composes the
-// store's plain-MVCC show reads (declaration detail, role grants, runs, dependency
-// edges, upstream latest runs, the run_inputs consumed check) with dispatch's pure
-// depends_on gate to produce the readout: the resolved declaration, the role and
-// its field-level grants, the recent runs, and the gate ledger -- the per-edge
-// verdict from the closed set (open, up_to_date, pending, poisoned). It is a read,
-// served on any role from the reader pool, and mutates nothing.
+// This file is the daemon's pipeline-show plane: the api.PipelineShowHandler behind
+// GET /pipeline/show (and therefore behind `iris pipeline show` -- one route, one
+// payload). It composes the store's plain-MVCC show reads (declaration detail, role
+// grants, runs, dependency edges, upstream latest runs, the run_inputs consumed
+// check) with dispatch's pure depends_on gate to produce the readout: the resolved
+// declaration, the role and its field-level grants, the recent runs, and the gate
+// ledger -- the per-edge verdict from the closed set (open, up_to_date, pending,
+// poisoned). It is a read, served on any role from the reader pool, and mutates
+// nothing.
 //
 // The ledger is resolved exactly as a run decision would resolve it -- the same
 // dispatch.Gate over the same run_inputs consumed check -- with the zero

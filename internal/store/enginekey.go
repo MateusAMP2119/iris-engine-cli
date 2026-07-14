@@ -8,13 +8,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// This file is the meta persistence of the engine's ed25519 signing key
-// (specification section 4, bootstrap Q/A: "private half in meta"). The key lives
-// in the single-row engine_key control table (id pinned to 1), not a per-database
-// GUC (ALTER DATABASE ... SET needs SUPERUSER the external admin role lacks) and
-// not a workspace file (which would force a shared filesystem for HA). The shared
-// meta database standbys already read gives HA superuser-free: a restarted or
-// standby daemon reads the same key back.
+// This file is the meta persistence of the engine's ed25519 signing key. The key
+// lives in the single-row engine_key control table (id pinned to 1), not a
+// per-database GUC (ALTER DATABASE ... SET needs SUPERUSER the external admin role
+// lacks) and not a workspace file (which would force a shared filesystem for HA).
+// The shared meta database standbys already read gives HA superuser-free: a
+// restarted or standby daemon reads the same key back.
 //
 // store owns only the bytes: the read seam returns the raw private half and the
 // write seam persists it, both keyed on id = 1. The daemon owns the crypto (mint,
@@ -95,10 +94,11 @@ func ReadEngineKeyOnce(ctx context.Context, src ConnSource) ([]byte, error) {
 
 // InsertEngineKey mints the engine key into the single-row engine_key meta table
 // create-once (INSERT ... ON CONFLICT (id) DO NOTHING): a second minter that lost
-// the race is a silent no-op, so the key can never fork under two candidates. priv
-// is the raw ed25519 private half and rides a bind parameter, never the SQL text,
-// so the private material never reaches a statement log. It is a leader-only meta
-// write, riding the single Writer. createdAt is an opaque audit string.
+// the race is a silent no-op, so the key can never fork under two candidates.
+// priv is the raw ed25519 private half and rides a bind parameter, never the SQL
+// text, so the private material never reaches a statement log. It is a
+// leader-only meta write, riding the single Writer. createdAt is an opaque audit
+// string.
 func (w *Writer) InsertEngineKey(ctx context.Context, priv []byte, createdAt string) error {
 	if err := w.conn.Exec(ctx, insertEngineKeySQL, priv, createdAt); err != nil {
 		return fmt.Errorf("store: writer insert engine key: %w", err)

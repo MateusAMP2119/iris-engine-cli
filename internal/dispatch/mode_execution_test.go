@@ -16,8 +16,6 @@ import (
 // TestBothModesFullyWired proves runs in both dev and built mode receive the
 // injected scoped connection (via composeEnv used for any started spec) and
 // full orchestration wiring is present for both.
-//
-// spec: S01/both-modes-fully-wired
 func TestBothModesFullyWired(t *testing.T) {
 	devScript := filepath.Join(t.TempDir(), "dev.sh")
 	_ = os.WriteFile(devScript, []byte("#!/bin/sh\necho dev\n"), 0o755)
@@ -41,8 +39,6 @@ func TestBothModesFullyWired(t *testing.T) {
 
 // TestModeSelectsExecTarget proves dev mode executes the source via its runtime
 // (the declared run vector) and built mode executes the content-addressed binary.
-//
-// spec: S01/mode-selects-exec-target
 func TestModeSelectsExecTarget(t *testing.T) {
 	dir := t.TempDir()
 	devDeclared := []string{writeScript(t, dir, "main.py", "#!/bin/sh\necho dev\n")}
@@ -63,8 +59,6 @@ func TestModeSelectsExecTarget(t *testing.T) {
 
 // TestBuiltModeIgnoresRun proves built mode executes the binary directly and
 // ignores the pipeline's declared run vector.
-//
-// spec: S03/built-mode-ignores-run
 func TestBuiltModeIgnoresRun(t *testing.T) {
 	declared := []string{"python", "main.py"}
 	objects := store.NewObjectStore(t.TempDir())
@@ -79,8 +73,6 @@ func TestBuiltModeIgnoresRun(t *testing.T) {
 // TestArtifactRetirementPostPrune proves that after pruning, artifact rows that
 // are neither the pipeline's newest artifact nor referenced by any surviving run
 // are deleted along with their object-store bytes.
-//
-// spec: S04/artifact-retirement-post-prune
 func TestArtifactRetirementPostPrune(t *testing.T) {
 	objectsDir := t.TempDir()
 

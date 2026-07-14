@@ -4,14 +4,12 @@ import (
 	"testing"
 )
 
-// TestPgxOnlyNoSQLite proves the specification section 9 rule that all database
-// access uses jackc/pgx directly -- never database/sql -- and that the module
+// TestPgxOnlyNoSQLite proves the rule that all database access uses jackc/pgx
+// directly -- never database/sql -- and that the module
 // contains no SQLite driver. Statically, that is a module-wide ban on importing
 // database/sql (or its subpackages) and on importing any SQLite driver; pgx
 // itself is fine. Synthetic graphs plant the banned imports, then the real repo,
 // which has neither, must be clean.
-//
-// spec: S09/pgx-only-no-sqlite
 func TestPgxOnlyNoSQLite(t *testing.T) {
 	t.Run("database/sql is banned anywhere", func(t *testing.T) {
 		g := synthGraph(

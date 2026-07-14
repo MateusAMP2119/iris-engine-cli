@@ -13,16 +13,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// These tests pin the stats surface of specification section 11: the read-only
-// rollup payload GET /stats serves (and `iris engine stats` prints identically),
-// its clock-free purity rules, and the deliberate absence of a /metrics endpoint
-// in core.
+// These tests pin the stats surface: the read-only rollup payload GET /stats
+// serves (and `iris engine stats` prints identically), its clock-free purity
+// rules, and the deliberate absence of a /metrics endpoint in core.
 
 // clockishNames are field-name fragments that would smuggle a clock-derived
-// metric into the stats payload. The payload's doctrine is counts and last-values
-// only (specification section 11: "the pass counter is clock-free (a count, not a
-// duration): no time-series, no clock-derived metric"), so no stats field may be
-// named like a timestamp, duration, rate, or liveness readout.
+// metric into the stats payload. The payload's doctrine is counts and
+// last-values only ("the pass counter is clock-free (a count, not a duration):
+// no time-series, no clock-derived metric"), so no stats field may be named
+// like a timestamp, duration, rate, or liveness readout.
 var clockishNames = []string{
 	"time", "duration", "seconds", "millis", "uptime", "age", "latency",
 	"heartbeat", "seen", "rate", "elapsed", "since", "when", "at",
@@ -35,7 +34,7 @@ var clockishNames = []string{
 // explicit-absence pointers/maps/slices over those. The per-lane pass counter is
 // an integer count, never a duration.
 func TestStatsClockFree(t *testing.T) {
-	t.Run("S11/stats-clock-free", func(t *testing.T) {
+	t.Run("stats-clock-free", func(t *testing.T) {
 		var walked []string
 		walkStatsType(t, reflect.TypeOf(api.StatsPayload{}), "StatsPayload", &walked)
 		if len(walked) == 0 {
@@ -119,11 +118,9 @@ var _ api.StatsHandler = fixedStats{}
 func (f fixedStats) Stats(context.Context) (api.StatsPayload, error) { return f.payload, nil }
 
 // TestStatsRoute proves GET /stats serves the wired handler's payload in the
-// section-7 data envelope on the real mux (the same handler the CLI's `iris
-// engine stats` reads, so both surfaces are one payload), rejects non-GET
-// methods, and faults internally when no handler is wired.
-//
-// spec: S11/stats-cli-http-parity
+// data envelope on the real mux (the same handler the CLI's `iris engine stats`
+// reads, so both surfaces are one payload), rejects non-GET methods, and faults
+// internally when no handler is wired.
 func TestStatsRoute(t *testing.T) {
 	head := &api.ChainHead{Seq: 3, Digest: "ab12", Location: "resident"}
 	payload := api.StatsPayload{
@@ -205,12 +202,12 @@ func TestStatsRoute(t *testing.T) {
 	})
 }
 
-// TestNoMetricsEndpoint proves core exposes no /metrics: the daemon mux answers a
-// /metrics request with the closed not_found error envelope, never a metrics
-// document -- with and without the stats handler wired (specification section 11:
-// a monitor consumes GET /stats; /metrics is deliberately left out).
+// TestNoMetricsEndpoint proves core exposes no /metrics: the daemon mux answers
+// a /metrics request with the closed not_found error envelope, never a metrics
+// document -- with and without the stats handler wired (a monitor consumes GET
+// /stats; /metrics is deliberately left out).
 func TestNoMetricsEndpoint(t *testing.T) {
-	t.Run("S11/no-metrics-endpoint", func(t *testing.T) {
+	t.Run("no-metrics-endpoint", func(t *testing.T) {
 		muxes := map[string]http.Handler{
 			"bare mux":         api.NewMux(),
 			"stats-wired mux":  api.NewMux(api.WithStats(fixedStats{})),

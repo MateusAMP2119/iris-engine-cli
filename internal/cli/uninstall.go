@@ -31,8 +31,8 @@ type uninstallCmdResult struct {
 }
 
 // uninstallCmd builds `iris uninstall`: one of the two root lifecycle verbs
-// (beside `iris update`), the self-removal of the installed iris binary
-// (specification section 8). It is daemonless and carries the destructive
+// (beside `iris update`), the self-removal of the installed iris binary. It is
+// daemonless and carries the destructive
 // --yes/--force gate; it is distinct from `iris engine uninstall`, which tears
 // down engine state.
 func (a *app) uninstallCmd() *cobra.Command {
@@ -47,7 +47,7 @@ func (a *app) uninstallCmd() *cobra.Command {
 }
 
 // uninstallSelf is the handler for `iris uninstall`: the daemonless self-removal
-// of the running iris executable (specification section 8). It refuses while a
+// of the running iris executable. It refuses while a
 // daemon is reachable (guiding to stop and tear down the engine first) unless
 // --force overrides the probe; it then enforces the dev-loop consent gate
 // (--yes/--force, or an interactive y/N prompt showing the version and path,

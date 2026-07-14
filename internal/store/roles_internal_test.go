@@ -30,10 +30,8 @@ func (c *recordingConn) Exec(_ context.Context, sql string, args ...any) error {
 // TestSecretRevealReachesTheBindOnly proves the raw secret crosses into the
 // credentials write -- the one legitimate exit -- while never leaking through a
 // formatting path.
-//
-// spec: S04/credentials-pipeline-login-only
 func TestSecretRevealReachesTheBindOnly(t *testing.T) {
-	t.Run("S04/credentials-pipeline-login-only", func(t *testing.T) {
+	t.Run("credentials-pipeline-login-only", func(t *testing.T) {
 		const raw = "9c1f-known-engine-secret"
 		s := Secret{value: raw}
 

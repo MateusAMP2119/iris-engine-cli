@@ -1,38 +1,33 @@
-// Package arch is the Iris structural gate: the executable form of the
-// specification's module-layout invariants (specification sections 9 and 10).
-// It is a static-analysis leaf, importing no other Iris package, whose job is to
-// prove -- by parsing go.mod, go.sum, and the module's own Go source, never by
-// executing the Go toolchain -- the four load-bearing structural contracts every
-// later epic leans on:
+// Package arch is the Iris structural gate: the executable form of the engine's
+// module-layout invariants. It is a static-analysis leaf, importing no other Iris
+// package, whose job is to prove -- by parsing go.mod, go.sum, and the module's
+// own Go source, never by executing the Go toolchain -- the four load-bearing
+// structural contracts every later epic leans on:
 //
 //   - the direct-dependency allowlist and the forbidden-anywhere ban on ORMs,
-//     migration frameworks, schedulers, parquet, and cloud object-store clients
-//     (S09/dependency-allowlist);
-//   - pgx-only database access with no database/sql and no SQLite driver
-//     (S09/pgx-only-no-sqlite);
-//   - the acyclic, one-direction internal import graph
-//     (S10/import-graph-one-direction);
+//     migration frameworks, schedulers, parquet, and cloud object-store clients;
+//   - pgx-only database access with no database/sql and no SQLite driver;
+//   - the acyclic, one-direction internal import graph;
 //   - store and pg as the sole database clients, no third path opened by any
-//     other package (S10/store-pg-sole-db-clients).
+//     other package.
 //
 // # Package classification
 //
-// The check divides the module's packages into three classes, because the spec's
+// The check divides the module's packages into three classes, because the
 // layering governs the shipped product roster, not the test scaffolding:
 //
-//   - Product: the specification section 10 roster (cli, daemon, api, dispatch,
-//     exec, archive, store, pg, declare, build, pat, version), each carrying a
-//     layer rank. The one-direction rule governs edges between product packages.
+//   - Product: the product roster (cli, daemon, api, dispatch, exec, archive,
+//     store, pg, declare, build, pat, version), each carrying a layer rank. The
+//     one-direction rule governs edges between product packages.
 //   - Main: cmd/iris, the single main package, the top of the direction (it may
 //     import product packages downward and nothing may import it).
-//   - Harness: every other package under internal/ -- the executable-spec and
-//     test-support scaffolding (spec, trace, golden, roundtrip, fixtures,
-//     socketio, conformance) and the recording-fake subpackages (store/storetest,
-//     pg/pgtest, exec/exectest). Harness packages carry no layer rank and sit
-//     outside the product graph: shipped code (Product or Main) never imports
-//     harness, but harness freely imports product (a fake wraps its seam), and a
-//     harness package may hold a pgx or Postgres-driving import a shipped
-//     non-database package never could.
+//   - Harness: every other package under internal/ -- the test-support
+//     scaffolding (golden, roundtrip, fixtures, socketio, conformance) and the
+//     recording-fake subpackages (store/storetest, pg/pgtest, exec/exectest).
+//     Harness packages carry no layer rank and sit outside the product graph:
+//     shipped code (Product or Main) never imports harness, but harness freely
+//     imports product (a fake wraps its seam), and a harness package may hold a
+//     pgx or Postgres-driving import a shipped non-database package never could.
 //
 // Every package, harness included, is still swept for import cycles and for the
 // forbidden database/sql and SQLite imports: those bans are module-wide.

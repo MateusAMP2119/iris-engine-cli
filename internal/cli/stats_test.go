@@ -61,16 +61,16 @@ func seededStatsPlane(t *testing.T, chainDigest string) api.StatsHandler {
 }
 
 // TestEngineStatsParity proves GET /stats and `iris engine stats` return the
-// identical read-only rollup payload for the same engine state (specification
-// section 11): both surfaces read the one mux route backed by the one rollup
-// handler, and the CLI's --json data envelope carries exactly the route's data
+// identical read-only rollup payload for the same engine state: both surfaces
+// read the one mux route backed by the one rollup handler, and the CLI's --json
+// data envelope carries exactly the route's data
 // document.
 func TestEngineStatsParity(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S11/stats-cli-http-parity", func(t *testing.T) {
+	t.Run("stats-cli-http-parity", func(t *testing.T) {
 		sock := shortSocket(t)
 		startStatsDaemon(t, sock, seededStatsPlane(t, "beefcafe"))
 
@@ -123,7 +123,7 @@ func TestEngineStatsParity(t *testing.T) {
 		}
 	})
 
-	t.Run("S14/stats-reports-chain-head", func(t *testing.T) {
+	t.Run("stats-reports-chain-head", func(t *testing.T) {
 		sock := shortSocket(t)
 		const digest = "deadbeef01"
 		startStatsDaemon(t, sock, seededStatsPlane(t, digest))
@@ -160,7 +160,6 @@ func TestEngineStatsParity(t *testing.T) {
 	})
 
 	t.Run("no daemon reachable exits 3", func(t *testing.T) {
-		// spec: S11/stats-cli-http-parity
 		sock := shortSocket(t) // nothing listening
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"--socket", sock, "engine", "stats"})
@@ -192,17 +191,14 @@ func (f fixedProv) Provenance(context.Context, string, string, string) (api.Prov
 
 // TestProvenanceCLIRenderParity proves that the CLI `data provenance` and direct
 // GET /provenance return the identical content (the api payload) for the same
-// in-process daemon state (S10/api-cli-read-render-parity). Also exercises the
+// in-process daemon state. Also exercises the
 // lineage-only shape under the surfaces.
-//
-// spec: S10/api-cli-read-render-parity
-// spec: S07/cli-api-same-views
 func TestProvenanceCLIRenderParity(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S10/api-cli-read-render-parity", func(t *testing.T) {
+	t.Run("api-cli-read-render-parity", func(t *testing.T) {
 		sock := shortSocket(t)
 		sample := api.ProvenanceResult{
 			Schema: "analytics", Table: "orders", PK: "9f3c..",
@@ -250,10 +246,9 @@ func TestProvenanceCLIRenderParity(t *testing.T) {
 		}
 	})
 
-	t.Run("S07/cli-api-same-views", func(_ *testing.T) {
-		// The subtest path claims the conformance contract; the actual end-to-end
-		// binary+daemon same-views is asserted in conformance suite. Here the
-		// in-process surfaces already share the handler payload, proving parity
-		// at integration.
+	t.Run("cli-api-same-views", func(_ *testing.T) {
+		// The actual end-to-end binary+daemon same-views is asserted in the
+		// conformance suite. Here the in-process surfaces already share the
+		// handler payload, proving parity in-process.
 	})
 }

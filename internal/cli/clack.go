@@ -7,7 +7,7 @@ package cli
 // framework); raw terminal mode comes from golang.org/x/term. Every widget
 // is production-surface only: the tour's injectable seams (tourPick,
 // tourInput) bypass this file entirely, so harnessed tests never meet raw
-// mode (specification section 8, quickstart ceremony widgets).
+// mode.
 
 import (
 	"fmt"

@@ -15,7 +15,7 @@ import (
 // OSRunner is the real subprocess runner: it spawns an OS process in its own
 // process group, captures its output through the standard library, and kills the
 // whole group on Kill or context cancellation. It is the seed of E05.1's exec
-// seam. Unix only (darwin + linux); Windows is deferred from v1 (section 16).
+// seam. Unix only (darwin + linux); Windows is deferred from v1.
 type OSRunner struct{}
 
 // NewOSRunner returns the real subprocess runner.
@@ -135,10 +135,9 @@ func (h *osHandle) Kill() error {
 // SIGKILL, signalling every member by killing the negated pgid. It is the crash-
 // reconciliation kill path: a restarting same-host leader has no live Handle for a
 // surviving run, only its recorded handle (runs.handle = pgid), so it SIGKILLs the
-// group by that bare pgid (specification section 2 crash recovery). An already-gone
-// group (ESRCH) is not an error -- the survivor may already have exited. The pgid
-// may in principle be recycled once the original group emptied (an inherent POSIX
-// race), the accepted best-effort trade the spec names.
+// group by that bare pgid. An already-gone group (ESRCH) is not an error -- the
+// survivor may already have exited. The pgid may in principle be recycled once the
+// original group emptied (an inherent POSIX race), the accepted best-effort trade.
 func KillGroup(pgid int) error {
 	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
 		if errors.Is(err, syscall.ESRCH) {

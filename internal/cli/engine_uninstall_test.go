@@ -42,12 +42,9 @@ func seedEngineArtifacts(t *testing.T) config.Settings {
 // TestEngineUninstallCLI proves the `iris engine uninstall` command: it is gated
 // (it refuses without --yes and touches nothing), and when confirmed it performs
 // the local, daemonless teardown of the engine's on-disk state -- the object store
-// under objects_path, the control socket, and the service unit (specification
-// sections 4 and 12). The teardown deletes both the object store's artifact bytes
+// under objects_path, the control socket, and the service unit.
+// The teardown deletes both the object store's artifact bytes
 // and archived partitions by removing the store directory outright.
-//
-// spec: S04/uninstall-full-teardown
-// spec: S12/uninstall-drops-engine-state
 func TestEngineUninstallCLI(t *testing.T) {
 	t.Run("refuses without --yes and removes nothing", func(t *testing.T) {
 		t.Chdir(t.TempDir())
@@ -101,8 +98,8 @@ func TestEngineUninstallCLI(t *testing.T) {
 	})
 
 	// uninstall is strictly local (no listener path); a --host/--token (remote
-	// control PAT) cannot trigger it. This proves S12/uninstall-local-only.
-	t.Run("S12/uninstall-local-only", func(t *testing.T) {
+	// control PAT) cannot trigger it.
+	t.Run("uninstall-local-only", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		seedEngineArtifacts(t)
 
@@ -111,7 +108,7 @@ func TestEngineUninstallCLI(t *testing.T) {
 		// locally; it must not yield "no_daemon".
 		code := newApp(&out, &errb).run([]string{"--host", "example:1234", "--token", "pat", "engine", "uninstall"})
 		if code == exitNoDaemon {
-			t.Fatalf("uninstall over --host yielded no_daemon; must be local-only (S12/uninstall-local-only)")
+			t.Fatalf("uninstall over --host yielded no_daemon; must be local-only")
 		}
 		// It refused on confirmation (the local gate), as expected.
 		if code != exitOpFailed {

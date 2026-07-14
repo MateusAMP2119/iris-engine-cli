@@ -1,8 +1,8 @@
 # golangci-lint configuration for Iris (schema v2).
 #
-# The CI merge gate (spec section 16, S16/ci-pipeline-merge-gate) runs this over
-# the whole tree. The enabled set is the one the task fixes: govet, staticcheck,
-# errcheck, revive, gosec, ineffassign, gocritic, misspell.
+# The CI lint job runs this over the whole tree, and a red lint blocks the merge.
+# The enabled set: govet, staticcheck, errcheck, revive, gosec, ineffassign,
+# gocritic, misspell.
 #
 # gosec policy: G304 (file inclusion via variable) is deliberately LEFT ACTIVE so
 # path-traversal analysis keeps running as later epics open user-influenced paths
@@ -35,13 +35,18 @@ linters:
         # the exec package drive the built iris binary with caller-supplied args
         # by design. (Not covered by any active exclusion preset, so this is live.)
         - G204
-        # File permissions (0o644): the repo's accepted style for goldens, the
-        # spec lockfile, and the archive round-trip temp file. (Not covered by the
-        # legacy preset's EXC0009, which is perms-of-dir only, so this is live.)
+        # File permissions (0o644): the repo's accepted style for the golden-file
+        # writer (internal/golden), the archive round-trip temp file
+        # (internal/roundtrip), and the workspace artifacts fixtures/catalog/pg
+        # materialise. (Not covered by the legacy preset's EXC0009, which is
+        # perms-of-dir only, so this is live.)
         - G306
-        # WalkDir/ReadFile in a callback: the trace gate and fixture walkers read
-        # every file under a trusted repo tree; the symlink-TOCTOU rule is noise
-        # here and fights the established gate walkers.
+        # WalkDir/ReadFile in a callback (symlink-TOCTOU). Defensive: the pinned
+        # gosec (v2.26.1) does not currently emit G122, so this entry is inert
+        # today -- it is kept so the tree walkers in internal/fixtures,
+        # internal/arch, internal/roundtrip and the store + conformance tests,
+        # which all read every file under a trusted repo or temp tree, stay
+        # covered if the rule lands in a later gosec.
         - G122
         # Bounded slice index inside a length-checked loop: a false positive in
         # the pre-existing equalStrings test helper.
@@ -69,24 +74,8 @@ linters:
       # permanently disable path-traversal analysis -- exactly what the top-of-file
       # policy keeps on. Dropping it is what makes G304 fire again.
     rules:
-      # internal/trace is the traceability gate: its whole job is to read the spec,
-      # the spec lockfile, and every test source by a computed path from the trusted
-      # repo tree (S16 gate walkers), so G304 (file inclusion via variable) is
-      # by-design across the package. The honest fix is a per-site //nolint:gosec at
-      # each read, but this package is owned by a separate fix branch this task must
-      # not touch, so its by-design reads are grandfathered here via a path rule.
-      # G304 stays active everywhere else, which is the point.
-      - path: internal/trace/
-        linters:
-          - gosec
-        text: "G304"
-      # Pre-existing test-support code that predates this config; accepted
-      # style, out of this task's scope to change.
+      # Pre-existing test-support code that predates this config; accepted style.
       - path: internal/roundtrip/roundtrip_test.go
         linters:
           - revive
         text: unused-parameter
-      - path: internal/spec/manifest_test.go
-        linters:
-          - revive
-        text: redefines-builtin-id

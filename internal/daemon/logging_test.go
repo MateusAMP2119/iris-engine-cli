@@ -11,16 +11,15 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
 )
 
-// TestStructuredJSONLogs proves the daemon emits structured JSON logs via slog
-// when it runs as a daemon (detached / daemonized) and switches to human-readable
-// console output when it runs attached in the foreground (specification section
-// 2: "Structured JSON logs (slog); human console in foreground"). LoggerFor is
-// the pure constructor the lifecycle wiring calls; its output shape is asserted
-// directly, and OpenDaemonLogger proves the daemon-mode logger lands JSON in the
-// size-rotated daemon.log.
+// TestStructuredJSONLogs proves the daemon emits structured JSON logs via slog when
+// it runs as a daemon (detached / daemonized) and switches to human-readable
+// console output when it runs attached in the foreground (structured JSON logs
+// (slog); human console in foreground). LoggerFor is the pure constructor the
+// lifecycle wiring calls; its output shape is asserted directly, and
+// OpenDaemonLogger proves the daemon-mode logger lands JSON in the size-rotated
+// daemon.log.
 func TestStructuredJSONLogs(t *testing.T) {
-	// spec: S02/structured-json-logs
-	t.Run("S02/structured-json-logs", func(t *testing.T) {
+	t.Run("structured-json-logs", func(t *testing.T) {
 		t.Run("daemon mode emits structured JSON", func(t *testing.T) {
 			var buf bytes.Buffer
 			logger := daemon.LoggerFor(daemon.LogModeDaemon, &buf)

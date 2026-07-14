@@ -6,12 +6,12 @@ import (
 	"net/http"
 )
 
-// This file is the daemon's workload-show surface: GET /workload and
-// `iris workload show [<pipeline>]` (specification sections 8 and the wiring
-// panel contract). It renders the standing wiring as a panel (lanes with
-// composer walk, artifact and data mode, run tips, per-edge live gate state),
-// never a commit graph. Optional ?pipeline= zooms to that pipeline's
-// neighborhood. It is a read, served on any role, and mutates nothing.
+// This file is the daemon's workload-show surface: GET /workload and `iris
+// workload show [<pipeline>]` (the wiring panel contract). It renders the
+// standing wiring as a panel (lanes with composer walk, artifact and data mode,
+// run tips, per-edge live gate state), never a commit graph. Optional
+// ?pipeline= zooms to that pipeline's neighborhood. It is a read, served on any
+// role, and mutates nothing.
 //
 // The panel draws from the same walks the dispatcher uses (dispatch.BuildWalk,
 // dispatch.Gate) and the existing gate ledger surface; no new meta state is

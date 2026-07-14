@@ -179,12 +179,11 @@ func (p *fakePostPass) snapshot() []dispatch.PassReport {
 	return append([]dispatch.PassReport(nil), p.reports...)
 }
 
-// TestLaneRunnerComposerOrder proves each lane runner starts the ELIGIBLE pipelines in
-// composer order (ORDER BY pos) on a pass: a closed-gate member in the middle mints no
-// run, and the open-gated members start in their composed order regardless
-// (specification section 6.1).
+// TestLaneRunnerComposerOrder proves each lane runner starts the ELIGIBLE pipelines
+// in composer order (ORDER BY pos) on a pass: a closed-gate member in the middle
+// mints no run, and the open-gated members start in their composed order regardless.
 func TestLaneRunnerComposerOrder(t *testing.T) {
-	t.Run("S06.1/lane-runner-composer-order", func(t *testing.T) {
+	t.Run("lane-runner-composer-order", func(t *testing.T) {
 		gate := newFakeGate()
 		gate.set("skipme", dispatch.Decision{Run: false}) // closed gate: mints no run
 		runner := newFakeRunner()
@@ -201,13 +200,13 @@ func TestLaneRunnerComposerOrder(t *testing.T) {
 	})
 }
 
-// TestDispatcherPostPassOnly proves dispatcher-owned bookkeeping runs opportunistically
-// only AFTER a lane pass completes, never mid-pass: the post-pass event lands strictly
-// after every one of the pass's runs, and a poisoned member's failure propagation is
-// deferred to the post-pass report rather than written at the member's turn
-// (specification section 6.1).
+// TestDispatcherPostPassOnly proves dispatcher-owned bookkeeping runs
+// opportunistically only AFTER a lane pass completes, never mid-pass: the post-pass
+// event lands strictly after every one of the pass's runs, and a poisoned member's
+// failure propagation is deferred to the post-pass report rather than written at the
+// member's turn.
 func TestDispatcherPostPassOnly(t *testing.T) {
-	t.Run("S06.1/dispatcher-post-pass-only", func(t *testing.T) {
+	t.Run("dispatcher-post-pass-only", func(t *testing.T) {
 		ev := &eventLog{}
 		gate := newFakeGate()
 		// dep's awaited upstream dead-lettered: the gate poisons, so no run starts for it
@@ -253,12 +252,12 @@ func TestDispatcherPostPassOnly(t *testing.T) {
 func blocked() chan struct{} { return make(chan struct{}) }
 
 // TestSameLaneSerialSeparateParallel proves pipelines in the same lane are dispatched
-// serially in composed order while pipelines in separate lanes run in parallel: while the
-// first member of lane etl is in flight, its second member has not started (serial), yet a
-// member of a separate lane is already running (parallel), and the second member starts
-// only after the first reaches a terminal state (specification section 3).
+// serially in composed order while pipelines in separate lanes run in parallel: while
+// the first member of lane etl is in flight, its second member has not started
+// (serial), yet a member of a separate lane is already running (parallel), and the
+// second member starts only after the first reaches a terminal state.
 func TestSameLaneSerialSeparateParallel(t *testing.T) {
-	t.Run("S03/same-lane-serial-order", func(t *testing.T) {
+	t.Run("same-lane-serial-order", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -304,12 +303,12 @@ func TestSameLaneSerialSeparateParallel(t *testing.T) {
 }
 
 // TestLanesParallelSerialWithinNoCap proves runs within a lane execute serially while
-// distinct lanes run in parallel with no engine cap, and a laneless pipeline forms its own
-// lane: five own-lane pipelines and the first member of a two-member lane are all in flight
-// simultaneously (no cap, laneless is its own lane run in parallel), while the lane's second
-// member waits for the first (serial within) (specification section 6.3).
+// distinct lanes run in parallel with no engine cap, and a laneless pipeline forms
+// its own lane: five own-lane pipelines and the first member of a two-member lane are
+// all in flight simultaneously (no cap, laneless is its own lane run in parallel),
+// while the lane's second member waits for the first (serial within).
 func TestLanesParallelSerialWithinNoCap(t *testing.T) {
-	t.Run("S06.3/lanes-parallel-serial-within", func(t *testing.T) {
+	t.Run("lanes-parallel-serial-within", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -360,12 +359,12 @@ func TestLanesParallelSerialWithinNoCap(t *testing.T) {
 	})
 }
 
-// TestPassBoundaryGraphVisibility proves runners read the walk at pass start: an in-flight
-// pass finishes on the OLD graph and only the next pass sees the NEW one, while the
-// in-flight run is untouched. A pipeline added to the walk while pass one is in flight does
-// not join that pass; it appears only in pass two (specification section 6.3).
+// TestPassBoundaryGraphVisibility proves runners read the walk at pass start: an
+// in-flight pass finishes on the OLD graph and only the next pass sees the NEW one,
+// while the in-flight run is untouched. A pipeline added to the walk while pass one
+// is in flight does not join that pass; it appears only in pass two.
 func TestPassBoundaryGraphVisibility(t *testing.T) {
-	t.Run("S06.3/pass-boundary-graph-visibility", func(t *testing.T) {
+	t.Run("pass-boundary-graph-visibility", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -431,12 +430,12 @@ func nextStart(ctx context.Context, t *testing.T, runner *fakeRunner) string {
 	}
 }
 
-// TestRemovedPipelineFinishes proves a removed pipeline finishes its current run and then
-// stops appearing in subsequent passes: a second lane member removed from the walk while
-// its run is in flight still finishes that run in the current pass, and the next pass -- on
-// the new walk -- omits it entirely and never re-dispatches it (specification section 6.3).
+// TestRemovedPipelineFinishes proves a removed pipeline finishes its current run and
+// then stops appearing in subsequent passes: a second lane member removed from the
+// walk while its run is in flight still finishes that run in the current pass, and
+// the next pass -- on the new walk -- omits it entirely and never re-dispatches it.
 func TestRemovedPipelineFinishes(t *testing.T) {
-	t.Run("S06.3/removed-pipeline-finishes", func(t *testing.T) {
+	t.Run("removed-pipeline-finishes", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -493,12 +492,12 @@ func TestRemovedPipelineFinishes(t *testing.T) {
 	})
 }
 
-// TestFailureNeverGloballyFatal proves a run failure is isolated: a pipeline whose run
-// dead-letters every pass keeps being freshly dispatched (the engine keeps running, never
-// globally fatal) while a pipeline in a separate lane continues dispatching unaffected
-// (specification section 1).
+// TestFailureNeverGloballyFatal proves a run failure is isolated: a pipeline whose
+// run dead-letters every pass keeps being freshly dispatched (the engine keeps
+// running, never globally fatal) while a pipeline in a separate lane continues
+// dispatching unaffected.
 func TestFailureNeverGloballyFatal(t *testing.T) {
-	t.Run("S01/failure-never-globally-fatal", func(t *testing.T) {
+	t.Run("failure-never-globally-fatal", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -538,13 +537,13 @@ func TestFailureNeverGloballyFatal(t *testing.T) {
 	})
 }
 
-// TestHungRunHoldsLane proves a hung run holds its lane indefinitely and the lane resumes
-// only after that run is cancelled by the operator: a pipeline whose run never terminates
-// is dispatched exactly once and blocks its lane, while a separate lane keeps dispatching;
-// no engine timer frees the hung run (clock doctrine), and only an explicit release (the
-// operator cancel) lets its lane advance (specification section 1).
+// TestHungRunHoldsLane proves a hung run holds its lane indefinitely and the lane
+// resumes only after that run is cancelled by the operator: a pipeline whose run
+// never terminates is dispatched exactly once and blocks its lane, while a separate
+// lane keeps dispatching; no engine timer frees the hung run (clock doctrine), and
+// only an explicit release (the operator cancel) lets its lane advance.
 func TestHungRunHoldsLane(t *testing.T) {
-	t.Run("S01/hung-run-holds-lane", func(t *testing.T) {
+	t.Run("hung-run-holds-lane", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
@@ -624,7 +623,7 @@ func (s *fakeJournalStep) AfterPass(_ context.Context, _ dispatch.PassReport) er
 	defer s.mu.Unlock()
 	// Simulate: for a newly sealable partition (test injects the condition by
 	// always acting once a pass completes, modeling "opportunistic after pass").
-	// Use the pure compact on a tiny fixture to exercise S14/compaction-collapse-rule path.
+	// Use the pure compact on a tiny fixture to exercise the compaction collapse-rule path.
 	fixture := []pg.JournalEntry{
 		{ID: 1, RunID: 99, Schema: "s", Table: "t", RowPK: "r", Op: pg.OpInsert, PreImage: "", Undo: pg.UndoOpen},
 		{ID: 2, RunID: 99, Schema: "s", Table: "t", RowPK: "r", Op: pg.OpUpdate, PreImage: "x", Undo: pg.UndoPromoted},
@@ -647,10 +646,8 @@ func (s *fakeJournalStep) snapshot() []string {
 // TestSealDispatcherStep proves sealing executes as an opportunistic
 // dispatcher step strictly after a lane pass completes: compact, then
 // checkpoint, then archive are performed for newly sealable partitions.
-//
-// spec: S14/seal-dispatcher-step
 func TestSealDispatcherStep(t *testing.T) {
-	t.Run("S14/seal-dispatcher-step", func(t *testing.T) {
+	t.Run("seal-dispatcher-step", func(t *testing.T) {
 		ev := &eventLog{}
 		gate := newFakeGate()
 		runner := newFakeRunner()
@@ -678,7 +675,7 @@ func TestSealDispatcherStep(t *testing.T) {
 		}
 		seq := step.snapshot()
 		if !reflect.DeepEqual(seq, []string{"compact", "checkpoint", "archive"}) {
-			t.Fatalf("seal step sequence = %v, want [compact, checkpoint, archive] (S14/seal-dispatcher-step)", seq)
+			t.Fatalf("seal step sequence = %v, want [compact, checkpoint, archive]", seq)
 		}
 	})
 }

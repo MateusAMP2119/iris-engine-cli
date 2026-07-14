@@ -19,8 +19,6 @@ import (
 // applies the hello_iris sample, runs it, and `iris data provenance
 // demo.colors green` names the authoring run. The engine is left running
 // afterwards, and a second unattended run adopts it and exits 0.
-//
-// spec: S08/quickstart-full-tour
 func TestQuickstartFullTour(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)
@@ -104,8 +102,6 @@ func TestQuickstartFullTour(t *testing.T) {
 // applies only the picked entry, runs it (the word counts computed wholly in
 // Postgres), and `iris data provenance demo.word_counts hope` names the
 // authoring run. A second unattended run exits 0.
-//
-// spec: S08/quickstart-catalog-picked-full-tour
 func TestQuickstartPickedFullTour(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)

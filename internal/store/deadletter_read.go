@@ -6,11 +6,11 @@ import (
 )
 
 // This file is the meta read path for the dead-letter worklist: the plain-MVCC
-// reads replay resolution and the blast-radius readout draw from (specification
-// section 6.2). Like every reader here it runs over the pool with no session pinning
-// and no busy-retry, so `iris deadletter show` (a read served on any node) and the
-// leader's replay resolution both read a consistent snapshot without contending with
-// the single-writer path.
+// reads replay resolution and the blast-radius readout draw from. Like every
+// reader here it runs over the pool with no session pinning and no busy-retry, so
+// `iris deadletter show` (a read served on any node) and the leader's replay
+// resolution both read a consistent snapshot without contending with the
+// single-writer path.
 //
 // The worklist row the dispatcher's pure resolution needs carries more than the stats
 // projection: besides the run, pipeline, and reason it needs -- for a propagated entry

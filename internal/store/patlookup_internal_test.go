@@ -47,8 +47,6 @@ func (p *scriptedPool) query(context.Context, string, ...any) (poolRows, error) 
 // TestLookupPATResolvesRecord proves the PAT lookup resolves a token prefix to its
 // hash, revoked flag, scope union, and owned read role -- the record a bearer-token
 // verifier authenticates against.
-//
-// spec: S04/pat-authority-scope-union
 func TestLookupPATResolvesRecord(t *testing.T) {
 	row := &scriptedRow{
 		present: true,
@@ -78,8 +76,6 @@ func TestLookupPATResolvesRecord(t *testing.T) {
 
 // TestLookupPATNotFound proves an absent prefix is ErrPATNotFound (mapped to 401),
 // and an empty prefix short-circuits to the same sentinel.
-//
-// spec: S04/pat-authority-scope-union
 func TestLookupPATNotFound(t *testing.T) {
 	r := &pgxPATReader{pool: &scriptedPool{row: &scriptedRow{present: false}}}
 	if _, err := r.LookupPAT(context.Background(), "nope"); !errors.Is(err, ErrPATNotFound) {

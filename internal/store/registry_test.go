@@ -9,11 +9,10 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the registry write surface (specification sections 3, 4, and
-// 6.3): the pipelines/dependencies/lanes shapes and the atomic write paths that
-// populate them. Every write rides the single meta writer over a recording fake --
-// no live Postgres -- so a test asserts the exact statement set and its
-// transaction grouping.
+// This file proves the registry write surface: the pipelines/dependencies/lanes
+// shapes and the atomic write paths that populate them. Every write rides the
+// single meta writer over a recording fake -- no live Postgres -- so a test
+// asserts the exact statement set and its transaction grouping.
 
 // stmtsContaining returns the recorded statements whose SQL contains sub.
 func stmtsContaining(stmts []storetest.RecordedStatement, sub string) []storetest.RecordedStatement {
@@ -47,10 +46,8 @@ func equalStrings(a, b []string) bool {
 // TestPipelinesTableShape proves the pipelines registry root: the table shape
 // (name PK, folder, run JSON argv, artifact and data_mode CHECK-constrained) and
 // that the write path persists exactly those columns for a registered pipeline.
-//
-// spec: S04/pipelines-table-shape
 func TestPipelinesTableShape(t *testing.T) {
-	t.Run("S04/pipelines-table-shape", func(t *testing.T) {
+	t.Run("pipelines-table-shape", func(t *testing.T) {
 		// The schema model: name PK; folder, run (json), artifact, data_mode columns;
 		// artifact in (source, built); data_mode in (disposable, permanent).
 		s := store.MetaSchema()
@@ -114,10 +111,8 @@ func TestPipelinesTableShape(t *testing.T) {
 // graph as one edge row per depends_on: from_pipeline/to_pipeline FKs to pipelines
 // (from = dependent), composite PK on both, indexed in both directions; and the
 // write path emits exactly one edge row per declared upstream.
-//
-// spec: S04/dependencies-edge-shape
 func TestDependenciesEdgeShape(t *testing.T) {
-	t.Run("S04/dependencies-edge-shape", func(t *testing.T) {
+	t.Run("dependencies-edge-shape", func(t *testing.T) {
 		s := store.MetaSchema()
 		deps := tableByName(t, s, "dependencies")
 
@@ -179,10 +174,8 @@ func TestDependenciesEdgeShape(t *testing.T) {
 // TestDependenciesPersistRows proves an applied pipeline's depends_on relationships
 // persist as rows in the dependencies table, separate from lanes: registering a
 // pipeline with upstreams writes dependency rows and touches no lanes row.
-//
-// spec: S03/dependencies-persist-rows
 func TestDependenciesPersistRows(t *testing.T) {
-	t.Run("S03/dependencies-persist-rows", func(t *testing.T) {
+	t.Run("dependencies-persist-rows", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		row := store.PipelineRow{Name: "load_orders", Folder: "f", Run: []string{"python", "m.py"}, Artifact: store.ArtifactSource, DataMode: store.DataDisposable}
@@ -203,8 +196,6 @@ func TestDependenciesPersistRows(t *testing.T) {
 // production write path clears the pipeline's edges before inserting the current
 // ones, and the registry-view fake mirrors that replace semantics, so the graph
 // validation reads is the graph the writer persists (never a stale union).
-//
-// spec: S03/dependencies-persist-rows
 func TestDependenciesReApplyReplaces(t *testing.T) {
 	ctx := context.Background()
 
@@ -257,10 +248,8 @@ func TestDependenciesReApplyReplaces(t *testing.T) {
 // TestLanesRowComposerWritten proves lane state persists in lanes as name-keyed
 // rows (lane, pipeline name, pos) and is written only by the composer's own apply:
 // RewriteLane emits those rows, and a pipeline apply (RegisterPipeline) emits none.
-//
-// spec: S03/lanes-row-composer-written
 func TestLanesRowComposerWritten(t *testing.T) {
-	t.Run("S03/lanes-row-composer-written", func(t *testing.T) {
+	t.Run("lanes-row-composer-written", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		if err := w.RewriteLane(context.Background(), "ingest", []string{"extract_orders", "reset_counters", "load_orders"}); err != nil {
@@ -302,10 +291,8 @@ func TestLanesRowComposerWritten(t *testing.T) {
 // TestLanesComposerAtomicRewrite proves a composer apply replaces a lane's rows as
 // one atomic full-lane rewrite -- the clearing DELETE and the ordered INSERTs are a
 // single meta transaction -- and that pipeline applies never write the lanes table.
-//
-// spec: S04/lanes-composer-atomic-rewrite
 func TestLanesComposerAtomicRewrite(t *testing.T) {
-	t.Run("S04/lanes-composer-atomic-rewrite", func(t *testing.T) {
+	t.Run("lanes-composer-atomic-rewrite", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		if err := w.RewriteLane(context.Background(), "ingest", []string{"a", "b"}); err != nil {

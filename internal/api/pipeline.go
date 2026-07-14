@@ -7,13 +7,14 @@ import (
 	"net/http"
 )
 
-// This file is the daemon's pipeline surface for the manual `iris pipeline run` control
-// mutation and the `iris pipeline list` read (specification section 8). POST
-// /pipeline/run is a mutation, so the mux's leader gate already rejects it on a standby
-// with not_leader guidance (exit 6); GET /pipeline/list is a read and works on any node.
-// Like the control plane, api stays a leaf: it defines the PipelineHandler seam and the
-// plain request/result shapes but reaches nothing up the stack -- the daemon supplies
-// the handler that composes the dispatcher, meta reads, and exec.
+// This file is the daemon's pipeline surface for the manual `iris pipeline run`
+// control mutation and the `iris pipeline list` read. POST /pipeline/run is a
+// mutation, so the mux's leader gate already rejects it on a standby with
+// not_leader guidance (exit 6); GET /pipeline/list is a read and works on any
+// node. Like the control plane, api stays a leaf: it defines the
+// PipelineHandler seam and the plain request/result shapes but reaches nothing
+// up the stack -- the daemon supplies the handler that composes the dispatcher,
+// meta reads, and exec.
 //
 // A manual run's business outcome (queued, succeeded, dead-lettered, or ineligible) is
 // NOT an HTTP error: the route returns 200 and carries the outcome in the body's state
@@ -102,11 +103,12 @@ func (noPipelines) ListPipelines(context.Context, bool) (PipelineListResult, err
 	return PipelineListResult{}, ErrControlUnavailable
 }
 
-// servePipelineRun handles POST /pipeline/run: decode the request, run the manual op,
-// and render the section-7 envelope. The leader gate ran already in ServeHTTP. A
-// malformed body is 400 bad_request; an operation failure is 422 operation_failed; an
-// internal fault (no handler) is 500 internal. A successful call is 200 -- the run's
-// business outcome rides the result's state field, not the HTTP status.
+// servePipelineRun handles POST /pipeline/run: decode the request, run the
+// manual op, and render the data envelope. The leader gate ran already in
+// ServeHTTP. A malformed body is 400 bad_request; an operation failure is 422
+// operation_failed; an internal fault (no handler) is 500 internal. A
+// successful call is 200 -- the run's business outcome rides the result's state
+// field, not the HTTP status.
 func (m *mux) servePipelineRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST "+r.URL.Path+" only")

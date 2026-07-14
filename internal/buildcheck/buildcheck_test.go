@@ -48,8 +48,6 @@ jobs:
 // pins the same discipline for the cross-compile matrix by requiring the build
 // job to set CGO_ENABLED=0, so every shipped artifact is static, not just this
 // local build.
-//
-// spec: S09/cgo-free-static-binary
 func TestCGOFreeStaticBinary(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "iris")
 
@@ -117,8 +115,6 @@ func TestCGOFreeStaticBinary(t *testing.T) {
 // one toolchain that is running. Together they bind both ends of the contract --
 // the CI matrix (the real cross-version proof) and a real build here -- so a
 // regression at either end fails this test.
-//
-// spec: S09/go-version-floor-and-target
 func TestGoVersionFloorAndTarget(t *testing.T) {
 	// go.mod declares the floor toolchain.
 	goMod, err := os.ReadFile(filepath.Join(repoRoot(), "go.mod")) //nolint:gosec // G304: path is the repo-controlled go.mod, joined from a constant filename, never user or network input.

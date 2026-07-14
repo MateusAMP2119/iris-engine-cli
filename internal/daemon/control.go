@@ -20,10 +20,9 @@ import (
 
 // This file is the daemon's leader-side control plane: the composition root that
 // turns POST /apply and POST /destroy into the registry apply, schema provisioning,
-// and scoped teardown (specification sections 3, 6.3, and 12). It sits at the top of
-// the import graph (daemon composes dispatch, pg, store, and declare) and is the one
-// place they are wired together, so no lower package reaches across the meta/data
-// boundary.
+// and scoped teardown. It sits at the top of the import graph (daemon composes
+// dispatch, pg, store, and declare) and is the one place they are wired together,
+// so no lower package reaches across the meta/data boundary.
 //
 // The control plane is leader-only. The api mux gates every mutation to the leader
 // (a standby returns not_leader), and the dispatcher -- the single meta writer -- only
@@ -248,12 +247,12 @@ func (o *controlOrchestrator) laneMembers(ctx context.Context, lane string) ([]s
 	return members, nil
 }
 
-// provision runs pipeline-independent schema provisioning over the workspace schemas/
-// tree (specification section 5): it rejects a reserved public schema folder,
-// discovers the declared tables, reconstructs each table's ledger (on-disk migrations
-// plus the applied head in meta), reads the live-Postgres view, and plans. On every
-// non-dry-run apply it ensures the capture function (self-healing, even when the plan
-// is empty) and then applies the plan when non-empty. A re-apply against an
+// provision runs pipeline-independent schema provisioning over the workspace
+// schemas/ tree: it rejects a reserved public schema folder, discovers the declared
+// tables, reconstructs each table's ledger (on-disk migrations plus the applied
+// head in meta), reads the live-Postgres view, and plans. On every non-dry-run
+// apply it ensures the capture function (self-healing, even when the plan is empty)
+// and then applies the plan when non-empty. A re-apply against an
 // already-provisioned database plans empty, so provisioning is idempotent (nothing
 // re-created, nothing re-recorded) beyond the idempotent capture-function ensure.
 func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error {
@@ -266,13 +265,13 @@ func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error 
 	// public is engine-reserved: reject a schemas/public/ folder before any
 	// provisioning, independent of ValidateSchemaTree's per-table folder-agreement
 	// checks, so declared tables never land in the engine's own public schema beside
-	// data_journal (specification section 3).
+	// data_journal.
 	if err := declare.ValidateSchemaTreeReserved(schemasDir); err != nil {
 		return fmt.Errorf("declare apply: %w", err)
 	}
-	// Provisioning reads only the schemas/ tree (pipeline-independent, specification
-	// section 5): it never validates the pipeline folders, so a schema apply provisions
-	// even while another pipeline in the workspace is mid-edit.
+	// Provisioning reads only the schemas/ tree (pipeline-independent): it never
+	// validates the pipeline folders, so a schema apply provisions even while another
+	// pipeline in the workspace is mid-edit.
 	schemas, err := declare.ValidateSchemaTree(schemasDir)
 	if err != nil {
 		return fmt.Errorf("declare apply: read schemas: %w", err)

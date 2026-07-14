@@ -14,10 +14,10 @@ import (
 type runE = func(cmd *cobra.Command, args []string) error
 
 // The lifecycle annotation classifies each leaf command as daemonless (runnable
-// without a daemon: the fixed roster of specification section 2) or daemon-
-// touching (must reach a running daemon, or fail fast with start guidance). It is
-// set explicitly at command construction, so later epics (and the traceability
-// sweep) read the annotation rather than a string list.
+// without a daemon: a fixed roster) or daemon-touching (must reach a running
+// daemon, or fail fast with start guidance). It is
+// set explicitly at command construction, so later epics (and the sweep tests)
+// read the annotation rather than a string list.
 const (
 	// lifecycleAnnotation is the cobra Annotations key carrying the classification.
 	lifecycleAnnotation = "iris.lifecycle"
@@ -42,14 +42,13 @@ func daemonTouching(c *cobra.Command) *cobra.Command {
 	return withLifecycle(c, lifecycleDaemonTouching)
 }
 
-// daemonless marks c as a command in the specification section 2 daemonless
-// roster.
+// daemonless marks c as a command in the daemonless roster.
 func daemonless(c *cobra.Command) *cobra.Command {
 	return withLifecycle(c, lifecycleDaemonless)
 }
 
 // newRootCommand builds the iris command tree: the root, its global persistent
-// flags, and the noun-verb subcommands of specification section 8. The tree is
+// flags, and the noun-verb subcommands. The tree is
 // built fresh per invocation from a constructor (no package globals, no init),
 // so it closes over the invocation's app for output and logging.
 func (a *app) newRootCommand() *cobra.Command {
@@ -81,7 +80,7 @@ func (a *app) newRootCommand() *cobra.Command {
 	// errors when resolving the output mode.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &flagError{err: err} })
 
-	// Global flags, on every command by inheritance (specification section 8).
+	// Global flags, on every command by inheritance.
 	pf := root.PersistentFlags()
 	pf.Bool("json", false, "emit a single JSON document on stdout instead of human-readable output")
 	pf.String("socket", "", "path to the engine's Unix control socket")
@@ -107,7 +106,7 @@ func (a *app) newRootCommand() *cobra.Command {
 
 // group builds a noun (or sub-noun) node: a command that owns verbs but does no
 // work itself. A bare invocation is a usage error (exit 2), consistent with the
-// resource-first tree and the spec's bare-declare rule, so no group node ever
+// resource-first tree and the bare-declare rule, so no group node ever
 // prints human help to stdout under --json.
 func (a *app) group(use, short string, children ...*cobra.Command) *cobra.Command {
 	c := &cobra.Command{
@@ -285,7 +284,7 @@ func (a *app) engineCmd() *cobra.Command {
 		Use: "start", Short: "Run an engine candidate (foreground; -d to detach)",
 		Args: cobra.NoArgs, RunE: a.engineStart(),
 	}
-	// Daemon-scoped flags live only on engine start (specification section 8).
+	// Daemon-scoped flags live only on engine start.
 	start.Flags().BoolP("detach", "d", false, "detach and run the engine in the background")
 	start.Flags().String("pg-dsn", "", "DSN of an external Postgres to use instead of the managed one")
 	start.Flags().String("retain", "", "run-history retention count")

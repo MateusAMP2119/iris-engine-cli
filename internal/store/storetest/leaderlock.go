@@ -1,10 +1,10 @@
-// This file adds an in-memory fake of the leader-election lock (store.LeaderLock).
-// A LockSet models one logical Postgres advisory lock contended by several daemon
-// candidates: exactly one candidate holds it at a time, the rest block acquiring,
-// and a release (or a scripted session loss) promotes the next waiter. This is the
-// mechanism the election and single-writer wiring are proven against with no live
-// Postgres (specification section 16, failover testing: "standby blocks, release
-// promotes"); E11 reuses it for the failover contracts.
+// This file adds an in-memory fake of the leader-election lock
+// (store.LeaderLock). A LockSet models one logical Postgres advisory lock
+// contended by several daemon candidates: exactly one candidate holds it at a
+// time, the rest block acquiring, and a release (or a scripted session loss)
+// promotes the next waiter. This is the mechanism the election and single-writer
+// wiring are proven against with no live Postgres (standby blocks, release
+// promotes); E11 reuses it for the failover contracts.
 package storetest
 
 import (
@@ -19,9 +19,8 @@ import (
 // Release or a scripted LoseSession): a Postgres session that died cannot be
 // revived, so a deposed candidate can never re-acquire the lock on its old
 // session. Re-entering standby requires a FRESH session -- a new handle from the
-// LockSet -- exactly the spec's "re-enters standby on a fresh session"
-// (specification section 15). This is what keeps a deposed leader's write guard
-// refusing forever: its session has not, and can never have, re-acquired the lock.
+// LockSet. This is what keeps a deposed leader's write guard refusing forever:
+// its session has not, and can never have, re-acquired the lock.
 var ErrSessionEnded = errors.New("storetest: lock session ended; contending again requires a fresh session")
 
 // LockSet is one logical advisory lock several candidates contend for. It hands out
@@ -118,9 +117,8 @@ func (l *FakeLock) releaseLocked() error {
 func (l *FakeLock) SessionLost() <-chan struct{} { return l.lost }
 
 // LoseSession models the candidate's Postgres session dying: connection death
-// releases the lock (specification section 15), so a blocked standby is promoted,
-// and SessionLost fires. It is the hook E11's failover tests drive; E02.6 builds it
-// for reuse.
+// releases the lock, so a blocked standby is promoted, and SessionLost fires. It
+// is the hook E11's failover tests drive; E02.6 builds it for reuse.
 func (l *FakeLock) LoseSession() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

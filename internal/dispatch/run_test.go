@@ -176,8 +176,6 @@ func deadLetteredStopped(stmts []storetest.RecordedStatement, runID string) bool
 // declared argv, never through a shell: shell metacharacters in arguments -- a pipe,
 // a glob, a variable, a command substitution, a semicolon -- reach the process
 // literally, with no interpretation.
-//
-// spec: S01/direct-exec-no-shell
 func TestStartRunDirectExecNoShell(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -211,8 +209,6 @@ func TestStartRunDirectExecNoShell(t *testing.T) {
 // folder and its environment is inherited + declared + the injected scoped DB
 // connection: the script sees the pipeline folder as cwd, an inherited variable, its
 // declared variable, and the injected IRIS_DB_URL.
-//
-// spec: S01/run-cwd-env-injection
 func TestStartRunCwdEnvInjection(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -258,8 +254,6 @@ func TestStartRunCwdEnvInjection(t *testing.T) {
 // id as its handle (runs.handle) when the subprocess starts: the value written
 // through the single writer equals the started group's id, and that id names a real,
 // live process group.
-//
-// spec: S01/run-handle-process-group
 func TestStartRunHandleIsProcessGroup(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -283,8 +277,6 @@ func TestStartRunHandleIsProcessGroup(t *testing.T) {
 
 // TestStartRunOutputCaptured proves the engine captures a run's output: both its
 // stdout and its stderr land in the run's log sink.
-//
-// spec: S01/run-output-captured
 func TestStartRunOutputCaptured(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -307,8 +299,6 @@ func TestStartRunOutputCaptured(t *testing.T) {
 // TestCancelKillsGroupDeadLetters proves iris run cancel kills the run's process
 // group and dead-letters it as stopped while touching nothing else: a second,
 // concurrent run's group and its meta record are untouched.
-//
-// spec: S01/cancel-kills-group-dead-letters
 func TestCancelKillsGroupDeadLetters(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -343,12 +333,8 @@ func TestCancelKillsGroupDeadLetters(t *testing.T) {
 // long-running run started with an ordinary (deadline-free) context stays alive on
 // its own and ends only when an explicit cancel kills it. The API carries no timeout
 // or deadline knob to trip -- StartRun and RunSpec expose none. A run reaches a
-// terminal state only by its process exiting or by an explicit cancel; no clock
-// ever ends one (specification section 6.1 clock doctrine: runs end only by exit
-// or cancellation).
-//
-// spec: S01/no-engine-timeout
-// spec: S06.1/run-ends-only-exit-or-cancel
+// terminal state only by its process exiting or by an explicit cancel; no clock ever
+// ends one (clock doctrine: runs end only by exit or cancellation).
 func TestNoEngineTimeout(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -376,8 +362,6 @@ func TestNoEngineTimeout(t *testing.T) {
 // TestRunTransitionRejectsOutOfEnum proves the run state machine is a closed enum: a
 // transition function accepts the legal lifecycle edges and rejects any value outside
 // the four run states, so an out-of-enum state never reaches a meta write.
-//
-// spec: S01/run-state-set
 func TestRunTransitionRejectsOutOfEnum(t *testing.T) {
 	legal := []struct{ from, to store.RunState }{
 		{store.RunQueued, store.RunRunning},

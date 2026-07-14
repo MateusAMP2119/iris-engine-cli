@@ -9,19 +9,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
-// This file proves the PAT leaf's pure logic (specification sections 2 and 7): the
-// scope algebra over {control, read, data}, the effective-authority union, and the
-// show-once token substrate -- mint, argon2id hashing, and constant-time verify.
-// Every test is pure (no I/O), matching the unit tier of its contracts.
+// This file proves the PAT leaf's pure logic: the scope algebra over {control, read,
+// data}, the effective-authority union, and the show-once token substrate -- mint,
+// argon2id hashing, and constant-time verify. Every test is pure (no I/O).
 
 // TestValidateScopes proves iris pat create accepts any non-empty subset of the
 // closed scope set {control, read, data} and rejects an empty set or one naming an
 // unknown scope. The scope algebra is the leaf the CLI and the read path both gate
 // on, so an unknown or empty scope is refused here before any PAT is minted.
-//
-// spec: S07/pat-scope-subset-validation
 func TestValidateScopes(t *testing.T) {
-	t.Run("S07/pat-scope-subset-validation", func(t *testing.T) {
+	t.Run("pat-scope-subset-validation", func(t *testing.T) {
 		// Every non-empty subset of {control, read, data} is accepted.
 		accepted := [][]pat.Scope{
 			{pat.ScopeControl},
@@ -60,10 +57,8 @@ func TestValidateScopes(t *testing.T) {
 
 // TestParseScopes proves the string parse maps the raw --scope tokens to the closed
 // scope set, rejecting an unknown token so a mistyped scope never reaches the store.
-//
-// spec: S07/pat-scope-subset-validation
 func TestParseScopes(t *testing.T) {
-	t.Run("S07/pat-scope-subset-validation", func(t *testing.T) {
+	t.Run("pat-scope-subset-validation", func(t *testing.T) {
 		got, err := pat.ParseScopes([]string{"control", "read", "data"})
 		if err != nil {
 			t.Fatalf("ParseScopes: %v", err)
@@ -87,10 +82,8 @@ func TestParseScopes(t *testing.T) {
 // TestEffectiveAuthority proves a PAT's effective authority is the union of its
 // pat_scopes rows: every distinct scope present, duplicates collapsed, in the
 // canonical scope order regardless of the row order the store returns.
-//
-// spec: S04/pat-authority-scope-union
 func TestEffectiveAuthority(t *testing.T) {
-	t.Run("S04/pat-authority-scope-union", func(t *testing.T) {
+	t.Run("pat-authority-scope-union", func(t *testing.T) {
 		// Union of all three rows, given out of canonical order and with a duplicate.
 		rows := []pat.Scope{pat.ScopeData, pat.ScopeControl, pat.ScopeRead, pat.ScopeControl}
 		got := pat.EffectiveAuthority(rows)
@@ -117,16 +110,14 @@ func TestEffectiveAuthority(t *testing.T) {
 	})
 }
 
-// TestTokenMintHashVerify proves the show-once token substrate (specification
-// sections 2 and 7): Mint returns a full token exactly once, argon2id Hash persists
-// no recoverable secret, and Verify round-trips while rejecting a tampered token.
-// It is the pat-side half of pat-show-once-hash (the store-side persistence half is
-// proved in internal/store); together they show a lost token is unrecoverable, only
-// revoked and re-minted.
-//
-// spec: S07/pat-show-once-hash
+// TestTokenMintHashVerify proves the show-once token substrate: Mint returns a full
+// token exactly once, argon2id Hash persists no recoverable secret, and Verify
+// round-trips while rejecting a tampered token. It is the pat-side half of the
+// show-once hash guarantee (the store-side persistence half is proved in
+// internal/store); together they show a lost token is unrecoverable, only revoked
+// and re-minted.
 func TestTokenMintHashVerify(t *testing.T) {
-	t.Run("S07/pat-show-once-hash", func(t *testing.T) {
+	t.Run("pat-show-once-hash", func(t *testing.T) {
 		tok, err := pat.Mint()
 		if err != nil {
 			t.Fatalf("Mint: %v", err)
@@ -214,10 +205,8 @@ func TestTokenMintHashVerify(t *testing.T) {
 // TestDataRoleName proves the engine derives a stable, cluster-unique NOLOGIN role
 // name for a data PAT from its token id, mirroring the pipeline role convention
 // (iris_pipeline_<name> -> iris_pat_<id>).
-//
-// spec: S04/data-pat-owns-read-role
 func TestDataRoleName(t *testing.T) {
-	t.Run("S04/data-pat-owns-read-role", func(t *testing.T) {
+	t.Run("data-pat-owns-read-role", func(t *testing.T) {
 		got := pat.DataRoleName("abc123")
 		if got != "iris_pat_abc123" {
 			t.Errorf("DataRoleName(abc123) = %q, want iris_pat_abc123", got)

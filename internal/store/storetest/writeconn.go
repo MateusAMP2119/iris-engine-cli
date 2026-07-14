@@ -2,7 +2,7 @@
 // the registry write path. Unlike the DDL-only Recorder, WriteRecorder captures
 // parameterized statements (SQL plus bound args) and their transaction grouping, so
 // a test can assert the exact write set an apply issues and prove it committed as
-// one atomic transaction -- with no live Postgres (S16/integration-fakes-interfaces).
+// one atomic transaction -- with no live Postgres.
 package storetest
 
 import (

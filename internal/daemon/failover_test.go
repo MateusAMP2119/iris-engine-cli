@@ -1,21 +1,19 @@
 package daemon_test
 
 // This file is the E11.3 failover-transition suite: the leadership handover
-// semantics of specification sections 2 and 15, proven at integration tier over
-// the meta-store fakes (storetest.LockSet models the one advisory lock,
-// storetest.Fake the meta run records) and the exec-seam fake (exectest models
-// subprocesses) -- no live Postgres, no real daemon boot, no real process.
+// semantics, proven at integration tier over the meta-store fakes
+// (storetest.LockSet models the one advisory lock, storetest.Fake the meta run
+// records) and the exec-seam fake (exectest models subprocesses) -- no live
+// Postgres, no real daemon boot, no real process.
 //
 //   - Promotion: a standby promoted by the leader's meta-session death runs the
-//     SAME startup reconciliation a restarted daemon runs (S15/promotion-runs-
-//     startup-reconciliation).
+//     SAME startup reconciliation a restarted daemon runs.
 //   - Self-demotion: a daemon losing its meta session immediately stops
 //     dispatching, kills its in-flight runs, and re-enters standby on a FRESH
-//     session -- a dead Postgres session can never re-acquire the lock
-//     (S15/self-demotion-on-session-loss).
+//     session -- a dead Postgres session can never re-acquire the lock.
 //   - Cross-host fate of in-flight runs: the new leader dead-letters them WITHOUT
 //     killing (it cannot reach processes on another host); the kill is the deposed
-//     leader's self-demotion (S02/crosshost-failover-no-kill).
+//     leader's self-demotion.
 
 import (
 	"context"
@@ -117,17 +115,15 @@ func serveCandidate(t *testing.T, cand *daemon.Candidate) (context.CancelFunc, c
 	return cancel, done
 }
 
-// --- S15/promotion-runs-startup-reconciliation -----------------------------------
-
 // TestPromotionRunsStartupReconciliation proves a daemon promoted by FAILOVER --
 // the previous leader's meta session dying, not a clean departure -- runs the same
-// startup reconciliation a restarted daemon runs (specification section 15:
-// "next standby acquires, becomes leader, runs the same startup reconciliation as
-// a restart"). A cold-start (restart) leader and a session-loss-promoted leader
-// reconcile identical fixtures and must produce identical action sequences, with
-// every reconciliation action complete before the dispatch-ready latch.
+// startup reconciliation a restarted daemon runs (next standby acquires, becomes
+// leader, runs the same startup reconciliation as a restart). A cold-start
+// (restart) leader and a session-loss-promoted leader reconcile identical fixtures
+// and must produce identical action sequences, with every reconciliation action
+// complete before the dispatch-ready latch.
 func TestPromotionRunsStartupReconciliation(t *testing.T) {
-	t.Run("S15/promotion-runs-startup-reconciliation", func(t *testing.T) {
+	t.Run("promotion-runs-startup-reconciliation", func(t *testing.T) {
 		// The restart baseline: a lone candidate cold-starts, wins the free lock, and
 		// reconciles the seeded leftovers.
 		coldSet := storetest.NewLockSet()
@@ -137,8 +133,8 @@ func TestPromotionRunsStartupReconciliation(t *testing.T) {
 		assertReconcileBeforeReady(t, coldEvents)
 
 		// The failover: a leader and a blocked standby on one lock; the leader's meta
-		// SESSION dies (connection death, the advisory-lock release of specification
-		// section 15 -- not a ctx shutdown), and the standby is promoted.
+		// SESSION dies (connection death, the advisory-lock release -- not a ctx
+		// shutdown), and the standby is promoted.
 		set := storetest.NewLockSet()
 		lockA, lockB := set.New(), set.New()
 		a := newReconcileProbe(t, lockA)
@@ -178,15 +174,13 @@ func TestPromotionRunsStartupReconciliation(t *testing.T) {
 	})
 }
 
-// --- S15/self-demotion-on-session-loss --------------------------------------------
-
 // TestSelfDemotionOnSessionLoss proves a daemon that loses its meta session
-// self-demotes at once (specification section 15): it stops dispatching (nothing
-// further rides the dead session, whose write guard refuses forever), kills its
-// in-flight runs, and re-enters standby on a FRESH session -- and from that fresh
-// session it can genuinely lead again, with its new writes riding the new session.
+// self-demotes at once: it stops dispatching (nothing further rides the dead
+// session, whose write guard refuses forever), kills its in-flight runs, and
+// re-enters standby on a FRESH session -- and from that fresh session it can
+// genuinely lead again, with its new writes riding the new session.
 func TestSelfDemotionOnSessionLoss(t *testing.T) {
-	t.Run("S15/self-demotion-on-session-loss", func(t *testing.T) {
+	t.Run("self-demotion-on-session-loss", func(t *testing.T) {
 		ctx := context.Background()
 		set := storetest.NewLockSet()
 
@@ -236,7 +230,7 @@ func TestSelfDemotionOnSessionLoss(t *testing.T) {
 		writesBeforeLoss := len(rec1.Statements())
 
 		// The meta session dies: connection death, not process death; demotion must be
-		// explicit and immediate (specification section 15).
+		// explicit and immediate.
 		lock1.LoseSession()
 
 		// The in-flight run's process group is killed by the self-demotion.
@@ -266,8 +260,8 @@ func TestSelfDemotionOnSessionLoss(t *testing.T) {
 		}
 
 		// It stopped dispatching: nothing further rode the dead session, and its write
-		// guard refuses every write (a session that has not re-acquired the lock
-		// carries no meta write -- specification section 15).
+		// guard refuses every write (a session that has not re-acquired the lock carries
+		// no meta write).
 		if got := len(rec1.Statements()); got != writesBeforeLoss {
 			t.Errorf("%d meta writes rode the dead session after demotion (had %d, now %d)",
 				got-writesBeforeLoss, writesBeforeLoss, got)
@@ -293,15 +287,13 @@ func TestSelfDemotionOnSessionLoss(t *testing.T) {
 	})
 }
 
-// --- S02/crosshost-failover-no-kill ------------------------------------------------
-
 // TestCrossHostFailoverNoKill proves the cross-host split of the failover kill
-// (specification section 2 crash recovery): the NEW leader dead-letters the
-// deposed leader's in-flight runs WITHOUT killing their processes -- a recorded
-// pgid is only meaningful on the host that spawned it -- and the processes die at
-// the DEPOSED leader's hand, through its self-demotion.
+// (crash recovery): the NEW leader dead-letters the deposed leader's in-flight runs
+// WITHOUT killing their processes -- a recorded pgid is only meaningful on the host
+// that spawned it -- and the processes die at the DEPOSED leader's hand, through
+// its self-demotion.
 func TestCrossHostFailoverNoKill(t *testing.T) {
-	t.Run("S02/crosshost-failover-no-kill", func(t *testing.T) {
+	t.Run("crosshost-failover-no-kill", func(t *testing.T) {
 		ctx := context.Background()
 		set := storetest.NewLockSet()
 
@@ -404,10 +396,8 @@ func (k *countingKiller) count() int {
 // objects_path (the one configured for that daemon candidate at startup).
 // Different hosts have distinct objects_path values; promotion does not
 // inherit or override with the deposed leader's.
-//
-// spec: S15/failover-leader-own-objects-path
 func TestFailoverLeaderOwnObjectsPath(t *testing.T) {
-	t.Run("S15/failover-leader-own-objects-path", func(t *testing.T) {
+	t.Run("failover-leader-own-objects-path", func(t *testing.T) {
 		// Standby (future leader) has its own objects root. Simulate artifact
 		// bytes present there (HA answer is shared storage visible under its path).
 		rootB := filepath.Join(t.TempDir(), "objects-b")
@@ -452,10 +442,8 @@ func TestFailoverLeaderOwnObjectsPath(t *testing.T) {
 // never resumes an interrupted destructive op (declare destroy, wipe, drain).
 // Reconciliation only dead-letters runs and deletes queued; it never drives
 // the destroyer or control-plane teardowns. The caller must re-issue+re-confirm.
-//
-// spec: S12/failover-no-resume-destructive
 func TestFailoverNoResumeDestructive(t *testing.T) {
-	t.Run("S12/failover-no-resume-destructive", func(t *testing.T) {
+	t.Run("failover-no-resume-destructive", func(t *testing.T) {
 		// Exercise the reconciler (the same one promotion and cold-start use)
 		// with a reader containing no leftover runs and a submit spy. It must
 		// complete without error and without any evidence of having invoked

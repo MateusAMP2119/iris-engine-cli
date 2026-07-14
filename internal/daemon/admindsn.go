@@ -1,27 +1,26 @@
 // Package daemon owns the engine's lifecycle state that lives only in the running
 // process: foremost the admin DSN, the one Postgres credential every engine
-// connection derives from (specification section 2). It sits above store and pg
-// in the import graph (specification section 10): the daemon holds the admin DSN
-// and hands store (meta) and pg (data) a derived connection source, so neither
-// database client ever sees a raw, user-supplied connection string.
+// connection derives from. It sits above store and pg in the import graph: the
+// daemon holds the admin DSN and hands store (meta) and pg (data) a derived
+// connection source, so neither database client ever sees a raw, user-supplied
+// connection string.
 //
 // # The admin DSN chain
 //
 // One daemon-owned admin DSN is resolved at startup with the strict precedence
-// --pg-dsn > IRIS_PG_DSN > iris.toml pg_dsn and no default (specification section
-// 2). The precedence itself is the config package's (the same pg_dsn key and
-// IRIS_PG_DSN it already resolves); Resolve layers the admin-DSN-specific
-// semantics on top of the resolved config.Settings: fail fast with no default,
-// hold the DSN only in memory, redact it from every formatting path, and derive
-// every Postgres connection from it.
+// --pg-dsn > IRIS_PG_DSN > iris.toml pg_dsn and no default. The precedence itself
+// is the config package's (the same pg_dsn key and IRIS_PG_DSN it already
+// resolves); Resolve layers the admin-DSN-specific semantics on top of the resolved
+// config.Settings: fail fast with no default, hold the DSN only in memory, redact
+// it from every formatting path, and derive every Postgres connection from it.
 //
 // # Managed vs external, reconciled
 //
-// The spec states two things that must be read together: the admin DSN chain has
-// "no default, fail fast", yet the zero-config default is an engine-managed
-// Postgres the engine mints its own superuser for (specification section 2). They
-// reconcile at the call site, not in Resolve. Resolve reports ErrNoAdminDSN when
-// no layer set a DSN; the caller decides what that means:
+// Two things must be read together: the admin DSN chain has "no default, fail
+// fast", yet the zero-config default is an engine-managed Postgres the engine mints
+// its own superuser for. They reconcile at the call site, not in Resolve. Resolve
+// reports ErrNoAdminDSN when no layer set a DSN; the caller decides what that
+// means:
 //
 //   - `iris engine start` treats ErrNoAdminDSN as "managed mode": it mints and
 //     dials its own managed instance, no external DSN required.
@@ -51,8 +50,8 @@ const redacted = "AdminDSN(REDACTED)"
 
 // ErrNoAdminDSN is returned by Resolve when no configuration layer set an admin
 // DSN: --pg-dsn, IRIS_PG_DSN, and iris.toml pg_dsn are all empty. There is no
-// default (specification section 2). A caller requiring an external DSN fails fast
-// on it; `iris engine start` treats it as the signal to run managed Postgres.
+// default. A caller requiring an external DSN fails fast on it; `iris engine start`
+// treats it as the signal to run managed Postgres.
 var ErrNoAdminDSN = errors.New("daemon: no admin DSN configured; set --pg-dsn, IRIS_PG_DSN, or pg_dsn in iris.toml, or run the engine-managed Postgres")
 
 // AdminDSN is the one daemon-owned Postgres admin connection string, held only in
@@ -138,9 +137,8 @@ func (ConnectionSource) GoString() string { return redacted }
 // data through the pg seam — each derived from the single admin DSN. It is the one
 // place the daemon dials Postgres: both connections take their string from the
 // admin DSN's derived source, so no engine connection originates from any other
-// string (specification section 2). The dialers are injected (the pgx-backed ones
-// land in E02.3), so this derivation is provable with recording fakes and no live
-// Postgres.
+// string. The dialers are injected (the pgx-backed ones land in E02.3), so this
+// derivation is provable with recording fakes and no live Postgres.
 func (a AdminDSN) Connect(ctx context.Context, meta store.Dialer, data pg.Dialer) error {
 	src := a.Source()
 	if err := store.Open(ctx, src, meta); err != nil {

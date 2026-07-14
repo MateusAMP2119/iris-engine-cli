@@ -10,8 +10,8 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
 )
 
-// This file is the CLI side of `iris pat create` (specification sections 7 and 8).
-// The command validates its scopes and grant intent locally -- a bare invocation or
+// This file is the CLI side of `iris pat create`. The command validates its
+// scopes and grant intent locally -- a bare invocation or
 // an unknown scope is a usage error (exit 2), so a malformed request never reaches
 // the leader -- then reaches the leader to mint and persist the PAT: minting, the
 // read-role provisioning, and the meta writes are leader work (single-writer path),
@@ -43,7 +43,7 @@ func (a *app) patCreate() runE {
 		}
 
 		// Read grants are the data scope's alone: --read/--endpoint expand into a data
-		// PAT's read role, so they are meaningless without it (specification section 7).
+		// PAT's read role, so they are meaningless without it.
 		if (len(reads) > 0 || len(endpoints) > 0) && !hasScope(scopes, pat.ScopeData) {
 			return a.usage("--read and --endpoint require --scope data")
 		}

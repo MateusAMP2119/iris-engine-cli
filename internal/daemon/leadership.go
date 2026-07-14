@@ -22,23 +22,22 @@ import (
 const lockReleaseGrace = 5 * time.Second
 
 // leaderAdPollInterval bounds how often a contending standby re-reads the leader's
-// advertised address from meta to refresh its guidance hint (specification section
-// 15). A standby learns the current leader on its first read (the poll reads
-// immediately, then on this interval); the interval only keeps a long-running standby
-// current across a leader change while it stays blocked on the lock.
+// advertised address from meta to refresh its guidance hint. A standby learns the
+// current leader on its first read (the poll reads immediately, then on this
+// interval); the interval only keeps a long-running standby current across a leader
+// change while it stays blocked on the lock.
 const leaderAdPollInterval = 500 * time.Millisecond
 
 // This file is leader election and the leadership transitions around it: the step
 // that turns a daemon candidate into the one leader, the sole dispatcher, and the
-// step that takes leadership away again (specification sections 2 and 15).
-// Leadership is a Postgres session advisory lock: a candidate blocks acquiring it
-// (standby), and the acquire returns only when it wins (leader). On winning, the
-// candidate starts the single dispatcher goroutine, re-checks the meta schema
-// through it (the leader-only write at election, specification section 4), runs
-// startup reconciliation -- identical on cold start and failover promotion, so a
-// newly promoted daemon reconciles exactly as a restarted one does -- and reports
-// the leader role so its listeners accept mutations. Standbys reject mutations
-// and serve reads.
+// step that takes leadership away again. Leadership is a Postgres session advisory
+// lock: a candidate blocks acquiring it (standby), and the acquire returns only
+// when it wins (leader). On winning, the candidate starts the single dispatcher
+// goroutine, re-checks the meta schema through it (the leader-only write at
+// election), runs startup reconciliation -- identical on cold start and failover
+// promotion, so a newly promoted daemon reconciles exactly as a restarted one does
+// -- and reports the leader role so its listeners accept mutations. Standbys reject
+// mutations and serve reads.
 //
 // Losing the meta session is the other transition (E11.3). Connection death
 // releases the lock at Postgres and promotes the next standby, but connection
@@ -59,9 +58,9 @@ type Candidate struct {
 	logger    *slog.Logger
 
 	// Startup reconciliation, run once on winning the lock before any lane dispatch
-	// (specification section 2 crash recovery). reader is nil when reconciliation is
-	// not configured (the election-only wiring E02.6 tests use), in which case the
-	// leader skips reconciliation entirely.
+	// (crash recovery). reader is nil when reconciliation is not configured (the
+	// election-only wiring E02.6 tests use), in which case the leader skips
+	// reconciliation entirely.
 	reader    store.Reader
 	killer    dispatch.GroupKiller
 	hostMatch dispatch.HostMatcher
@@ -72,17 +71,17 @@ type Candidate struct {
 
 	// Control-plane wiring, installed on winning leadership and cleared on demotion so
 	// the api mux's apply/destroy routes reach the single meta writer only while this
-	// daemon leads (specification sections 3, 6.3, and 12). Nil control skips it (the
-	// election-only wiring used by tests with no control plane).
+	// daemon leads. Nil control skips it (the election-only wiring used by tests with
+	// no control plane).
 	control    *controlPlane
 	workspace  string
 	registry   store.RegistryReader
 	appliedHds store.AppliedHeadReader
 	data       dataPlane
 
-	// Manual-run wiring, installed on winning leadership and cleared on demotion so the
-	// api mux's POST /pipeline/run reaches the single meta writer and the exec seam only
-	// while this daemon leads (specification section 8). Nil pipelines skips it.
+	// Manual-run wiring, installed on winning leadership and cleared on demotion so
+	// the api mux's POST /pipeline/run reaches the single meta writer and the exec
+	// seam only while this daemon leads. Nil pipelines skips it.
 	pipelines    *pipelinePlane
 	manualReader store.ManualReader
 	runner       exec.Runner
@@ -104,16 +103,15 @@ type Candidate struct {
 	sealData      sealDataStore
 	sealMeta      store.JournalSealReader
 
-	// Build wiring, installed on winning leadership and cleared on demotion so the
-	// api mux's POST /pipeline/build reaches the single meta writer, the object
-	// store, and the exec seam only while this daemon leads (specification sections
-	// 1 and 9). Nil builds skips it.
+	// Build wiring, installed on winning leadership and cleared on demotion so the api
+	// mux's POST /pipeline/build reaches the single meta writer, the object store, and
+	// the exec seam only while this daemon leads. Nil builds skips it.
 	builds  *buildPlane
 	objects *store.ObjectStore
 
-	// Wipe wiring, installed on winning leadership and cleared on demotion so the
-	// api mux's POST /workload/wipe reaches the attribution reader and the data
-	// database ExecuteWipe only while leading (specification sections 5,12,13).
+	// Wipe wiring, installed on winning leadership and cleared on demotion so the api
+	// mux's POST /workload/wipe reaches the attribution reader and the data database
+	// ExecuteWipe only while leading.
 	wipes *wipePlane
 
 	// Promote wiring (for pipeline promote).
@@ -122,18 +120,18 @@ type Candidate struct {
 	journalPromoter dispatch.JournalPromoter
 
 	// Dead-letter wiring, installed on winning leadership and cleared on demotion so
-	// the api mux's POST /deadletter/replay and /deadletter/drain reach the single meta
-	// writer only while leading (specification section 6.2). The blast readout (GET
-	// /dead_letters/{run}/impact) is a read served from the plane's reader on any node,
-	// so it needs no leader install. Nil skips it.
+	// the api mux's POST /deadletter/replay and /deadletter/drain reach the single
+	// meta writer only while leading. The blast readout (GET
+	// /dead_letters/{run}/impact) is a read served from the plane's reader on any
+	// node, so it needs no leader install. Nil skips it.
 	deadletters *deadletterPlane
 
 	// Lane-loop wiring: builds the perpetual lane loop over the single dispatcher on
 	// winning leadership. The leader drives it after reconciliation (so no lane
-	// dispatches ahead of crash recovery) and stops it on demotion (so a deposed leader
-	// never dispatches). Nil leaves the leader without a lane loop -- the election-only,
-	// control-only, and manual-only wiring uses this, so existing composition is
-	// unaffected (specification sections 6.1 and 6.3).
+	// dispatches ahead of crash recovery) and stops it on demotion (so a deposed
+	// leader never dispatches). Nil leaves the leader without a lane loop -- the
+	// election-only, control-only, and manual-only wiring uses this, so existing
+	// composition is unaffected.
 	laneLoopBuild func(dispatch.Submitter) *dispatch.Loop
 
 	// lanes is the leader-side run-cancel plane over the lane loop's in-flight runs: on
@@ -142,56 +140,56 @@ type Candidate struct {
 	// a cancel racing a lost lock faults. Nil leaves the candidate without a cancel plane.
 	lanes *lanePlane
 
-	// Self-demotion wiring (specification section 15). inflight kills every in-flight
-	// run's process group when the meta session is lost -- a process kill only, never a
-	// meta write (the deposed session cannot carry one; the new leader dead-letters the
-	// records). fresh returns a NEW lock handle and the meta write connection riding its
-	// session, so a demoted daemon re-enters standby on a fresh session (a dead session
-	// can never re-acquire). Nil inflight skips the kill; nil fresh means a demotion
-	// ends Serve instead of re-entering standby (the election-only wiring tests use).
+	// Self-demotion wiring. inflight kills every in-flight run's process group when
+	// the meta session is lost -- a process kill only, never a meta write (the deposed
+	// session cannot carry one; the new leader dead-letters the records). fresh
+	// returns a NEW lock handle and the meta write connection riding its session, so a
+	// demoted daemon re-enters standby on a fresh session (a dead session can never
+	// re-acquire). Nil inflight skips the kill; nil fresh means a demotion ends Serve
+	// instead of re-entering standby (the election-only wiring tests use).
 	inflight InflightKiller
 	fresh    func() (store.LeaderLock, store.MetaWriteConn)
 
-	// passCounter is the leader-held per-lane loop pass counter (specification
-	// section 11): the lane loop increments it per completed pass, and the candidate
-	// resets it at the start of each leadership term so counts never carry across a
-	// leader change (a restart resets it by construction -- it is process memory).
-	// Nil leaves pass counting unwired.
+	// passCounter is the leader-held per-lane loop pass counter: the lane loop
+	// increments it per completed pass, and the candidate resets it at the start of
+	// each leadership term so counts never carry across a leader change (a restart
+	// resets it by construction -- it is process memory). Nil leaves pass counting
+	// unwired.
 	passCounter *dispatch.PassCounter
 
 	// Endpoint-apply wiring, installed on winning leadership and cleared on demotion
 	// so POST /endpoint/apply reaches the single meta writer and the shared serving
-	// registry only while leading (specification section 7). The registry is
-	// process-long (shared with the serving mux); the applier is rebuilt each term
-	// over that term's dispatcher and the data-database prepare-verifier. Nil skips it.
+	// registry only while leading. The registry is process-long (shared with the
+	// serving mux); the applier is rebuilt each term over that term's dispatcher and
+	// the data-database prepare-verifier. Nil skips it.
 	endpointsPlane   *endpointPlane
 	endpointRegistry *dispatch.EndpointRegistry
 	prepareVerifier  dispatch.PrepareVerifier
 
-	// PAT-mint wiring, installed on winning leadership and cleared on demotion so
-	// POST /pat/create reaches the single meta writer and the data-database role
-	// provisioner only while leading (specification sections 4 and 7). It reuses the
-	// candidate's workspace, data client, and the shared endpoint registry
-	// (--endpoint grant expansion). Nil skips it.
+	// PAT-mint wiring, installed on winning leadership and cleared on demotion so POST
+	// /pat/create reaches the single meta writer and the data-database role
+	// provisioner only while leading. It reuses the candidate's workspace, data
+	// client, and the shared endpoint registry (--endpoint grant expansion). Nil skips
+	// it.
 	patsPlane *patPlane
 
-	// Leader-advertisement wiring (specification sections 4, 7, 8, and 15).
-	// advertiseAddr is this candidate's own address -- its TCP listen address, empty
-	// when socket-only -- written into the single-row leadership meta table through
-	// the single writer on winning the lock, so a standby can name the leader for
-	// retargeting (exit 6, GET /leader). leaderAddrReader is the plain-MVCC read a
-	// standby polls while contending to learn the current leader's advertised address;
-	// nil leaves a standby without a hint (it reports "unknown"). Both are absent in
-	// the election-only wiring the shape tests use.
+	// Leader-advertisement wiring. advertiseAddr is this candidate's own address --
+	// its TCP listen address, empty when socket-only -- written into the single-row
+	// leadership meta table through the single writer on winning the lock, so a
+	// standby can name the leader for retargeting (exit 6, GET /leader).
+	// leaderAddrReader is the plain-MVCC read a standby polls while contending to
+	// learn the current leader's advertised address; nil leaves a standby without a
+	// hint (it reports "unknown"). Both are absent in the election-only wiring the
+	// shape tests use.
 	advertiseAddr    string
 	leaderAddrReader store.LeaderAddrReader
 }
 
-// InflightKiller kills every in-flight run's process group, the self-demotion kill
-// of specification section 15: a daemon losing its meta session stops dispatching
-// and kills its in-flight runs at once, writing nothing to meta (the run records
-// are the new leader's to dead-letter during its startup reconciliation). The
-// dispatch.RunManager satisfies it; a test injects a recording fake.
+// InflightKiller kills every in-flight run's process group, the self-demotion kill:
+// a daemon losing its meta session stops dispatching and kills its in-flight runs
+// at once, writing nothing to meta (the run records are the new leader's to
+// dead-letter during its startup reconciliation). The dispatch.RunManager satisfies
+// it; a test injects a recording fake.
 type InflightKiller interface {
 	// KillInflight best-effort SIGKILLs every in-flight run's process group and
 	// returns how many groups it signalled.
@@ -273,13 +271,14 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 	}
 }
 
-// WithSealer wires the opportunistic post-terminal seal step: the resident-partition
-// data store (the *pg.Client, satisfying sealDataStore), the meta seal read seam
-// (chain head, in-flight run count, engine key), and the journal_partition_rows
-// threshold the resident partition must cross before it seals. The checkpoint is
-// signed with the engine key the seal loads from the engine_key meta table (minted
-// create-once on first need). A zero threshold or nil seam leaves sealing off, so
-// the manual/shape tests that wire no seal are unaffected (specification section 14).
+// WithSealer wires the opportunistic post-terminal seal step: the
+// resident-partition data store (the *pg.Client, satisfying sealDataStore), the
+// meta seal read seam (chain head, in-flight run count, engine key), and the
+// journal_partition_rows threshold the resident partition must cross before it
+// seals. The checkpoint is signed with the engine key the seal loads from the
+// engine_key meta table (minted create-once on first need). A zero threshold or nil
+// seam leaves sealing off, so the manual/shape tests that wire no seal are
+// unaffected.
 func WithSealer(threshold int64, data sealDataStore, meta store.JournalSealReader) CandidateOption {
 	return func(c *Candidate) {
 		c.sealThreshold = threshold
@@ -299,24 +298,24 @@ func (c *Candidate) buildSealer(submit dispatch.Submitter) *journalSealer {
 	return newJournalSealer(c.sealThreshold, c.sealData, c.sealMeta, submit, c.objects, c.logger)
 }
 
-// WithInflightKiller wires the self-demotion kill seam: on losing its meta
-// session, the daemon kills every in-flight run's process group through k before
-// re-entering standby (specification section 15: "stops dispatching, kills
-// in-flight runs"). The kill writes nothing to meta -- the deposed session cannot
-// carry a meta write, and the run records are the new leader's to dead-letter. A
-// nil killer skips the kill (the election-only wiring).
+// WithInflightKiller wires the self-demotion kill seam: on losing its meta session,
+// the daemon kills every in-flight run's process group through k before re-entering
+// standby (stops dispatching, kills in-flight runs). The kill writes nothing to
+// meta -- the deposed session cannot carry a meta write, and the run records are
+// the new leader's to dead-letter. A nil killer skips the kill (the election-only
+// wiring).
 func WithInflightKiller(k InflightKiller) CandidateOption {
 	return func(c *Candidate) { c.inflight = k }
 }
 
 // WithFreshSessions wires standby re-entry after a self-demotion: fresh returns a
-// NEW leader-lock handle and the meta write connection riding its session, the
-// spec's "re-enters standby on a fresh session" (specification section 15). It is
-// called only after a demotion completes (dispatch stopped, in-flight runs killed,
-// dead lock released), never for the first election, and each call must mint a
-// genuinely fresh session -- a dead Postgres session can never re-acquire the
-// lock, and its lock-guarded write connection refuses forever. Absent this option
-// a demotion ends Serve, which is how the pre-E11.3 wiring behaved.
+// NEW leader-lock handle and the meta write connection riding its session, re-entry
+// into standby on a fresh session. It is called only after a demotion completes
+// (dispatch stopped, in-flight runs killed, dead lock released), never for the
+// first election, and each call must mint a genuinely fresh session -- a dead
+// Postgres session can never re-acquire the lock, and its lock-guarded write
+// connection refuses forever. Absent this option a demotion ends Serve, which is
+// how the pre-E11.3 wiring behaved.
 func WithFreshSessions(fresh func() (store.LeaderLock, store.MetaWriteConn)) CandidateOption {
 	return func(c *Candidate) { c.fresh = fresh }
 }
@@ -367,13 +366,13 @@ func WithPromotePlane(pp *promotePlane, submit dispatch.Submitter, state store.P
 }
 
 // WithLaneLoop wires the leader-side perpetual lane loop: on winning leadership the
-// candidate builds the loop over the single dispatcher (the sole meta writer) with build,
-// starts it once startup reconciliation is done, and stops it on demotion. The loop reads
-// the walk at each pass start and starts eligible pipelines in composer order, one
-// goroutine per lane, distinct lanes in parallel (specification sections 6.1 and 6.3).
-// build receives the dispatcher as the single-writer submission seam and composes the
-// walk, gate, run-start, and post-pass bookkeeping over it. A nil build (the default)
-// leaves the leader without a lane loop.
+// candidate builds the loop over the single dispatcher (the sole meta writer) with
+// build, starts it once startup reconciliation is done, and stops it on demotion.
+// The loop reads the walk at each pass start and starts eligible pipelines in
+// composer order, one goroutine per lane, distinct lanes in parallel. build
+// receives the dispatcher as the single-writer submission seam and composes the
+// walk, gate, run-start, and post-pass bookkeeping over it. A nil build (the
+// default) leaves the leader without a lane loop.
 func WithLaneLoop(build func(dispatch.Submitter) *dispatch.Loop) CandidateOption {
 	return func(c *Candidate) { c.laneLoopBuild = build }
 }
@@ -387,13 +386,13 @@ func WithLanePlane(lanes *lanePlane) CandidateOption {
 	return func(c *Candidate) { c.lanes = lanes }
 }
 
-// WithPassCounter wires the leader-held per-lane pass counter: the candidate
-// resets it when it wins a leadership term, so `iris engine stats` never reports
-// a previous term's pass counts after a leader change (specification section 11:
-// "a leader-held runtime counter, reset on restart and leader change"; the
-// restart half is structural -- the counter is process memory). The lane loop's
-// build composes the counter's Hook into the loop (dispatch.WithOnPass); this
-// option owns only the term reset. A nil counter is ignored.
+// WithPassCounter wires the leader-held per-lane pass counter: the candidate resets
+// it when it wins a leadership term, so `iris engine stats` never reports a
+// previous term's pass counts after a leader change (a leader-held runtime counter,
+// reset on restart and leader change; the restart half is structural -- the counter
+// is process memory). The lane loop's build composes the counter's Hook into the
+// loop (dispatch.WithOnPass); this option owns only the term reset. A nil counter
+// is ignored.
 func WithPassCounter(pc *dispatch.PassCounter) CandidateOption {
 	return func(c *Candidate) { c.passCounter = pc }
 }
@@ -430,21 +429,21 @@ func WithPATPlane(pp *patPlane, registry *dispatch.EndpointRegistry, workspace s
 }
 
 // WithLeaderAdvertiser sets the address this candidate advertises when it wins
-// leadership: its own listen address (the TCP listen address an operator retargets to
-// via --host), written into the single-row leadership meta table through the single
-// writer so a standby can name it for retargeting (specification sections 4, 7, 8, and
-// 15). An empty address is advertised too (a socket-only leader clears any stale prior
-// address); absent this option, a leader advertises the empty address.
+// leadership: its own listen address (the TCP listen address an operator retargets
+// to via --host), written into the single-row leadership meta table through the
+// single writer so a standby can name it for retargeting. An empty address is
+// advertised too (a socket-only leader clears any stale prior address); absent this
+// option, a leader advertises the empty address.
 func WithLeaderAdvertiser(addr string) CandidateOption {
 	return func(c *Candidate) { c.advertiseAddr = addr }
 }
 
 // WithLeaderAddrReader wires the read a standby polls to learn the current leader's
-// advertised address while it contends for the lock (specification section 15): each
-// read updates the standby's leader hint so a not_leader rejection and GET /leader
-// name the live leader. It reads plain MVCC off the reader pool, on any candidate. A
-// nil reader leaves a standby without a hint (its guidance stays "unknown"), which is
-// the election-only wiring the shape tests use.
+// advertised address while it contends for the lock: each read updates the
+// standby's leader hint so a not_leader rejection and GET /leader name the live
+// leader. It reads plain MVCC off the reader pool, on any candidate. A nil reader
+// leaves a standby without a hint (its guidance stays "unknown"), which is the
+// election-only wiring the shape tests use.
 func WithLeaderAddrReader(r store.LeaderAddrReader) CandidateOption {
 	return func(c *Candidate) { c.leaderAddrReader = r }
 }
@@ -471,18 +470,17 @@ func NewCandidate(lock store.LeaderLock, role *api.RoleState, writeConn store.Me
 // dispatching, releases the lock so the next standby is promoted, and returns. A
 // lost session instead SELF-DEMOTES (stop dispatching, kill in-flight runs) and --
 // when fresh sessions are wired -- re-enters standby on a fresh session and
-// contends again, so one daemon process survives any number of demotions
-// (specification section 15). A cancelled-before-acquire candidate returns nil
-// without ever leading.
+// contends again, so one daemon process survives any number of demotions. A
+// cancelled-before-acquire candidate returns nil without ever leading.
 func (c *Candidate) Serve(ctx context.Context) error {
 	for {
 		c.role.SetStandby("")
 		c.logger.Info("iris daemon standby: contending for leadership")
 
-		// While contending, refresh the standby's leader hint from the meta
-		// advertisement so a not_leader rejection names the live leader (specification
-		// section 15). The poll is bound to a child context cancelled the instant the
-		// lock is acquired, so no stale SetStandby races the SetLeader in lead().
+		// While contending, refresh the standby's leader hint from the meta advertisement
+		// so a not_leader rejection names the live leader. The poll is bound to a child
+		// context cancelled the instant the lock is acquired, so no stale SetStandby
+		// races the SetLeader in lead().
 		var stopPoll context.CancelFunc
 		pollDone := make(chan struct{})
 		if c.leaderAddrReader != nil {
@@ -532,12 +530,12 @@ func (c *Candidate) Serve(ctx context.Context) error {
 }
 
 // pollLeaderAddress refreshes the standby's leader hint from the meta advertisement
-// while this candidate contends for the lock (specification section 15): each read
-// updates the role's standby hint, so a not_leader rejection and GET /leader name the
-// live leader. It reads immediately, then on leaderAdPollInterval, until ctx is
-// cancelled (the lock was acquired, or the daemon is shutting down). A read error is
-// non-fatal -- the hint keeps its last value, degrading to "unknown" rather than
-// failing the standby -- and it never flips the role, only refreshes the standby hint.
+// while this candidate contends for the lock: each read updates the role's standby
+// hint, so a not_leader rejection and GET /leader name the live leader. It reads
+// immediately, then on leaderAdPollInterval, until ctx is cancelled (the lock was
+// acquired, or the daemon is shutting down). A read error is non-fatal -- the hint
+// keeps its last value, degrading to "unknown" rather than failing the standby --
+// and it never flips the role, only refreshes the standby hint.
 func (c *Candidate) pollLeaderAddress(ctx context.Context) {
 	for {
 		if addr, err := c.leaderAddrReader.LeaderAddr(ctx); err == nil {
@@ -561,9 +559,9 @@ func (c *Candidate) pollLeaderAddress(ctx context.Context) {
 // whether leadership ended by session loss (a demotion, which Serve may follow with
 // a fresh-session standby re-entry) as opposed to a shutdown or a startup fault.
 func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
-	// A new leadership term starts at zero passes: reset the leader-held pass
-	// counter before any lane can complete a pass, so a re-elected leader never
-	// resumes a previous term's counts (specification section 11).
+	// A new leadership term starts at zero passes: reset the leader-held pass counter
+	// before any lane can complete a pass, so a re-elected leader never resumes a
+	// previous term's counts.
 	if c.passCounter != nil {
 		c.passCounter.Reset()
 	}
@@ -572,9 +570,8 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	d.Start(ctx)
 	defer d.Stop()
 
-	// The leader re-checks the meta schema at election (specification section 4),
-	// through the single-writer dispatcher path: the first meta write only the
-	// leader performs.
+	// The leader re-checks the meta schema at election, through the single-writer
+	// dispatcher path: the first meta write only the leader performs.
 	if err := d.EnsureSchema(ctx); err != nil {
 		// Failed to establish the schema: relinquish leadership so another candidate
 		// can try, rather than lead with an unverified meta.
@@ -582,13 +579,12 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		return false, errors.Join(err, c.release())
 	}
 
-	// Startup reconciliation, before any lane dispatch and identical on cold start
-	// and failover promotion (specification sections 2 and 15: a newly promoted
-	// daemon "runs the same startup reconciliation as a restart"): dead-letter
-	// leftover running runs, delete queued never-started ones, and SIGKILL same-host
-	// survivors first -- cross-host, the matcher yields no kill and the leftover runs
-	// are dead-lettered only (the deposed leader's self-demotion kills its own).
-	// Disposals ride the single-writer dispatcher.
+	// Startup reconciliation, before any lane dispatch and identical on cold start and
+	// failover promotion (a newly promoted daemon runs the same startup reconciliation
+	// as a restart): dead-letter leftover running runs, delete queued never-started
+	// ones, and SIGKILL same-host survivors first -- cross-host, the matcher yields no
+	// kill and the leftover runs are dead-lettered only (the deposed leader's
+	// self-demotion kills its own). Disposals ride the single-writer dispatcher.
 	if c.reader != nil {
 		rec := dispatch.NewReconciler(c.reader, d, c.killer, c.hostMatch, c.logger)
 		if err := rec.Reconcile(ctx); err != nil {
@@ -720,11 +716,10 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 
 	// Reconciliation is done: release the dispatch-ready latch (the E05 lane
 	// dispatcher waits on it) before reporting the leader role, so no lane is ever
-	// dispatched ahead of reconciliation.
-	// Advertise this leader's address into the single-row leadership meta table
-	// through the single writer, so a standby (sharing meta) can name it for
-	// retargeting (specification sections 4, 7, 8, and 15). It rides the same pre-
-	// dispatch establishment as the schema re-check and reconciliation -- before the
+	// dispatched ahead of reconciliation. Advertise this leader's address into the
+	// single-row leadership meta table through the single writer, so a standby
+	// (sharing meta) can name it for retargeting. It rides the same pre-dispatch
+	// establishment as the schema re-check and reconciliation -- before the
 	// dispatch-ready latch and the leader role -- so the advertisement is in place by
 	// the time this daemon reports itself leader. The upsert supersedes any prior
 	// leader's address, so the advertisement converges on the live leader across a
@@ -744,12 +739,12 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	c.logger.Info("iris daemon leader: dispatching (sole meta writer)")
 
 	// Drive the perpetual lane loop for the duration of leadership, over the single
-	// dispatcher (specification sections 6.1 and 6.3). It starts only now -- after crash
-	// reconciliation and after the leader role is reported -- so no lane dispatches ahead
-	// of recovery, and it is bound to a child context cancelled the moment leadership ends
-	// (ctx cancelled at shutdown, or the lock session lost), so a demoted leader stops
-	// dispatching at once. The join waits for Run to return, not for in-flight runs: a hung
-	// run holds its lane but never delays demotion (the loop exits promptly on cancel).
+	// dispatcher. It starts only now -- after crash reconciliation and after the
+	// leader role is reported -- so no lane dispatches ahead of recovery, and it is
+	// bound to a child context cancelled the moment leadership ends (ctx cancelled at
+	// shutdown, or the lock session lost), so a demoted leader stops dispatching at
+	// once. The join waits for Run to return, not for in-flight runs: a hung run holds
+	// its lane but never delays demotion (the loop exits promptly on cancel).
 	var stopLaneLoop func()
 	if c.laneLoopBuild != nil {
 		loop := c.laneLoopBuild(d)
@@ -774,25 +769,24 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	select {
 	case <-ctx.Done():
 	case <-c.lock.SessionLost():
-		// Connection death released the lock at Postgres (specification section 15),
-		// but connection death is not process death: demote explicitly, at once.
+		// Connection death released the lock at Postgres, but connection death is not
+		// process death: demote explicitly, at once.
 		demoted = true
 		c.logger.Warn("iris daemon leader: lock session lost, demoting")
 	}
 
 	// Leadership is over -- shutdown or demotion. Stop dispatching FIRST: the lane
 	// loop is halted before anything else, so a deposed leader never starts another
-	// run (specification section 15: "stops dispatching").
+	// run (stops dispatching).
 	if stopLaneLoop != nil {
 		stopLaneLoop()
 	}
 
-	// On a demotion, kill the in-flight runs (specification section 15: "kills
-	// in-flight runs"). This is a process kill only, never a meta write: the deposed
-	// session cannot carry one (its write guard refuses), and the run records are
-	// the NEW leader's to dead-letter in its startup reconciliation -- which cannot
-	// reach these processes across hosts, making this kill the deposed side's half
-	// of the cross-host failover contract.
+	// On a demotion, kill the in-flight runs (kills in-flight runs). This is a process
+	// kill only, never a meta write: the deposed session cannot carry one (its write
+	// guard refuses), and the run records are the NEW leader's to dead-letter in its
+	// startup reconciliation -- which cannot reach these processes across hosts,
+	// making this kill the deposed side's half of the cross-host failover contract.
 	if demoted && c.inflight != nil {
 		killed := c.inflight.KillInflight()
 		c.logger.Warn("iris daemon demotion: killed in-flight runs", "count", killed)
@@ -827,11 +821,11 @@ type leaderSessionMaker interface {
 
 // freshLeaderSession builds the WithFreshSessions callback for production Run: on a
 // self-demotion it mints a genuinely NEW leader session (a new session-pinned
-// connection, a new advisory-lock handle, and its lock-guarded writer) so the demoted
-// daemon re-enters standby and can lead again -- a dead session can never re-acquire
-// the lock (specification section 15). Minting can fail transiently (a meta-database
-// blip); rather than end the daemon, it retries with a bounded backoff until a session
-// opens or ctx is cancelled (shutdown), in which case it returns a lock that refuses to
+// connection, a new advisory-lock handle, and its lock-guarded writer) so the
+// demoted daemon re-enters standby and can lead again -- a dead session can never
+// re-acquire the lock. Minting can fail transiently (a meta-database blip); rather
+// than end the daemon, it retries with a bounded backoff until a session opens or
+// ctx is cancelled (shutdown), in which case it returns a lock that refuses to
 // acquire so Serve exits cleanly instead of spinning.
 func freshLeaderSession(ctx context.Context, maker leaderSessionMaker, logger *slog.Logger) func() (store.LeaderLock, store.MetaWriteConn) {
 	if logger == nil {

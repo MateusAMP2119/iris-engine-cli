@@ -24,8 +24,7 @@ var starterScriptMarks = []string{"set -eu", "IRIS_DB_URL", "ON_ERROR_STOP=1", "
 // declaration, table files, and script satisfy the starter constraints through
 // the real declare loaders.
 func TestQuickstartCatalogEntriesValid(t *testing.T) {
-	// spec: S08/quickstart-catalog-entries-valid
-	t.Run("S08/quickstart-catalog-entries-valid", func(t *testing.T) {
+	t.Run("quickstart-catalog-entries-valid", func(t *testing.T) {
 		cat, err := loadCatalog()
 		if err != nil {
 			t.Fatalf("loadCatalog: %v", err)
@@ -207,8 +206,7 @@ func TestQuickstartCatalogEntriesValid(t *testing.T) {
 // the pipeline folder validates, the schema tree validates, and the files land
 // byte-identical to the embedded goldens.
 func TestQuickstartSampleValidDeclaration(t *testing.T) {
-	// spec: S08/quickstart-sample-valid-declaration
-	t.Run("S08/quickstart-sample-valid-declaration", func(t *testing.T) {
+	t.Run("quickstart-sample-valid-declaration", func(t *testing.T) {
 		cat, err := loadCatalog()
 		if err != nil {
 			t.Fatalf("loadCatalog: %v", err)
@@ -260,8 +258,7 @@ func TestQuickstartSampleValidDeclaration(t *testing.T) {
 // entries, silently skips identical files on a re-run, and keeps -- with a
 // warning -- a present-but-different file.
 func TestQuickstartSampleMaterializeNeverClobber(t *testing.T) {
-	// spec: S08/quickstart-sample-materialize-never-clobber
-	t.Run("S08/quickstart-sample-materialize-never-clobber", func(t *testing.T) {
+	t.Run("quickstart-sample-materialize-never-clobber", func(t *testing.T) {
 		root := t.TempDir()
 		relFiles := []string{
 			"pipelines/hello_iris/iris-declare.yaml",

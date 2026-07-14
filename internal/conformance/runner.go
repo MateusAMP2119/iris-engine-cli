@@ -2,9 +2,9 @@
 // the whole end-to-end suite uses to drive the actual shipped iris binary as a
 // real process. It builds ./cmd/iris once, invokes it with arguments and
 // environment, captures stdout/stderr/exit code, asserts exit codes, and parses
-// the single-JSON-document --json envelope on stdout
-// (S16/conformance-real-binary-json). From E02 onward the daemon helpers here
-// also start the daemon over a unix socket and speak HTTP to it; see daemon.go.
+// the single-JSON-document --json envelope on stdout. From E02 onward the daemon
+// helpers here also start the daemon over a unix socket and speak HTTP to it;
+// see daemon.go.
 //
 // Conformance is the one tier with a real Postgres, created by the engine
 // itself and hosting both databases -- the single place generated SQL meets a
@@ -12,16 +12,14 @@
 // taking over: only a live database proves these, so this tier is where they are
 // proven, against the real binary and nothing faked.
 //
-// # Acceptance scenario is this tier's spine (S16/acceptance-steps-cover-contracts)
+// # Acceptance scenario is this tier's spine
 //
-// The doctrine this harness serves: each numbered step of the specification's
-// acceptance scenario (spec section 15) is the conformance suite for its
-// section's contracts. Driving the sample workspace end-to-end and asserting
-// each step's exit codes and --json IS enforcing those sections' contracts, so
-// "the sample passes" and "the spec is enforced" are one statement. As later
-// epics fill the binary, their conformance tests reuse this harness to drive the
-// matching acceptance step; the harness is deliberately generic so no step needs
-// bespoke plumbing.
+// The doctrine this harness serves: each numbered step of the acceptance
+// scenario is the conformance suite for the behavior that step exercises.
+// Driving the sample workspace end-to-end and asserting each step's exit codes
+// and --json IS enforcing that behavior. As later epics fill the binary, their
+// conformance tests reuse this harness to drive the matching acceptance step;
+// the harness is deliberately generic so no step needs bespoke plumbing.
 //
 // This is test-support infrastructure: it imports testing and is meant to be
 // used from _test.go files carrying the `conformance` build tag, which run only

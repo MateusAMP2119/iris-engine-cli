@@ -11,11 +11,9 @@ import (
 // built on: it extracts the module path, the go version, and every require
 // directive in both single-line and block form, carries the // indirect marker
 // through, and ignores comments and unrelated directives. The allowlist and
-// forbidden-anywhere bans (specification section 9) can only be as trustworthy as
-// this extraction, so it is proven directly on synthetic go.mod snippets and then
-// run over the repo's real go.mod.
-//
-// spec: S09/dependency-allowlist
+// forbidden-anywhere bans can only be as trustworthy as this extraction, so it is
+// proven directly on synthetic go.mod snippets and then run over the repo's real
+// go.mod.
 func TestParseGoMod(t *testing.T) {
 	const src = `module example.com/m
 

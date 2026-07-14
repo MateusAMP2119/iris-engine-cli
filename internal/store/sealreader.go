@@ -5,15 +5,15 @@ import (
 	"fmt"
 )
 
-// This file is the meta read seam the leader-side seal step draws on
-// (specification section 14). Sealing is a leader-only, opportunistic dispatcher
-// step, but the two facts it reads are plain-MVCC meta reads, so they ride the
-// reader pool exactly like every other read seam here: the chain's current head (the
-// parent the next checkpoint links to) and the count of in-flight runs that wrote
-// into the resident partition (a partition seals only once every in-flight run
-// writing into it has finished). The engine key that signs the checkpoint is not a
-// meta read -- it is loaded from the engine-owned workspace key file, which is
-// non-superuser-safe unlike the per-database GUC install cannot set in external mode.
+// This file is the meta read seam the leader-side seal step draws on. Sealing is
+// a leader-only, opportunistic dispatcher step, but the two facts it reads are
+// plain-MVCC meta reads, so they ride the reader pool exactly like every other
+// read seam here: the chain's current head (the parent the next checkpoint links
+// to) and the count of in-flight runs that wrote into the resident partition (a
+// partition seals only once every in-flight run writing into it has finished).
+// The engine key that signs the checkpoint is not a meta read -- it is loaded
+// from the engine-owned workspace key file, which is non-superuser-safe unlike
+// the per-database GUC install cannot set in external mode.
 
 // JournalSealReader is the meta read seam the seal step consults: the checkpoint
 // chain head to link to, the in-flight run count that gates whether a seal may
@@ -29,11 +29,10 @@ type JournalSealReader interface {
 	// wait for before it may cut. An empty id set counts zero (no writer is in flight).
 	RunningAmong(ctx context.Context, runIDs []int64) (int64, error)
 	// ReadEngineKey returns the raw ed25519 private key bytes stored in the
-	// single-row engine_key meta table (specification section 4, bootstrap Q/A:
-	// "private half in meta"). It returns (nil, nil) when the table holds no key yet,
-	// so the seal can mint one on first need; the daemon decodes the bytes into its
-	// EngineKey (store never imports crypto). The bytes are the private half: a
-	// caller must never log or render them.
+	// single-row engine_key meta table. It returns (nil, nil) when the table
+	// holds no key yet, so the seal can mint one on first need; the daemon
+	// decodes the bytes into its EngineKey (store never imports crypto). The
+	// bytes are the private half: a caller must never log or render them.
 	ReadEngineKey(ctx context.Context) ([]byte, error)
 }
 

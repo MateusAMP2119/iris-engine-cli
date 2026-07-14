@@ -10,13 +10,12 @@ import (
 )
 
 // This file is the daemon's promote surface for the `iris pipeline promote`
-// control mutation (specification sections 1, 5, and 8). POST /pipeline/promote
-// is a mutation, so the mux's leader gate already rejects it on a standby with
-// not_leader guidance (exit 6), and its scope is control. Like the build route,
-// api stays a leaf: it defines the PromoteHandler seam and the plain
-// request/result shapes but reaches nothing up the stack -- the daemon supplies
-// the handler that composes the dispatcher's promote op over meta and the data
-// journal.
+// control mutation. POST /pipeline/promote is a mutation, so the mux's leader
+// gate already rejects it on a standby with not_leader guidance (exit 6), and
+// its scope is control. Like the build route, api stays a leaf: it defines the
+// PromoteHandler seam and the plain request/result shapes but reaches nothing
+// up the stack -- the daemon supplies the handler that composes the
+// dispatcher's promote op over meta and the data journal.
 //
 // Promotion is gated on built: a promote refused because the pipeline is not in
 // built state (or not registered at all) is an operation failure (422), never a
@@ -40,9 +39,8 @@ type PipelinePromoteResult struct {
 	// DataMode is the pipeline's per-pipeline data mode after the promote:
 	// "permanent".
 	DataMode string `json:"data_mode"`
-	// Warnings are the advisory cross-mode read warnings the promote repeats
-	// while an upstream stays disposable (specification section 5); omitted when
-	// there are none.
+	// Warnings are the advisory cross-mode read warnings the promote repeats while
+	// an upstream stays disposable; omitted when there are none.
 	Warnings []declare.Warning `json:"warnings,omitempty"`
 }
 
@@ -76,8 +74,8 @@ func (noPromote) PromotePipeline(context.Context, PipelinePromoteRequest) (Pipel
 }
 
 // servePipelinePromote handles POST /pipeline/promote: decode the request, run
-// the promote op, and render the section-7 envelope. The leader gate ran already
-// in ServeHTTP. A malformed body is 400 bad_request; a refused promote (un-built
+// the promote op, and render the data envelope. The leader gate ran already in
+// ServeHTTP. A malformed body is 400 bad_request; a refused promote (un-built
 // or unregistered pipeline) is 422 operation_failed carrying the gate's reason;
 // an internal fault (no handler) is 500 internal. A successful promote is 200
 // carrying the permanent data mode and any repeated cross-mode read warnings.

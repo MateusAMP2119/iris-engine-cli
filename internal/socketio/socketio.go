@@ -2,12 +2,12 @@
 // server bound to a unix-domain socket in a throwaway temp dir, paired with an
 // http.Client that dials that socket. It proves the unix-socket control plane
 // for real -- real listener, real HTTP framing, real socket I/O -- with no
-// database (S16/real-process-io-throwaway-scripts).
+// database.
 //
 // It fixes the socket convention E02's daemon control plane and the CLI's socket
 // client reuse: the default CLI-daemon channel is an always-on, local-only unix
-// socket carrying HTTP/JSON (specification section 2). This is test-support
-// infrastructure imported only by _test.go files.
+// socket carrying HTTP/JSON. This is test-support infrastructure imported only
+// by _test.go files.
 package socketio
 
 import (

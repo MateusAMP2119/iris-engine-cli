@@ -1,6 +1,6 @@
 // Package roundtrip is the archive round-trip harness: it drives payload bytes
 // through an encode -> real temp file -> decode cycle and verifies byte-exact
-// equality plus a matching SHA-256 checksum (S16/archive-roundtrip-temp-files).
+// equality plus a matching SHA-256 checksum.
 //
 // The concrete archive format is E07's deliverable and does not exist yet. This
 // package fixes the round-trip CONVENTION that E07's archive-format tests MUST

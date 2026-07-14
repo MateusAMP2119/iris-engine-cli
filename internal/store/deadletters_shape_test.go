@@ -8,15 +8,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// TestDeadLettersWorklistShape proves the dead_letters worklist table shape
-// (specification section 4): one row per outstanding dead-lettered run awaiting
-// disposition, keyed by run_id as a primary-key foreign key to runs; reason drawn
-// from the closed set (failed, stopped, upstream_dead_lettered); a nullable human
-// error; and a nullable failed_upstream foreign key to pipelines (the immediate
-// upstream whose dead-lettered run propagated, else null). The DDL is E02.1's; this
-// test locks the worklist's shape as the contract replay and drain depend on.
-//
-// spec: S04/dead-letters-worklist-shape
+// TestDeadLettersWorklistShape proves the dead_letters worklist table shape: one
+// row per outstanding dead-lettered run awaiting disposition, keyed by run_id as
+// a primary-key foreign key to runs; reason drawn from the closed set (failed,
+// stopped, upstream_dead_lettered); a nullable human error; and a nullable
+// failed_upstream foreign key to pipelines (the immediate upstream whose
+// dead-lettered run propagated, else null). The DDL is E02.1's; this test locks
+// the worklist's shape as the contract replay and drain depend on.
 func TestDeadLettersWorklistShape(t *testing.T) {
 	s := store.MetaSchema()
 	dl := tableByName(t, s, "dead_letters")

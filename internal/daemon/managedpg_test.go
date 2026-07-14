@@ -82,16 +82,13 @@ func assertBefore(t *testing.T, events []string, earlier, later string) {
 	}
 }
 
-// TestManagedPGSubprocessLifecycle proves managed mode's subprocess lifecycle
-// (specification section 2, managed-vs-external Q/A): the daemon starts the local
-// Postgres subprocess -- which hosts both the data and meta databases in one
-// cluster reached through one admin DSN -- before any lane could be dispatched, and
-// stops it on shutdown. The instance listens on a local unix socket by default,
-// exposing TCP only when a standby / remote topology needs it. The admin DSN is
-// built from an engine-minted superuser credential that stays memory-only (redacts
-// under formatting), so the CLI never sees it.
-//
-// spec: S02/managed-pg-subprocess-lifecycle
+// TestManagedPGSubprocessLifecycle proves managed mode's subprocess lifecycle: the
+// daemon starts the local Postgres subprocess -- which hosts both the data and meta
+// databases in one cluster reached through one admin DSN -- before any lane could
+// be dispatched, and stops it on shutdown. The instance listens on a local unix
+// socket by default, exposing TCP only when a standby / remote topology needs it.
+// The admin DSN is built from an engine-minted superuser credential that stays
+// memory-only (redacts under formatting), so the CLI never sees it.
 func TestManagedPGSubprocessLifecycle(t *testing.T) {
 	ctx := context.Background()
 
@@ -214,10 +211,7 @@ func TestManagedPGSubprocessLifecycle(t *testing.T) {
 // DSN, then Connect meta (store) and data (pg) from it. The only difference between
 // the two modes is where the admin DSN comes from (a minted local credential vs.
 // the user's DSN) and whether a subprocess was supervised; everything downstream of
-// Resolve is one code path (specification section 2: "two modes, one code path ...
-// external: no local instance, internally identical (same admin-DSN path)").
-//
-// spec: S02/external-pg-identical-path
+// Resolve is one code path.
 func TestExternalPGIdenticalPath(t *testing.T) {
 	ctx := context.Background()
 	const userDSN = "postgres://user:secretpw@db.example.com:5432/postgres?sslmode=require" //nolint:gosec // G101: synthetic external-mode test DSN, not a real credential.

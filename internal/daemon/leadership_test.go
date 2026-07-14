@@ -52,8 +52,6 @@ func (l *acquireErrLock) SessionLost() <-chan struct{}  { return l.lost }
 // cancellation while still a standby is a clean shutdown (nil), while any other
 // acquire failure propagates as an error -- and either way the candidate never
 // reports the leader role.
-//
-// spec: S02/one-leader-sole-dispatcher
 func TestCandidateServeShutdown(t *testing.T) {
 	t.Run("ctx cancellation before winning the lock is a clean shutdown (nil)", func(t *testing.T) {
 		for _, ctxErr := range []error{context.Canceled, context.DeadlineExceeded} {
@@ -163,8 +161,7 @@ func TestLeaderElectionSingleWriter(t *testing.T) {
 		}
 	})
 
-	// spec: S02/one-leader-sole-dispatcher
-	t.Run("S02/one-leader-sole-dispatcher", func(t *testing.T) {
+	t.Run("one-leader-sole-dispatcher", func(t *testing.T) {
 		// The candidates reach their roles asynchronously: each reports standby before
 		// contending, then the one that wins the lock flips to leader. Wait for the
 		// electorate to settle -- exactly one leader and every other candidate a
@@ -185,8 +182,6 @@ func TestLeaderElectionSingleWriter(t *testing.T) {
 		}
 	})
 
-	// spec: S02/leader-only-meta-writes
-	// spec: S04/only-leader-writes-meta
 	t.Run("only the leader dispatches meta writes", func(t *testing.T) {
 		if !pollUntil(func() bool { return len(leaders(cands)) == 1 }) {
 			t.Fatalf("no single leader")

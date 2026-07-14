@@ -11,7 +11,7 @@ import (
 // advisory lock is acquired on one session-pinned connection and that the session
 // is held (never returned/closed) for the whole leadership lifetime -- the
 // distinction between a session-pinned connection and a pooled one whose return
-// releases the lock (specification section 9).
+// releases the lock.
 type scriptedSession struct {
 	execs      []scriptedExec
 	closes     int
@@ -58,10 +58,8 @@ func (s *scriptedSession) close(context.Context) error {
 // connection open for its whole held lifetime (never returning it, as a pooled
 // connection would -- which would release the lock), and only closes it on
 // Release, alongside the matching pg_advisory_unlock.
-//
-// spec: S09/leader-lock-session-pinned-conn
 func TestPgxLeaderLockSessionPinned(t *testing.T) {
-	t.Run("S09/leader-lock-session-pinned-conn", func(t *testing.T) {
+	t.Run("leader-lock-session-pinned-conn", func(t *testing.T) {
 		t.Run("acquire issues pg_advisory_lock on the pinned session", func(t *testing.T) {
 			sess := &scriptedSession{}
 			lock, err := newPgxLeaderLock(sess)

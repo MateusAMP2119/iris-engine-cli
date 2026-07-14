@@ -35,8 +35,6 @@ func writeScript(t *testing.T, dir, name, body string) string {
 
 // TestOSRunnerCapturesOutput runs a real throwaway script and proves stdout and
 // stderr are captured to the seam's writers, with a clean exit status.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerCapturesOutput(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "echo.sh", "echo out-line\necho err-line 1>&2\n")
@@ -71,8 +69,6 @@ func TestOSRunnerCapturesOutput(t *testing.T) {
 
 // TestOSRunnerExitCode proves a non-zero exit code is reported through the exit
 // status, not swallowed and not surfaced as a Go error.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerExitCode(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "fail.sh", "exit 7\n")
@@ -92,8 +88,6 @@ func TestOSRunnerExitCode(t *testing.T) {
 
 // TestOSRunnerCwdAndEnv proves the seam runs the subprocess with the pipeline
 // folder as working directory and injects the declared environment.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerCwdAndEnv(t *testing.T) {
 	dir := t.TempDir()
 	workdir := filepath.Join(dir, "pipeline_folder")
@@ -128,18 +122,11 @@ func TestOSRunnerCwdAndEnv(t *testing.T) {
 	}
 }
 
-// TestOSRunnerDirectExecNoShell proves the seam direct-execs argv without a
-// shell: an argument full of shell metacharacters arrives at the program
-// verbatim, never expanded or interpreted.
-//
-// spec: S16/real-process-io-throwaway-scripts
-// TestOSRunnerDirectExecNoShell proves the runner execs the argv vector directly
-// and never through a shell: a shell metacharacter argument -- a variable, a
+// TestOSRunnerDirectExecNoShell proves the seam direct-execs the argv vector and
+// never runs it through a shell: a shell metacharacter argument -- a variable, a
 // command chain, a glob -- reaches the process verbatim, with no expansion,
-// substitution, or word splitting (specification section 3: the run vector is a
-// plain direct-exec argv, no shell).
-//
-// spec: S03/run-exec-no-shell
+// substitution, or word splitting. The run vector is a plain direct-exec argv,
+// no shell.
 func TestOSRunnerDirectExecNoShell(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "arg.sh", "printf 'arg=%s' \"$1\"\n")
@@ -167,8 +154,6 @@ func TestOSRunnerDirectExecNoShell(t *testing.T) {
 // the group reaps both. The parent's Wait reports a signaled terminal status.
 // Synchronization is on the script's own "ready" output and on process liveness,
 // never a fixed sleep.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerKillKillsGroup(t *testing.T) {
 	dir := t.TempDir()
 	// The script forks a grandchild that outlives a naive parent-only kill, then
@@ -237,8 +222,6 @@ func TestOSRunnerKillKillsGroup(t *testing.T) {
 
 // TestOSRunnerContextCancelKillsGroup proves the other cancel path: cancelling
 // the context passed to Start kills the process group.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerContextCancelKillsGroup(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "hang.sh", "echo ready\nsleep 300\n")
@@ -285,8 +268,6 @@ func TestOSRunnerContextCancelKillsGroup(t *testing.T) {
 // the child's exit, carrying the child's own recorded status and its own output,
 // and the drain that could not finish surfaces as ErrWaitDelay -- never a silent
 // success. Timing is asserted with a deadline, never a fixed sleep.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerGrandchildBoundedByWaitDelay(t *testing.T) {
 	dir := t.TempDir()
 	// The grandchild outlives the parent and inherits its stdout, keeping the pipe
@@ -339,8 +320,6 @@ func TestOSRunnerGrandchildBoundedByWaitDelay(t *testing.T) {
 // dropped bytes: a script interleaves many lines across both streams into one
 // shared buffer, and every line comes back. Two independent pumps on one writer
 // would race (caught by -race) and lose output.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerSharedWriterCapturesAllBytes(t *testing.T) {
 	dir := t.TempDir()
 	const perStream = 1000
@@ -400,8 +379,6 @@ func (w *throttledWriter) len() int {
 // lingering descendant EOF arrives at the child's exit. A blob larger than the
 // pipe buffer is streamed through a throttled writer and every byte comes back
 // with a clean status.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerSlowWriterCapturesBufferedOutput(t *testing.T) {
 	dir := t.TempDir()
 	const blob = 96 * 1024
@@ -447,8 +424,6 @@ func (errWriter) Write([]byte) (int, error) { return 0, errSink }
 // buffer. os/exec closes the pipe read end when the copy stops, delivering EPIPE
 // so the child is never wedged in write(2); Wait returns quickly rather than
 // hanging. Timing is asserted with a deadline, never a fixed sleep.
-//
-// spec: S16/real-process-io-throwaway-scripts
 func TestOSRunnerWriterErrorSurfacesFromWait(t *testing.T) {
 	dir := t.TempDir()
 	// Far more than the ~64KiB pipe buffer, so a runner that abandoned the pipe on

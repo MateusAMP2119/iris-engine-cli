@@ -18,8 +18,8 @@ const tableFile = "table.yaml"
 const migrationsDirName = "migrations"
 
 // Column is one parsed table.yaml column: a name and YAML type plus the four
-// modifiers of specification section 5. The YAML-to-Postgres type mapping and
-// DDL rendering belong to a later task; this parses the shape only.
+// modifiers. The YAML-to-Postgres type mapping and DDL rendering belong to a
+// later task; this parses the shape only.
 type Column struct {
 	// Name is the column name.
 	Name string `yaml:"name"`
@@ -48,8 +48,7 @@ func (c Column) IsNullable() bool {
 	return *c.Nullable
 }
 
-// Table is a parsed table.yaml: the desired head of one declared table
-// (specification section 5).
+// Table is a parsed table.yaml: the desired head of one declared table.
 type Table struct {
 	// Schema is the schema name; validated against its folder.
 	Schema string `yaml:"schema"`
@@ -96,7 +95,7 @@ type DiscoveredTable struct {
 // is a folder per schema and a folder per table; each table folder holds
 // table.yaml (required) plus an optional engine-written migrations/ ledger. The
 // schema:/table: keys in each table.yaml are validated against their folders,
-// which are authoritative; a mismatch is rejected (specification section 3).
+// which are authoritative; a mismatch is rejected.
 func ValidateSchemaTree(schemasDir string) ([]DiscoveredTable, error) {
 	schemaEntries, err := os.ReadDir(schemasDir)
 	if err != nil {

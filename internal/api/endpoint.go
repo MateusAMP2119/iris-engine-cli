@@ -12,16 +12,16 @@ import (
 )
 
 // This file is the /q/{endpoint} serving surface of the endpoint apply
-// lifecycle (specification section 7): the request-boundary shape checkout and
-// the seams the daemon wires it through. A request resolves its compiled shape
-// exactly once, at its boundary, from the live EndpointSource (dispatch's
-// endpoint registry, swapped on apply commit) and holds that shape to the end,
-// so an applied endpoint serves the very next request with no daemon restart
-// and a re-apply never disturbs a request already in flight. Execution is
-// delegated to the EndpointReader seam; the production reader is PoolReader
-// (readexec.go): the shared data-database read pool, SET ROLE to the caller
-// PAT's role, the compiled statement with bound params. With either seam
-// unwired, /q answers the internal-fault envelope exactly as E09.5 mounted it.
+// lifecycle: the request-boundary shape checkout and the seams the daemon wires
+// it through. A request resolves its compiled shape exactly once, at its
+// boundary, from the live EndpointSource (dispatch's endpoint registry, swapped
+// on apply commit) and holds that shape to the end, so an applied endpoint
+// serves the very next request with no daemon restart and a re-apply never
+// disturbs a request already in flight. Execution is delegated to the
+// EndpointReader seam; the production reader is PoolReader (readexec.go): the
+// shared data-database read pool, SET ROLE to the caller PAT's role, the
+// compiled statement with bound params. With either seam unwired, /q answers
+// the internal-fault envelope exactly as E09.5 mounted it.
 
 // EndpointSource is the live compiled-shape lookup the /q route checks a
 // request's endpoint out of. The daemon supplies dispatch's endpoint registry;
@@ -64,10 +64,9 @@ func WithEndpointReader(rd EndpointReader) MuxOption {
 	}
 }
 
-// Page is the pagination half of a collection envelope (specification section
-// 7): {"page": {"next_after": <key|null>, "limit": <n>}}. NextAfter is the
-// continuation cursor (null when the page did not fill), Limit the resolved
-// page size.
+// Page is the pagination half of a collection envelope: {"page": {"next_after":
+// <key|null>, "limit": <n>}}. NextAfter is the continuation cursor (null when
+// the page did not fill), Limit the resolved page size.
 type Page struct {
 	// NextAfter is the continuation key of the last served row, or nil.
 	NextAfter any `json:"next_after"`
@@ -83,13 +82,12 @@ func WriteDataPage(w http.ResponseWriter, status int, v any, page Page) {
 	writeJSON(w, status, Envelope{Data: v, Page: &page})
 }
 
-// serveEndpoint handles GET /q/{endpoint}: the declared read contract
-// (specification section 7). With either seam unwired it answers the E09.5
-// internal-fault envelope (mounted, scope-checked, never a silent payload).
-// Wired, it checks the request's shape out of the live source exactly once --
-// the request boundary the re-apply swap honors -- resolves the wire grammar
-// against that shape (400 naming a refused param), executes through the
-// reader, and serves the data+page envelope.
+// serveEndpoint handles GET /q/{endpoint}: the declared read contract. With
+// either seam unwired it answers the E09.5 internal-fault envelope (mounted,
+// scope-checked, never a silent payload). Wired, it checks the request's shape
+// out of the live source exactly once -- the request boundary the re-apply swap
+// honors -- resolves the wire grammar against that shape (400 naming a refused
+// param), executes through the reader, and serves the data+page envelope.
 func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string) {
 	if m.endpoints == nil || m.qreader == nil {
 		serveUnwiredRead(w, r, "endpoint")
@@ -119,7 +117,7 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 		return
 	}
 
-	// NDJSON streaming (S07/ndjson-streaming, S07/ndjson-resume-by-cursor):
+	// NDJSON streaming:
 	// Accept: application/x-ndjson yields one JSON row object per line, no
 	// envelope, streamed through the end of the result set from the provided
 	// cursor onward. The same plan grammar (after=, filters) and auth apply.
@@ -181,9 +179,8 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 	if err != nil {
 		if errors.Is(err, store.ErrReadForbidden) {
 			// Postgres refused the read: the caller's role lacks a grant on the
-			// endpoint's source fields. The 403 names the endpoint with a fresh
-			// message -- never the wrapped Postgres text, never the missing fields
-			// (specification section 7).
+			// endpoint's source fields. The 403 names the endpoint with a fresh message
+			// -- never the wrapped Postgres text, never the missing fields.
 			WriteError(w, http.StatusForbidden, string(CodeForbidden),
 				"forbidden: the calling role lacks a grant on endpoint "+name)
 			return
@@ -198,7 +195,7 @@ func (m *mux) serveEndpoint(w http.ResponseWriter, r *http.Request, name string)
 }
 
 // wantsNDJSON reports whether the client requested NDJSON streaming for a
-// collection route (specification section 7).
+// collection route.
 func wantsNDJSON(r *http.Request) bool {
 	// Accept may be a list; any token containing the exact NDJSON type wins.
 	for _, v := range r.Header.Values("Accept") {

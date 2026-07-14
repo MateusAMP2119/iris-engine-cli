@@ -5,28 +5,28 @@ import (
 	"fmt"
 )
 
-// This file is the store half of `iris pipeline promote` (specification sections
-// 1, 5, and 12): the meta write that flips one pipeline's per-pipeline data_mode
-// from disposable to permanent -- the control truth the wipe scope consults --
-// plus the plain-MVCC reads the promote gate decides from. Promote owns the
-// data_mode column exactly as build owns artifact (registry.go: apply never
-// overwrites either); the flip is promotion's entire meta footprint, and the
-// journal-side marker flip lives in internal/pg (promote.go there). The gate
-// itself -- refuse while un-built, repeat the cross-mode warning -- is dispatch
-// work; this file only supplies its write and its facts.
+// This file is the store half of `iris pipeline promote`: the meta write that
+// flips one pipeline's per-pipeline data_mode from disposable to permanent -- the
+// control truth the wipe scope consults -- plus the plain-MVCC reads the promote
+// gate decides from. Promote owns the data_mode column exactly as build owns
+// artifact (registry.go: apply never overwrites either); the flip is promotion's
+// entire meta footprint, and the journal-side marker flip lives in internal/pg
+// (promote.go there). The gate itself -- refuse while un-built, repeat the
+// cross-mode warning -- is dispatch work; this file only supplies its write and
+// its facts.
 
 // promotePipelineSQL flips one pipeline's data_mode to permanent. It is a
 // single-row guarded UPDATE -- the pipeline named by bound parameter, the target
-// mode a literal because permanent is the only mode promote may ever set
-// (specification section 5: promote flips it permanent; nothing flips it back).
+// mode a literal because permanent is the only mode promote may ever set (promote
+// flips it permanent; nothing flips it back).
 const promotePipelineSQL = `UPDATE pipelines SET data_mode = 'permanent' WHERE name = $1`
 
 // PromotePipeline flips the named pipeline's per-pipeline data_mode in meta from
-// disposable to permanent (specification section 5). It is a leader-only meta
-// write riding the single Writer, it touches exactly the one named row, and it is
-// idempotent: re-promoting a permanent pipeline rewrites the same value. The
-// caller (the dispatch promote op) enforces the built gate before this runs; the
-// write itself is deliberately gate-free so the rule lives in one place.
+// disposable to permanent. It is a leader-only meta write riding the single
+// Writer, it touches exactly the one named row, and it is idempotent:
+// re-promoting a permanent pipeline rewrites the same value. The caller (the
+// dispatch promote op) enforces the built gate before this runs; the write itself
+// is deliberately gate-free so the rule lives in one place.
 func (w *Writer) PromotePipeline(ctx context.Context, name string) error {
 	if err := w.conn.Exec(ctx, promotePipelineSQL, name); err != nil {
 		return fmt.Errorf("store: writer promote pipeline %q: %w", name, err)
@@ -36,8 +36,8 @@ func (w *Writer) PromotePipeline(ctx context.Context, name string) error {
 
 // UpstreamDataMode pairs one depends_on upstream pipeline with its current data
 // mode, read from meta: the per-upstream fact the promote-time cross-mode read
-// warning is computed from (specification section 5: promote repeats the warning
-// while an upstream read dependency stays disposable).
+// warning is computed from (promote repeats the warning while an upstream read
+// dependency stays disposable).
 type UpstreamDataMode struct {
 	// Pipeline is the upstream pipeline's name (dependencies.to_pipeline).
 	Pipeline string
@@ -55,8 +55,8 @@ type PromoteStateReader interface {
 	PipelineDataMode(ctx context.Context, name string) (DataMode, bool, error)
 	// PipelineBuilt reports whether the pipeline is in built state: it has a
 	// recorded artifact. The artifacts table is insert-only and the current
-	// artifact is the pipeline's newest row (specification section 4), so any row
-	// at all means a built, content-addressed binary exists for the pipeline.
+	// artifact is the pipeline's newest row, so any row at all means a built,
+	// content-addressed binary exists for the pipeline.
 	PipelineBuilt(ctx context.Context, name string) (bool, error)
 	// UpstreamDataModes returns the data mode of every registered upstream the
 	// pipeline declares depends_on edges to, in upstream-name order.

@@ -13,14 +13,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 )
 
-// This file is the CLI side of `iris data provenance <schema.table> <pk>`
-// (specification sections 8, 14): the row-level lineage walk. It GETs
-// /provenance/{schema}/{table}/{pk} and renders the same payload the route
+// This file is the CLI side of `iris data provenance <schema.table> <pk>`: the
+// row-level lineage walk. It GETs /provenance/{schema}/{table}/{pk} and renders
+// the same payload the route
 // serves. Under --json the data envelope is identical (render parity); the
 // human form prints the layer stack with per-stamp disposition.
 //
-// The route (and thus CLI) requires only the read scope (S07/provenance-route-lineage-only);
-// it carries lineage only, never row images (S14/provenance-lineage-never-images).
+// The route (and thus CLI) requires only the read scope; it carries lineage
+// only, never row images.
 
 // dataProvenance is the handler for `iris data provenance <schema.table> <pk>`.
 func (a *app) dataProvenance() runE {

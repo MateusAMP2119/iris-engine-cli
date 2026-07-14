@@ -7,12 +7,11 @@ import (
 )
 
 // This file is the daemon's engine-inspect surface: GET /inspect, the read-only
-// dump of the engine-table DDL `iris engine inspect` prints (specification
-// sections 4 and 11). The DDL is embedded in the binary (create-if-missing at
-// bootstrap), so the dump renders the engine's own schema model and reads no rows
-// and writes nothing -- a mutation-free readout. It is a GET, served on any role
-// (reads work anywhere), and non-GET methods are refused, so the route can never
-// mutate engine state.
+// dump of the engine-table DDL `iris engine inspect` prints. The DDL is
+// embedded in the binary (create-if-missing at bootstrap), so the dump renders
+// the engine's own schema model and reads no rows and writes nothing -- a
+// mutation-free readout. It is a GET, served on any role (reads work anywhere),
+// and non-GET methods are refused, so the route can never mutate engine state.
 //
 // Like the other read surfaces, api stays a leaf: it defines the InspectHandler
 // seam and the payload shape but reaches nothing up the stack; the daemon supplies
@@ -60,9 +59,9 @@ func (noInspect) Inspect(context.Context) (InspectPayload, error) {
 	return InspectPayload{}, ErrInspectUnavailable
 }
 
-// serveInspect handles GET /inspect: run the wired inspect handler and render the
-// section-7 data envelope. It is a read, served on any role, and only ever a GET,
-// so it cannot mutate engine state. An unwired handler is 500 internal.
+// serveInspect handles GET /inspect: run the wired inspect handler and render
+// the data envelope. It is a read, served on any role, and only ever a GET, so
+// it cannot mutate engine state. An unwired handler is 500 internal.
 func (m *mux) serveInspect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")

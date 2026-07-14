@@ -15,19 +15,17 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file holds the engine key: the ed25519 keypair minted once at
-// `iris engine install`, whose signature seals the tamper-evidence checkpoint
-// chain (specification section 4). The spec states the private half lives "in
-// meta" and the public half is surfaced by `iris engine info`.
+// This file holds the engine key: the ed25519 keypair minted once at `iris engine
+// install`, whose signature seals the tamper-evidence checkpoint chain. The private
+// half lives in meta; the public half is surfaced by `iris engine info`.
 //
 // # Where the private half lives
 //
 // The private key is persisted as a row in the engine-owned single-row engine_key
-// meta table (id pinned to 1), added by the devdebt 2026-07-10 spec delta. This
-// supersedes two earlier realizations, both flawed: a per-database GUC
-// (`ALTER DATABASE meta SET iris.engine_key`) which needs SUPERUSER the external
-// admin role lacks (specification section 2 grants it only CREATEDB), so it never
-// worked in external mode; and a workspace key file, which forces a shared
+// meta table (id pinned to 1). This supersedes two earlier realizations, both
+// flawed: a per-database GUC (`ALTER DATABASE meta SET iris.engine_key`) which
+// needs SUPERUSER the external admin role lacks (it is granted only CREATEDB), so
+// it never worked in external mode; and a workspace key file, which forces a shared
 // filesystem for HA. The meta table is superuser-free and gives HA via the shared
 // meta database standbys already read, so a restarted or failover leader signs the
 // same chain. store owns the bytes (internal/store/enginekey.go); this file owns
@@ -59,8 +57,7 @@ type EngineKey struct {
 }
 
 // MintEngineKey mints a fresh ed25519 engine keypair from crypto/rand: the key
-// minted once at install (specification section 4). Each call is an independent
-// keypair.
+// minted once at install. Each call is an independent keypair.
 func MintEngineKey() (EngineKey, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -137,7 +134,6 @@ func (k EngineKey) valid() bool { return len(k.private) == ed25519.PrivateKeySiz
 
 // SignDigest returns the ed25519 signature over the given digest (the checkpoint's
 // own digest). This is the signature stored in journal_checkpoints.signature.
-// (S04/checkpoint-ed25519-signature, S14/checkpoint-digest-chain)
 func (k EngineKey) SignDigest(digest []byte) ([]byte, error) {
 	if !k.valid() {
 		return nil, fmt.Errorf("daemon: sign digest: invalid engine key")
@@ -147,7 +143,6 @@ func (k EngineKey) SignDigest(digest []byte) ([]byte, error) {
 
 // VerifyDigest reports whether sig is a valid ed25519 signature over digest for
 // this key's public half. Used to verify checkpoint signatures.
-// (S04/checkpoint-ed25519-signature)
 func (k EngineKey) VerifyDigest(digest, sig []byte) bool {
 	if !k.valid() {
 		return false

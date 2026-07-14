@@ -11,7 +11,7 @@ import (
 )
 
 // This file proves the data-PAT read-role and engine read-pool login provisioning
-// DDL of specification sections 4 and 7: a data PAT owns a NOLOGIN read role,
+// DDL: a data PAT owns a NOLOGIN read role,
 // assumed via SET ROLE by the engine read-pool login, granted read-only on its
 // mint fields and membership in the pool login so the pool can assume it. It
 // drives the real render/exec code through the recording fake, no live Postgres.
@@ -20,8 +20,6 @@ import (
 // a NOLOGIN read role (never LOGIN, no credential), denied the meta database,
 // granted only its declared read fields, and made assumable by the engine
 // read-pool login via a membership grant -- the SET ROLE cycle's precondition.
-//
-// spec: S04/data-pat-role-nologin-set-role
 func TestProvisionDataPATRoleNologinSetRole(t *testing.T) {
 	rec := pgtest.New()
 	spec := pg.DataPATRoleProvision{
@@ -77,8 +75,6 @@ func TestProvisionDataPATRoleNologinSetRole(t *testing.T) {
 
 // TestProvisionDataPATRoleRejectsWriteGrant proves a write-access grant is refused:
 // a data-PAT role holds read grants only.
-//
-// spec: S04/data-pat-role-nologin-set-role
 func TestProvisionDataPATRoleRejectsWriteGrant(t *testing.T) {
 	rec := pgtest.New()
 	err := pg.ProvisionDataPATRole(context.Background(), rec, pg.DataPATRoleProvision{
@@ -99,8 +95,6 @@ func TestProvisionDataPATRoleRejectsWriteGrant(t *testing.T) {
 // TestProvisionReadPoolLogin proves the engine read-pool login is a LOGIN role
 // with the engine-minted credential, denied meta and granted CONNECT on data,
 // holding no table grants of its own.
-//
-// spec: S07/read-pool-set-role-cycle
 func TestProvisionReadPoolLogin(t *testing.T) {
 	rec := pgtest.New()
 	spec := pg.ReadPoolLoginProvision{ //nolint:gosec // G101: test-only fake DSN, not a real credential

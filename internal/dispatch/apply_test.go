@@ -11,12 +11,11 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the dispatch-level apply op (specification sections 3 and 6.3):
-// it validates a declaration against the current registry, then persists it through
-// the single meta writer as one atomic registry transaction. Every write rides a
-// real Dispatcher over a recording fake -- no live Postgres -- so a test asserts the
-// exact write set, its transaction grouping, and that a validation failure changes
-// nothing.
+// This file proves the dispatch-level apply op: it validates a declaration against
+// the current registry, then persists it through the single meta writer as one atomic
+// registry transaction. Every write rides a real Dispatcher over a recording fake --
+// no live Postgres -- so a test asserts the exact write set, its transaction
+// grouping, and that a validation failure changes nothing.
 
 // applyHarness wires an Applier over a real Dispatcher (the single-writer path) and
 // a recording write connection, plus a seedable registry reader.
@@ -60,10 +59,8 @@ func touchesLanes(stmts []storetest.RecordedStatement) bool {
 // TestApplyAtomicRegistryTxn proves an apply's registry changes commit in one
 // dispatcher meta transaction, all-or-nothing, and that a validation failure
 // changes nothing.
-//
-// spec: S06.3/apply-atomic-registry-txn
 func TestApplyAtomicRegistryTxn(t *testing.T) {
-	t.Run("S06.3/apply-atomic-registry-txn", func(t *testing.T) {
+	t.Run("apply-atomic-registry-txn", func(t *testing.T) {
 		// A valid apply: its pipelines row and depends_on edges commit as one atomic
 		// transaction, nothing outside it.
 		h := newApplyHarness(t)
@@ -106,10 +103,8 @@ func TestApplyAtomicRegistryTxn(t *testing.T) {
 // TestApplySingleMemberNoLanesRow proves a single-member lane (a lone pipeline with
 // no composer) produces no lanes row: its apply persists the pipeline but writes
 // nothing to lanes, so the name stays nominal until a composer promotes it to 2+.
-//
-// spec: S03/single-member-no-lanes-row
 func TestApplySingleMemberNoLanesRow(t *testing.T) {
-	t.Run("S03/single-member-no-lanes-row", func(t *testing.T) {
+	t.Run("single-member-no-lanes-row", func(t *testing.T) {
 		h := newApplyHarness(t)
 		decl := &declare.Pipeline{Name: "solo", Run: []string{"python", "main.py"}}
 		if err := h.applier.ApplyPipeline(context.Background(), "pipelines/solo/solo", decl); err != nil {
@@ -128,10 +123,8 @@ func TestApplySingleMemberNoLanesRow(t *testing.T) {
 // resolved env or env_file values: a pipeline whose env and env_file carry
 // distinctive secret strings registers with no secret value anywhere in the meta
 // write set, and the pipelines row carries no env columns.
-//
-// spec: S03/secrets-never-in-meta
 func TestApplySecretsNeverInMeta(t *testing.T) {
-	t.Run("S03/secrets-never-in-meta", func(t *testing.T) {
+	t.Run("secrets-never-in-meta", func(t *testing.T) {
 		const (
 			secretValue = "sk-live-DISTINCTIVE-DO-NOT-PERSIST-0xDEADBEEF"
 			interpolate = "${REGION_FROM_DAEMON_ENV}"
@@ -172,10 +165,8 @@ func TestApplySecretsNeverInMeta(t *testing.T) {
 // entire order in one atomic all-or-nothing write through the single meta writer,
 // regardless of whether the members are registered yet (lanes holds names, not FKs),
 // and that an injected transaction failure commits nothing.
-//
-// spec: S06.3/composer-apply-atomic-lane-rewrite
 func TestApplyComposerAtomicLaneRewrite(t *testing.T) {
-	t.Run("S06.3/composer-apply-atomic-lane-rewrite", func(t *testing.T) {
+	t.Run("composer-apply-atomic-lane-rewrite", func(t *testing.T) {
 		// The members are never registered, yet the rewrite writes their names.
 		h := newApplyHarness(t)
 		composer := &declare.Composer{Lane: "ingest", Order: []string{"never_registered_a", "never_registered_b"}}

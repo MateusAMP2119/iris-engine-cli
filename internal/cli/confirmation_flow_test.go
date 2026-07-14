@@ -61,14 +61,12 @@ type apiControlRec struct {
 
 // TestFiveOpsConfirmationGated proves each of the five destructive operations
 // refuses without explicit confirmation (flag or interactive seam).
-//
-// spec: S12/five-ops-confirmation-gated
 func TestFiveOpsConfirmationGated(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S12/five-ops-confirmation-gated", func(t *testing.T) {
+	t.Run("five-ops-confirmation-gated", func(t *testing.T) {
 		// engine uninstall (daemonless local)
 		t.Run("engine uninstall without confirm refuses", func(t *testing.T) {
 			t.Chdir(t.TempDir())
@@ -128,14 +126,12 @@ func TestFiveOpsConfirmationGated(t *testing.T) {
 
 // TestTeardownTypedNameConfirm proves irreversible teardowns use typed-name
 // confirmation path (via seam) rather than y/N.
-//
-// spec: S12/teardown-typed-name-confirm
 func TestTeardownTypedNameConfirm(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S12/teardown-typed-name-confirm", func(t *testing.T) {
+	t.Run("teardown-typed-name-confirm", func(t *testing.T) {
 		// Simulate TTY typed confirm by injecting confirm seam returning true for teardown.
 		app := newApp(&bytes.Buffer{}, &bytes.Buffer{})
 		typed := false
@@ -155,26 +151,24 @@ func TestTeardownTypedNameConfirm(t *testing.T) {
 		code := a2.run([]string{"engine", "uninstall"})
 		// It will proceed past confirm, then may fail on live check or removal, but must have taken typed path.
 		if !typed {
-			t.Errorf("teardown did not consult confirm seam with isTeardown=true (S12/teardown-typed-name-confirm)")
+			t.Errorf("teardown did not consult confirm seam with isTeardown=true")
 		}
 		_ = code // outcome after confirm is not asserted here; gate entry is.
-		// Teardowns must print what they will remove (spec: S12/teardown-typed-name-confirm).
+		// Teardowns must print what they will remove.
 		combined := out.String() + errb.String()
 		if !strings.Contains(combined, "will remove") {
-			t.Errorf("teardown must print 'will remove' summary for typed-name confirm (S12/teardown-typed-name-confirm); got: %s", combined)
+			t.Errorf("teardown must print 'will remove' summary for typed-name confirm; got: %s", combined)
 		}
 	})
 }
 
 // TestDevloopYNConfirm proves dev-loop ops use y/N (isTeardown=false) seam.
-//
-// spec: S12/devloop-yn-confirm
 func TestDevloopYNConfirm(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S12/devloop-yn-confirm", func(t *testing.T) {
+	t.Run("devloop-yn-confirm", func(t *testing.T) {
 		yn := false
 		a := newApp(&bytes.Buffer{}, &bytes.Buffer{})
 		a.confirm = func(_ string, isTeardown bool) (bool, error) {
@@ -189,7 +183,7 @@ func TestDevloopYNConfirm(t *testing.T) {
 		a2.confirm = a.confirm
 		_ = a2.run([]string{"workload", "wipe", "p"})
 		if !yn {
-			t.Errorf("workload wipe did not consult confirm seam with isTeardown=false (S12/devloop-yn-confirm)")
+			t.Errorf("workload wipe did not consult confirm seam with isTeardown=false")
 		}
 	})
 }
@@ -197,14 +191,12 @@ func TestDevloopYNConfirm(t *testing.T) {
 // TestDryRunWritesNothing proves --dry-run on declare apply and destroy prints
 // preview language and the request carries DryRun without performing the write
 // path.
-//
-// spec: S12/dry-run-writes-nothing
 func TestDryRunWritesNothing(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S12/dry-run-writes-nothing", func(t *testing.T) {
+	t.Run("dry-run-writes-nothing", func(t *testing.T) {
 		sock := shortSocket(t)
 		var rec []apiControlRec
 		startControlStub(t, sock, &rec)
@@ -262,14 +254,12 @@ func TestDryRunWritesNothing(t *testing.T) {
 // soft-blocks causes the force path (we assert Force flag reaches for destroy;
 // the actual run cancel+deadletter as stopped is exercised via dispatch decision
 // in tandem with the command surface).
-//
-// spec: S12/force-cancels-inflight
 func TestForceCancelsInflight(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
 
-	t.Run("S12/force-cancels-inflight", func(t *testing.T) {
+	t.Run("force-cancels-inflight", func(t *testing.T) {
 		sock := shortSocket(t)
 		var rec []apiControlRec
 		startControlStub(t, sock, &rec)

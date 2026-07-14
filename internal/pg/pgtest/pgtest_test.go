@@ -13,7 +13,7 @@ import (
 
 // canonicalDDL is a representative CREATE / ALTER / GRANT / trigger DDL sequence
 // -- the exact shapes E03/E04 will issue through the pg seam -- built from the
-// golden analytics.orders table of specification section 5. The recording fake
+// golden analytics.orders table. The recording fake
 // must capture these statements verbatim and in order.
 var canonicalDDL = []string{
 	`CREATE TABLE analytics.orders (
@@ -32,8 +32,6 @@ var canonicalDDL = []string{
 // TestRecorderSatisfiesDB proves the recording pg fake stands behind the data
 // database seam: it implements pg.DB, so DDL/grant reconcile code runs against
 // it with no live Postgres.
-//
-// spec: S16/integration-fakes-interfaces
 func TestRecorderSatisfiesDB(t *testing.T) {
 	rec := pgtest.New()
 
@@ -52,8 +50,6 @@ func TestRecorderSatisfiesDB(t *testing.T) {
 // in order -- byte-for-byte against a checked-in golden. This is the seam by
 // which E03/E04 prove their generated DDL without a live database: a golden diff
 // is a contract diff.
-//
-// spec: S16/integration-fakes-interfaces
 func TestRecorderCapturesDDLGolden(t *testing.T) {
 	ctx := context.Background()
 	rec := pgtest.New()
@@ -82,8 +78,6 @@ func TestRecorderCapturesDDLGolden(t *testing.T) {
 // TestRecorderErrorInjection proves the fake can model a failing data database:
 // an injected error surfaces from Exec, and the offending statement is still
 // recorded so a test can assert what was attempted before the failure.
-//
-// spec: S16/integration-fakes-interfaces
 func TestRecorderErrorInjection(t *testing.T) {
 	ctx := context.Background()
 	rec := pgtest.New()

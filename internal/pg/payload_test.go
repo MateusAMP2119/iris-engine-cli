@@ -13,8 +13,8 @@ import (
 var allOps = []pg.WriteOp{pg.OpInsert, pg.OpUpdate, pg.OpDelete}
 
 // TestCaptureCoversAllModes proves capture is active in every artifact/data mode
-// combination, with only the captured payload TIER differing between modes
-// (specification section 1: "Capture covers all modes; only payload differs").
+// combination, with only the captured payload TIER differing between modes: capture
+// covers all modes, only payload differs.
 //
 // The integration surface is twofold: the capture-install DDL (the mode-independent
 // trigger set the engine emits for every declared table) and the runtime tier
@@ -22,8 +22,6 @@ var allOps = []pg.WriteOp{pg.OpInsert, pg.OpUpdate, pg.OpDelete}
 // install carries no mode input at all -- so capture is unconditionally on for
 // every mode -- and the only thing that varies across modes is whether a
 // wipe-eligible update/delete keeps a full pre-image or records a slim stamp.
-//
-// spec: S01/capture-covers-all-modes
 func TestCaptureCoversAllModes(t *testing.T) {
 	// --- Capture install is mode-independent: it is emitted for every declared
 	// table unconditionally, and the plan carries no mode input at all (PlanProvision
@@ -118,10 +116,7 @@ func TestCaptureCoversAllModes(t *testing.T) {
 // TestModeChangeWipeEligibilityOnly proves changing a pipeline's data mode changes
 // the wipe eligibility of its data (and hence the payload tier of a future
 // update/delete) but never changes capture behavior: every op is still captured in
-// both modes (specification section 12: "data mode changes wipe eligibility, never
-// capture").
-//
-// spec: S12/mode-change-wipe-eligibility-only
+// both modes -- a data mode change moves wipe eligibility, never capture.
 func TestModeChangeWipeEligibilityOnly(t *testing.T) {
 	// Wipe eligibility flips with the data mode.
 	if !pg.WipeEligible(declare.DataDisposable) {
@@ -158,10 +153,7 @@ func TestModeChangeWipeEligibilityOnly(t *testing.T) {
 
 // TestUnbuiltPermanentWriteRefused proves the engine refuses permanent-mode data
 // writes from a pipeline running un-built source: permanent data requires a built
-// artifact (specification sections 1 and 12: "permanent requires built; loose
-// source never writes permanent data").
-//
-// spec: S12/unbuilt-permanent-write-refused
+// artifact, and a loose source never writes permanent data.
 func TestUnbuiltPermanentWriteRefused(t *testing.T) {
 	// Permanent + un-built source is the one refused combination.
 	err := pg.PermanentRequiresBuilt(declare.DataPermanent, false)

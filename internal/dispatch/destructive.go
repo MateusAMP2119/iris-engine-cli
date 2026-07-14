@@ -1,17 +1,17 @@
 package dispatch
 
 // This file is the pure gate and blocker predicate logic behind the destructive
-// operation gates (specification sections 8 and 12): the --yes versus --force
-// semantics (confirmation satisfied versus soft-block override), the two
-// soft-block refusals (an in-flight run on the affected scope; un-promoted
-// disposable data on teardowns), and the declare-destroy downstream-blocker
-// predicates (a dependent's depends_on, a downstream run_inputs row, an
-// outstanding dead-letter entry naming the target as failed_upstream). Everything
-// here is a decision over snapshots -- no I/O, no daemon -- mirroring drain.go and
-// gate.go: the predicates decide, the callers (the CLI's confirmation flows and
-// the daemon's control connection, E10.2's wiring) read the snapshots and act.
+// operation gates: the --yes versus --force semantics (confirmation satisfied versus
+// soft-block override), the two soft-block refusals (an in-flight run on the affected
+// scope; un-promoted disposable data on teardowns), and the declare-destroy
+// downstream-blocker predicates (a dependent's depends_on, a downstream run_inputs
+// row, an outstanding dead-letter entry naming the target as failed_upstream).
+// Everything here is a decision over snapshots -- no I/O, no daemon -- mirroring
+// drain.go and gate.go: the predicates decide, the callers (the CLI's confirmation
+// flows and the daemon's control connection, E10.2's wiring) read the snapshots and
+// act.
 //
-// The tier split the spec draws: hard blockers versus soft-blocks. The destroy
+// The tier split: hard blockers versus soft-blocks. The destroy
 // downstream blockers are HARD -- destroy refuses while they hold, naming them
 // (drop or drain first), and no flag overrides a dangling-reference refusal. The
 // soft-blocks are operational hazards -- --yes honors them (confirms, then refuses
@@ -27,9 +27,9 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// DestructiveOp identifies one of the gated destructive operations
-// (specification section 12). Engine-managed role teardown rides destroy and
-// uninstall rather than gating separately, so it carries no op of its own.
+// DestructiveOp identifies one of the gated destructive operations. Engine-managed
+// role teardown rides destroy and uninstall rather than gating separately, so it
+// carries no op of its own.
 type DestructiveOp int
 
 // The gated destructive operations.
@@ -73,11 +73,10 @@ func (op DestructiveOp) Teardown() bool {
 	return op == OpDeclareDestroy || op == OpEngineUninstall
 }
 
-// ConfirmMode is how a non-interactive invocation satisfied the confirmation
-// gate (specification section 8: --yes/--force on destructive commands). The
-// interactive prompt flows (typed target name, y/N) are E10.2's; both resolve to
-// one of these modes before the decision here runs. The zero value is
-// ConfirmYes, the safe mode: it never overrides a soft-block.
+// ConfirmMode is how a non-interactive invocation satisfied the confirmation gate
+// (--yes/--force on destructive commands). The interactive prompt flows (typed target
+// name, y/N) are E10.2's; both resolve to one of these modes before the decision here
+// runs. The zero value is ConfirmYes, the safe mode: it never overrides a soft-block.
 type ConfirmMode int
 
 // The confirmation modes.
@@ -112,8 +111,8 @@ func (s GateScope) covers(pipeline string) bool {
 	return s.Pipeline == "" || s.Pipeline == pipeline
 }
 
-// SoftBlockKind is the closed set of soft-blocks the specification section 12
-// confirmation gate defines: exactly two.
+// SoftBlockKind is the closed set of soft-blocks the confirmation gate defines:
+// exactly two.
 type SoftBlockKind int
 
 // The soft-block kinds.
@@ -141,7 +140,7 @@ func (k SoftBlockKind) String() string {
 // the --yes refusal prints (Guidance). An in-flight block additionally names the
 // run ids --force would cancel.
 type SoftBlock struct {
-	// Kind is which of the two section 12 soft-blocks this is.
+	// Kind is which of the two soft-blocks this is.
 	Kind SoftBlockKind
 	// Runs are the in-flight run ids on the affected scope, ascending; set only
 	// for SoftBlockInFlightRun. They are what --force cancels.
@@ -170,8 +169,8 @@ func InFlightRuns(runs []store.Run, scope GateScope) []store.Run {
 	return out
 }
 
-// EvaluateSoftBlocks evaluates the two specification section 12 soft-blocks for
-// one destructive operation: an in-flight run on the affected scope (every op),
+// EvaluateSoftBlocks evaluates the two soft-blocks for one destructive
+// operation: an in-flight run on the affected scope (every op),
 // and un-promoted disposable data (teardowns only). runs is the current run
 // snapshot; unpromoted is the number of un-promoted disposable journal entries
 // in the op's scope -- the wipe scope's size, len(pg.WipeScope(...)), which the
@@ -225,12 +224,11 @@ type GateDecision struct {
 	CancelRuns []string
 }
 
-// DecideDestructive applies the --yes/--force semantics to the evaluated
-// soft-blocks (specification section 8): --yes satisfies the confirmation prompt
-// but honors every soft-block, refusing with guidance while any holds; --force
-// overrides them all, proceeding and naming the in-flight runs the override
-// cancels. With no soft-blocks both modes proceed -- confirmation was the only
-// gate and the mode supplied it.
+// DecideDestructive applies the --yes/--force semantics to the evaluated soft-blocks:
+// --yes satisfies the confirmation prompt but honors every soft-block, refusing with
+// guidance while any holds; --force overrides them all, proceeding and naming the
+// in-flight runs the override cancels. With no soft-blocks both modes proceed --
+// confirmation was the only gate and the mode supplied it.
 func DecideDestructive(mode ConfirmMode, blocks []SoftBlock) GateDecision {
 	if len(blocks) == 0 {
 		return GateDecision{Proceed: true}
@@ -246,8 +244,8 @@ func DecideDestructive(mode ConfirmMode, blocks []SoftBlock) GateDecision {
 }
 
 // RunInputEdge is one run_inputs row as the destroy blocker reads it: the
-// consumer run and the upstream run it consumed (specification section 4's
-// consumption ledger, section 12's second destroy blocker).
+// consumer run and the upstream run it consumed (the consumption ledger, which
+// feeds the second destroy blocker).
 type RunInputEdge struct {
 	// RunID is the consuming run.
 	RunID int64
@@ -255,8 +253,8 @@ type RunInputEdge struct {
 	InputRunID int64
 }
 
-// DestroyBlockReasons scans the three specification section 12 downstream-blocker
-// predicates for target and returns one human reason per hit, each naming the
+// DestroyBlockReasons scans the three downstream-blocker predicates for target
+// and returns one human reason per hit, each naming the
 // blocker and its remedy (drop or drain first); an empty result means the target
 // is destroyable. The predicates, over snapshots so the decision is pure:
 //

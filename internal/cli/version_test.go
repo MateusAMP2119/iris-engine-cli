@@ -28,8 +28,6 @@ func runVersion(t *testing.T, flag string) string {
 // "dev". The default is asserted through buildinfo.Version rather than a literal
 // so the test tracks the constant, yet an unstamped test build must observe the
 // "dev" default -- the value the release workflow overrides with -ldflags -X.
-//
-// spec: S08/version-flag-defaults-dev
 func TestVersionFlagDefaultsDev(t *testing.T) {
 	if buildinfo.Version != "dev" {
 		t.Fatalf("unstamped build: buildinfo.Version = %q, want the \"dev\" default", buildinfo.Version)
@@ -45,8 +43,6 @@ func TestVersionFlagDefaultsDev(t *testing.T) {
 // string verbatim, and a single trailing newline, with no help text or usage
 // noise. Both --version and its short form -v (if wired) resolve to the same
 // single-line surface the installer parses.
-//
-// spec: S08/version-template-format
 func TestVersionTemplateFormat(t *testing.T) {
 	got := runVersion(t, "--version")
 	want := "iris version " + buildinfo.Version + "\n"

@@ -26,8 +26,7 @@ func (f infoFunc) Info(ctx context.Context) (api.InfoPayload, error) { return f(
 func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
-	// spec: S08/quickstart-act-structure
-	t.Run("S08/quickstart-act-structure", func(t *testing.T) {
+	t.Run("quickstart-act-structure", func(t *testing.T) {
 		t.Run("the act holds through unknown AND standby, proceeding only on leader", func(t *testing.T) {
 			chdirWorkspace(t)
 			sock := shortSocket(t)

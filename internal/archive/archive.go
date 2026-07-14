@@ -1,8 +1,7 @@
 // Package archive implements the engine-owned archive file format for sealed
 // journal partitions and the export flow that moves a resident checkpoint's
 // rows out to the content-addressed object store, re-validates, drops the
-// partition from the data database, and flips the checkpoint to archived
-// (specification sections 4, 10, 14).
+// partition from the data database, and flips the checkpoint to archived.
 //
 // It sits beside dispatch, reuses store and pg seams, and performs only plain
 // filesystem I/O plus calls through its seams; no direct meta or data DB

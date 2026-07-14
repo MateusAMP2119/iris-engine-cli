@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// canonicalDDL is the CREATE TABLE for analytics.orders exactly as the
-// specification prints it (docs/Iris Specification Inventory.md section 5).
-// The checked-in golden testdata/orders_create.sql must equal these bytes;
-// E03's real DDL generator will be asserted against the same golden.
+// canonicalDDL is the canonical CREATE TABLE for analytics.orders: the exact
+// bytes the DDL generator must emit for that table, down to column order,
+// alignment, and trailing newline. The checked-in golden
+// testdata/orders_create.sql must equal these bytes; the real DDL generator is
+// asserted against the same golden.
 const canonicalDDL = `CREATE TABLE analytics.orders (
     id          uuid        PRIMARY KEY,
     customer_id uuid        NOT NULL,
@@ -19,14 +20,13 @@ const canonicalDDL = `CREATE TABLE analytics.orders (
 );
 `
 
-// canonicalAlter is the --dry-run migration preview from section 5, verbatim.
+// canonicalAlter is the canonical --dry-run migration preview: the exact bytes
+// previewed when a defaulted status column is added to analytics.orders.
 const canonicalAlter = `ALTER TABLE analytics.orders ADD COLUMN status text DEFAULT 'pending';
 `
 
 // TestGoldenByteDiff proves that a generated artifact is compared byte-for-byte
 // against a checked-in golden file and that any difference fails the test.
-//
-// spec: S16/golden-byte-diff
 func TestGoldenByteDiff(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -69,8 +69,6 @@ func TestGoldenByteDiff(t *testing.T) {
 // place instead of failing on a diff. The behavior is exercised against a
 // throwaway temp golden so a normal `go test` run never rewrites a checked-in
 // golden, and the flag is restored before the test returns.
-//
-// spec: S16/golden-update-flag
 func TestGoldenUpdateFlag(t *testing.T) {
 	// The -update flag is registered on the package's flag set.
 	if flag.Lookup("update") == nil {

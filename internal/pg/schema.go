@@ -7,7 +7,7 @@ import (
 )
 
 // This file holds the embedded data-journal schema: public.data_journal, the
-// always-on write-capture table in the data database (specification section 4).
+// always-on write-capture table in the data database.
 // pg owns the data database, so it owns this DDL, just as store owns the meta
 // tables. pg keeps its own small schema model rather than importing store's: the
 // two are peer database clients that never import each other (two clients, two
@@ -165,7 +165,7 @@ func (t Table) DDL() []string {
 }
 
 // JournalTable returns the data_journal table model: the always-on write-capture
-// table in the data database's public schema (specification section 4),
+// table in the data database's public schema,
 // partitioned by id range with exactly two indexes (its primary key on the bigint
 // identity id and the (schema, table, row_pk, run_id) provenance key). id is the
 // monotonic ordering key; recorded_at is an opaque non-ordering text audit
@@ -199,7 +199,7 @@ func JournalTable() Table {
 }
 
 // JournalSelectGrantDDL renders the journal's read grant: GRANT SELECT on
-// public.data_journal TO PUBLIC (specification section 4). public is the readable
+// public.data_journal TO PUBLIC. public is the readable
 // surface, so every engine role -- present and future -- may SELECT the journal,
 // and no write privilege is ever granted here: writes reach the journal only
 // through the capture triggers, which run as the table owner. Granting to PUBLIC
@@ -210,8 +210,8 @@ func JournalSelectGrantDDL() string {
 }
 
 // JournalTeardownDDL renders the statements that drop the data journal in full:
-// the engine uninstall teardown of the data database (specification sections 4 and
-// 12). It is a single cascading DROP TABLE, so the journal's partitions and any
+// the engine uninstall teardown of the data database. It is a single cascading
+// DROP TABLE, so the journal's partitions and any
 // triggers or rules that depend on it go with it rather than being orphaned; the
 // per-table capture triggers E03/E04 add to user tables extend this teardown when
 // they land. IF EXISTS keeps the teardown idempotent when the journal was already

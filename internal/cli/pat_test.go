@@ -7,15 +7,13 @@ import (
 )
 
 // TestPATCreateScopeValidation proves `iris pat create` validates its scope set
-// locally before reaching the leader (specification section 7): it accepts any
-// non-empty subset of {control, read, data} and rejects an empty set or an unknown
+// locally before reaching the leader: it accepts any non-empty subset of
+// {control, read, data} and rejects an empty set or an unknown
 // scope as a usage error (exit 2), and it rejects --read/--endpoint without the data
 // scope. A valid request gets past validation and then requires a running daemon
 // (exit 3 against an unreachable socket), proving validation is the only local gate.
-//
-// spec: S07/pat-scope-subset-validation
 func TestPATCreateScopeValidation(t *testing.T) {
-	t.Run("S07/pat-scope-subset-validation", func(t *testing.T) {
+	t.Run("pat-scope-subset-validation", func(t *testing.T) {
 		// Isolate ambient IRIS_* config so a developer's exported socket/host cannot
 		// redirect the resolved dial target: the --socket flag is the only target.
 		t.Setenv("IRIS_SOCKET", "")
@@ -57,10 +55,8 @@ func TestPATCreateScopeValidation(t *testing.T) {
 
 // TestPATCreateUnknownScopeNamesIt proves the usage error names the offending scope,
 // so an operator sees which token was rejected.
-//
-// spec: S07/pat-scope-subset-validation
 func TestPATCreateUnknownScopeNamesIt(t *testing.T) {
-	t.Run("S07/pat-scope-subset-validation", func(t *testing.T) {
+	t.Run("pat-scope-subset-validation", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"pat", "create", "--scope", "superuser"})
 		if code != exitUsage {

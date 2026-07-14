@@ -56,8 +56,6 @@ func freshLedgers(tables []declare.DiscoveredTable) map[string]pg.TableLedger {
 // table.yaml head for each missing table (and ends by ensuring capture: the
 // partitioned journal once and the per-table capture triggers). The emitted DDL
 // stream is pinned byte-for-byte; a golden diff is a contract diff.
-//
-// spec: S05/provision-create-if-missing
 func TestProvisionCreateIfMissing(t *testing.T) {
 	ctx := context.Background()
 	tables := discoverGoldenSchemas(t)
@@ -95,8 +93,6 @@ func TestProvisionCreateIfMissing(t *testing.T) {
 // migration files on disk beyond the recorded applied head) instead of recreating
 // the table: no CREATE TABLE, one ADD COLUMN ALTER, and the replayed head
 // recorded.
-//
-// spec: S05/provision-applies-pending-migrations
 func TestProvisionAppliesPendingMigrations(t *testing.T) {
 	ctx := context.Background()
 
@@ -197,8 +193,6 @@ func TestProvisionAppliesPendingMigrations(t *testing.T) {
 // existing one, never both. The branch is chosen by a single predicate (the table
 // exists live or not) and carried as a closed oneof, so a table structurally
 // cannot hold both paths.
-//
-// spec: S05/provision-one-path-per-table
 func TestProvisionOnePathPerTable(t *testing.T) {
 	declared := parseTable(t, ordersWithStatusYAML)
 	raw := []byte(ordersWithStatusYAML)
@@ -258,8 +252,6 @@ func TestProvisionOnePathPerTable(t *testing.T) {
 // its table.yaml head, the ledger head is recorded as applied: the head is the
 // highest migration id present in the table's migrations/ directory, or 0001 (the
 // implicit create head, whose revision is table.yaml itself) when none are.
-//
-// spec: S05/provision-head-create-records-ledger
 func TestProvisionHeadCreateRecordsLedger(t *testing.T) {
 	ctx := context.Background()
 
@@ -396,8 +388,6 @@ func TestProvisionHeadCreateRecordsLedger(t *testing.T) {
 // already-provisioned target emits no schema, table, or migration changes: the
 // re-planned plan is empty and applying it issues no statements and records no
 // heads.
-//
-// spec: S05/provision-idempotent
 func TestProvisionIdempotent(t *testing.T) {
 	ctx := context.Background()
 	tables := discoverGoldenSchemas(t)
@@ -454,8 +444,6 @@ func TestProvisionIdempotent(t *testing.T) {
 // declares reads or writes on it. PlanProvision's only table source is the
 // schemas/ tree -- its signature carries no pipeline, reads, or writes input -- so
 // a table that no pipeline references is planned identically to one that many do.
-//
-// spec: S05/provision-pipeline-independent
 func TestProvisionPipelineIndependent(t *testing.T) {
 	// An orphan table under schemas/ that no pipeline reads or writes.
 	orphanYAML := `schema: analytics

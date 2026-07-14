@@ -19,11 +19,11 @@ import (
 )
 
 // This file proves the daemon's leader-side build plane: the composition root that
-// turns POST /pipeline/build into the dispatch build op over the single meta writer,
-// the registry's run-target read, the content-addressed object store, and the exec
-// seam (specification sections 1, 8, and 9). The toolchain subprocess is a fake --
-// the exec seam's point -- while the hashing, object storage, and artifacts record
-// are the real production path.
+// turns POST /pipeline/build into the dispatch build op over the single meta
+// writer, the registry's run-target read, the content-addressed object store, and
+// the exec seam. The toolchain subprocess is a fake -- the exec seam's point --
+// while the hashing, object storage, and artifacts record are the real production
+// path.
 
 // fakeBuildTargets is a canned run-target read: pipeline name -> (folder, argv).
 type fakeBuildTargets map[string]store.PipelineRunTarget
@@ -87,8 +87,6 @@ func (builtHandle) Kill() error                    { return nil }
 // storing the produced binary's bytes in the object store under its content hash,
 // and recording that hash in artifacts through the single meta writer -- and an
 // uninstalled (or cleared) plane faults instead of building off-path.
-//
-// spec: S09/build-records-hash-and-bytes
 func TestBuildPlaneRecordsHashAndBytes(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	d := dispatch.New(rec)

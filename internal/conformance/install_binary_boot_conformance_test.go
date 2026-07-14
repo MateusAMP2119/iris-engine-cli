@@ -54,7 +54,7 @@ func requireMetaAndData(t *testing.T, dsn string) {
 
 // TestInstallCreatesMetaAndData drives the real binary and proves that
 // `iris engine install` creates the meta database alongside the data database
-// (specification section 13, acceptance step 1: "Install creates meta alongside the
+// (acceptance step 1: "Install creates meta alongside the
 // data database"). The assertion is install-only: it probes the cluster through an
 // independent admin connection, before any daemon runs, so it proves install itself
 // created both databases rather than a later start.
@@ -66,13 +66,11 @@ func requireMetaAndData(t *testing.T, dsn string) {
 // cluster; the managed one-code-path bring-up is proven end to end in
 // TestInstallStartOneCodepath instead. When no external DSN is configured this test
 // skips rather than assert against a cluster it cannot reach.
-//
-// spec: S13/install-creates-meta-and-data
 func TestInstallCreatesMetaAndData(t *testing.T) {
-	t.Run("S13/install-creates-meta-and-data", func(t *testing.T) {
+	t.Run("install-creates-meta-and-data", func(t *testing.T) {
 		dsn := os.Getenv("IRIS_PG_DSN")
 		if dsn == "" {
-			t.Skip("S13/install-creates-meta-and-data: set IRIS_PG_DSN to probe the install-created databases through an independent admin connection (managed-mode bring-up is covered by TestInstallStartOneCodepath)")
+			t.Skip("install-creates-meta-and-data: set IRIS_PG_DSN to probe the install-created databases through an independent admin connection (managed-mode bring-up is covered by TestInstallStartOneCodepath)")
 		}
 
 		bin := Build(t)
@@ -90,12 +88,10 @@ func TestInstallCreatesMetaAndData(t *testing.T) {
 
 // TestInstallStartOneCodepath proves that install plus start brings up the engine
 // for managed Postgres (no IRIS_PG_DSN) and for external mode (IRIS_PG_DSN present)
-// through one shared code path (specification section 13, acceptance step 1). Both
+// through one shared code path (acceptance step 1). Both
 // legs install, start a detached daemon, and require the daemon to reach the leader
 // role -- the single writer only a genuinely connected engine attains -- so the same
 // install+start sequence is proven functional in each mode.
-//
-// spec: S13/install-start-one-codepath
 func TestInstallStartOneCodepath(t *testing.T) {
 	cases := []struct {
 		name string
@@ -106,7 +102,7 @@ func TestInstallStartOneCodepath(t *testing.T) {
 	}
 	for _, c := range cases {
 		c := c
-		t.Run("S13/install-start-one-codepath/"+c.name, func(t *testing.T) {
+		t.Run("install-start-one-codepath/"+c.name, func(t *testing.T) {
 			c.set(t)
 			// Freshen the shared external cluster first (managed leg sets IRIS_PG_DSN="",
 			// where freshDatabases is a no-op): FORCE-dropping meta/data evicts a prior
@@ -156,10 +152,8 @@ func TestInstallStartOneCodepath(t *testing.T) {
 // host runtime -- a bare invocation exits 0 -- and that the static binary drives a
 // full engine install: install exits 0 and, in external mode, both the meta and data
 // databases exist afterward (probed through an independent admin connection).
-//
-// spec: S13/static-cross-compile-boot
 func TestStaticCrossCompileBoot(t *testing.T) {
-	t.Run("S13/static-cross-compile-boot", func(t *testing.T) {
+	t.Run("static-cross-compile-boot", func(t *testing.T) {
 		tmp := t.TempDir()
 		out := filepath.Join(tmp, binName())
 		cmd := exec.Command("go", "build", "-o", out, irisPkg)
@@ -215,8 +209,6 @@ func TestStaticCrossCompileBoot(t *testing.T) {
 // assert leadership, and tear down -- asserting exit codes throughout. Non-host
 // targets cannot be executed here (cross-arch), so they are build-only; in a matrix
 // CI each job runs its native target's full cycle.
-//
-// spec: S16/cross-compile-smoke
 func TestCrossCompileSmoke(t *testing.T) {
 	targets := []struct{ goos, goarch string }{
 		{"linux", "amd64"},
@@ -227,7 +219,7 @@ func TestCrossCompileSmoke(t *testing.T) {
 	for _, tgt := range targets {
 		tgt := tgt
 		name := tgt.goos + "/" + tgt.goarch
-		t.Run("S16/cross-compile-smoke/"+name, func(t *testing.T) {
+		t.Run("cross-compile-smoke/"+name, func(t *testing.T) {
 			tmp := t.TempDir()
 			out := filepath.Join(tmp, "iris")
 			if tgt.goos == "windows" {
@@ -278,8 +270,8 @@ func TestCrossCompileSmoke(t *testing.T) {
 				t.Fatalf("smoke %s: daemon never became leader; cannot apply against the single writer", name)
 			}
 
-			// Apply the golden sample graph, upstream-first (specification section 13,
-			// step 2), each apply exit 0.
+			// Apply the golden sample graph, upstream-first (acceptance step 2),
+			// each apply exit 0.
 			for _, tgt := range []string{
 				"pipelines/ingest",
 				"pipelines/ingest/extract_orders",

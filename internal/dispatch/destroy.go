@@ -1,13 +1,13 @@
 package dispatch
 
 // This file is the declaration destroy op: the leader-side path that tears down one
-// declared unit (specification section 12, destructive ops item 1). A pipeline
-// destroy reverts the target's un-promoted disposable data, then retires all of its
-// meta rows in one atomic transaction (the pipelines row last) through the single
-// meta writer, then deletes its object-store bytes. A composer destroy clears the
-// lane's rows, but only once the lane has at most one registered member -- the mirror
-// of apply's 2+ invariant. This is the dispatch-level surface; the CLI and daemon
-// control-connection wiring that drives it is wired at the daemon layer.
+// declared unit. A pipeline destroy reverts the target's un-promoted disposable data,
+// then retires all of its meta rows in one atomic transaction (the pipelines row
+// last) through the single meta writer, then deletes its object-store bytes. A
+// composer destroy clears the lane's rows, but only once the lane has at most one
+// registered member -- the mirror of apply's 2+ invariant. This is the dispatch-level
+// surface; the CLI and daemon control-connection wiring that drives it is wired at
+// the daemon layer.
 //
 // Three seams are deliberately open here, each documented rather than silently
 // stubbed, because the behavior they gate belongs to a later epic:
@@ -47,10 +47,10 @@ func LaneComposerDestroyable(registeredMembers int) bool {
 }
 
 // DataReverter reverts a pipeline's un-promoted disposable data as part of its
-// teardown (specification section 12: destroy reverts un-promoted disposable data
-// along with the registration, role, and grants). The real journal-driven
-// reverse-replay is E06; the destroy flow invokes this seam before the meta teardown,
-// so a nil-safe no-op stands in today and E06 fills the reverse-replay body.
+// teardown (destroy reverts un-promoted disposable data along with the registration,
+// role, and grants). The real journal-driven reverse-replay is E06; the destroy flow
+// invokes this seam before the meta teardown, so a nil-safe no-op stands in today and
+// E06 fills the reverse-replay body.
 type DataReverter interface {
 	// RevertUnpromoted reverts the pipeline's un-promoted disposable writes. It runs
 	// before any meta row is retired, so a failure leaves meta untouched.
@@ -69,11 +69,11 @@ type ObjectDeleter interface {
 }
 
 // DestroyBlocker is the downstream-blocker predicate the destroy op consults before
-// tearing a pipeline down (specification section 12: destroy refuses while any
-// registered pipeline declares depends_on the target, any downstream run_inputs row
-// names its runs, or any outstanding dead-letter entry names it as failed_upstream).
-// Those predicates are E10.1's; this seam defaults OPEN so the teardown action is
-// wired now and E10.1 supplies the guard.
+// tearing a pipeline down (destroy refuses while any registered pipeline declares
+// depends_on the target, any downstream run_inputs row names its runs, or any
+// outstanding dead-letter entry names it as failed_upstream). Those predicates are
+// E10.1's; this seam defaults OPEN so the teardown action is wired now and E10.1
+// supplies the guard.
 type DestroyBlocker interface {
 	// Blocked reports whether the pipeline's teardown is blocked, a human reason when
 	// it is, and any error consulting the blocker. The default (openBlocker) never
@@ -82,7 +82,7 @@ type DestroyBlocker interface {
 }
 
 // RunLister lists the prunable runs for a pipeline so destroy can write their
-// archival summaries before deleting the run rows (S12/destroy-summaries-before-delete).
+// archival summaries before deleting the run rows.
 // The default (noopRunLister) returns no runs, so summaries are a later wiring.
 type RunLister interface {
 	ListPrunableRuns(ctx context.Context, pipeline string) ([]store.PrunableRun, error)
@@ -193,7 +193,7 @@ func WithDestroyBlocker(b DestroyBlocker) DestroyerOption {
 }
 
 // WithRunLister sets the run lister used to archive remaining runs' summaries
-// during destroy (S12/destroy-summaries-before-delete). A nil lister is ignored.
+// during destroy. A nil lister is ignored.
 func WithRunLister(l RunLister) DestroyerOption {
 	return func(d *Destroyer) {
 		if l != nil {
@@ -242,7 +242,7 @@ func (d *Destroyer) DestroyPipeline(ctx context.Context, name string) error {
 	}
 
 	// Archive summaries for remaining runs before the retirement deletes, inside
-	// the same transaction so stamps keep resolving (S12/destroy-summaries-before-delete).
+	// the same transaction so stamps keep resolving.
 	var sums []store.RunSummary
 	if runs, err := d.runLister.ListPrunableRuns(ctx, name); err == nil && len(runs) > 0 {
 		for _, r := range runs {

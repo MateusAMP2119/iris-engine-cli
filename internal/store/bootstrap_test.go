@@ -27,8 +27,6 @@ func countPrefix(stmts []string, prefix string) int {
 // TestBootstrapCreatesDedicatedMetaDatabase proves the engine bootstrap creates
 // the dedicated meta database and, in its public schema, exactly the eighteen
 // control tables with no warehouse schemas.
-//
-// spec: S02/meta-dedicated-db
 func TestBootstrapCreatesDedicatedMetaDatabase(t *testing.T) {
 	ctx := context.Background()
 	rec := storetest.NewRecorder()
@@ -60,8 +58,6 @@ func TestBootstrapCreatesDedicatedMetaDatabase(t *testing.T) {
 // create-if-missing and can be re-checked at each leader election: EnsureSchema
 // emits IF NOT EXISTS everywhere, is byte-identical on a second run (idempotent),
 // and carries no self-migration ledger, version gate, ALTER, or DROP.
-//
-// spec: S04/meta-ddl-create-if-missing
 func TestMetaDDLCreateIfMissing(t *testing.T) {
 	ctx := context.Background()
 
@@ -111,8 +107,6 @@ func TestMetaDDLCreateIfMissing(t *testing.T) {
 // TestBootstrapNoLocalStateStore proves all engine state lives in Postgres behind
 // the single DSN seam: the bootstrap path issues only Postgres DDL through the
 // Execer and creates no local SQLite storage or .iris/state.db on disk.
-//
-// spec: S02/no-local-state-store
 func TestBootstrapNoLocalStateStore(t *testing.T) {
 	ctx := context.Background()
 

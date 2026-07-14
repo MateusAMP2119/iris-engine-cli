@@ -10,7 +10,7 @@ import "github.com/MateusAMP2119/iris-engine-cli/internal/arch"
 const synthModule = "example.com/m"
 
 // pgxImport is the pgx driver import path the database-client fixtures use. Held
-// as data in a string, it never registers as a contract claim.
+// as data in a string, it is never a real import of the driver.
 const pgxImport = "github.com/jackc/pgx/v5"
 
 // internalImport builds the full import path of an internal package from its

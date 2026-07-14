@@ -6,22 +6,20 @@ import (
 )
 
 // This file holds the leader-election lock: the Postgres session advisory lock a
-// candidate acquires to become the sole leader (specification sections 2, 9, and
-// 15). Leadership is a single advisory lock: the leader holds it, standbys block
-// acquiring it, and connection death releases it so the next standby acquires and
-// becomes leader. The lock MUST be held on a session-pinned connection -- one
-// dedicated pgx *Conn, never a pooled connection whose return to the pool would
-// release the lock (specification section 9: "a session-pinned connection pooling
-// would break"). This package owns that lock; failover (self-demotion on session
-// loss, standby promotion) is E11 -- E02.6 lands election and the single-writer
-// path.
+// candidate acquires to become the sole leader. Leadership is a single advisory
+// lock: the leader holds it, standbys block acquiring it, and connection death
+// releases it so the next standby acquires and becomes leader. The lock MUST be
+// held on a session-pinned connection -- one dedicated pgx *Conn, never a pooled
+// connection whose return to the pool would release the lock. This package owns
+// that lock; failover (self-demotion on session loss, standby promotion) is E11
+// -- E02.6 lands election and the single-writer path.
 
-// LeaderLockKey is the fixed 64-bit key of the leader-election advisory lock
-// (specification section 15). It is a single, documented constant so every engine
-// candidate contends for the identical lock: the high 32 bits spell the ASCII of
-// "iris" (0x69726973) and the low 32 bits are the lock purpose (0x00000001 =
-// leader election), leaving room for future engine-owned advisory locks under the
-// same "iris" namespace without colliding with this one.
+// LeaderLockKey is the fixed 64-bit key of the leader-election advisory lock. It
+// is a single, documented constant so every engine candidate contends for the
+// identical lock: the high 32 bits spell the ASCII of "iris" (0x69726973) and the
+// low 32 bits are the lock purpose (0x00000001 = leader election), leaving room
+// for future engine-owned advisory locks under the same "iris" namespace without
+// colliding with this one.
 const LeaderLockKey int64 = 0x6972697300000001
 
 // AcquireLeaderLockSQL is the blocking acquire: pg_advisory_lock waits until the
@@ -49,9 +47,9 @@ type LeaderLock interface {
 	Acquire(ctx context.Context) error
 	// Release relinquishes the leader lock, so a blocked standby can acquire it.
 	Release(ctx context.Context) error
-	// SessionLost returns a channel closed when the lock's session dies. Connection
-	// death releases the lock (specification section 15); the daemon watches this to
-	// self-demote. Failover consumption of it is E11.
+	// SessionLost returns a channel closed when the lock's session dies.
+	// Connection death releases the lock; the daemon watches this to self-demote.
+	// Failover consumption of it is E11.
 	SessionLost() <-chan struct{}
 }
 

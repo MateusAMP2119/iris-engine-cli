@@ -15,14 +15,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 )
 
-// This file is the request-side half of the read-API wire contract (specification
-// section 7): the eq/range filter grammar, exact-field filtering on collection
-// routes, the fixed cursor-key roster per collection, keyset-cursor pagination
-// (ascending by key, with the id-keyed before= reverse cursor), the limit default
-// and cap, and strict 400 handling for unknown, repeated, or unparseable params.
-// It is pure grammar: it turns a route's compiled shape plus a request's raw query
-// values into a validated QueryPlan (filter predicates + a keyset cursor plan), or
-// a ParamError naming the offending param. It never assembles SQL, opens a
+// This file is the request-side half of the read-API wire contract: the
+// eq/range filter grammar, exact-field filtering on collection routes, the
+// fixed cursor-key roster per collection, keyset-cursor pagination (ascending
+// by key, with the id-keyed before= reverse cursor), the limit default and cap,
+// and strict 400 handling for unknown, repeated, or unparseable params. It is
+// pure grammar: it turns a route's compiled shape plus a request's raw query
+// values into a validated QueryPlan (filter predicates + a keyset cursor plan),
+// or a ParamError naming the offending param. It never assembles SQL, opens a
 // connection, or touches a server; the route layer (E09.5/E09.8) surfaces a
 // ParamError as a 400 bad_param and renders the plan against the read pool.
 //
@@ -32,9 +32,9 @@ import (
 // needed.
 
 // ParamError is a wire-grammar rejection: a query param the grammar refuses. It
-// names the offending param so the route layer can surface a 400 bad_param naming
-// it (specification section 7: a bad, unknown, repeated, or unparseable param is a
-// 400, never silently ignored or clamped). Reason is the human-readable detail.
+// names the offending param so the route layer can surface a 400 bad_param
+// naming it (a bad, unknown, repeated, or unparseable param is a 400, never
+// silently ignored or clamped). Reason is the human-readable detail.
 type ParamError struct {
 	// Param is the offending query-param name.
 	Param string
@@ -53,8 +53,8 @@ func paramErrf(param, format string, args ...any) *ParamError {
 	return &ParamError{Param: param, Reason: fmt.Sprintf(format, args...)}
 }
 
-// Limit bounds (specification section 7): a request omitting limit gets
-// DefaultLimit; an explicit limit above MaxLimit is a 400, never a silent clamp.
+// Limit bounds: a request omitting limit gets DefaultLimit; an explicit limit
+// above MaxLimit is a 400, never a silent clamp.
 const (
 	// DefaultLimit is the page size a request that omits limit receives.
 	DefaultLimit = 100
@@ -62,13 +62,13 @@ const (
 	MaxLimit = 1000
 )
 
-// Collection identifies a fixed engine-state collection route whose cursor key is
-// pinned by the roster (specification section 7). The data (/data) and endpoint
-// (/q) routes carry per-source keys instead and are keyed via DataCursorKey and
+// Collection identifies a fixed engine-state collection route whose cursor key
+// is pinned by the roster. The data (/data) and endpoint (/q) routes carry
+// per-source keys instead and are keyed via DataCursorKey and
 // EndpointCursorKey.
 type Collection string
 
-// The fixed engine-state collections and their spec-roster cursor keys.
+// The fixed engine-state collections and their roster cursor keys.
 const (
 	// CollectionRuns is /runs, keyed by the monotonic run id.
 	CollectionRuns Collection = "runs"
@@ -84,9 +84,9 @@ const (
 
 // CursorKey is a collection's fixed keyset-pagination key: the ordered key
 // column(s) that define its ascending order, and whether the key is a single
-// monotonic id. Only an id-keyed collection admits the before= reverse cursor (a
-// newest-first log page); every other collection pages ascending only
-// (specification section 7: keys, never clocks, define order).
+// monotonic id. Only an id-keyed collection admits the before= reverse cursor
+// (a newest-first log page); every other collection pages ascending only (keys,
+// never clocks, define order).
 type CursorKey struct {
 	// Columns are the ordered key columns; ascending keyset order compares them
 	// lexicographically. A monotonic id is one column; lanes is (lane, pos).
@@ -106,11 +106,11 @@ func (k CursorKey) single() (string, bool) {
 	return "", false
 }
 
-// CollectionKey returns the fixed cursor key for a fixed engine-state collection
-// (specification section 7 roster): a monotonic id for runs, dead_letters, and the
-// journal; name for pipelines; the (lane, pos) pair for lanes. ok is false for a
-// collection outside the roster. It is a pure switch, not a mutable table, so the
-// roster cannot drift at runtime.
+// CollectionKey returns the fixed cursor key for a fixed engine-state
+// collection (the roster): a monotonic id for runs, dead_letters, and the
+// journal; name for pipelines; the (lane, pos) pair for lanes. ok is false for
+// a collection outside the roster. It is a pure switch, not a mutable table, so
+// the roster cannot drift at runtime.
 func CollectionKey(c Collection) (key CursorKey, ok bool) {
 	switch c {
 	case CollectionRuns:
@@ -184,10 +184,9 @@ type CursorBound struct {
 	Value any
 }
 
-// CursorPlan is the keyset-pagination plan for one request: the collection's key,
-// the page direction, the optional cursor bound, and the row limit. There is never
-// an offset or a timestamp bound; the key alone defines the order (specification
-// section 7).
+// CursorPlan is the keyset-pagination plan for one request: the collection's
+// key, the page direction, the optional cursor bound, and the row limit. There
+// is never an offset or a timestamp bound; the key alone defines the order.
 type CursorPlan struct {
 	// Key is the collection's fixed cursor key.
 	Key CursorKey
@@ -234,15 +233,16 @@ type QueryPlan struct {
 	Cursor CursorPlan
 }
 
-// PlanEndpointQuery resolves a request against a compiled /q endpoint
-// (specification section 7): it validates every query param against the endpoint's
-// binding plan (unknown or repeated -> 400 naming it), binds each eq filter as an
-// equality predicate and each range filter as inclusive from/to bounds (either
-// side omittable), parses every value per its source-column type (parse failure ->
-// 400 naming the param), resolves the limit (default 100, cap 1000, over-cap ->
-// 400), and builds the ascending keyset cursor from after= (a /q endpoint is never
-// id-keyed, so it takes no before). It composes E09.2's ParamSlot plan directly:
-// the allowed param set and the per-param type are exactly the compiled slots.
+// PlanEndpointQuery resolves a request against a compiled /q endpoint: it
+// validates every query param against the endpoint's binding plan (unknown or
+// repeated -> 400 naming it), binds each eq filter as an equality predicate and
+// each range filter as inclusive from/to bounds (either side omittable), parses
+// every value per its source-column type (parse failure -> 400 naming the
+// param), resolves the limit (default 100, cap 1000, over-cap -> 400), and
+// builds the ascending keyset cursor from after= (a /q endpoint is never
+// id-keyed, so it takes no before). It composes E09.2's ParamSlot plan
+// directly: the allowed param set and the per-param type are exactly the
+// compiled slots.
 func PlanEndpointQuery(ce *declare.CompiledEndpoint, q url.Values) (*QueryPlan, error) {
 	if ce == nil {
 		return nil, errors.New("api: plan endpoint query: nil compiled endpoint")
@@ -310,11 +310,11 @@ func PlanEndpointQuery(ce *declare.CompiledEndpoint, q url.Values) (*QueryPlan, 
 	return &QueryPlan{Predicates: preds, Cursor: cursor}, nil
 }
 
-// PlanCollectionQuery resolves a request against a fixed engine-state collection
-// (specification section 7): its cursor key comes from the roster, its filterable
-// fields and their types come from fields (the route supplies the collection's
-// curated column set). Filtering is exact field equality only; there is no range
-// or operator grammar on a collection route.
+// PlanCollectionQuery resolves a request against a fixed engine-state
+// collection: its cursor key comes from the roster, its filterable fields and
+// their types come from fields (the route supplies the collection's curated
+// column set). Filtering is exact field equality only; there is no range or
+// operator grammar on a collection route.
 func PlanCollectionQuery(c Collection, fields map[string]string, q url.Values) (*QueryPlan, error) {
 	key, ok := CollectionKey(c)
 	if !ok {
@@ -323,16 +323,16 @@ func PlanCollectionQuery(c Collection, fields map[string]string, q url.Values) (
 	return planKeyedQuery(key, fields, q)
 }
 
-// PlanDataQuery resolves a request against the raw /data route (specification
-// section 7: /data is column projection plus eq/range filters keyset-paged by
-// table PK; the filtering and paging grammar lives here, projection in the
-// route layer). It is keyed by the source table's primary key, and every
-// declared column takes the full filter grammar: <col>= binds exact equality
-// and <col>_from / <col>_to bind an inclusive range, either side omittable --
-// the same eq/range wire grammar a /q endpoint declares, ad hoc. A declared
-// column whose name collides with another column's range param keeps its own
-// name (the declared column always wins). primaryKey is the table's PK
-// columns; fields is the table's filterable columns and their types.
+// PlanDataQuery resolves a request against the raw /data route (/data is column
+// projection plus eq/range filters keyset-paged by table PK; the filtering and
+// paging grammar lives here, projection in the route layer). It is keyed by the
+// source table's primary key, and every declared column takes the full filter
+// grammar: <col>= binds exact equality and <col>_from / <col>_to bind an
+// inclusive range, either side omittable -- the same eq/range wire grammar a /q
+// endpoint declares, ad hoc. A declared column whose name collides with another
+// column's range param keeps its own name (the declared column always wins).
+// primaryKey is the table's PK columns; fields is the table's filterable
+// columns and their types.
 func PlanDataQuery(primaryKey []string, fields map[string]string, q url.Values) (*QueryPlan, error) {
 	type rangeRef struct {
 		column string
@@ -489,9 +489,8 @@ func parseCursorValue(key CursorKey, fields map[string]string, param, raw string
 }
 
 // checkKnownSingle rejects any query param not in allowed (unknown) or carrying
-// more than one value (repeated), naming the first offender in sorted order so the
-// error is deterministic (specification section 7: unknown/repeated -> 400, never
-// silently ignored).
+// more than one value (repeated), naming the first offender in sorted order so
+// the error is deterministic (unknown/repeated -> 400, never silently ignored).
 func checkKnownSingle(q url.Values, allowed map[string]struct{}) error {
 	keys := make([]string, 0, len(q))
 	for k := range q {
@@ -532,10 +531,9 @@ func single(q url.Values, key string) (string, bool) {
 	return vs[0], true
 }
 
-// resolveLimit resolves the row limit (specification section 7): absent ->
-// DefaultLimit; present -> parsed, required positive, capped at MaxLimit with an
-// over-cap value a 400 (never a silent clamp). Every failure is a ParamError
-// naming limit.
+// resolveLimit resolves the row limit: absent -> DefaultLimit; present ->
+// parsed, required positive, capped at MaxLimit with an over-cap value a 400
+// (never a silent clamp). Every failure is a ParamError naming limit.
 func resolveLimit(q url.Values) (int, error) {
 	raw, ok := single(q, "limit")
 	if !ok {
@@ -555,8 +553,8 @@ func resolveLimit(q url.Values) (int, error) {
 }
 
 // parseParam parses raw per pgType, wrapping any failure as a ParamError naming
-// param (specification section 7: a value that fails to parse per its source-column
-// type -> 400 naming the param).
+// param (a value that fails to parse per its source-column type -> 400 naming
+// the param).
 func parseParam(param, pgType, raw string) (any, error) {
 	v, err := parseValue(pgType, raw)
 	if err != nil {
@@ -584,12 +582,12 @@ func baseType(pgType string) string {
 	return t
 }
 
-// parseValue validates raw against the closed source-column type set that is the
-// wire grammar (specification section 5 type mapping = section 7 wire grammar) and
-// returns the parsed value. A value that does not parse returns an error naming the
+// parseValue validates raw against the closed source-column type set that is
+// the wire grammar (the declared type mapping is the wire grammar) and returns
+// the parsed value. A value that does not parse returns an error naming the
 // type; the caller wraps it as a ParamError naming the param. text and varchar
-// accept any string; every other type is validated. The returned value is bound as
-// a positional param by the read layer, never interpolated.
+// accept any string; every other type is validated. The returned value is bound
+// as a positional param by the read layer, never interpolated.
 func parseValue(pgType, raw string) (any, error) {
 	switch baseType(pgType) {
 	case "smallint":
@@ -636,9 +634,9 @@ func parseValue(pgType, raw string) (any, error) {
 	}
 }
 
-// timestampLayouts are the RFC 3339 timestamp forms the wire accepts, offset and
-// offset-free (specification section 7: timestamptz/timestamp are RFC 3339
-// strings). The offset-free forms cover a plain timestamp column.
+// timestampLayouts are the RFC 3339 timestamp forms the wire accepts, offset
+// and offset-free (timestamptz/timestamp are RFC 3339 strings). The offset-free
+// forms cover a plain timestamp column.
 var timestampLayouts = []string{
 	time.RFC3339Nano,
 	time.RFC3339,
@@ -656,8 +654,8 @@ func parseTimestamp(raw string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("value %q is not an RFC 3339 timestamp", raw)
 }
 
-// timeLayouts are the time-of-day forms the wire accepts (specification section 7:
-// time is an RFC 3339 string).
+// timeLayouts are the time-of-day forms the wire accepts (time is an RFC 3339
+// string).
 var timeLayouts = []string{
 	"15:04:05.999999999",
 	"15:04:05",

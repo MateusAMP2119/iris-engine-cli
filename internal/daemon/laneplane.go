@@ -19,13 +19,13 @@ import (
 )
 
 // This file is the daemon's leader-side perpetual lane-loop plane: the composition
-// root that turns the persisted lane walk into runs (specification sections 1, 6.1,
-// and 6.3). It builds the four production seams the dispatch.Loop composes -- the
-// walk read (lanes + registered pipelines through BuildWalk), the depends_on pass
-// gate (the same gate the manual path uses), the fresh cause=loop run-start (mint,
-// exec run-scoped for capture attribution, record terminal), and the post-pass
-// bookkeeping (failure propagation along depends_on) -- and wires the whole loop over
-// the single dispatcher on winning leadership.
+// root that turns the persisted lane walk into runs. It builds the four production
+// seams the dispatch.Loop composes -- the walk read (lanes + registered pipelines
+// through BuildWalk), the depends_on pass gate (the same gate the manual path
+// uses), the fresh cause=loop run-start (mint, exec run-scoped for capture
+// attribution, record terminal), and the post-pass bookkeeping (failure propagation
+// along depends_on) -- and wires the whole loop over the single dispatcher on
+// winning leadership.
 //
 // Run execution here mirrors the manual plane's mint/exec/record shape, with two
 // additions the lane loop needs that the manual path did not: the run's data
@@ -74,11 +74,11 @@ func (p *lanePlane) clear() {
 	p.submit = nil
 }
 
-// CancelRun kills a running lane run's process group and dead-letters it as stopped,
-// touching nothing else (specification section 6.3: only an operator cancel frees a
-// hung run). It is leader-only: with no submitter installed it reports the run is not
-// cancellable here, and a run not tracked in the shared registry (already terminal or
-// never started here) reports not in flight, so the CLI maps each to the right exit.
+// CancelRun kills a running lane run's process group and dead-letters it as
+// stopped, touching nothing else (only an operator cancel frees a hung run). It is
+// leader-only: with no submitter installed it reports the run is not cancellable
+// here, and a run not tracked in the shared registry (already terminal or never
+// started here) reports not in flight, so the CLI maps each to the right exit.
 func (p *lanePlane) CancelRun(ctx context.Context, runID string) error {
 	p.mu.Lock()
 	submit := p.submit
@@ -155,8 +155,8 @@ func newLaneLoop(
 }
 
 // laneWalkReader reads the current lane walk from meta: the registered-pipeline set
-// and the persisted lane rows, fed through the pure BuildWalk. It is read at each pass
-// start, so a graph change lands only at the next pass (specification section 6.3).
+// and the persisted lane rows, fed through the pure BuildWalk. It is read at each
+// pass start, so a graph change lands only at the next pass.
 type laneWalkReader struct {
 	registry store.RegistryReader
 	manual   store.ManualReader
@@ -309,11 +309,11 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 	return dispatch.RunSucceeded, nil
 }
 
-// childEnv builds a lane run's environment: the inherited daemon environment plus the
-// run-scoped data connection under IRIS_DB_URL, carrying the run id as the per-session
-// iris.run_id GUC so the capture trigger attributes every write to this run
-// (specification section 4). A run whose data DSN is empty (no data database wired)
-// still receives the variable, empty, so a run resolves its connection from one place.
+// childEnv builds a lane run's environment: the inherited daemon environment plus
+// the run-scoped data connection under IRIS_DB_URL, carrying the run id as the
+// per-session iris.run_id GUC so the capture trigger attributes every write to this
+// run. A run whose data DSN is empty (no data database wired) still receives the
+// variable, empty, so a run resolves its connection from one place.
 func (m *laneExec) childEnv(runID int64) []string {
 	url := m.dataDSN
 	if url != "" {
@@ -323,10 +323,10 @@ func (m *laneExec) childEnv(runID int64) []string {
 }
 
 // lanePostPass runs the dispatcher-owned failure propagation after a lane pass
-// completes (specification sections 6.1 and 6.2): for each member whose gate poisoned
-// this pass, it mints a never-executed dead-lettered run (cause=propagated) recording
-// the immediate failed_upstream and the poisoned upstream run(s) for lineage. It never
-// runs mid-pass.
+// completes: for each member whose gate poisoned this pass, it mints a
+// never-executed dead-lettered run (cause=propagated) recording the immediate
+// failed_upstream and the poisoned upstream run(s) for lineage. It never runs
+// mid-pass.
 type lanePostPass struct {
 	workspace string
 	submit    dispatch.Submitter

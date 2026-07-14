@@ -9,14 +9,10 @@ import (
 )
 
 // TestIrisTOMLEngineSettingsOnly proves that iris.toml is limited to
-// engine/connection settings and is never treated as a project manifest
-// (specification section 8: "engine/connection settings only, never a project
-// manifest; project-level keys are not honored"). Every documented engine
-// setting is honored; every project-manifest-shaped key contributes nothing to
-// the resolved settings and is reported as ignored so the choice is visible
-// rather than silent.
-//
-// spec: S08/iris-toml-engine-settings-only
+// engine/connection settings and is never treated as a project manifest. Every
+// documented engine setting is honored; every project-manifest-shaped key
+// contributes nothing to the resolved settings and is reported as ignored so the
+// choice is visible rather than silent.
 func TestIrisTOMLEngineSettingsOnly(t *testing.T) {
 	t.Run("engine and connection settings are honored", func(t *testing.T) {
 		src := `

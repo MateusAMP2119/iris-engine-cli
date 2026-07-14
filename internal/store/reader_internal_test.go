@@ -19,7 +19,7 @@ func (r *countingRows) Close()            { r.closed = true }
 
 // countingPool is a fake readPool that records how many times a query was issued,
 // so a test can prove the reader attempts a failing read exactly once -- no
-// busy-retry, no backoff loop (specification section 2: "No busy-retry anywhere").
+// busy-retry, no backoff loop.
 type countingPool struct {
 	attempts int
 	err      error
@@ -38,10 +38,8 @@ func (p *countingPool) query(_ context.Context, _ string, _ ...any) (poolRows, e
 // TestReaderNoBusyRetry proves the meta reader uses a plain MVCC query with no
 // busy-retry: a failing read is attempted exactly once and its error propagates
 // immediately, never re-attempted behind a retry or backoff loop.
-//
-// spec: S02/readers-plain-mvcc-no-retry
 func TestReaderNoBusyRetry(t *testing.T) {
-	t.Run("S02/readers-plain-mvcc-no-retry", func(t *testing.T) {
+	t.Run("readers-plain-mvcc-no-retry", func(t *testing.T) {
 		t.Run("a failing read propagates immediately, attempted exactly once", func(t *testing.T) {
 			boom := errors.New("connection reset by peer")
 			pool := &countingPool{err: boom}

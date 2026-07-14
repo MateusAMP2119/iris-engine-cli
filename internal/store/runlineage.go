@@ -5,18 +5,18 @@ import (
 	"fmt"
 )
 
-// This file is the meta read path for the run-history lineage view (specification
-// section 7): the plain-MVCC reads GET /runs[?include=inputs] and GET /runs/{id}
-// draw from, and therefore what `iris run list` renders as the lineage rail. Like
-// every reader here it runs over the pool with no session pinning and no busy-retry,
-// so listing run history never contends with the leader's single-writer path.
+// This file is the meta read path for the run-history lineage view: the
+// plain-MVCC reads GET /runs[?include=inputs] and GET /runs/{id} draw from, and
+// therefore what `iris run list` renders as the lineage rail. Like every reader
+// here it runs over the pool with no session pinning and no busy-retry, so
+// listing run history never contends with the leader's single-writer path.
 //
-// Each row carries the run and, for the include=inputs view, its consumed upstream
-// run ids and replayed_from as plain attributes (parents-per-row, never a separate
-// edge array). The consumed upstream ids come straight off run_inputs, which is
-// FK-free (PR #101 / specification section 4): an upstream id may name a run since
-// pruned, so it is returned verbatim -- the rail renderer's gap to draw -- never
-// joined away against a live run.
+// Each row carries the run and, for the include=inputs view, its consumed
+// upstream run ids and replayed_from as plain attributes (parents-per-row, never
+// a separate edge array). The consumed upstream ids come straight off run_inputs,
+// which is FK-free (PR #101): an upstream id may name a run since pruned, so it
+// is returned verbatim -- the rail renderer's gap to draw -- never joined away
+// against a live run.
 
 // RunLineage is one run of the history view as the runs collection consumes it:
 // the run, its pipeline and state, its consumed upstream run ids (the run_inputs

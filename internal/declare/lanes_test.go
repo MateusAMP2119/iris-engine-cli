@@ -27,8 +27,6 @@ func member(lane string, contained bool) declare.Membership {
 // by content: a composer carries lane+order, a pipeline carries run. The composer
 // validates as a full-lane rewrite when its order names its immediate member
 // folders; the pipeline is recognized as a member, not a lane writer.
-//
-// spec: S03/composer-file-shape
 func TestComposerFileShape(t *testing.T) {
 	composerYAML := []byte("lane: ingest\norder:\n  - extract_orders\n  - load_orders\n")
 	pipelineYAML := []byte("name: load_orders\nrun: [python, main.py]\n")
@@ -82,8 +80,6 @@ func TestComposerFileShape(t *testing.T) {
 
 // TestComposerLaneMatchesFolder proves a composer's lane value must match its lane
 // folder name; a mismatch is rejected on apply, an agreement accepted.
-//
-// spec: S03/composer-lane-matches-folder
 func TestComposerLaneMatchesFolder(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -134,8 +130,6 @@ func TestComposerLaneMatchesFolder(t *testing.T) {
 
 // TestComposerRequiredAtTwo proves apply rejects a lane reaching 2+ pipelines
 // without a composer, while a single-pipeline lane is valid with no composer.
-//
-// spec: S03/composer-required-at-two
 func TestComposerRequiredAtTwo(t *testing.T) {
 	t.Run("single member needs no composer", func(t *testing.T) {
 		eff, err := declare.ValidatePipelineApply(declare.RegistryView{}, declare.PipelineApply{
@@ -166,8 +160,6 @@ func TestComposerRequiredAtTwo(t *testing.T) {
 // TestInlineContainmentAgree proves that when a pipeline joins a lane both inline
 // (lane: X) and by folder containment (folder Y), the two must name the same lane;
 // a disagreement is rejected, an agreement accepted.
-//
-// spec: S03/inline-containment-agree
 func TestInlineContainmentAgree(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -202,8 +194,6 @@ func TestInlineContainmentAgree(t *testing.T) {
 // TestOmittedLaneOwnLane proves a pipeline that omits lane is placed in its own
 // implicit lane (named for itself, unique), parallel with every other pipeline,
 // and writes no lanes.
-//
-// spec: S03/omitted-lane-own-lane
 func TestOmittedLaneOwnLane(t *testing.T) {
 	alpha, err := declare.ValidatePipelineApply(declare.RegistryView{}, declare.PipelineApply{Pipeline: "alpha"})
 	if err != nil {
@@ -233,8 +223,6 @@ func TestOmittedLaneOwnLane(t *testing.T) {
 // TestOrderEntriesContained proves apply validates that every composer order entry
 // names a pipeline folder contained inside the lane folder; an entry naming a
 // non-contained folder is rejected.
-//
-// spec: S03/order-entries-contained
 func TestOrderEntriesContained(t *testing.T) {
 	t.Run("all contained", func(t *testing.T) {
 		_, err := declare.ValidateComposerApply(declare.RegistryView{}, declare.ComposerApply{
@@ -283,8 +271,6 @@ func TestOrderEntriesContained(t *testing.T) {
 // valid only while the lane is single-member: an apply that would create a 2+ lane
 // with a member outside the lane folder is rejected, with guidance to move the
 // folder in.
-//
-// spec: S03/outside-member-rejected
 func TestOutsideMemberRejected(t *testing.T) {
 	t.Run("single outside member is nominal", func(t *testing.T) {
 		eff, err := declare.ValidatePipelineApply(declare.RegistryView{}, declare.PipelineApply{
@@ -318,8 +304,6 @@ func TestOutsideMemberRejected(t *testing.T) {
 // TestPipelineSingleLane proves apply validates that each pipeline belongs to
 // exactly one lane; membership in more than one lane is rejected, from both the
 // member-apply side and the composer-order side.
-//
-// spec: S03/pipeline-single-lane
 func TestPipelineSingleLane(t *testing.T) {
 	t.Run("member re-applied into a different lane", func(t *testing.T) {
 		view := regView(map[string]declare.Membership{"p": member("ingest", true)})
@@ -354,8 +338,6 @@ func TestPipelineSingleLane(t *testing.T) {
 // TestTwoPlusInterlock proves a pipeline apply that would leave its lane folder
 // with 2+ registered members is rejected, naming the lane, unless that lane's
 // composer has been applied.
-//
-// spec: S06.3/two-plus-interlock
 func TestTwoPlusInterlock(t *testing.T) {
 	base := map[string]declare.Membership{"first": member("ingest", true)}
 
@@ -401,8 +383,6 @@ func TestTwoPlusInterlock(t *testing.T) {
 // TestMemberApplyNeverWritesLanes proves a member pipeline apply never writes
 // lanes: a pipeline's position always comes from the composer's apply, which
 // carries the full-lane rewrite. Asserted structurally on the effects type.
-//
-// spec: S06.3/member-apply-never-writes-lanes
 func TestMemberApplyNeverWritesLanes(t *testing.T) {
 	pipelineApplies := []struct {
 		name  string

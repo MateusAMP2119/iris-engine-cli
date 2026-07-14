@@ -9,19 +9,16 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the store half of `iris pipeline promote` (specification
-// section 5): the meta write that flips one pipeline's per-pipeline data_mode
-// from disposable to permanent. The flip is the promote op's entire meta
-// footprint -- one guarded single-row UPDATE riding the single Writer -- and it
-// touches only the named pipeline's row; the gate that decides WHETHER the flip
-// may run lives in the dispatch promote op.
+// This file proves the store half of `iris pipeline promote`: the meta write that
+// flips one pipeline's per-pipeline data_mode from disposable to permanent. The
+// flip is the promote op's entire meta footprint -- one guarded single-row UPDATE
+// riding the single Writer -- and it touches only the named pipeline's row; the
+// gate that decides WHETHER the flip may run lives in the dispatch promote op.
 
 // TestPromotePipelineFlipsDataMode proves Writer.PromotePipeline issues exactly
 // one meta statement: the pipelines data_mode flip to permanent, scoped to the
 // one named pipeline by bound parameter -- disposable to permanent, nothing
 // else touched.
-//
-// spec: S05/promote-flips-data-mode
 func TestPromotePipelineFlipsDataMode(t *testing.T) {
 	rec := storetest.NewWriteRecorder()
 	w := store.NewWriter(rec)

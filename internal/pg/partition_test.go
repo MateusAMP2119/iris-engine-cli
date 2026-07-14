@@ -25,8 +25,6 @@ func windowSplit(boundaries []int64, w pg.RunWindow) bool {
 // (else per-run compaction would break). A run larger than the threshold, and a
 // run interleaved with others in flight, both stay whole -- the threshold is not
 // a cut point mid-run.
-//
-// spec: S14/run-stamps-one-partition
 func TestRunStampsOnePartition(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -107,8 +105,6 @@ func TestRunStampsOnePartition(t *testing.T) {
 // partitions: a sealed partition is immutable by construction, so the shared
 // eligibility classification (MutablePartitions) excludes every sealed partition
 // and keeps every unsealed one. Both operations run over exactly this set.
-//
-// spec: S14/wipe-promote-unsealed-only
 func TestWipePromoteUnsealedOnly(t *testing.T) {
 	parts := []pg.Partition{
 		{Seq: 0, From: 1, To: 101, Sealed: true},                 // sealed history
@@ -147,8 +143,6 @@ func TestWipePromoteUnsealedOnly(t *testing.T) {
 // TestJournalPartitionByIDRange proves data_journal is partitioned by id range
 // and that partition size is governed by the configurable journal_partition_rows
 // threshold (default 10M), treated as a threshold rather than an exact cap.
-//
-// spec: S14/partition-by-id-range
 func TestJournalPartitionByIDRange(t *testing.T) {
 	ctx := context.Background()
 
@@ -225,14 +219,12 @@ func equalInts(a, b []int64) bool {
 	return true
 }
 
-// TestSealCondition proves the seal condition (specification section 14): a
+// TestSealCondition proves the seal condition: a
 // journal partition seals only when it is past the row threshold, every
 // in-flight run writing into it has finished (no overlapping open window), and
 // it holds zero open (undo=open) entries.
-//
-// spec: S14/seal-condition
 func TestSealCondition(t *testing.T) {
-	t.Run("S14/seal-condition", func(t *testing.T) {
+	t.Run("seal-condition", func(t *testing.T) {
 		cases := []struct {
 			name      string
 			threshold int64

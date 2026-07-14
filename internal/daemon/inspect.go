@@ -8,13 +8,13 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
-// This file is the daemon's engine-inspect plane: the api.InspectHandler behind
-// GET /inspect (and therefore behind `iris engine inspect` -- one route, one
-// payload, specification sections 4 and 11). The engine-table DDL is an embedded
-// model (create-if-missing at bootstrap), so the dump renders that model -- the
-// meta control tables followed by the data journal and its initial partition --
-// and touches no database at all: no connection, no row read, no write. That is
-// the mutation-free guarantee by construction, not by discipline.
+// This file is the daemon's engine-inspect plane: the api.InspectHandler behind GET
+// /inspect (and therefore behind `iris engine inspect` -- one route, one payload).
+// The engine-table DDL is an embedded model (create-if-missing at bootstrap), so
+// the dump renders that model -- the meta control tables followed by the data
+// journal and its initial partition -- and touches no database at all: no
+// connection, no row read, no write. That is the mutation-free guarantee by
+// construction, not by discipline.
 
 // inspectPlane is the api.InspectHandler over the embedded schema models. It holds
 // nothing: the dump is a pure render.

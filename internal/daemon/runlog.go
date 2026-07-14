@@ -8,14 +8,14 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
 )
 
-// This file holds the per-run log lifecycle helpers (specification section 2:
-// "per-run logs unrotated (bounded output), run-id-keyed under .iris/logs/
-// (runs.log_ref), deleted when run row pruned"). A run's log is created unrotated
-// under .iris/logs/ keyed by run id (run-<id>.log), its path is the value recorded
-// in runs.log_ref, and it is deleted when the run row is pruned. Run rows and
-// pruning proper are E05's; this builds the mechanics both drive: the dispatcher
-// creates the log and records Ref in runs.log_ref when a run starts, and the
-// pruner calls DeleteOnPrune (a RunLogPruneFunc) for each run row it removes.
+// This file holds the per-run log lifecycle helpers (per-run logs unrotated
+// (bounded output), run-id-keyed under .iris/logs/ (runs.log_ref), deleted when run
+// row pruned). A run's log is created unrotated under .iris/logs/ keyed by run id
+// (run-<id>.log), its path is the value recorded in runs.log_ref, and it is deleted
+// when the run row is pruned. Run rows and pruning proper are E05's; this builds
+// the mechanics both drive: the dispatcher creates the log and records Ref in
+// runs.log_ref when a run starts, and the pruner calls DeleteOnPrune (a
+// RunLogPruneFunc) for each run row it removes.
 
 // RunLogPruneFunc is the delete-on-prune callback the run-record pruner (E05)
 // invokes for each run it removes, so a run's per-run log dies with its row without

@@ -6,12 +6,12 @@ import (
 )
 
 // This file holds the daemon's leadership role as the HTTP surface sees it: the
-// role a healthz probe reports and the gate a standby uses to reject mutations
-// (specification sections 2 and 15). Only the leader writes meta; a standby (or a
-// candidate not yet confirmed leader) rejects mutating requests with guidance
-// pointing at the leader, while reads work on any role ("reads work anywhere").
-// The daemon owns a RoleState, flips it during election, and hands it to the mux,
-// which consults it per request -- so api never reaches up into the daemon.
+// role a healthz probe reports and the gate a standby uses to reject mutations.
+// Only the leader writes meta; a standby (or a candidate not yet confirmed
+// leader) rejects mutating requests with guidance pointing at the leader, while
+// reads work on any role ("reads work anywhere"). The daemon owns a RoleState,
+// flips it during election, and hands it to the mux, which consults it per
+// request -- so api never reaches up into the daemon.
 
 // Role is the daemon's leadership role as reported on the wire.
 type Role string

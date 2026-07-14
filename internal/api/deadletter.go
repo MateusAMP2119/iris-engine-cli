@@ -7,14 +7,14 @@ import (
 	"net/http"
 )
 
-// This file is the dead-letter mutation plane's HTTP surface (specification section
-// 6.2): POST /deadletter/replay and the real POST /deadletter/drain, plus the wire
-// types the CLI's `iris deadletter replay`/`drain` marshal and decode. Both are
-// leader-only mutations -- ServeHTTP gates them to the leader before routing, and the
-// scope check (authority.go) demands the control scope over TCP -- so the handlers
-// here run only on the leader. GET /dead_letters/{run}/impact (the blast readout
-// `iris deadletter show` renders) lives in readroutes.go; this file owns the two
-// operator dispositions.
+// This file is the dead-letter mutation plane's HTTP surface: POST
+// /deadletter/replay and the real POST /deadletter/drain, plus the wire types
+// the CLI's `iris deadletter replay`/`drain` marshal and decode. Both are
+// leader-only mutations -- ServeHTTP gates them to the leader before routing,
+// and the scope check (authority.go) demands the control scope over TCP -- so
+// the handlers here run only on the leader. GET /dead_letters/{run}/impact (the
+// blast readout `iris deadletter show` renders) lives in readroutes.go; this
+// file owns the two operator dispositions.
 
 // ReplayRequest is the scope of a replay: exactly one of a single run, one
 // pipeline's outstanding entries, or every outstanding entry (bare invocation is a
@@ -70,10 +70,10 @@ type DrainResult struct {
 	Drained []string `json:"drained"`
 }
 
-// DeadImpactPayload is the body of GET /dead_letters/{run}/impact: the blast radius
-// `iris deadletter show` renders (specification section 6.2). It names the root cause
-// the entry walks to and classifies every pipeline in the root's blast neighborhood
-// from the closed class set (poisoned_now / pending / shielded), with composer-only
+// DeadImpactPayload is the body of GET /dead_letters/{run}/impact: the blast
+// radius `iris deadletter show` renders. It names the root cause the entry
+// walks to and classifies every pipeline in the root's blast neighborhood from
+// the closed class set (poisoned_now / pending / shielded), with composer-only
 // lane neighbors marked untouched (order is not dependency).
 type DeadImpactPayload struct {
 	// Run is the dead-lettered run the readout was requested for.
@@ -102,15 +102,15 @@ type DeadImpactItem struct {
 	Class string `json:"class"`
 }
 
-// ReplayHandler is the leader-side replay seam: it resolves the scope to root causes,
-// mints each a replacement on current data, and discards the propagated entries that
-// walked to a replayed root as superseded (specification section 6.2).
+// ReplayHandler is the leader-side replay seam: it resolves the scope to root
+// causes, mints each a replacement on current data, and discards the propagated
+// entries that walked to a replayed root as superseded.
 type ReplayHandler interface {
 	Replay(ctx context.Context, req ReplayRequest) (ReplayResult, error)
 }
 
-// DrainHandler is the leader-side drain seam: it resolves the scope to the exact
-// outstanding entries and discards their worklist rows (specification section 6.2).
+// DrainHandler is the leader-side drain seam: it resolves the scope to the
+// exact outstanding entries and discards their worklist rows.
 type DrainHandler interface {
 	Drain(ctx context.Context, req DrainRequest) (DrainResult, error)
 }

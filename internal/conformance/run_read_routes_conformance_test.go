@@ -15,8 +15,8 @@ import (
 )
 
 // TestRunReadRoutesServeLive drives the real iris binary and daemon against real
-// Postgres to prove the E14 read routes now serve live instead of faulting
-// (specification section 7): `iris run list` renders the run history with its
+// Postgres to prove the E14 read routes now serve live instead of faulting:
+// `iris run list` renders the run history with its
 // consumed upstream ids and replayed_from as plain attributes (and the rail view
 // draws the run_inputs edge), GET /runs/{id}/trace walks the run_inputs ancestry,
 // and GET /pipelines/{name}/gate answers the depends_on gate ledger. Before this
@@ -27,9 +27,6 @@ import (
 // read routes -- this task's subject -- can be proven through the real binary +
 // daemon + Postgres over the registered golden pipelines, without depending on the
 // lane loop to produce it (that is E13.3's).
-//
-// spec: S07/runs-include-inputs
-// spec: S07/trace-gate-impact-routes
 func TestRunReadRoutesServeLive(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)

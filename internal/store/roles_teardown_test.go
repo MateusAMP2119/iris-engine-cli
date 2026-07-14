@@ -11,9 +11,9 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
 )
 
-// This file proves the engine-managed pipeline-role teardown rides declare destroy
-// and engine uninstall, never a standalone operation (specification section 12,
-// destructive ops item 5). The proof is two-sided:
+// This file proves the engine-managed pipeline-role teardown rides declare
+// destroy and engine uninstall, never a standalone operation. The proof is
+// two-sided:
 //   - behavioral: RetirePipeline (the destroy path) retires the role/grants/
 //     credentials rows in its one atomic transaction, and engine uninstall drops the
 //     whole meta database (DropMetaDatabaseDDL), taking the access ledger with it;
@@ -44,10 +44,8 @@ var teardownExclusiveSQL = []string{
 
 // TestRoleTeardownRidesDestroyAndUninstall proves the role teardown is reachable
 // only through declare destroy and engine uninstall.
-//
-// spec: S12/role-teardown-rides-destroy-uninstall
 func TestRoleTeardownRidesDestroyAndUninstall(t *testing.T) {
-	t.Run("S12/role-teardown-rides-destroy-uninstall", func(t *testing.T) {
+	t.Run("role-teardown-rides-destroy-uninstall", func(t *testing.T) {
 		// Destroy: RetirePipeline retires the role/grants/credentials rows in its one
 		// atomic meta transaction (the destroy op rides its own confirmation gate).
 		rec := storetest.NewWriteRecorder()
@@ -136,10 +134,10 @@ func pos(batch []storetest.RecordedStatement, sub string) int {
 	return len(batch)
 }
 
-// moduleGoFiles reads every non-test .go file under the module's internal/ and cmd/
-// trees (testdata skipped), keyed by slash-separated repo-relative path. It is the
-// source-scan basis for the structural teardown-only checks: a call-graph proof over
-// the real tree, mirroring the arch package's own source walk.
+// moduleGoFiles reads every non-test .go file under the module's internal/ and
+// cmd/ trees (testdata skipped), keyed by slash-separated repo-relative path. It
+// is the source-scan basis for the structural teardown-only checks: a call-graph
+// proof over the real tree, mirroring the arch package's own source walk.
 func moduleGoFiles(t *testing.T) map[string]string {
 	t.Helper()
 	root := filepath.Join("..", "..")

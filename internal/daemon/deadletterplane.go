@@ -19,13 +19,12 @@ import (
 
 // This file is the daemon's dead-letter plane: the composition root that turns the
 // three dead-letter HTTP surfaces into the pure dispatch resolution and the single
-// writer (specification section 6.2). GET /dead_letters/{run}/impact -- the blast
-// readout `iris deadletter show` renders -- is a plain-MVCC read served on any node
-// from the reader pool. POST /deadletter/replay and POST /deadletter/drain are
-// leader-only mutations: their executor is installed on winning leadership (before the
-// leader role is reported) and cleared on demotion, and the api mux gates the mutation
-// to the leader too, so a request racing a lost lock faults rather than writing
-// off-path.
+// writer. GET /dead_letters/{run}/impact -- the blast readout `iris deadletter
+// show` renders -- is a plain-MVCC read served on any node from the reader pool.
+// POST /deadletter/replay and POST /deadletter/drain are leader-only mutations:
+// their executor is installed on winning leadership (before the leader role is
+// reported) and cleared on demotion, and the api mux gates the mutation to the
+// leader too, so a request racing a lost lock faults rather than writing off-path.
 //
 // The plane owns only the wiring: the failed_upstream root walk, the supersession
 // rule, the blast classification, and the drain scope resolution are dispatch's pure
@@ -139,9 +138,9 @@ func (p *deadletterPlane) Impact(ctx context.Context, runID string) (any, error)
 	}, nil
 }
 
-// Replay serves POST /deadletter/replay: it resolves the scope to root causes, mints
-// each a replacement on current data, and discards as superseded every propagated entry
-// that walked to a replayed root (specification section 6.2). Leader-only.
+// Replay serves POST /deadletter/replay: it resolves the scope to root causes,
+// mints each a replacement on current data, and discards as superseded every
+// propagated entry that walked to a replayed root. Leader-only.
 func (p *deadletterPlane) Replay(ctx context.Context, req api.ReplayRequest) (api.ReplayResult, error) {
 	ex := p.executor()
 	if ex == nil {
@@ -177,8 +176,8 @@ func (p *deadletterPlane) Replay(ctx context.Context, req api.ReplayRequest) (ap
 
 	// Discard the propagated entries that walk to a replayed root as superseded: the
 	// replay minted a fresh root run their dependent will consume next pass, so their
-	// rejection is superseded now (specification section 6.2). The root entries were
-	// already removed when their replacements minted.
+	// rejection is superseded now. The root entries were already removed when their
+	// replacements minted.
 	var superseded []int64
 	for _, e := range entries {
 		if !e.IsPropagated() {
@@ -203,10 +202,10 @@ func (p *deadletterPlane) Replay(ctx context.Context, req api.ReplayRequest) (ap
 	return api.ReplayResult{Replayed: replayed, DeadLettered: nil}, nil
 }
 
-// Drain serves POST /deadletter/drain: it resolves the scope to the exact outstanding
-// entries and discards their worklist rows through the single writer (specification
-// section 6.2). Leader-only. The confirm gate is the mux's; the run rows stay in runs
-// (a worklist exit never deletes run history) and a drained run can never be replayed.
+// Drain serves POST /deadletter/drain: it resolves the scope to the exact
+// outstanding entries and discards their worklist rows through the single writer.
+// Leader-only. The confirm gate is the mux's; the run rows stay in runs (a worklist
+// exit never deletes run history) and a drained run can never be replayed.
 func (p *deadletterPlane) Drain(ctx context.Context, req api.DrainRequest) (api.DrainResult, error) {
 	ex := p.executor()
 	if ex == nil {

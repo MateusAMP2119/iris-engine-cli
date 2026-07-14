@@ -39,12 +39,10 @@ func startDrainStub(t *testing.T, sock string, status int, body any) {
 }
 
 // TestDeadletterDrainRequiresExplicitScope proves `iris deadletter drain` refuses a
-// bare invocation as a usage error (S12/drain-requires-explicit-scope) and, once
+// bare invocation as a usage error and, once
 // given an explicit scope, reaches the leader for every one of the three forms
 // (<run>, --pipeline, --all): drain has no re-dead-letter outcome (it is a pure
 // discard, never a re-run), so a clean drain always exits 0.
-//
-// spec: S12/drain-requires-explicit-scope
 func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 	// Isolate ambient IRIS_* config so --socket is authoritative (a real IRIS_HOST
 	// would otherwise win over the flag socket and the test would dial elsewhere).
@@ -138,15 +136,12 @@ func TestDeadletterDrainRequiresExplicitScope(t *testing.T) {
 
 // TestDeadletterReplayAndDrainRequireExplicitScope proves both dead-letter
 // dispositions refuse a bare invocation as a usage error (exit 2), never defaulting
-// the missing scope to --all (specification sections 6.2, 8, and 12): both `iris
-// deadletter replay` and `iris deadletter drain` require an explicit <run>,
+// the missing scope to --all: both `iris deadletter replay` and `iris deadletter
+// drain` require an explicit <run>,
 // --pipeline <name>, or --all. Neither command dials the daemon to decide this: with
 // nothing listening at sock, a scope silently defaulted to --all would surface as
 // exit 3 (no daemon reachable), never exit 2 -- so exit 2 here is the proof the bare
 // form never reaches the network.
-//
-// spec: S08/deadletter-scope-required
-// spec: S06.2/replay-drain-bare-usage-error
 func TestDeadletterReplayAndDrainRequireExplicitScope(t *testing.T) {
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")

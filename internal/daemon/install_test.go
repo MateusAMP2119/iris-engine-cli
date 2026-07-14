@@ -98,15 +98,13 @@ func maskEngineKey(line string) string {
 }
 
 // TestBootstrapEngineInstallSequence proves `iris engine install` bootstraps the
-// engine over the admin DSN as the spec's bootstrap Q/A prescribes (specification
-// section 4): probe for meta, create it if missing with a plain CREATE DATABASE,
-// ensure its tables, create the partitioned public.data_journal on the data
-// connection, store the minted ed25519 engine key on the meta connection, and set
-// up the socket -- in that order, across the right targets. The whole statement
-// sequence is pinned to a golden with the random engine-key payload masked; the
-// real key material is asserted structurally and is never logged or reported.
-//
-// spec: S04/install-bootstraps-engine
+// engine over the admin DSN: probe for meta, create it if missing with a plain
+// CREATE DATABASE, ensure its tables, create the partitioned public.data_journal on
+// the data connection, store the minted ed25519 engine key on the meta connection,
+// and set up the socket -- in that order, across the right targets. The whole
+// statement sequence is pinned to a golden with the random engine-key payload
+// masked; the real key material is asserted structurally and is never logged or
+// reported.
 func TestBootstrapEngineInstallSequence(t *testing.T) {
 	ctx := context.Background()
 
@@ -233,10 +231,7 @@ func countTag(lines []string, prefix string) int {
 
 // TestPrepareSocketDir proves the real socket-setup leg of install: it creates the
 // workspace .iris directory the control socket lives in and removes a stale socket
-// file left by a prior run, so a fresh daemon can bind cleanly (specification
-// section 4, "set up the socket").
-//
-// spec: S04/install-bootstraps-engine
+// file left by a prior run, so a fresh daemon can bind cleanly.
 func TestPrepareSocketDir(t *testing.T) {
 	ws := t.TempDir()
 	settings := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
@@ -273,14 +268,10 @@ func TestPrepareSocketDir(t *testing.T) {
 
 // TestEngineKeyMintedAtInstall and checkpoints insert-only prove the integration
 // contracts using fakes (per E00.4).
-//
-// spec: S14/engine-key-minted-at-install
-// spec: S04/checkpoints-insert-only
 func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("S14/engine-key-minted-at-install", func(t *testing.T) {
-		// spec: S14/engine-key-minted-at-install
+	t.Run("engine-key-minted-at-install", func(t *testing.T) {
 		log := &seqLog{}
 		rep, err := daemon.BootstrapEngine(ctx, daemon.InstallDeps{
 			Probe:   &seqProbe{log: log, exists: true},
@@ -308,8 +299,7 @@ func TestEngineKeyMintedAtInstallAndCheckpointsInsertOnly(t *testing.T) {
 		}
 	})
 
-	t.Run("S04/checkpoints-insert-only", func(t *testing.T) {
-		// spec: S04/checkpoints-insert-only
+	t.Run("checkpoints-insert-only", func(t *testing.T) {
 		rec := storetest.NewWriteRecorder()
 		w := store.NewWriter(rec)
 		// table of checkpoints, all inserts, location constrained, logical refs

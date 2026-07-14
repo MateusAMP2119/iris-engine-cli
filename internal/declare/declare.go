@@ -1,9 +1,9 @@
 // Package declare parses and validates the declared world of an Iris workspace:
 // the per-pipeline iris-declare.yaml files (pipeline declarations and lane
 // composers) and the schemas/ tree of table.yaml desired-state files. It is a
-// leaf package (specification section 10) with no Iris dependencies of its own:
-// pure YAML-to-model parsing plus filesystem-shape validation, the layer every
-// other part of the declared-world epic builds on.
+// leaf package with no Iris dependencies of its own: pure YAML-to-model parsing
+// plus filesystem-shape validation, the layer every other part of the
+// declared-world epic builds on.
 //
 // The parse core (ParseDeclaration, ParseTable) is pure over bytes; the shape
 // validators (ValidatePipelineFolder, ValidateSchemaTree) and the discovery
@@ -27,8 +27,7 @@ import (
 const declFile = "iris-declare.yaml"
 
 // Kind discriminates a parsed iris-declare.yaml by content: a pipeline
-// declaration carries run, a lane composer carries order (specification
-// section 3).
+// declaration carries run, a lane composer carries order.
 type Kind int
 
 // The declaration kinds.
@@ -62,8 +61,8 @@ type Access struct {
 }
 
 // StringList is a YAML scalar-or-sequence of strings: a single scalar `x` and a
-// sequence `[x, y]` both decode to a StringList. It backs env_file, which the
-// spec describes as one or more external KEY=VALUE files.
+// sequence `[x, y]` both decode to a StringList. It backs env_file: one or more
+// external KEY=VALUE files.
 type StringList []string
 
 // UnmarshalYAML decodes either a scalar string or a sequence of strings into the
@@ -83,8 +82,8 @@ func (s *StringList) UnmarshalYAML(b []byte) error {
 	return nil
 }
 
-// Pipeline is a parsed pipeline declaration: the eight-field shape of
-// specification section 3. name and run are required; the rest are optional.
+// Pipeline is a parsed pipeline declaration: the eight-field declaration shape.
+// name and run are required; the rest are optional.
 type Pipeline struct {
 	// Name is the pipeline name; required, and must match its folder.
 	Name string `yaml:"name"`
@@ -105,8 +104,8 @@ type Pipeline struct {
 }
 
 // Composer is a parsed lane composer: a lane folder's iris-declare.yaml carrying
-// the lane name and the lane's serial order (specification section 3). The
-// deeper composer rules (folder agreement, 2+ interlock) belong to a later task.
+// the lane name and the lane's serial order. The deeper composer rules (folder
+// agreement, 2+ interlock) belong to a later task.
 type Composer struct {
 	// Lane is the lane name; must match the composer's folder.
 	Lane string `yaml:"lane"`
@@ -131,8 +130,8 @@ var pipelineFields = map[string]bool{
 	"lane": true, "reads": true, "writes": true, "depends_on": true,
 }
 
-// pipelineFieldList is the human-readable rendering of pipelineFields, in the
-// spec's declaration order, for error messages.
+// pipelineFieldList is the human-readable rendering of pipelineFields, in
+// declaration order, for error messages.
 const pipelineFieldList = "name, run, env, env_file, lane, reads, writes, depends_on"
 
 // composerFields is the whitelist for a lane composer.

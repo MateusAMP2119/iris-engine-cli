@@ -3,7 +3,7 @@ package pg
 import "fmt"
 
 // This file owns the engine's always-on write-capture function, iris.capture(),
-// and the schema that hosts it (specification section 4: data_journal capture).
+// and the schema that hosts it (the data_journal capture surface).
 // The per-operation CREATE TRIGGER bindings that reference it live in trigger.go;
 // this is the function body they bind to -- the PL/pgSQL that reads the statement's
 // transition tables and writes one provenance stamp per changed row into
@@ -31,9 +31,9 @@ func CaptureSchemaDDL() string {
 }
 
 // RenderCaptureReachabilityGrants renders the two idempotent grants a pipeline login
-// role needs to reach the always-on capture function (specification section 4: capture
-// is always on, every role): USAGE on the engine-owned iris schema and EXECUTE on
-// iris.capture(). A pipeline role's write fires the per-table capture trigger, which
+// role needs to reach the always-on capture function (capture is always on, for every
+// role): USAGE on the engine-owned iris schema and EXECUTE on iris.capture(). A
+// pipeline role's write fires the per-table capture trigger, which
 // calls iris.capture(); without these grants that call is refused and the write fails,
 // so they are part of provisioning every pipeline role, never a per-declaration grant.
 // The function is SECURITY DEFINER, so the journal INSERT still runs as the journal
@@ -48,9 +48,9 @@ func RenderCaptureReachabilityGrants(role string) []string {
 	}
 }
 
-// CaptureFunctionDDL renders the always-on write-capture function iris.capture()
-// (specification section 4). It is a statement-level trigger function: bound FOR
-// EACH STATEMENT with transition tables (trigger.go), it fires once per write
+// CaptureFunctionDDL renders the always-on write-capture function iris.capture().
+// It is a statement-level trigger function: bound FOR EACH STATEMENT with transition
+// tables (trigger.go), it fires once per write
 // statement and issues exactly one INSERT...SELECT into public.data_journal over
 // the statement's transition table, so a 10M-row load stamps in one insert, not
 // 10M. The hot write path only inserts a stamp: nothing is partitioned, sealed, or
@@ -82,7 +82,7 @@ func RenderCaptureReachabilityGrants(role string) []string {
 //     later wipe skips it). The pre_image carries the full prior row (to_json) only
 //     on a wipe-eligible update or delete, where undo can spend it on a wipe; it is
 //     null on every insert (a wipe reverts an insert by deleting the row) and on
-//     every write born promoted -- a slim stamp (specification sections 4, 12, 14).
+//     every write born promoted -- a slim stamp.
 //     ClassifyPayloadTier (payload.go) is the pure model of this decision.
 //   - row_pk. Resolved from the firing table's primary key, in key order, as the
 //     text of the key column(s). A single-column key renders its bare value (the

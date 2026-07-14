@@ -19,8 +19,6 @@ import (
 // empty table maps to ErrEngineNotInstalled so `iris engine info` reports a clear
 // operation failure. The meta byte-load is faked (integration tier, no live
 // Postgres); the real byte read over meta is proven at conformance.
-//
-// spec: S04/engine-key-public-via-info
 func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 	// The private half exactly as the engine_key table stores it (raw ed25519
 	// bytes): the meta store returns these bytes to the reader.
@@ -31,7 +29,6 @@ func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 	priv := minted.privateBytes()
 
 	t.Run("stored private yields the public half, never the private", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		r := metaEngineKeyReader{
 			load: func(context.Context, config.Settings) ([]byte, error) { return priv, nil },
 		}
@@ -57,7 +54,6 @@ func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 	})
 
 	t.Run("empty table maps to ErrEngineNotInstalled", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		r := metaEngineKeyReader{
 			load: func(context.Context, config.Settings) ([]byte, error) { return nil, nil },
 		}
@@ -67,7 +63,6 @@ func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 	})
 
 	t.Run("unreachable meta maps to ErrEngineNotInstalled", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		r := metaEngineKeyReader{
 			load: func(context.Context, config.Settings) ([]byte, error) {
 				return nil, errors.New("dial meta: connection refused")
@@ -79,7 +74,6 @@ func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 	})
 
 	t.Run("malformed stored bytes are a distinct error, not not-installed", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		r := metaEngineKeyReader{
 			load: func(context.Context, config.Settings) ([]byte, error) {
 				return []byte("too short to be an ed25519 private key"), nil
@@ -102,11 +96,8 @@ func TestMetaEngineKeyReaderDerivesPublicFromStoredPrivate(t *testing.T) {
 // credential + postmaster.pid port) and never starts a postmaster. A managed
 // instance with no runtime files is "not installed / not running", surfaced as an
 // error.
-//
-// spec: S04/engine-key-public-via-info
 func TestMetaSourceForInfoResolvesPerMode(t *testing.T) {
 	t.Run("external mode uses the configured admin DSN", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		s := config.Settings{PgDSN: "postgres://admin@db.example:5432/postgres"}
 		src, err := metaSourceForInfo(s)
 		if err != nil {
@@ -118,7 +109,6 @@ func TestMetaSourceForInfoResolvesPerMode(t *testing.T) {
 	})
 
 	t.Run("managed mode reconstructs the running instance DSN from runtime files", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		ws := t.TempDir()
 		s := config.Settings{Socket: filepath.Join(ws, config.DirName, config.SocketName)}
 		if !s.Managed() {
@@ -152,7 +142,6 @@ func TestMetaSourceForInfoResolvesPerMode(t *testing.T) {
 	})
 
 	t.Run("managed mode with no running instance is an error", func(t *testing.T) {
-		// spec: S04/engine-key-public-via-info
 		ws := t.TempDir()
 		s := config.Settings{Socket: filepath.Join(ws, config.DirName, config.SocketName)}
 		if _, err := metaSourceForInfo(s); err == nil {

@@ -6,9 +6,9 @@ import (
 	"fmt"
 )
 
-// This file is the PAT authentication read surface of specification sections 4 and
-// 7: the plain-MVCC meta read that resolves a token prefix (pats.id) to the durable
-// record a bearer-token verifier checks -- the argon2id hash, the revoked flag, the
+// This file is the PAT authentication read surface: the plain-MVCC meta read that
+// resolves a token prefix (pats.id) to the durable record a bearer-token verifier
+// checks -- the argon2id hash, the revoked flag, the
 // scope-row union, and, for a data-scope PAT, the engine-managed read role it owns
 // (roles.pat -> pg_role). It is a read, never a write, so it rides the reader pool
 // on any node (a standby authenticates TCP reads exactly as the leader does). The
