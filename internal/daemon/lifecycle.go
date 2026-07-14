@@ -101,6 +101,15 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer func() { _ = mgr.Shutdown() }()
 
+	// Preflight the admin DSN's privileges before anything needs them: the meta
+	// connect below lazily creates meta (CREATEDB) and the read-pool provisioning
+	// mints the engine login (CREATEROLE), so a misconfigured role fails here with
+	// the missing grant named instead of a raw Postgres permission error
+	// mid-sequence.
+	if err := CheckPrivileges(ctx, NewAdminPrivilegeReader(adminDSN.Source().ConnString())); err != nil {
+		return err
+	}
+
 	client, err := store.Connect(ctx, adminDSN.Source())
 	if err != nil {
 		return fmt.Errorf("daemon: connect meta: %w", err)
