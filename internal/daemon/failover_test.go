@@ -221,10 +221,15 @@ func TestSelfDemotionOnSessionLoss(t *testing.T) {
 
 		// A second candidate contends only AFTER the first leads, so the lost lock
 		// passes to it and the demoted daemon's re-entry lands in a genuine standby
-		// wait rather than an instant re-acquire.
+		// wait rather than an instant re-acquire. Killing the session before B is
+		// observably queued would let A's fresh-session re-entry win the freed lock
+		// back, so wait for the queue -- an enqueued waiter beats any later arrival.
 		roleB := api.NewRoleState()
 		candB := daemon.NewCandidate(set.New(), roleB, storetest.NewWriteRecorder(), nil)
 		cancelB, doneB := serveCandidate(t, candB)
+		if !pollUntil(func() bool { return set.Waiters() == 1 }) {
+			t.Fatalf("the second candidate never queued for the lock")
+		}
 
 		_, waitCh := startBlockingRun(t, mgr, "41")
 		writesBeforeLoss := len(rec1.Statements())
