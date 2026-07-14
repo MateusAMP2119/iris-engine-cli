@@ -63,6 +63,7 @@ type Client struct {
 	retention   RetentionReader
 	chain       CheckpointChainReader
 	patGrants   DataPATGrantsReader
+	roleCreds   RoleCredentialReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -117,6 +118,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		retention:   newPgxRetentionReader(readPoolSeam),
 		chain:       newPgxCheckpointChainReader(readPoolSeam),
 		patGrants:   newPgxDataPATGrantsReader(readPoolSeam),
+		roleCreds:   newPgxRoleCredentialReader(readPoolSeam),
 	}, nil
 }
 
@@ -269,6 +271,11 @@ func (c *Client) CheckpointChainReader() CheckpointChainReader { return c.chain 
 // (the pool): every minted data-PAT role with its ledgered field grants, the
 // authoritative set the leader reconciles live Postgres grants against.
 func (c *Client) DataPATGrantsReader() DataPATGrantsReader { return c.patGrants }
+
+// RoleCredentialReader returns the plain-MVCC role-credential read seam (the
+// pool): the persisted secret a login role's scoped connection authenticates
+// with, read at run start and at re-apply (create-once reuse).
+func (c *Client) RoleCredentialReader() RoleCredentialReader { return c.roleCreds }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

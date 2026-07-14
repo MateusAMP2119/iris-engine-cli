@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -123,9 +122,9 @@ func startDaemonTCP(t *testing.T, bin *Binary, ws, tcpAddr string, install bool)
 // leadership table converges on the new leader, never stranding the dead leader's
 // address.
 func TestLeaderAdvertisementFailover(t *testing.T) {
-	if os.Getenv("IRIS_PG_DSN") == "" {
-		t.Skip("leader advertisement failover needs two candidates on one shared meta; set IRIS_PG_DSN (external mode) to run it")
-	}
+	// Two candidates share one meta: the suite-owned embedded cluster (or an
+	// ambient IRIS_PG_DSN).
+	requireSharedCluster(t)
 	freshDatabases(t)
 	bin := Build(t)
 

@@ -25,11 +25,10 @@ import (
 // scoped database connection URL (env = inherited + declared + injected scoped DB
 // connection). StartRun injects RunSpec.DBURL under this name, with the run's id
 // riding it as the iris.run_id session setting, so a run resolves its connection
-// from a single place. What the daemon supplies as RunSpec.DBURL today is the
-// engine's own data-database DSN: the per-pipeline least-privilege login role (pg's
-// ProvisionPipelineRole, over store's roles/grants/credentials ledger) is rendered
-// but never provisioned for a run, so a run does not yet connect as its own scoped
-// role -- this name remains the seam such a connection would arrive through.
+// from a single place. The daemon supplies each run's PIPELINE-SCOPED connection:
+// the pipeline's own least-privilege login role (pg.ProvisionPipelineRole at
+// declare apply, credential persisted in store's roles/grants/credentials
+// ledger), so Postgres enforces the declared access for the run's own writes.
 const DBConnEnvVar = "IRIS_DB_URL"
 
 // ErrRunNotInFlight reports that no in-flight run has the given id: it has already

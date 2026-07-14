@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // This file is the pipeline-scoped connection the engine injects into a run at
@@ -51,6 +52,31 @@ type ScopedConn struct {
 	// encoder (encoding/json, etc.) can serialize it, keeping the credential-bearing
 	// DSN memory-only until the deliberate run-environment injection.
 	dsn string
+}
+
+// ScopedParamsFromDSN derives the scoped-connection parameters from a
+// postgres:// DSN: the host, port, database, and raw options of the connection
+// the params will re-target with a different identity. The DSN's own user and
+// password are deliberately dropped -- the whole point of the scoped connection
+// is that the run authenticates as its own least-privilege role, never as the
+// DSN's (admin) identity.
+func ScopedParamsFromDSN(dsn string) (ScopedConnParams, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return ScopedConnParams{}, fmt.Errorf("store: parse DSN for scoped params: %w", err)
+	}
+	port := 5432
+	if p := u.Port(); p != "" {
+		if port, err = strconv.Atoi(p); err != nil {
+			return ScopedConnParams{}, fmt.Errorf("store: parse DSN port for scoped params: %w", err)
+		}
+	}
+	return ScopedConnParams{
+		Host:     u.Hostname(),
+		Port:     port,
+		Database: strings.TrimPrefix(u.Path, "/"),
+		Options:  u.RawQuery,
+	}, nil
 }
 
 // BuildScopedConn assembles the scoped connection for a pipeline's login role

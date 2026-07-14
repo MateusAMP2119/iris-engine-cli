@@ -68,10 +68,9 @@ func requireMetaAndData(t *testing.T, dsn string) {
 // skips rather than assert against a cluster it cannot reach.
 func TestInstallCreatesMetaAndData(t *testing.T) {
 	t.Run("install-creates-meta-and-data", func(t *testing.T) {
-		dsn := os.Getenv("IRIS_PG_DSN")
-		if dsn == "" {
-			t.Skip("install-creates-meta-and-data: set IRIS_PG_DSN to probe the install-created databases through an independent admin connection (managed-mode bring-up is covered by TestInstallStartOneCodepath)")
-		}
+		// The independent admin probe rides the shared external cluster: the
+		// suite-owned embedded one, or an ambient IRIS_PG_DSN.
+		dsn := requireSharedCluster(t)
 
 		bin := Build(t)
 		ws := shortWorkspace(t)

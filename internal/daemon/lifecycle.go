@@ -126,11 +126,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	defer data.Close()
 
 	// The lane and manual runs' scoped data connection targets the engine-owned data
-	// database (where the declared tables and capture trigger live), retargeted from the
-	// admin/maintenance DSN and injected into each run as IRIS_DB_URL.
+	// database (where the declared tables and capture trigger live). Each run
+	// authenticates as its pipeline's own least-privilege login role (credential
+	// read from meta; the admin-derived DSN only donates host/port/database and
+	// stands in as the fallback for a pipeline whose role is not yet provisioned).
 	laneDataDSN, err := pg.DataDSN(adminDSN.Source().ConnString())
 	if err != nil {
 		return fmt.Errorf("daemon: derive lane run data DSN: %w", err)
+	}
+	runConn, err := newRunConnBuilder(laneDataDSN, client.RoleCredentialReader(), logger)
+	if err != nil {
+		return fmt.Errorf("daemon: build run connection builder: %w", err)
 	}
 
 	// The leader's workspace tree (already verified as a prerequisite above): declarations
@@ -319,14 +325,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
 	laneBuild := func(submit dispatch.Submitter) *dispatch.Loop {
 		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
-			exec.NewOSRunner(), data, objects, laneDataDSN, passCounter,
+			exec.NewOSRunner(), data, objects, runConn, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
 	}
 
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, laneDataDSN),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, runConn),
 		WithSealer(s.JournalPartitionRows, data, client.SealReader()),
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),

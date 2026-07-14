@@ -13,7 +13,6 @@ import (
 	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
 )
 
@@ -139,7 +138,7 @@ type manualOrchestrator struct {
 // is the base scoped data-database connection each run's IRIS_DB_URL is derived from
 // (the run id rides it), the same DSN the lane loop injects, so a manual run's captured
 // writes attribute to its own run exactly like a lane run's.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, dbURL string, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
+func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, runConn *runConnBuilder, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -150,7 +149,7 @@ func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry
 		objects:   objects,
 		runner:    runner,
 		journal:   journal,
-		dbURL:     dbURL,
+		runConn:   runConn,
 		inflight:  inflight,
 		sealer:    sealer,
 		runLogs:   runLogs,
@@ -307,7 +306,7 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	dbURL     string         // the run's base scoped data-database connection; the run id rides it (the daemon derives it with pg.DataDSN; empty only where no data connection is wired)
+	runConn   *runConnBuilder // the run's scoped data connection builder (the pipeline's own login role); nil leaves IRIS_DB_URL empty
 	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
 	runLogs   *RunLogWriter  // per-run output capture; nil discards (shape tests)
@@ -368,7 +367,7 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	h, err := m.runner.Start(ctx, exec.Spec{
 		Dir:    filepath.Join(m.workspace, target.Folder),
 		Argv:   argv,
-		Env:    m.childEnv(info.ID),
+		Env:    m.childEnv(ctx, rec.Pipeline, info.ID),
 		Stdout: sink,
 		Stderr: sink,
 	})
@@ -437,29 +436,14 @@ func (m *manualExec) sealAfterPass(ctx context.Context) {
 	m.sealer.sealAfterPass(ctx)
 }
 
-// childEnv builds the manual run's environment: the inherited daemon environment plus
-// the run-scoped data-database connection injected as IRIS_DB_URL, exactly as the lane
-// path injects it (dispatch.injectedDBURL). The run id rides the base scoped DSN as the
-// iris.run_id session GUC (pg.InjectRunID), so a manual run's captured writes attribute
-// to its own run just like a lane run's -- attribution is by run id, not by cause. It
-// wins over any IRIS_DB_URL the pipeline author declared, since it is appended last.
-func (m *manualExec) childEnv(runID int64) []string {
-	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.injectedDBURL(runID))
-}
-
-// injectedDBURL rides the run id on the base scoped DSN, mirroring the lane path's
-// dispatch.injectedDBURL. An empty base DSN (a wiring with no scoped data connection,
-// as in the shape tests) stays empty rather than becoming a malformed options-only DSN;
-// a non-positive run id leaves the base unchanged. Otherwise the run id is merged in as
-// the iris.run_id connection option the capture trigger reads in-transaction.
-func (m *manualExec) injectedDBURL(runID int64) string {
-	if m.dbURL == "" {
-		return ""
-	}
-	if runID <= 0 {
-		return m.dbURL
-	}
-	return pg.InjectRunID(m.dbURL, runID)
+// childEnv builds the manual run's environment: the inherited daemon environment
+// plus the run-scoped data connection injected as IRIS_DB_URL, exactly as the
+// lane path injects it -- the pipeline's own least-privilege login role, the run
+// id riding it as the iris.run_id session GUC (pg.InjectRunID), so a manual
+// run's captured writes attribute to its own run just like a lane run's. It wins
+// over any IRIS_DB_URL the pipeline author declared, since it is appended last.
+func (m *manualExec) childEnv(ctx context.Context, pipeline string, runID int64) []string {
+	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.runConn.dsnFor(ctx, pipeline, runID))
 }
 
 // checksum reads the pipeline's declaration file and returns its SHA-256 hex digest, the
