@@ -55,6 +55,8 @@ func (r *retentionScriptRows) Scan(dest ...any) error {
 				v := row[i].(int64)
 				*p = &v
 			}
+		case *[]byte:
+			*p = []byte(row[i].(string))
 		default:
 			return fmt.Errorf("retentionScriptRows: unsupported scan dest %T", d)
 		}

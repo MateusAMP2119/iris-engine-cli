@@ -61,6 +61,7 @@ type Client struct {
 	leaderAddr  LeaderAddrReader
 	runLineages RunLineageReader
 	retention   RetentionReader
+	chain       CheckpointChainReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -113,6 +114,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		leaderAddr:  newPgxLeaderAddrReader(readPoolSeam),
 		runLineages: newPgxRunLineageReader(readPoolSeam),
 		retention:   newPgxRetentionReader(readPoolSeam),
+		chain:       newPgxCheckpointChainReader(readPoolSeam),
 	}, nil
 }
 
@@ -255,6 +257,11 @@ func (c *Client) RunLineageReader() RunLineageReader { return c.runLineages }
 // (id, pipeline) census, the dead-letter-held run ids, and the archival records
 // the lane loop's post-pass count-based pruner decides over and archives from.
 func (c *Client) RetentionReader() RetentionReader { return c.retention }
+
+// CheckpointChainReader returns the plain-MVCC archived-checkpoint read seam
+// (the pool): the chain rows whose partitions were exported and dropped, which
+// the provenance plane resolves archived stamps through.
+func (c *Client) CheckpointChainReader() CheckpointChainReader { return c.chain }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

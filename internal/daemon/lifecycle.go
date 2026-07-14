@@ -202,7 +202,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// database + run/summary/input lineage from meta, run through the pure
 	// pg.WalkProvenance. Archived-partition stamps resolve via the object store.
 	objects := store.NewObjectStore(s.ObjectsPath)
-	prov := NewProvenancePlane(client.Reader(), data, objects, logger)
+	prov := NewProvenancePlane(client.Reader(), data, objects, client.CheckpointChainReader(), logger)
 
 	// The wipe and promote planes serve POST /workload/wipe and POST
 	// /pipeline/promote once this daemon leads: the journal-driven revert over

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -305,6 +307,50 @@ FROM public.data_journal WHERE id >= $1 AND ($2 = 0 OR id < $2) ORDER BY id`
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// ParseCompactedRow decodes one canonical compacted-row serialization -- the
+// exact shape QueryCompactedRows produces and the archive export persists
+// (id|pg_role|run_id|schema|table|row_pk|op|pre_image|undo|recorded_at) -- back
+// into a JournalEntry, so stamps recovered from an archived partition feed the
+// same provenance walk resident stamps do. The pre_image field is JSON and may
+// itself contain the delimiter, so the head fields split from the LEFT and the
+// undo/recorded_at tail from the RIGHT, leaving everything between as the
+// pre-image. It reports false for bytes that do not parse (a foreign or
+// corrupted row is skipped, never misread). pg_role and recorded_at are not part
+// of the in-memory entry and are dropped.
+func ParseCompactedRow(b []byte) (JournalEntry, bool) {
+	head := strings.SplitN(string(b), "|", 8)
+	if len(head) != 8 {
+		return JournalEntry{}, false
+	}
+	id, err := strconv.ParseInt(head[0], 10, 64)
+	if err != nil {
+		return JournalEntry{}, false
+	}
+	runID, err := strconv.ParseInt(head[2], 10, 64)
+	if err != nil {
+		return JournalEntry{}, false
+	}
+	rest := head[7] // pre_image|undo|recorded_at, pre_image possibly containing '|'
+	i := strings.LastIndexByte(rest, '|')
+	if i < 0 {
+		return JournalEntry{}, false
+	}
+	j := strings.LastIndexByte(rest[:i], '|')
+	if j < 0 {
+		return JournalEntry{}, false
+	}
+	return JournalEntry{
+		ID:       id,
+		RunID:    runID,
+		Schema:   head[3],
+		Table:    head[4],
+		RowPK:    head[5],
+		Op:       WriteOp(head[6]),
+		PreImage: rest[:j],
+		Undo:     UndoState(rest[j+1 : i]),
+	}, true
 }
 
 // DropPartitionForRange detaches and drops the bootstrap p0 partition (the

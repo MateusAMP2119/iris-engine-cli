@@ -465,6 +465,15 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		if cp.location != "archived" {
 			t.Errorf("checkpoint location = %q, want archived after export+drop", cp.location)
 		}
+
+		// Sealed history is still answerable: provenance for a row whose stamps
+		// were all exported and dropped resolves from the archived partition (the
+		// object-store read-back), never as "no provenance recorded".
+		pres := bin.Run(t, RunOptions{Args: []string{"data", "provenance", "analytics.orders", "200"}, Dir: ws, Timeout: 30 * time.Second})
+		if pres.ExitCode != 0 {
+			t.Errorf("provenance for an archived row exited %d, want 0 (archived stamps must resolve)\nstdout:\n%s\nstderr:\n%s",
+				pres.ExitCode, pres.Stdout, pres.Stderr)
+		}
 	})
 }
 
