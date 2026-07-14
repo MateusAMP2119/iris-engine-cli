@@ -61,6 +61,10 @@ type DrainRequest struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	// All scopes to every outstanding entry.
 	All bool `json:"all,omitempty"`
+	// Force requests that soft-blocks be overridden (--force): in-flight runs on
+	// the drain's scope are cancelled instead of refusing. Without it (--yes or an
+	// interactive confirmation) every soft-block is honored.
+	Force bool `json:"force,omitempty"`
 }
 
 // DrainResult is the leader's reply to a drain: the runs whose worklist entries were

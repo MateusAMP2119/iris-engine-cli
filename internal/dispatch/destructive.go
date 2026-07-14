@@ -10,13 +10,12 @@ package dispatch
 // drain.go and gate.go: the predicates decide, and a caller reads the snapshots and
 // acts on them.
 //
-// No production caller does so yet. The confirmation gate is enforced in the CLI
-// (internal/cli: a typed target name on a TTY, or --yes/--force), which forwards
-// the confirm/force flags to the daemon's control connection, and the daemon then
-// executes the op -- declare destroy runs with the Destroyer's open blocker
-// (destroy.go), and the workload-wipe plane notes the same gap. So the evaluation
-// and decision below are the model, proven by this package's tests, not a gate the
-// running engine consults.
+// The confirmation gate is enforced in the CLI (internal/cli: a typed target
+// name on a TTY, or --yes/--force), which forwards the confirm/force flags to
+// the daemon's control connection; the daemon's destructive gate
+// (internal/daemon/destructivegate.go) evaluates the soft-blocks below on the
+// destroy, wipe, and drain paths, and the destroyer's blocker seam consults
+// DestroyBlockReasons over live meta snapshots.
 //
 // The tier split: hard blockers versus soft-blocks. The destroy
 // downstream blockers are HARD -- destroy refuses while they hold, naming them
@@ -327,8 +326,7 @@ func DestroyBlockReasons(target string, dependsOn map[string][]string, edges []R
 
 // DestroyBlockerFunc adapts a function to the DestroyBlocker seam, so a caller can
 // feed DestroyBlockReasons over live snapshots into a Destroyer without a named
-// type. Nothing in the daemon does so today (the Destroyer's blocker still defaults
-// open); this package's tests drive the adapter.
+// type. The daemon's leader wiring does exactly that (Candidate.destroyBlocker).
 type DestroyBlockerFunc func(ctx context.Context, pipeline string) (blocked bool, reason string, err error)
 
 // Blocked consults the adapted function.

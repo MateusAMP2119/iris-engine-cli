@@ -63,18 +63,21 @@ func (p *wipePlane) Wipe(ctx context.Context, req api.WorkloadWipeRequest) (api.
 	return o.wipe(ctx, req)
 }
 
-// wipeOrchestrator wires the wipe: gate evaluation (using destructive predicates
-// over a snapshot), attribution map from the run reader, and the pg data client
-// ExecuteWipe in one tx.
+// wipeOrchestrator wires the wipe: the destructive-op gate (soft-blocks over a
+// run snapshot, --yes/--force semantics), the attribution map from the run
+// reader, and the pg data client ExecuteWipe in one tx.
 type wipeOrchestrator struct {
-	submit dispatch.Submitter // for potential future, or gate reads via snapshot
+	submit dispatch.Submitter
 	reader store.Reader
 	data   dataPlane
+	gate   destructiveGate
 	logger *slog.Logger
 }
 
-// newWipeOrchestrator builds it. The data seam is the daemon's dataPlane (*pg.Client).
-func newWipeOrchestrator(submit dispatch.Submitter, reader store.Reader, data dataPlane, logger *slog.Logger) *wipeOrchestrator {
+// newWipeOrchestrator builds it. The data seam is the daemon's dataPlane
+// (*pg.Client); inflight is the shared in-flight registry a --force override
+// kills cancelled runs through (nil leaves the override dead-lettering only).
+func newWipeOrchestrator(submit dispatch.Submitter, reader store.Reader, data dataPlane, inflight *inflightRuns, logger *slog.Logger) *wipeOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -82,6 +85,7 @@ func newWipeOrchestrator(submit dispatch.Submitter, reader store.Reader, data da
 		submit: submit,
 		reader: reader,
 		data:   data,
+		gate:   destructiveGate{reader: reader, inflight: inflight, submit: submit},
 		logger: logger,
 	}
 }
@@ -89,6 +93,15 @@ func newWipeOrchestrator(submit dispatch.Submitter, reader store.Reader, data da
 func (o *wipeOrchestrator) wipe(ctx context.Context, req api.WorkloadWipeRequest) (api.WorkloadWipeResult, error) {
 	if !req.Confirm {
 		return api.WorkloadWipeResult{}, fmt.Errorf("workload wipe: confirmation required (re-run with --yes or --force)")
+	}
+
+	// The destructive-op gate: an in-flight run on the wipe's scope refuses a
+	// --yes invocation with guidance; --force cancels the runs and proceeds.
+	// Wipe is a dev-loop op, not a teardown, so un-promoted data never blocks it
+	// (disposing of that data is what wipe exists to do).
+	scope := dispatch.GateScope{Pipeline: req.Pipeline}
+	if err := o.gate.enforce(ctx, dispatch.OpWorkloadWipe, scope, req.Force, 0); err != nil {
+		return api.WorkloadWipeResult{}, err
 	}
 
 	// Build attribution map: run_id -> pipeline for all runs (small in practice;
@@ -100,11 +113,7 @@ func (o *wipeOrchestrator) wipe(ctx context.Context, req api.WorkloadWipeRequest
 	}
 	runPipeline := make(map[int64]string, len(runs))
 	for _, r := range runs {
-		// store.Run.ID is string? normalize to int64 if needed; assume parse or it's int in practice.
-		// From usage, run ids in journal are int64, store uses string "run-N" ? Wait, check.
-		// To be robust, we will use a helper; for now assume numeric ids or cast.
-		id := parseRunID(r.ID) // defined below in this file for the plane
-		if id != 0 {
+		if id := parseRunID(r.ID); id != 0 {
 			runPipeline[id] = r.Pipeline
 		}
 	}
@@ -113,12 +122,6 @@ func (o *wipeOrchestrator) wipe(ctx context.Context, req api.WorkloadWipeRequest
 		Pipeline:    req.Pipeline,
 		RunPipeline: runPipeline,
 	}
-
-	// Note: full gate soft-block evaluation for wipe lives in dispatch (EvaluateSoftBlocks
-	// with OpWorkloadWipe). Here we assume the CLI layer + any E10 wiring has
-	// already enforced confirm; the handler executes. If inflight etc, the
-	// destructive op wiring would have refused earlier. For direct Execute we
-	// perform the data op (conformance and declare-destroy path use it directly).
 
 	res, err := o.data.ExecuteWipe(ctx, target)
 	if err != nil {

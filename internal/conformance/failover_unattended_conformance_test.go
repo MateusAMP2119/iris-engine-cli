@@ -412,12 +412,15 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	// Step 4: the operator's wipe mutations run non-interactively and succeed against
 	// the live sample -- scoped wipe of one pipeline, then the bare wipe of the rest.
 	// (The exact revert invariants are proven by their own legs; here they must simply
-	// pass unattended.) The build+promote half of step 5 and its wipe-immunity invariant
-	// are proven over a compile-in-CI pipeline -- the golden sample's
-	// Python pipelines build via pyinstaller, which the conformance runner does not carry.
+	// pass unattended.) The lane loop keeps the sample pipelines perpetually in
+	// flight, so the destructive-op gate soft-blocks a --yes wipe; --force is the
+	// documented override, cancelling the in-flight loop runs and proceeding. The
+	// build+promote half of step 5 and its wipe-immunity invariant are proven over a
+	// compile-in-CI pipeline -- the golden sample's Python pipelines build via
+	// pyinstaller, which the conformance runner does not carry.
 	for _, mut := range [][]string{
-		{"workload", "wipe", "extract_orders", "--yes"},
-		{"workload", "wipe", "--yes"},
+		{"workload", "wipe", "extract_orders", "--force"},
+		{"workload", "wipe", "--force"},
 	} {
 		bin.Run(t, RunOptions{Args: mut, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 	}

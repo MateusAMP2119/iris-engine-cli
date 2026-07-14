@@ -208,6 +208,32 @@ func (c *Client) ResidentRunIDs(ctx context.Context) ([]int64, error) {
 	return ids, nil
 }
 
+// OpenUndoRunIDs returns the run id of every resident journal entry still undo =
+// open (written under disposable data_mode, unreleased by promotion), one element
+// per entry so the count is the wipe scope's size once attributed. The
+// destructive-op gate reads it to evaluate the un-promoted-data soft-block on a
+// teardown: the caller attributes each run id to its pipeline (meta-side) and
+// counts the entries under the teardown's scope. It is one plain-MVCC read.
+func (c *Client) OpenUndoRunIDs(ctx context.Context) ([]int64, error) {
+	rows, err := c.pool.Query(ctx, `SELECT run_id FROM public.data_journal WHERE undo = 'open'`)
+	if err != nil {
+		return nil, fmt.Errorf("pg: read open-undo journal run ids: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("pg: scan open-undo journal run id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pg: iterate open-undo journal run ids: %w", err)
+	}
+	return ids, nil
+}
+
 // CurrentLSN returns the data database's current WAL LSN in text form. It satisfies
 // dispatch.LSNReader for snapshot pin stamping.
 func (c *Client) CurrentLSN(ctx context.Context) (string, error) {

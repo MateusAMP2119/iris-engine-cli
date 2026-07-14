@@ -36,6 +36,7 @@ func (f *controlDataFake) EnsureCaptureFunction(context.Context) error {
 func (f *controlDataFake) ExecuteWipe(context.Context, pg.WipeTarget) (pg.WipeResult, error) {
 	return pg.WipeResult{}, nil
 }
+func (f *controlDataFake) OpenUndoRunIDs(context.Context) ([]int64, error) { return nil, nil }
 
 // controlHeadsFake is a store.AppliedHeadReader over a fixed head map.
 type controlHeadsFake struct{ heads map[string]string }
@@ -84,7 +85,7 @@ func TestProvisionRejectsPublicSchemaFolder(t *testing.T) {
 
 		o := newControlOrchestrator(ws, nil, nil, storetest.NewRegistryFake(),
 			&controlDataFake{live: provEmptyLive()}, controlLedgerFake{},
-			controlHeadsFake{heads: map[string]string{}}, nil)
+			controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil)
 
 		err := o.provision(context.Background(), true) // dry run: the reserved guard must fire first.
 		if err == nil {
@@ -115,7 +116,7 @@ func TestProvisionEnsuresCaptureOnEmptyPlan(t *testing.T) {
 		}
 		data := &controlDataFake{live: live}
 		o := newControlOrchestrator(ws, nil, nil, storetest.NewRegistryFake(), data,
-			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{"sales.orders": "0001"}}, nil)
+			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{"sales.orders": "0001"}}, destructiveGate{}, nil)
 
 		if err := o.provision(context.Background(), false); err != nil {
 			t.Fatalf("provision: %v", err)
@@ -141,7 +142,7 @@ func TestComposerInterlockCountsRegisteredFromDB(t *testing.T) {
 		reg.SeedLane("etl", "extract", "transform", "load")
 
 		o := newControlOrchestrator(ws, nil, nil, reg, &controlDataFake{live: provEmptyLive()},
-			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{}}, nil)
+			controlLedgerFake{}, controlHeadsFake{heads: map[string]string{}}, destructiveGate{}, nil)
 
 		members, err := o.laneMembers(ctx, "etl")
 		if err != nil {

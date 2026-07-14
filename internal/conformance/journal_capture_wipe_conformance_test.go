@@ -77,8 +77,10 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 		assertCount(ctxFor(t), t, conn, 2, "SELECT count(*) FROM testdata.items")
 		assertCount(ctxFor(t), t, conn, 2, "SELECT count(*) FROM public.data_journal WHERE undo='open'")
 
-		// Wipe via real CLI: should revert the landed rows.
-		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--yes"}, Dir: ws, Timeout: time.Minute})
+		// Wipe via real CLI: should revert the landed rows. The lane loop keeps the
+		// pipeline perpetually in flight, so the destructive-op gate soft-blocks a
+		// --yes wipe; --force cancels the in-flight loop run and proceeds.
+		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--force"}, Dir: ws, Timeout: time.Minute})
 		wres.RequireExit(t, 0)
 
 		// After wipe: data reverted (0 rows), journal retained with wiped markers.
@@ -130,14 +132,14 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 		assertCount(ctxFor(t), t, conn, 4, "SELECT count(*) FROM testdata.items")
 
 		// Scoped wipe only extract's.
-		w1 := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "extract_orders", "--yes"}, Dir: ws, Timeout: time.Minute})
+		w1 := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "extract_orders", "--force"}, Dir: ws, Timeout: time.Minute})
 		w1.RequireExit(t, 0)
 
 		// extract's rows gone; load's remain. Will be RED until scoped wipe implemented.
 		assertCount(ctxFor(t), t, conn, 2, "SELECT count(*) FROM testdata.items")
 
 		// Bare wipe clears the rest.
-		w2 := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--yes"}, Dir: ws, Timeout: time.Minute})
+		w2 := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--force"}, Dir: ws, Timeout: time.Minute})
 		w2.RequireExit(t, 0)
 		assertCount(ctxFor(t), t, conn, 0, "SELECT count(*) FROM testdata.items")
 	})
@@ -210,7 +212,7 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 
 		// Wipe must leave the promoted rows untouched (immune): the journal drives the
 		// wipe, and no promoted entry is in wipe scope.
-		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--yes"}, Dir: ws, Timeout: time.Minute})
+		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--force"}, Dir: ws, Timeout: time.Minute})
 		wres.RequireExit(t, 0)
 
 		// Both eras' promoted data rows survive the wipe, and the re-run's promoted

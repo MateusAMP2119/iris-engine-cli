@@ -28,6 +28,10 @@ type WorkloadWipeRequest struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	// Confirm is the explicit confirmation.
 	Confirm bool `json:"confirm,omitempty"`
+	// Force requests that soft-blocks be overridden (--force): in-flight runs on
+	// the wipe's scope are cancelled instead of refusing. Without it (--yes or an
+	// interactive confirmation) every soft-block is honored.
+	Force bool `json:"force,omitempty"`
 }
 
 // WorkloadWipeResult is the success payload of POST /workload/wipe: the counts

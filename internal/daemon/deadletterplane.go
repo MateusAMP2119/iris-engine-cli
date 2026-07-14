@@ -211,7 +211,7 @@ func (p *deadletterPlane) Drain(ctx context.Context, req api.DrainRequest) (api.
 	if ex == nil {
 		return api.DrainResult{}, api.ErrDrainUnavailable
 	}
-	entries, _, err := p.worklist(ctx)
+	entries, pipelineOf, err := p.worklist(ctx)
 	if err != nil {
 		return api.DrainResult{}, err
 	}
@@ -226,6 +226,19 @@ func (p *deadletterPlane) Drain(ctx context.Context, req api.DrainRequest) (api.
 	if err != nil {
 		return api.DrainResult{}, err
 	}
+
+	// The destructive-op gate: an in-flight run on the drain's scope refuses a
+	// --yes invocation with guidance; --force cancels the runs and proceeds. The
+	// scope is the named pipeline, engine-wide for --all, or -- for a single-run
+	// drain -- the drained run's own pipeline.
+	scope := dispatch.GateScope{Pipeline: req.Pipeline}
+	if req.Run != "" && req.Pipeline == "" {
+		scope.Pipeline = pipelineOf[runScope]
+	}
+	if err := ex.gate.enforce(ctx, dispatch.OpDeadletterDrain, scope, req.Force, 0); err != nil {
+		return api.DrainResult{}, err
+	}
+
 	if len(targets) > 0 {
 		if err := ex.submit.Submit(ctx, func(w *store.Writer) error {
 			return w.DrainDeadLetters(ctx, targets)
@@ -316,6 +329,7 @@ type deadletterExec struct {
 	workspace string
 	lsn       dispatch.LSNReader            // data-database current LSN (fresh snapshot pin); nil leaves it empty
 	journal   dispatch.JournalHighWatermark // data journal high id (journal floor); nil leaves it zero
+	gate      destructiveGate               // the drain's soft-block gate (--yes refuses on in-flight runs, --force cancels)
 	logger    *slog.Logger
 }
 

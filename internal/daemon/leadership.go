@@ -602,14 +602,26 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// passes the mux's leader gate always finds an installed orchestrator; clear it on
 	// demotion so a request racing a lost lock faults rather than writing off-path.
 	if c.control != nil {
+		// The destroyer's hard blockers ride live meta snapshots: a destroy refuses
+		// while a registered pipeline declares depends_on the target, a downstream
+		// run_inputs row names a target run, or an outstanding dead-letter entry
+		// names the target as failed_upstream. No flag overrides these. They need
+		// the run/lineage reader and the worklist reader; the shape compositions
+		// that wire neither run with the open default, as before.
+		var destroyOpts []dispatch.DestroyerOption
+		if blocker := c.destroyBlocker(); blocker != nil {
+			destroyOpts = append(destroyOpts, dispatch.WithDestroyBlocker(blocker))
+		}
+		reg, _ := c.inflight.(*inflightRuns)
 		orch := newControlOrchestrator(
 			c.workspace,
 			dispatch.NewApplier(c.registry, d),
-			dispatch.NewDestroyer(c.registry, d),
+			dispatch.NewDestroyer(c.registry, d, destroyOpts...),
 			c.registry,
 			c.data,
 			dispatch.NewLedgerRecorder(d),
 			c.appliedHds,
+			destructiveGate{reader: c.reader, inflight: reg, submit: d},
 			c.logger,
 		)
 		c.control.install(orch)
@@ -659,7 +671,8 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// /workload/wipe that passes the mux's leader gate always finds an installed
 	// handler; clear on demotion.
 	if c.wipes != nil {
-		wo := newWipeOrchestrator(d, c.reader, c.data, c.logger)
+		reg, _ := c.inflight.(*inflightRuns)
+		wo := newWipeOrchestrator(d, c.reader, c.data, reg, c.logger)
 		c.wipes.install(wo)
 		defer c.wipes.clear()
 	}
@@ -704,12 +717,14 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		if lr, ok := c.journalHM.(dispatch.LSNReader); ok {
 			lsn = lr
 		}
+		reg, _ := c.inflight.(*inflightRuns)
 		ex := &deadletterExec{
 			submit:    d,
 			manual:    c.manualReader,
 			workspace: c.workspace,
 			lsn:       lsn,
 			journal:   c.journalHM,
+			gate:      destructiveGate{reader: c.reader, inflight: reg, submit: d},
 			logger:    c.logger,
 		}
 		c.deadletters.install(ex)

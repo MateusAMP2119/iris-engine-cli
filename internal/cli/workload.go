@@ -49,7 +49,7 @@ func (a *app) workloadWipe() runE {
 		settings := a.resolveTarget(cmd)
 		client, base, overTCP := a.daemonHTTPClient(settings)
 
-		body, err := json.Marshal(api.WorkloadWipeRequest{Pipeline: pipeline, Confirm: yes || force})
+		body, err := json.Marshal(api.WorkloadWipeRequest{Pipeline: pipeline, Confirm: confirmed || yes || force, Force: force})
 		if err != nil {
 			return &fault{code: exitOpFailed, codeStr: "encode", message: fmt.Sprintf("workload wipe: encode request: %v", err)}
 		}

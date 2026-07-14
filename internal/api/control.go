@@ -139,13 +139,9 @@ func (m *mux) serveControl(w http.ResponseWriter, r *http.Request, op func(conte
 	// (enforced by scope) plus an explicit confirm body field. The confirm gate
 	// runs after decode but before the handler, so a !Confirm destroy never
 	// reaches the control plane and is rejected as an operation failure.
-	if r.URL.Path == "/destroy" {
-		if !req.Confirm {
-			WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "confirm required for destructive operation")
-			return
-		}
-		// debug marker: if we reach here with Confirm, we will proceed
-		_ = req.Confirm
+	if r.URL.Path == "/destroy" && !req.Confirm {
+		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "confirm required for destructive operation")
+		return
 	}
 	res, err := op(r.Context(), req)
 	if err != nil {
@@ -166,6 +162,7 @@ type drainReq struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	All      bool   `json:"all,omitempty"`
 	Confirm  bool   `json:"confirm"`
+	Force    bool   `json:"force,omitempty"`
 }
 
 // serveDeadletterDrain handles POST /deadletter/drain: destructive, so like
@@ -195,7 +192,7 @@ func (m *mux) serveDeadletterDrain(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, "drain requires a scope: <run>, --pipeline, or --all")
 		return
 	}
-	res, err := m.drain.Drain(r.Context(), DrainRequest{Run: req.Run, Pipeline: req.Pipeline, All: req.All})
+	res, err := m.drain.Drain(r.Context(), DrainRequest{Run: req.Run, Pipeline: req.Pipeline, All: req.All, Force: req.Force})
 	if err != nil {
 		WriteError(w, http.StatusUnprocessableEntity, CodeOpFailed, err.Error())
 		return

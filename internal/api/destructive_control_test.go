@@ -151,6 +151,13 @@ func TestAPIDrainConfirmField(t *testing.T) {
 	if recOK.Code == http.StatusForbidden || recOK.Code == http.StatusUnauthorized {
 		t.Errorf("control+confirm drain blocked at auth/scope: %d", recOK.Code)
 	}
+
+	// force decodes: the --force override rides the body to the drain handler's
+	// soft-block gate, never rejected as an unknown field.
+	recF := postJSONDrain(t, mux, `{"all":true,"confirm":true,"force":true}`)
+	if recF.Code == http.StatusBadRequest {
+		t.Errorf("drain with force rejected as malformed (%d); force must reach the gate", recF.Code)
+	}
 }
 
 func postJSONDrain(t *testing.T, h http.Handler, body string) *httptest.ResponseRecorder {

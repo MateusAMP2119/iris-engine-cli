@@ -24,9 +24,11 @@ package dispatch
 //     teardown frees no object bytes.
 //   - DestroyBlocker is the downstream-blocker predicate set (a registered pipeline
 //     depends_on the target, a run_inputs row names its runs, a dead-letter entry
-//     names it as failed_upstream). Those predicates ARE implemented, pure, in
-//     destructive.go (DestroyBlockReasons), but nothing feeds them into a
-//     Destroyer: the seam here defaults OPEN and never blocks.
+//     names it as failed_upstream). The predicates are pure in destructive.go
+//     (DestroyBlockReasons); the daemon's leader wiring feeds them in over live
+//     meta snapshots (Candidate.destroyBlocker), so a production destroy refuses
+//     while any holds. The default stays OPEN only for compositions that pass no
+//     blocker (shape tests).
 //
 // The archival-summary write (each remaining run's run_summaries row, written in the
 // retirement transaction so pruned lineage never dangles) rides the RunLister seam,

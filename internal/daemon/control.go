@@ -51,6 +51,10 @@ type dataPlane interface {
 	// Added here so the same client instance wires to wipe plane without extra
 	// seam (wipe and provision share the data client).
 	ExecuteWipe(ctx context.Context, target pg.WipeTarget) (pg.WipeResult, error)
+	// OpenUndoRunIDs returns the run id of every journal entry still undo = open
+	// (un-promoted disposable data), one element per entry: the destructive-op
+	// gate's input for the un-promoted-data soft-block on teardowns.
+	OpenUndoRunIDs(ctx context.Context) ([]int64, error)
 }
 
 // controlPlane is the daemon's api.ControlHandler: a stable handle the mux binds to
@@ -123,14 +127,19 @@ type controlOrchestrator struct {
 	data      dataPlane
 	ledgerRec pg.LedgerRecorder
 	heads     store.AppliedHeadReader
-	logger    *slog.Logger
+	// gate is the destructive-op soft-block gate a pipeline destroy passes before
+	// the destroyer runs (--yes refuses on in-flight runs or un-promoted data,
+	// --force cancels the runs and proceeds). An unwired gate (nil reader) skips
+	// evaluation -- the shape-test compositions.
+	gate   destructiveGate
+	logger *slog.Logger
 }
 
 // newControlOrchestrator builds the leader's control orchestrator over its workspace
 // root and the wired seams. reg is the plain-MVCC registry reader the composer-destroy
 // interlock counts a lane's registered members from (the lanes table in meta, not the
 // workspace disk). A nil logger discards output.
-func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, reg store.RegistryReader, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, logger *slog.Logger) *controlOrchestrator {
+func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroyer *dispatch.Destroyer, reg store.RegistryReader, data dataPlane, ledgerRec pg.LedgerRecorder, heads store.AppliedHeadReader, gate destructiveGate, logger *slog.Logger) *controlOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -142,6 +151,7 @@ func newControlOrchestrator(workspace string, applier *dispatch.Applier, destroy
 		data:      data,
 		ledgerRec: ledgerRec,
 		heads:     heads,
+		gate:      gate,
 		logger:    logger,
 	}
 }
@@ -210,12 +220,28 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 	switch decl.Kind {
 	case declare.KindPipeline:
 		if !req.DryRun {
+			// The destructive-op gate runs before the destroyer: --yes refuses on an
+			// in-flight run or un-promoted disposable data under the pipeline; --force
+			// cancels the runs and discards the data by proceeding. The destroyer's own
+			// hard blockers (dangling downstream lineage) come after and no flag
+			// overrides them.
+			unpromoted, err := o.unpromotedCount(ctx, decl.Pipeline.Name)
+			if err != nil {
+				return api.ControlResult{}, err
+			}
+			scope := dispatch.GateScope{Pipeline: decl.Pipeline.Name}
+			if err := o.gate.enforce(ctx, dispatch.OpDeclareDestroy, scope, req.Force, unpromoted); err != nil {
+				return api.ControlResult{}, err
+			}
 			if err := o.destroyer.DestroyPipeline(ctx, decl.Pipeline.Name); err != nil {
 				return api.ControlResult{}, err
 			}
 		}
 		return api.ControlResult{Kind: decl.Kind.String(), Target: decl.Pipeline.Name, DryRun: req.DryRun}, nil
 	case declare.KindComposer:
+		// A composer destroy clears only the lane's rows -- no run, lineage, or data
+		// deletion -- and its own registered-member interlock already refuses while
+		// 2+ members remain, so it takes no soft-block gate.
 		if !req.DryRun {
 			members, err := o.laneMembers(ctx, decl.Composer.Lane)
 			if err != nil {
@@ -229,6 +255,40 @@ func (o *controlOrchestrator) destroy(ctx context.Context, req api.ControlReques
 	default:
 		return api.ControlResult{}, fmt.Errorf("declare destroy: unknown declaration kind %v", decl.Kind)
 	}
+}
+
+// unpromotedCount counts the un-promoted disposable journal entries under the
+// pipeline: the open-undo entries whose run belongs to it -- the wipe scope's size,
+// the teardown soft-block's input. An unwired gate or data plane contributes zero
+// (the shape-test compositions; the gate is skipped there anyway).
+func (o *controlOrchestrator) unpromotedCount(ctx context.Context, pipeline string) (int, error) {
+	if o.gate.reader == nil || o.data == nil {
+		return 0, nil
+	}
+	openRuns, err := o.data.OpenUndoRunIDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("declare destroy: read un-promoted journal entries: %w", err)
+	}
+	if len(openRuns) == 0 {
+		return 0, nil
+	}
+	runs, err := o.gate.reader.Runs(ctx, store.RunFilter{})
+	if err != nil {
+		return 0, fmt.Errorf("declare destroy: read runs for journal attribution: %w", err)
+	}
+	runPipeline := make(map[int64]string, len(runs))
+	for _, r := range runs {
+		if id := parseRunID(r.ID); id != 0 {
+			runPipeline[id] = r.Pipeline
+		}
+	}
+	count := 0
+	for _, id := range openRuns {
+		if runPipeline[id] == pipeline {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // laneMembers returns the lane's member names from the lanes table in meta (the
