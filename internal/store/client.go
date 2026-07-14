@@ -62,6 +62,7 @@ type Client struct {
 	runLineages RunLineageReader
 	retention   RetentionReader
 	chain       CheckpointChainReader
+	patGrants   DataPATGrantsReader
 }
 
 // Connect opens the meta client from the admin-derived connection source: it
@@ -115,6 +116,7 @@ func Connect(ctx context.Context, src ConnSource) (*Client, error) {
 		runLineages: newPgxRunLineageReader(readPoolSeam),
 		retention:   newPgxRetentionReader(readPoolSeam),
 		chain:       newPgxCheckpointChainReader(readPoolSeam),
+		patGrants:   newPgxDataPATGrantsReader(readPoolSeam),
 	}, nil
 }
 
@@ -262,6 +264,11 @@ func (c *Client) RetentionReader() RetentionReader { return c.retention }
 // (the pool): the chain rows whose partitions were exported and dropped, which
 // the provenance plane resolves archived stamps through.
 func (c *Client) CheckpointChainReader() CheckpointChainReader { return c.chain }
+
+// DataPATGrantsReader returns the plain-MVCC data-PAT grant ledger read seam
+// (the pool): every minted data-PAT role with its ledgered field grants, the
+// authoritative set the leader reconciles live Postgres grants against.
+func (c *Client) DataPATGrantsReader() DataPATGrantsReader { return c.patGrants }
 
 // Close tears down the client: it closes the reader pool and the leader session. It
 // is safe to call after the lock has already released the session, so the daemon can

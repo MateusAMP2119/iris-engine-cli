@@ -126,6 +126,12 @@ type Candidate struct {
 	// Nil leaves manual runs uncaptured (shape-test compositions).
 	runLogs *RunLogWriter
 
+	// patGrantLedger is the meta read of every data-PAT role's ledgered grants:
+	// the authoritative set the leader reconciles each role's live Postgres
+	// grants against on winning leadership (additive re-grants applied, strays
+	// reported). Nil leaves drift detection off (shape-test compositions).
+	patGrantLedger store.DataPATGrantsReader
+
 	// Promote wiring (for pipeline promote).
 	promotes        *promotePlane
 	promoteState    store.PromoteStateReader
@@ -371,6 +377,18 @@ func WithWipePlane(wp *wipePlane, reader store.Reader, data dataPlane) Candidate
 func WithRunLogs(logs *RunLogWriter) CandidateOption {
 	return func(c *Candidate) {
 		c.runLogs = logs
+	}
+}
+
+// WithGrantDrift wires data-PAT grant-drift reconciliation: on winning
+// leadership the candidate diffs every ledgered data-PAT role's live Postgres
+// grants against the meta ledger, re-issues missing GRANTs (the ledger is
+// authoritative), and reports strays -- grants Postgres holds beyond the ledger
+// -- in the daemon log. Strays are never revoked. Absent, drift goes undetected
+// (shape-test compositions).
+func WithGrantDrift(ledger store.DataPATGrantsReader) CandidateOption {
+	return func(c *Candidate) {
+		c.patGrantLedger = ledger
 	}
 }
 
@@ -627,6 +645,12 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 			return false, errors.Join(err, c.release())
 		}
 	}
+
+	// Grant-drift reconciliation: diff every ledgered data-PAT role's live grants
+	// against the meta ledger, re-issue missing GRANTs, and report strays. It runs
+	// once per leadership term, best-effort -- a drift read or re-grant failure is
+	// logged and never blocks leadership (detection quality, not a dispatch gate).
+	c.reconcileGrantDrift(ctx)
 
 	// Install the leader-side control plane over the single dispatcher (the sole meta
 	// writer) before reporting the leader role, so a POST /apply or /destroy that

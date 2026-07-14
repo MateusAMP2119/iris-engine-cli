@@ -55,6 +55,9 @@ type dataPlane interface {
 	// (un-promoted disposable data), one element per entry: the destructive-op
 	// gate's input for the un-promoted-data soft-block on teardowns.
 	OpenUndoRunIDs(ctx context.Context) ([]int64, error)
+	// ReadFieldGrants reads a role's current field-level grants from the data
+	// database's catalogs: the live half of grant-drift reconciliation.
+	ReadFieldGrants(ctx context.Context, role string) ([]declare.FieldGrant, error)
 }
 
 // controlPlane is the daemon's api.ControlHandler: a stable handle the mux binds to

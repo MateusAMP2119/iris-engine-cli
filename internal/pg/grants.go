@@ -81,14 +81,13 @@ type GrantReconcile struct {
 	Strays []declare.Drift
 }
 
-// LiveGrantReader reads a role's current field-level grants from the data database
-// (a pg_catalog / information_schema.column_privileges read). Nothing implements it
-// against a live Postgres: the only implementation is the fake in this package's
-// tests, which is what makes the reconcile below provable with no live database.
-// Reconcile and ReconcileGrants have no caller outside those tests either --
-// production issues grants without a live read, applying the ledger's fixed
-// per-field set directly as DDL (ProvisionDataPATRole, datapatrole.go), so a stray
-// grant held by Postgres beyond the ledger is never detected today.
+// LiveGrantReader reads a role's current field-level grants from the data
+// database. *Client implements it against the live catalogs (livegrants.go,
+// aclexplode over pg_attribute/pg_class ACLs); the fake in this package's tests
+// keeps the reconcile below provable with no live database. The daemon runs
+// Reconcile over every ledgered data-PAT role on winning leadership
+// (Candidate.reconcileGrantDrift), so a grant drifted out-of-band is re-issued
+// from the ledger and a stray beyond it is reported.
 type LiveGrantReader interface {
 	// ReadFieldGrants returns the field-level grants Postgres currently holds for
 	// role.

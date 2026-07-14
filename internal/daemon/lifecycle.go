@@ -334,6 +334,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithLaneLoop(laneBuild),
 		WithLanePlane(lanes),
 		WithTeardownSeams(client.RetentionReader()),
+		WithGrantDrift(client.DataPATGrantsReader()),
 		WithRunLogs(runLogs),
 		WithPassCounter(passCounter),
 		WithDeadletterPlane(deadletters),

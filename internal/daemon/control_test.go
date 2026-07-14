@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
 	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
@@ -37,6 +38,9 @@ func (f *controlDataFake) ExecuteWipe(context.Context, pg.WipeTarget) (pg.WipeRe
 	return pg.WipeResult{}, nil
 }
 func (f *controlDataFake) OpenUndoRunIDs(context.Context) ([]int64, error) { return nil, nil }
+func (f *controlDataFake) ReadFieldGrants(context.Context, string) ([]declare.FieldGrant, error) {
+	return nil, nil
+}
 
 // controlHeadsFake is a store.AppliedHeadReader over a fixed head map.
 type controlHeadsFake struct{ heads map[string]string }
