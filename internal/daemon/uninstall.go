@@ -36,35 +36,59 @@ import (
 const ServiceUnitName = "iris.service"
 
 // ErrLiveCandidate is returned when uninstall refuses because a daemon candidate
-// still holds a meta connection: the shared meta database is never dropped under a
-// live candidate. The predicate that detects this is a seam a later task fills; the
-// default predicate proceeds.
-var ErrLiveCandidate = errors.New("daemon: refusing engine uninstall while a daemon candidate holds a meta connection")
+// is still live: engine state is never torn down out from under a running
+// candidate. The CLI backs the check with its daemon probe and the pidfile
+// predicate (PIDFileLiveCheck).
+var ErrLiveCandidate = errors.New("daemon: refusing engine uninstall while a daemon candidate is running")
 
 // LiveCandidatePredicate reports whether any daemon candidate currently holds a
-// meta connection, so uninstall can refuse rather than drop meta out from under a
-// live candidate. It is still an open seam: no predicate backed by the
-// leadership/liveness wiring exists, so ProceedWithoutLiveCheck -- which always
-// reports no live candidate -- remains the only implementation and the one the CLI
-// uses.
+// meta connection, so uninstall can refuse rather than tear the engine down out
+// from under a live candidate. The CLI composes two live implementations: its
+// daemon probe (GET /healthz over the resolved socket/TCP target, catching any
+// serving daemon) and PIDFileLiveCheck below (catching a detached daemon whose
+// listener is wedged or still starting). ProceedWithoutLiveCheck remains for
+// compositions that deliberately skip the check.
 type LiveCandidatePredicate interface {
 	// LiveCandidateHoldsMeta reports whether a daemon candidate holds a meta
 	// connection right now.
 	LiveCandidateHoldsMeta(ctx context.Context) (bool, error)
 }
 
-// ProceedWithoutLiveCheck returns the default live-candidate predicate: it reports
-// no live candidate, so uninstall proceeds. It is the documented default a real
-// meta-connection check over the leadership/liveness wiring would replace; nothing
-// replaces it today, so the guard is open.
+// ProceedWithoutLiveCheck returns the always-open live-candidate predicate: it
+// reports no live candidate, so uninstall proceeds. It exists for compositions
+// that deliberately skip the check; the CLI's uninstall path uses the real
+// probes instead.
 func ProceedWithoutLiveCheck() LiveCandidatePredicate { return proceedPredicate{} }
 
-// proceedPredicate is the default LiveCandidatePredicate: it always reports no live
-// candidate.
+// proceedPredicate is the always-open LiveCandidatePredicate: it always reports no
+// live candidate.
 type proceedPredicate struct{}
 
 // LiveCandidateHoldsMeta always reports no live candidate (proceed).
 func (proceedPredicate) LiveCandidateHoldsMeta(context.Context) (bool, error) { return false, nil }
+
+// PIDFileLiveCheck returns a LiveCandidatePredicate over the workspace pidfile: a
+// live candidate is reported when the pidfile a detached daemon recorded names a
+// process that is still running. It catches the daemon the socket probe can miss
+// -- one mid-start (socket not yet bound) or wedged (listener dead, process
+// alive) -- and reports nothing when no pidfile exists (no detached daemon) or
+// the recorded process is gone (a stale pidfile never blocks an uninstall).
+func PIDFileLiveCheck(s config.Settings) LiveCandidatePredicate {
+	return pidfilePredicate{settings: s}
+}
+
+// pidfilePredicate is the pidfile-backed LiveCandidatePredicate.
+type pidfilePredicate struct{ settings config.Settings }
+
+// LiveCandidateHoldsMeta reports whether the workspace pidfile names a running
+// process.
+func (p pidfilePredicate) LiveCandidateHoldsMeta(context.Context) (bool, error) {
+	pid, err := ReadPIDFile(p.settings)
+	if err != nil {
+		return false, nil // no (or unreadable) pidfile: no detached daemon recorded
+	}
+	return processAlive(pid), nil
+}
 
 // UninstallDeps bundles the seams `iris engine uninstall` orchestrates over.
 type UninstallDeps struct {
