@@ -1,0 +1,88 @@
+name: Snapshot
+
+on:
+  push:
+    branches: [development]
+
+permissions:
+  contents: write
+
+# Only the newest development push matters; cancel superseded builds.
+concurrency:
+  group: snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    name: Build and publish snapshot binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Determine snapshot version
+        id: ver
+        run: |
+          set -euo pipefail
+          # Next patch after the last stable tag; --match excludes the
+          # rolling "snapshot" tag itself.
+          LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)
+          BASE=${LAST#v}
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3)
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          DATE=$(git log -1 --format=%cd --date=format:%Y%m%d HEAD)
+          SHA=$(git rev-parse --short=12 HEAD)
+          VERSION="${NEXT}-snapshot.${DATE}.${SHA}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using snapshot version: $VERSION"
+
+      - name: Cross-compile
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ steps.ver.outputs.version }}"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/}
+            export GOOS GOARCH
+            out="dist/iris_${GOOS}_${GOARCH}"
+            go build -trimpath -ldflags="-s -w -X github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo.Version=${VERSION}" -o "${out}/iris" ./cmd/iris
+            tar -czf "${out}.tar.gz" -C "${out}" iris
+            rm -r "${out}"
+          done
+          (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+
+      - name: Publish rolling snapshot release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+
+          cat > notes.md <<EOF
+          Rolling snapshot build of the \`development\` branch. Unstable; rebuilt on every merge.
+
+          - Version: \`${VERSION}\`
+          - Commit: ${GITHUB_SHA}
+
+          Install with: \`IRIS_VERSION=snapshot ./install.sh\`
+          EOF
+
+          # Rolling release: drop the previous snapshot (and its tag), recreate at HEAD.
+          gh release delete snapshot --yes --cleanup-tag 2>/dev/null || true
+          gh release create snapshot \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --prerelease \
+            --latest=false \
+            --notes-file notes.md \
+            dist/*.tar.gz dist/checksums.txt
