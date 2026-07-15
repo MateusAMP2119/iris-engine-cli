@@ -117,7 +117,7 @@ func TestConfigPrecedenceOrder(t *testing.T) {
 		if got.Retain != config.DefaultRetain {
 			t.Errorf("Retain = %d, want the default %d (untouched by the socket flag)", got.Retain, config.DefaultRetain)
 		}
-		if got.ObjectsPath != filepath.Join(".iris", "objects") {
+		if got.ObjectsPath != "objects" {
 			t.Errorf("ObjectsPath = %q, want the default (untouched by the socket flag)", got.ObjectsPath)
 		}
 	})
@@ -182,8 +182,8 @@ func TestDocumentedEnvVarsRecognized(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FromEnv: %v", err)
 		}
-		got := config.Resolve(config.Defaults("/ws"), config.Layer{}, layer, config.Layer{})
-		if got.Socket != filepath.Join("/ws", ".iris", "iris.sock") {
+		got := config.Resolve(config.Defaults("/home/dev/.iris"), config.Layer{}, layer, config.Layer{})
+		if got.Socket != filepath.Join("/home/dev/.iris", "iris.sock") {
 			t.Errorf("empty env Socket = %q, want the default socket", got.Socket)
 		}
 		if got.Retain != config.DefaultRetain {
@@ -219,16 +219,16 @@ func TestDocumentedEnvVarsRecognized(t *testing.T) {
 
 // TestZeroConfigDefaults proves the zero-config path: with no flags, no
 // environment, and no iris.toml, the CLI defaults to the local socket under the
-// workspace .iris directory and the engine defaults to managed Postgres (no admin
+// per-user engine home and the engine defaults to managed Postgres (no admin
 // DSN configured -> managed mode). It resolves both the bare defaults layer and
 // the full four-layer stack with every other source empty, which must agree.
 func TestZeroConfigDefaults(t *testing.T) {
-	const ws = "/home/dev/project"
+	const home = "/home/dev/.iris"
 
 	// The full stack with nothing but defaults set.
-	got := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
+	got := config.Resolve(config.Defaults(home), config.Layer{}, config.Layer{}, config.Layer{})
 
-	wantSocket := filepath.Join(ws, ".iris", "iris.sock")
+	wantSocket := filepath.Join(home, "iris.sock")
 	if got.Socket != wantSocket {
 		t.Errorf("zero-config Socket = %q, want the local socket %q", got.Socket, wantSocket)
 	}
@@ -238,7 +238,7 @@ func TestZeroConfigDefaults(t *testing.T) {
 	if got.PgDSN != "" {
 		t.Errorf("zero-config PgDSN = %q, want empty (managed mode)", got.PgDSN)
 	}
-	if want := filepath.Join(ws, ".iris", "objects"); got.ObjectsPath != want {
+	if want := filepath.Join(home, "objects"); got.ObjectsPath != want {
 		t.Errorf("zero-config ObjectsPath = %q, want %q", got.ObjectsPath, want)
 	}
 	if got.Retain != config.DefaultRetain {
@@ -256,7 +256,7 @@ func TestZeroConfigDefaults(t *testing.T) {
 		Socket:               wantSocket,
 		Retain:               config.DefaultRetain,
 		JournalPartitionRows: config.DefaultJournalPartitionRows,
-		ObjectsPath:          filepath.Join(ws, ".iris", "objects"),
+		ObjectsPath:          filepath.Join(home, "objects"),
 	}
 	if got != want {
 		t.Errorf("zero-config resolution = %+v, want the documented defaults %+v", got, want)
@@ -264,8 +264,49 @@ func TestZeroConfigDefaults(t *testing.T) {
 
 	// External Postgres is selected the moment an admin DSN appears, so managed is
 	// exactly the no-DSN case.
-	external := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{PgDSN: sp("postgres://u@h/db")}, config.Layer{})
+	external := config.Resolve(config.Defaults(home), config.Layer{}, config.Layer{PgDSN: sp("postgres://u@h/db")}, config.Layer{})
 	if external.Managed() {
 		t.Error("Managed() = true with an admin DSN set, want false (external mode)")
 	}
+}
+
+// TestHome proves the engine-home resolution: IRIS_HOME relocates the engine
+// home wholesale, and with it unset the home is the fixed per-user ~/.iris --
+// never anything derived from the invoking directory (one engine per machine;
+// every iris command must find it from any cwd).
+func TestHome(t *testing.T) {
+	t.Run("IRIS_HOME relocates the engine home wholesale", func(t *testing.T) {
+		env := map[string]string{config.EnvHome: "/relocated/engine-home"}
+		got, err := config.Home(func(k string) string { return env[k] })
+		if err != nil {
+			t.Fatalf("Home: %v", err)
+		}
+		if got != "/relocated/engine-home" {
+			t.Errorf("Home = %q, want the IRIS_HOME value", got)
+		}
+	})
+
+	t.Run("unset IRIS_HOME resolves to ~/.iris", func(t *testing.T) {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			t.Skipf("no user home directory on this host: %v", err)
+		}
+		got, err := config.Home(func(string) string { return "" })
+		if err != nil {
+			t.Fatalf("Home: %v", err)
+		}
+		if want := filepath.Join(userHome, config.DirName); got != want {
+			t.Errorf("Home = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("defaults derive from the engine home, not a cwd", func(t *testing.T) {
+		got := config.Resolve(config.Defaults("/eh"), config.Layer{}, config.Layer{}, config.Layer{})
+		if want := filepath.Join("/eh", config.SocketName); got.Socket != want {
+			t.Errorf("Socket = %q, want %q", got.Socket, want)
+		}
+		if want := filepath.Join("/eh", config.ObjectsDir); got.ObjectsPath != want {
+			t.Errorf("ObjectsPath = %q, want %q", got.ObjectsPath, want)
+		}
+	})
 }

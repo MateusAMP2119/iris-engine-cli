@@ -25,11 +25,16 @@ import (
 // clearTargetEnv unsets the ambient IRIS_* target variables so a test resolves
 // its daemon target only from the explicit --socket it passes (test-env
 // isolation).
-func clearTargetEnv(t *testing.T) {
+func clearTargetEnv(t *testing.T) string {
 	t.Helper()
 	t.Setenv("IRIS_HOST", "")
 	t.Setenv("IRIS_SOCKET", "")
 	t.Setenv("IRIS_TOKEN", "")
+	// A fresh engine home per test: target resolution reads $IRIS_HOME (never
+	// the cwd), so tests that record or read engine-home state stay isolated.
+	home := t.TempDir()
+	t.Setenv("IRIS_HOME", home)
+	return home
 }
 
 // startRunsDaemon stands an in-process HTTP server over a real unix socket that

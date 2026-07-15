@@ -8,19 +8,24 @@
 // only and is never a project manifest (the workload graph lives in
 // iris-declare.yaml); project-level keys in an iris.toml are not honored (see
 // ParseTOML). With nothing configured the resolution yields the local socket
-// under the workspace .iris directory and an empty admin DSN, which selects the
-// engine's managed Postgres.
+// under the per-user engine home (~/.iris) and an empty admin DSN, which selects
+// the engine's managed Postgres.
 package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 )
 
-// The documented IRIS_* environment variable names. These seven are the complete
+// The documented IRIS_* environment variable names. These eight are the complete
 // recognized set; no other IRIS_* variable feeds configuration.
 const (
+	// EnvHome relocates the engine home wholesale (tests, packaging). It is not a
+	// Layer field: it moves where the default socket, iris.toml, and object store
+	// live rather than setting any one of them.
+	EnvHome                 = "IRIS_HOME"
 	EnvSocket               = "IRIS_SOCKET"
 	EnvHost                 = "IRIS_HOST"
 	EnvToken                = "IRIS_TOKEN"
@@ -37,18 +42,39 @@ const (
 	DefaultJournalPartitionRows int64 = 10_000_000
 )
 
-// The workspace .iris tree layout: the default socket file and object-store
-// directory both live under <workspace>/.iris.
+// The engine home layout: Iris runs ONE engine per machine, and its state --
+// the default socket file, the object-store directory, and the optional
+// iris.toml -- lives under a fixed per-user engine home, ~/.iris (relocated
+// wholesale by IRIS_HOME). Nothing about the engine target is derived from the
+// invoking directory, so every iris command finds the engine from any cwd.
 const (
-	// DirName is the per-workspace Iris state directory.
+	// DirName is the engine home's directory name under the user's home
+	// directory (~/.iris). It is also the legacy per-workspace state directory
+	// pre-engine-home releases used, which `iris engine start` detects and
+	// refuses with migration guidance.
 	DirName = ".iris"
-	// SocketName is the default Unix control socket filename under DirName.
+	// SocketName is the default Unix control socket filename under the engine home.
 	SocketName = "iris.sock"
-	// ObjectsDir is the default object-store directory name under DirName.
+	// ObjectsDir is the default object-store directory name under the engine home.
 	ObjectsDir = "objects"
-	// FileName is the optional configuration file's name under DirName.
+	// FileName is the optional configuration file's name under the engine home.
 	FileName = "iris.toml"
 )
+
+// Home resolves the per-user engine home: IRIS_HOME when set (the wholesale
+// relocation for tests and packaging), otherwise ~/.iris. getenv is injected
+// (os.Getenv in production) so resolution stays testable; the home-directory
+// lookup itself is the one OS fact this package reads.
+func Home(getenv func(string) string) (string, error) {
+	if v := getenv(EnvHome); v != "" {
+		return v, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("config: resolve the engine home: %w", err)
+	}
+	return filepath.Join(home, DirName), nil
+}
 
 // Settings is the fully resolved engine/connection configuration: one typed
 // field per documented setting. It is the output of Resolve and the input every
@@ -148,14 +174,15 @@ func Resolve(defaults, file, env, flags Layer) Settings {
 }
 
 // Defaults returns the built-in default layer, the lowest-precedence source. The
-// socket defaults to <workspace>/.iris/iris.sock and the object store to
-// <workspace>/.iris/objects; retention and journal partition size take their
-// documented defaults; and the admin DSN is left unset, which selects the managed
-// Postgres. workspace is the root of the workspace tree; an empty workspace
-// yields .iris-relative paths.
-func Defaults(workspace string) Layer {
-	socket := filepath.Join(workspace, DirName, SocketName)
-	objects := filepath.Join(workspace, DirName, ObjectsDir)
+// socket defaults to <home>/iris.sock and the object store to <home>/objects,
+// where home is the engine home (Home: IRIS_HOME, or ~/.iris); retention and
+// journal partition size take their documented defaults; and the admin DSN is
+// left unset, which selects the managed Postgres. An empty home yields paths
+// relative to the invoking directory, the caller's last-resort fallback when no
+// home directory resolves.
+func Defaults(home string) Layer {
+	socket := filepath.Join(home, SocketName)
+	objects := filepath.Join(home, ObjectsDir)
 	retain := DefaultRetain
 	journal := DefaultJournalPartitionRows
 	empty := ""

@@ -140,7 +140,7 @@ func TestQuickstartActStructure(t *testing.T) {
 }
 
 // TestQuickstartWorkspacePrompt proves the ENGINE act's opening question:
-// `Engine workspace [~/iris]:` with a visible default, the empty answer
+// `Pipeline workspace [~/iris]:` with a visible default, the empty answer
 // accepting it, `~` expanding to the operator's home, mkdir -p plus chdir, a
 // workspace cwd proposed back as the default, and --yes using the invoking
 // directory unprompted.

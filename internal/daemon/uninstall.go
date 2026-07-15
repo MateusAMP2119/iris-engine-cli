@@ -172,7 +172,7 @@ func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, 
 }
 
 // ServiceUnitPath returns the workspace-local service-unit path for the settings:
-// <workspace>/.iris/iris.service. See ServiceUnitName for why this path is the
+// <engine home>/iris.service. See ServiceUnitName for why this path is the
 // convention service install and engine uninstall share.
 func ServiceUnitPath(s config.Settings) string {
 	return filepath.Join(irisDir(s), ServiceUnitName)

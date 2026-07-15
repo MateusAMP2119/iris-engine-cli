@@ -118,7 +118,7 @@ func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) 
 	}
 	logger.Info("engine install: ensured data journal")
 
-	// Set up the control socket (the workspace .iris directory, clearing any stale
+	// Set up the control socket (the engine home, clearing any stale
 	// socket) -- real local filesystem I/O, no database.
 	if err := PrepareSocketDir(s); err != nil {
 		return InstallReport{}, fmt.Errorf("daemon: set up control socket for install: %w", err)
@@ -163,7 +163,7 @@ type MetaProbe interface {
 	MetaExists(ctx context.Context) (bool, error)
 }
 
-// SocketPreparer sets up the control socket location (the workspace .iris
+// SocketPreparer sets up the control socket location (the engine home
 // directory, clearing any stale socket). FileSocketPreparer is the production
 // implementation; the install-sequence test records the step through a fake.
 type SocketPreparer interface {

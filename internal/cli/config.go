@@ -12,24 +12,25 @@ import (
 
 // resolveTarget resolves an invocation's engine/connection settings through the
 // configuration precedence: the global --socket/--host/--token flags override
-// the IRIS_* environment, which overrides an optional .iris/iris.toml under the
-// workspace, which overrides the built-in defaults (the local socket + managed
-// Postgres of the zero-config path). Full consumption -- actually dialing the
-// resolved target -- arrives with the daemon client; today the exit-3 dial path
-// resolves through it so the precedence is real rather than a library sitting
-// unused, and a misconfigured iris.toml or IRIS_* value surfaces as a warning
-// instead of being silently ignored.
+// the IRIS_* environment, which overrides an optional iris.toml under the
+// engine home, which overrides the built-in defaults (the local socket + managed
+// Postgres of the zero-config path). The engine home is fixed per user (~/.iris,
+// relocated wholesale by IRIS_HOME) -- Iris runs one engine per machine, so the
+// invoking directory plays no part in where the engine is found and every iris
+// command works from any cwd. A misconfigured iris.toml or IRIS_* value surfaces
+// as a warning instead of being silently ignored.
 func (a *app) resolveTarget(cmd *cobra.Command) config.Settings {
-	workspace, err := os.Getwd()
+	home, err := config.Home(os.Getenv)
 	if err != nil {
-		workspace = "" // fall back to .iris-relative defaults
+		a.logger.Warn("no home directory; falling back to .iris under the invoking directory", "err", err)
+		home = config.DirName
 	}
 	env, err := config.FromEnv(os.Getenv)
 	if err != nil {
 		a.logger.Warn("ignoring malformed IRIS_* configuration", "err", err)
 		env = config.Layer{}
 	}
-	file, err := config.LoadTOMLFile(filepath.Join(workspace, config.DirName, config.FileName))
+	file, err := config.LoadTOMLFile(filepath.Join(home, config.FileName))
 	if err != nil {
 		a.logger.Warn("ignoring unreadable iris.toml", "err", err)
 		file = config.TOML{}
@@ -37,10 +38,10 @@ func (a *app) resolveTarget(cmd *cobra.Command) config.Settings {
 	for _, key := range file.Ignored {
 		a.logger.Warn("ignoring non-engine key in iris.toml (never a project manifest)", "key", key)
 	}
-	settings := config.Resolve(config.Defaults(workspace), file.Layer, env, flagLayer(cmd))
+	settings := config.Resolve(config.Defaults(home), file.Layer, env, flagLayer(cmd))
 	if a.forceLocalTarget {
-		// The quickstart tour's child apps only ever target the local workspace
-		// engine: any ambient host (IRIS_HOST or iris.toml) is dropped here, after
+		// The quickstart tour's child apps only ever target the local engine:
+		// any ambient host (IRIS_HOST or iris.toml) is dropped here, after
 		// the tour has announced it once. The socket keeps its full precedence.
 		settings.Host = ""
 	}

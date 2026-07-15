@@ -30,7 +30,7 @@ const (
 
 // workspacePromptFor is the pinned workspace question for a visible default:
 // the ENGINE act's opening line read.
-func workspacePromptFor(def string) string { return "Engine workspace [" + def + "]:" }
+func workspacePromptFor(def string) string { return "Pipeline workspace [" + def + "]:" }
 
 // tourApp builds an app for driving `iris quickstart` with both TTY seams
 // forced to tty.

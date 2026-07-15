@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -47,7 +48,7 @@ type installResult struct {
 // engineInstall is the handler for `iris engine install`: a daemonless lifecycle
 // command (it dials no daemon) that performs the engine bootstrap. Through the one
 // Manager code path it brings up Postgres for the configured mode -- downloading and
-// placing the pinned, checksum-verified managed Postgres under <workspace>/.iris/pg
+// placing the pinned, checksum-verified managed Postgres under <engine home>/pg
 // and starting it, or resolving the external admin DSN -- then creates meta alongside
 // the data database, ensures the control tables and the partitioned journal, and sets
 // up the control socket. In managed mode the local instance is stopped again once the
@@ -56,6 +57,9 @@ type installResult struct {
 func (a *app) engineInstall() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
+		if err := a.refuseLegacyWorkspaceState(settings); err != nil {
+			return err
+		}
 		ctx := cmd.Context()
 		if ctx == nil {
 			ctx = context.Background()
@@ -335,6 +339,9 @@ type startResult struct {
 func (a *app) engineStart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
+		if err := a.refuseLegacyWorkspaceState(settings); err != nil {
+			return err
+		}
 		detach, _ := cmd.Flags().GetBool("detach")
 		daemonized := os.Getenv(daemon.DaemonizedEnv) == "1"
 
@@ -574,6 +581,42 @@ func (a *app) engineServiceUninstall() runE {
 		}
 		return nil
 	}
+}
+
+// refuseLegacyWorkspaceState fails `iris engine install`/`start` fast when the
+// invoking directory holds pre-engine-home state: earlier releases resolved the
+// engine target from the cwd and placed the socket, config, and managed
+// Postgres under <cwd>/.iris, so silently provisioning a second engine at the
+// fixed engine home would strand that state (and its data). The check looks for
+// the engine-owned leaves under <cwd>/.iris (iris.toml, iris.sock, iris.pid,
+// the managed-Postgres pg/ directory) and skips itself when that directory IS
+// the resolved engine directory (the cwd is the user's home, or IRIS_HOME
+// points there). Pre-1.0 this is a documented breaking change: the operator
+// moves or removes the legacy state once.
+func (a *app) refuseLegacyWorkspaceState(settings config.Settings) error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil // no invoking directory to inspect; nothing to adopt
+	}
+	legacy := filepath.Join(wd, config.DirName)
+	if engineDir, aerr := filepath.Abs(filepath.Dir(settings.Socket)); aerr == nil {
+		if abs, lerr := filepath.Abs(legacy); lerr == nil && abs == engineDir {
+			return nil
+		}
+	}
+	// The engine-owned leaves earlier releases placed under <workspace>/.iris; a
+	// bare or unrelated .iris directory does not trip the guard.
+	for _, marker := range []string{config.FileName, config.SocketName, "iris.pid", "pg"} {
+		if _, serr := os.Stat(filepath.Join(legacy, marker)); serr == nil {
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "legacy_workspace_state",
+				message: fmt.Sprintf("found engine state from an older iris at %s; the engine now lives at the fixed per-user engine home (%s), not the invoking directory — stop any old daemon, then move the state (mv %s %s) or remove it and reinstall",
+					legacy, filepath.Dir(settings.Socket), legacy, filepath.Dir(settings.Socket)),
+			}
+		}
+	}
+	return nil
 }
 
 // modeName names the Postgres mode for `iris engine info`: managed when no admin

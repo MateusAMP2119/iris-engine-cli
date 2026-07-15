@@ -51,7 +51,7 @@ var ErrManagedNotInstalled = errors.New("daemon: the engine's managed Postgres i
 
 // IsManagedInstalled reports whether the managed Postgres has been installed for
 // these settings: its data directory records a Postgres major version (initdb has
-// run under <workspace>/.iris/pg). It is the guard Run uses to fail fast rather
+// run under <engine home>/pg). It is the guard Run uses to fail fast rather
 // than start a managed engine with no database to manage.
 func IsManagedInstalled(s config.Settings) bool {
 	v, err := ReadDataDirMajorVersion(managedDataDir(ManagedPGDir(s)))
@@ -140,8 +140,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 
 	// The leader's workspace tree (already verified as a prerequisite above): declarations
-	// and the schemas/ tree resolve against it. The daemon runs in the workspace (its
-	// socket lives under <workspace>/.iris), so its working directory is that tree.
+	// and the schemas/ tree resolve against it. The daemon dispatches from the
+	// directory it was started in; the engine home (socket, state) is fixed per user.
 	// (No re-resolve or re-check: the early check already refused lacking trees.)
 
 	// The declared read surface: the shared read pool on the data database, the live

@@ -23,16 +23,15 @@ func seedFile(t *testing.T, path, body string) {
 	}
 }
 
-// seedEngineArtifacts creates, under the current workspace, the on-disk engine
-// artifacts an uninstall removes: an object store with a payload file, a control
-// socket file, and a service unit file. It returns the resolved settings.
+// seedEngineArtifacts pins a fresh per-test engine home (IRIS_HOME) and creates
+// under it the on-disk engine artifacts an uninstall removes: an object store
+// with a payload file, a control socket file, and a service unit file. It
+// returns the resolved settings.
 func seedEngineArtifacts(t *testing.T) config.Settings {
 	t.Helper()
-	ws, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	s := config.Resolve(config.Defaults(ws), config.Layer{}, config.Layer{}, config.Layer{})
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+	s := config.Resolve(config.Defaults(home), config.Layer{}, config.Layer{}, config.Layer{})
 	seedFile(t, filepath.Join(s.ObjectsPath, "deadbeef.artifact"), "bytes")
 	seedFile(t, s.Socket, "socket")
 	seedFile(t, daemon.ServiceUnitPath(s), "unit")

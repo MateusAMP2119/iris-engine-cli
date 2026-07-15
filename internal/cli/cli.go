@@ -164,11 +164,11 @@ type app struct {
 	// terminal read); tests inject it to script the answer without a real
 	// terminal.
 	connectSecret func(prompt string) (string, error)
-	// forceLocalTarget pins resolveTarget to the local workspace engine: a host
+	// forceLocalTarget pins resolveTarget to the local engine: a host
 	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
 	// the unix socket (the flag surface cannot contribute one on this path:
 	// quickstart refuses --host outright). It is set only on the quickstart
-	// tour's child apps -- the tour only ever targets the local workspace engine
+	// tour's child apps -- the tour only ever targets the local engine
 	// it provisions, never a remote -- and has no command-line spelling.
 	forceLocalTarget bool
 }

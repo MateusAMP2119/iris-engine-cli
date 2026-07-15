@@ -41,7 +41,7 @@ See [docs/CLOUDFLARE_INSTALL_SETUP.md](docs/CLOUDFLARE_INSTALL_SETUP.md) for exa
 curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash
 ```
 
-The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where the engine workspace should live (`~/iris` by default), bootstraps the engine there, then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
+The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where your pipeline workspace should live (`~/iris` by default), bootstraps the engine at its fixed per-user home (`~/.iris` — every shell finds it, whatever directory you run `iris` from), then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
 
 Have Go 1.25+? `go install` works too:
 
