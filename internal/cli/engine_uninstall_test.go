@@ -25,14 +25,18 @@ func seedFile(t *testing.T, path, body string) {
 
 // seedEngineArtifacts pins a fresh per-test engine home (IRIS_HOME) and creates
 // under it the on-disk engine artifacts an uninstall removes: an object store
-// with a payload file, a control socket file, and a service unit file. It
-// returns the resolved settings.
+// with a payload file, a managed Postgres tree with binaries and a data
+// directory, a log directory, a control socket file, and a service unit file.
+// It returns the resolved settings.
 func seedEngineArtifacts(t *testing.T) config.Settings {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv(config.EnvHome, home)
 	s := config.Resolve(config.Defaults(home), config.Layer{}, config.Layer{}, config.Layer{})
 	seedFile(t, filepath.Join(s.ObjectsPath, "deadbeef.artifact"), "bytes")
+	seedFile(t, filepath.Join(daemon.ManagedPGDir(s), "bin", "postgres"), "postgres binary")
+	seedFile(t, filepath.Join(daemon.ManagedPGDir(s), "data", "PG_VERSION"), "16\n")
+	seedFile(t, filepath.Join(daemon.LogsDir(s), "daemon.log"), "log lines")
 	seedFile(t, s.Socket, "socket")
 	seedFile(t, daemon.ServiceUnitPath(s), "unit")
 	return s
@@ -41,9 +45,10 @@ func seedEngineArtifacts(t *testing.T) config.Settings {
 // TestEngineUninstallCLI proves the `iris engine uninstall` command: it is gated
 // (it refuses without --yes and touches nothing), and when confirmed it performs
 // the local, daemonless teardown of the engine's on-disk state -- the object store
-// under objects_path, the control socket, and the service unit.
-// The teardown deletes both the object store's artifact bytes
-// and archived partitions by removing the store directory outright.
+// under objects_path, the managed Postgres tree (binaries and the data directory
+// holding the meta and data databases), the log directory, the control socket,
+// and the service unit. The teardown deletes both the object store's artifact
+// bytes and archived partitions by removing the store directory outright.
 func TestEngineUninstallCLI(t *testing.T) {
 	t.Run("refuses without --yes and removes nothing", func(t *testing.T) {
 		t.Chdir(t.TempDir())
@@ -55,14 +60,14 @@ func TestEngineUninstallCLI(t *testing.T) {
 			t.Fatalf("exit = %d, want %d (refused, operation failed)\nstdout: %s\nstderr: %s", code, exitOpFailed, out.String(), errb.String())
 		}
 		// Nothing was torn down: the gate blocked before any removal.
-		for _, path := range []string{s.ObjectsPath, s.Socket, daemon.ServiceUnitPath(s)} {
+		for _, path := range []string{s.ObjectsPath, daemon.ManagedPGDir(s), daemon.LogsDir(s), s.Socket, daemon.ServiceUnitPath(s)} {
 			if _, err := os.Stat(path); err != nil {
 				t.Errorf("refused uninstall removed %s (stat err = %v); the gate must touch nothing", path, err)
 			}
 		}
 	})
 
-	t.Run("with --yes removes the object store, socket, and service unit", func(t *testing.T) {
+	t.Run("with --yes removes the object store, managed Postgres tree, logs, socket, and service unit", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		s := seedEngineArtifacts(t)
 
@@ -71,7 +76,7 @@ func TestEngineUninstallCLI(t *testing.T) {
 		if code != exitOK {
 			t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 		}
-		for _, path := range []string{s.ObjectsPath, s.Socket, daemon.ServiceUnitPath(s)} {
+		for _, path := range []string{s.ObjectsPath, daemon.ManagedPGDir(s), daemon.LogsDir(s), s.Socket, daemon.ServiceUnitPath(s)} {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Errorf("%s still present after confirmed uninstall (stat err = %v)", path, err)
 			}

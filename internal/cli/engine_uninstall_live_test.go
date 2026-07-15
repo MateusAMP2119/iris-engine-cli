@@ -84,6 +84,10 @@ func TestEngineUninstallRefusesLiveDaemon(t *testing.T) {
 			if _, err := os.Stat(s.ObjectsPath); !os.IsNotExist(err) {
 				t.Errorf("object store still present after uninstall past a stale pidfile (stat err = %v)", err)
 			}
+			// The stale pidfile itself is engine state: the teardown removes it too.
+			if _, err := os.Stat(daemon.PIDPath(s)); !os.IsNotExist(err) {
+				t.Errorf("stale pidfile still present after uninstall (stat err = %v)", err)
+			}
 		})
 	})
 }

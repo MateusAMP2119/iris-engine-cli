@@ -33,8 +33,10 @@ func seedFile(t *testing.T, path, body string) {
 
 // teardownWorkspace seeds a throwaway workspace with the on-disk engine artifacts
 // uninstall must delete: an object store under objects_path holding artifact bytes
-// and an archived journal partition, a control socket file, and a service unit
-// file. It returns the resolved settings the teardown reads its paths from.
+// and an archived journal partition, a managed Postgres tree with binaries and an
+// initialized data directory, a log directory with a daemon log, a control socket
+// file, a service unit file, and a pidfile. It returns the resolved settings the
+// teardown reads its paths from.
 func teardownWorkspace(t *testing.T) config.Settings {
 	t.Helper()
 	ws := t.TempDir()
@@ -44,8 +46,15 @@ func teardownWorkspace(t *testing.T) config.Settings {
 	// partition, the two payload kinds uninstall removes with the store.
 	seedFile(t, filepath.Join(s.ObjectsPath, "deadbeef.artifact"), "built binary bytes")
 	seedFile(t, filepath.Join(s.ObjectsPath, "c0ffee.partition.seal"), "archived journal partition")
+	// The managed Postgres tree: the pinned binaries and the data directory
+	// holding the meta and data databases (the largest engine state on disk).
+	seedFile(t, filepath.Join(daemon.ManagedPGDir(s), "bin", "postgres"), "postgres binary")
+	seedFile(t, filepath.Join(daemon.ManagedPGDir(s), "data", "PG_VERSION"), "16\n")
+	// The log directory with the daemon's own log.
+	seedFile(t, filepath.Join(daemon.LogsDir(s), "daemon.log"), "log lines")
 	seedFile(t, s.Socket, "socket")
 	seedFile(t, daemon.ServiceUnitPath(s), "unit")
+	seedFile(t, daemon.PIDPath(s), "12345\n")
 	return s
 }
 
@@ -73,7 +82,8 @@ func runUninstall(t *testing.T) (cluster *storetest.Recorder, data *pgtest.Recor
 // TestUninstallEngineFullTeardown proves `iris engine uninstall` is a full engine
 // teardown: it drops the meta database (all captured provenance with it), drops the
 // data journal on the data connection, deletes the object store under objects_path,
-// and removes the socket and service unit -- leaving nothing behind.
+// the managed Postgres tree, and the log directory, and removes the socket, service
+// unit, and pidfile -- leaving nothing behind.
 func TestUninstallEngineFullTeardown(t *testing.T) {
 	cluster, data, rep, s := runUninstall(t)
 
@@ -99,14 +109,19 @@ func TestUninstallEngineFullTeardown(t *testing.T) {
 		t.Error("report does not record the journal drop")
 	}
 
-	// the object store, socket, and service unit are gone from disk.
-	for _, path := range []string{s.ObjectsPath, s.Socket, daemon.ServiceUnitPath(s)} {
+	// the object store, managed Postgres tree, log directory, socket, service
+	// unit, and pidfile are gone from disk.
+	all := []string{
+		s.ObjectsPath, daemon.ManagedPGDir(s), daemon.LogsDir(s),
+		s.Socket, daemon.ServiceUnitPath(s), daemon.PIDPath(s),
+	}
+	for _, path := range all {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("%s still present after uninstall (stat err = %v)", path, err)
 		}
 	}
 	// and the report names each removed path.
-	for _, path := range []string{s.ObjectsPath, s.Socket, daemon.ServiceUnitPath(s)} {
+	for _, path := range all {
 		if !containsString(rep.Removed, path) {
 			t.Errorf("report Removed %v does not name %s", rep.Removed, path)
 		}
@@ -204,6 +219,11 @@ func TestUninstallRefusesLiveCandidate(t *testing.T) {
 		}
 		if stmts := cluster.Statements(); len(stmts) != 0 {
 			t.Errorf("live-candidate guard let cluster execs %v; meta must not be touched", stmts)
+		}
+		// The managed cluster on disk is likewise untouched: it is never removed
+		// out from under a live candidate.
+		if _, err := os.Stat(daemon.ManagedPGDir(s)); err != nil {
+			t.Errorf("live-candidate guard removed the managed Postgres tree (stat err = %v)", err)
 		}
 	})
 }

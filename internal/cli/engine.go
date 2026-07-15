@@ -240,9 +240,11 @@ type uninstallResult struct {
 // local-machine-only engine teardown. It refuses without --yes (operation failed,
 // exit 4, with guidance), and otherwise removes the engine's on-disk state -- the
 // object store under objects_path (artifact bytes and archived partitions), the
-// control socket, and the service unit. The meta and journal drops are orchestrated
-// by daemon.UninstallEngine and run against the cluster once the daemon's live admin
-// connection is wired; the on-disk teardown is real from now.
+// managed Postgres tree (binaries and the data directory, taking the meta and data
+// databases with it on a managed install), the log directory, the control socket,
+// the service unit, and the pidfile. The external-cluster meta and journal drops
+// are orchestrated by daemon.UninstallEngine and run against the cluster once the
+// daemon's live admin connection is wired; the on-disk teardown is real from now.
 func (a *app) engineUninstall() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		// Confirmation gate for teardown: typed name ("engine") or --yes/--force.
@@ -256,15 +258,15 @@ func (a *app) engineUninstall() runE {
 			return &fault{
 				code:    exitOpFailed,
 				codeStr: "confirmation_required",
-				message: `iris engine uninstall is an irreversible teardown; re-run with --yes or --force, or type the target name to confirm (it drops meta, the journal, the object store, the socket, and the service unit)`,
+				message: `iris engine uninstall is an irreversible teardown; re-run with --yes or --force, or type the target name to confirm (it removes the managed Postgres tree with the meta and data databases, the object store, the logs, the socket, and the service unit)`,
 			}
 		}
 
 		// Print what will be removed for teardowns (typed-name confirm path) on human output only.
 		if jsonMode, _ := cmd.Flags().GetBool("json"); !jsonMode {
-			fmt.Fprintln(a.out, "engine uninstall: will remove engine state (meta, journal, object store, socket, service unit)")
+			fmt.Fprintln(a.out, "engine uninstall: will remove engine state (managed Postgres tree with meta and data, object store, logs, socket, service unit)")
 		} else {
-			fmt.Fprintln(a.errOut, "engine uninstall: will remove engine state (meta, journal, object store, socket, service unit)")
+			fmt.Fprintln(a.errOut, "engine uninstall: will remove engine state (managed Postgres tree with meta and data, object store, logs, socket, service unit)")
 		}
 
 		settings := a.resolveTarget(cmd)
