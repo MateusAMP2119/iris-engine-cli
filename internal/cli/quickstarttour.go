@@ -53,9 +53,10 @@ var errTourAborted = errors.New("quickstart: tour aborted")
 
 // The tour's pinned prompt copy.
 const (
-	// tourDefaultWorkspace is the workspace question's visible default anywhere
-	// the invoking directory is not already a workspace: never the invoking
-	// directory itself, which under `curl | sh` is arbitrary.
+	// tourDefaultWorkspace is the workspace question's visible default: always
+	// this fixed path, never the invoking directory, which under `curl | sh`
+	// is arbitrary (and may itself contain a pipelines/ tree -- the iris source
+	// checkout does -- without being the operator's intended workspace).
 	tourDefaultWorkspace = "~/iris"
 )
 
@@ -503,8 +504,8 @@ func (a *app) renderTourStep(p painter, step quickstartStep) {
 // tour materializes and is the tree the daemon dispatches from; the engine's
 // socket, config, and state live at the fixed engine home (~/.iris), so every
 // shell finds the engine afterwards regardless of this answer. Interactive, it
-// reads one line with a visible default -- `~/iris`, or the invoking directory
-// when that is already a workspace (pipelines/ present) -- expands `~` to the
+// reads one line with a fixed visible default (`~/iris`; never the invoking
+// directory, however workspace-like), expands `~` to the
 // operator's home, creates the directory (mkdir -p) and enters it, so every
 // subsequent step operates on cwd exactly like any command. The empty answer
 // accepts the default AND consents to the act; `q`, EOF, and an interrupt
@@ -523,9 +524,6 @@ func (a *app) openEngineWorkspace(s *tourSession) error {
 	}
 
 	def := tourDefaultWorkspace
-	if isWorkspaceDir(wd) {
-		def = wd
-	}
 	line, perr := askTourLine(s.ctx, s.input, "Pipeline workspace ["+def+"]:", def)
 	if perr != nil || s.ctx.Err() != nil {
 		a.reportPromptFault(perr)
@@ -588,15 +586,6 @@ func expandUserPath(path string) (string, error) {
 			message: fmt.Sprintf("quickstart: %s: ~user paths are not supported; use an absolute path or ~/<dir>", path)}
 	}
 	return path, nil
-}
-
-// isWorkspaceDir reports whether dir already looks like an iris workspace: a
-// pipelines/ source tree. (A .iris/ directory is no longer a workspace marker:
-// engine state lives at the fixed engine home, and a workspace-local .iris is
-// legacy state `iris engine start` refuses with migration guidance.)
-func isWorkspaceDir(dir string) bool {
-	st, err := os.Stat(filepath.Join(dir, "pipelines"))
-	return err == nil && st.IsDir()
 }
 
 // tourDisclaimerBody is the heads-up copy: honest about maturity, concrete

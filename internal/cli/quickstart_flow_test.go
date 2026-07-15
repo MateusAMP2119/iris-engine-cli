@@ -129,13 +129,16 @@ func canonicalStepArgvs() []string {
 	return out
 }
 
-// chdirWorkspace moves the test into a fresh temp directory that already is a
-// workspace (a pipelines/ folder exists), so the tour's workspace question
-// proposes it back as the default and the empty answer stays put.
+// chdirWorkspace pins HOME to a fresh temp directory and moves the test into
+// $HOME/iris, pre-created as a workspace (a pipelines/ folder exists). The
+// tour's fixed `~/iris` default resolves to exactly this directory, so the
+// empty answer stays put.
 func chdirWorkspace(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "pipelines"), 0o755); err != nil {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "iris")
+	if err := os.MkdirAll(filepath.Join(dir, "pipelines"), 0o755); err != nil {
 		t.Fatalf("create pipelines dir: %v", err)
 	}
 	t.Chdir(dir)
@@ -216,7 +219,6 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 	t.Run("quickstart-step-order-confirmed", func(t *testing.T) {
 		t.Run("acts run in order, one consent each, steps straight through", func(t *testing.T) {
 			chdirWorkspace(t)
-			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, proceeds(1), nil) // the PIPELINE act gate
@@ -227,7 +229,7 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 			}
 
 			all := canonicalStepArgvs()
-			want := []string{"input " + workspacePromptFor(wd)}
+			want := []string{"input " + workspacePromptFor("~/iris")}
 			for _, argv := range all[:3] {
 				want = append(want, "step "+argv)
 			}

@@ -47,7 +47,6 @@ func TestQuickstartActStructure(t *testing.T) {
 	t.Run("quickstart-act-structure", func(t *testing.T) {
 		t.Run("marks frame the acts; one consent per act; steps run straight through", func(t *testing.T) {
 			chdirWorkspace(t)
-			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, proceeds(1), nil) // exactly one consent: THE PIPELINE's pick
@@ -61,7 +60,7 @@ func TestQuickstartActStructure(t *testing.T) {
 			// straight through with no further prompt, one pick opens THE PIPELINE,
 			// then its steps run straight through.
 			all := canonicalStepArgvs()
-			want := []string{"input " + workspacePromptFor(wd)}
+			want := []string{"input " + workspacePromptFor("~/iris")}
 			for _, argv := range all[:3] {
 				want = append(want, "step "+argv)
 			}
@@ -140,10 +139,10 @@ func TestQuickstartActStructure(t *testing.T) {
 }
 
 // TestQuickstartWorkspacePrompt proves the ENGINE act's opening question:
-// `Pipeline workspace [~/iris]:` with a visible default, the empty answer
-// accepting it, `~` expanding to the operator's home, mkdir -p plus chdir, a
-// workspace cwd proposed back as the default, and --yes using the invoking
-// directory unprompted.
+// `Pipeline workspace [~/iris]:` with a fixed visible default (never the
+// invoking directory, however workspace-like), the empty answer accepting it,
+// `~` expanding to the operator's home, mkdir -p plus chdir, and --yes using
+// the invoking directory unprompted.
 func TestQuickstartWorkspacePrompt(t *testing.T) {
 	clearTargetEnv(t)
 	unsetNoColor(t)
@@ -192,9 +191,16 @@ func TestQuickstartWorkspacePrompt(t *testing.T) {
 			requireSameDir(t, mustGetwd(t), filepath.Join(home, "lab", "deep", "iris"))
 		})
 
-		t.Run("a workspace cwd is proposed back as the default", func(t *testing.T) {
-			chdirWorkspace(t)
-			wd := mustGetwd(t)
+		t.Run("a workspace-like cwd is never proposed as the default", func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			// A workspace-like invoking directory OUTSIDE the home: it has a
+			// pipelines/ tree (as the iris source checkout does) but is not ~/iris.
+			start := t.TempDir()
+			if err := os.Mkdir(filepath.Join(start, "pipelines"), 0o755); err != nil {
+				t.Fatalf("create pipelines dir: %v", err)
+			}
+			t.Chdir(start)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, proceeds(1), nil)
@@ -203,10 +209,13 @@ func TestQuickstartWorkspacePrompt(t *testing.T) {
 			if code != exitOK {
 				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 			}
-			if got := inputEvents(*events); len(got) != 1 || got[0] != workspacePromptFor(wd) {
-				t.Errorf("workspace question = %q, want [%q] (a workspace cwd proposes itself)", got, workspacePromptFor(wd))
+			// The invoking directory has a pipelines/ tree (as the iris source
+			// checkout does), yet the default stays the fixed ~/iris: the tour
+			// never adopts the invoking directory as the workspace answer.
+			if got := inputEvents(*events); len(got) != 1 || got[0] != workspacePromptFor("~/iris") {
+				t.Errorf("workspace question = %q, want [%q] (fixed default, never the cwd)", got, workspacePromptFor("~/iris"))
 			}
-			requireSameDir(t, mustGetwd(t), wd)
+			requireSameDir(t, mustGetwd(t), filepath.Join(home, "iris"))
 		})
 
 		t.Run("--yes never prompts and uses the invoking directory unchanged", func(t *testing.T) {
@@ -283,7 +292,6 @@ func TestQuickstartFromInstallerContinuation(t *testing.T) {
 	t.Run("quickstart-from-installer-continuation", func(t *testing.T) {
 		t.Run("opens on the ENGINE chapter: no welcome, straight to the workspace question", func(t *testing.T) {
 			chdirWorkspace(t)
-			wd := mustGetwd(t)
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, proceeds(1), nil)
@@ -298,8 +306,8 @@ func TestQuickstartFromInstallerContinuation(t *testing.T) {
 			if !strings.Contains(stripANSI(out.String()), "── THE ENGINE ") {
 				t.Errorf("--from-installer did not open on the ENGINE chapter mark:\n%s", stripANSI(out.String()))
 			}
-			if got := *events; len(got) == 0 || got[0] != "input "+workspacePromptFor(wd) {
-				t.Errorf("first interaction = %q, want the workspace question %q", got, workspacePromptFor(wd))
+			if got := *events; len(got) == 0 || got[0] != "input "+workspacePromptFor("~/iris") {
+				t.Errorf("first interaction = %q, want the workspace question %q", got, workspacePromptFor("~/iris"))
 			}
 			if got := stepEvents(*events); !equalStrings(got, canonicalStepArgvs()) {
 				t.Errorf("continuation did not run the full tour:\n got %q\nwant %q", got, canonicalStepArgvs())
