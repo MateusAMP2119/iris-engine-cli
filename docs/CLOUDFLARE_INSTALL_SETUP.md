@@ -3,7 +3,8 @@
 This makes these commands work:
 
 ```sh
-curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
+curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash            # stable
+curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash   # rolling development build
 curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 ```
 
@@ -37,7 +38,10 @@ Delete everything and paste this exact code:
 
 ```js
 // Worker for https://install.iris-lakehouse.bymarreco.com
-// Makes "curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash" work.
+// Makes these work:
+//   curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash            (stable)
+//   curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash   (development build)
+//   curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 
 export default {
   async fetch(request) {
@@ -52,12 +56,27 @@ export default {
       return Response.redirect(target, 302);
     }
 
+    // Snapshot channel: same installer, version pinned to the rolling
+    // "snapshot" prerelease. Served inline (not a redirect) so the pin
+    // line can be prepended to the script body.
+    if (path === '/snapshot') {
+      const res = await fetch(`${base}/install.sh`);
+      if (!res.ok) {
+        return new Response('Upstream fetch of install.sh failed', { status: 502 });
+      }
+      const script = await res.text();
+      const pinned = 'IRIS_VERSION="${IRIS_VERSION:-snapshot}"\n' + script;
+      return new Response(pinned, {
+        headers: { 'content-type': 'text/plain; charset=utf-8' }
+      });
+    }
+
     if (path === '/uninstall.sh') {
       const target = `${base}/uninstall.sh`;
       return Response.redirect(target, 302);
     }
 
-    return new Response('Not found. Supported paths: / or /install.sh or /uninstall.sh', {
+    return new Response('Not found. Supported paths: /, /install.sh, /snapshot, /uninstall.sh', {
       status: 404,
       headers: { 'content-type': 'text/plain' }
     });
