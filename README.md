@@ -45,11 +45,13 @@ The installer ends with one question — `Set up the engine now? (Y/n)` — and 
 
 ### Snapshot channel (bleeding edge)
 
-Want the newest code before it ships? Every merge to `development` automatically publishes a rolling [`snapshot` prerelease](https://github.com/MateusAMP2119/iris-lakehouse/releases/tag/snapshot) — same static binaries, same installer, no tests gate it, so it lands minutes after the merge. Install it by pinning the version:
+Want the newest code before it ships? Every merge to `development` automatically publishes a rolling [`snapshot` prerelease](https://github.com/MateusAMP2119/iris-lakehouse/releases/tag/snapshot) — same static binaries, same installer, no tests gate it, so it lands minutes after the merge:
 
 ```sh
-curl -fsSL https://install.iris-lakehouse.bymarreco.com | IRIS_VERSION=snapshot bash
+curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash
 ```
+
+(raw GitHub equivalent: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash -s snapshot`)
 
 `iris --version` reports a snapshot build as `v<next>-snapshot.<date>.<commit>`, so you always know exactly what you're running. The stable command above never picks up snapshots — GitHub's `latest` release excludes prereleases. To go back to stable, just re-run the normal install command.
 
