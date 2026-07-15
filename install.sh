@@ -10,6 +10,7 @@
 #
 # Knobs:
 #   IRIS_VERSION=<tag>   install that release instead of latest
+#                        (IRIS_VERSION=snapshot → rolling development build)
 #   IRIS_NO_SETUP=1      install only; never hand off to the setup tour
 #   IRIS_FORCE=1         legacy alias of IRIS_NO_SETUP
 #   IRIS_BASE_URL=<url>  fetch the asset + checksums from here (local testing)
