@@ -34,7 +34,8 @@ jobs:
             # Can be overridden by labels on the merged PR:
             #   release:major / major / breaking   → major bump
             #   release:minor / minor / feature    → minor bump
-            LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            # --match excludes the rolling "snapshot" tag from the dev channel.
+            LAST=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)
             BASE=${LAST#v}
             MAJOR=$(echo "$BASE" | cut -d. -f1)
             MINOR=$(echo "$BASE" | cut -d. -f2)
