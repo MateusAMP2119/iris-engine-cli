@@ -87,10 +87,11 @@ type app struct {
 	// prints them to stderr. Set per invocation, so the app holds no global state.
 	warnings []declare.Warning
 	// runUpdate performs the `iris update` self-replace, returning the
-	// outcome for the running version. It is nil in production (the handler falls
-	// back to update.New().Run); tests inject a fake to drive the exit-code and
-	// output surface without network or filesystem I/O.
-	runUpdate func(ctx context.Context, current string) (update.Result, error)
+	// outcome for the running version; snapshot selects the rolling development
+	// channel instead of the latest stable release. It is nil in production (the
+	// handler falls back to update.New().Run); tests inject a fake to drive the
+	// exit-code and output surface without network or filesystem I/O.
+	runUpdate func(ctx context.Context, current string, snapshot bool) (update.Result, error)
 	// confirm is the confirmation seam for the destructive ops' interactive prompts
 	// (typed-name for teardowns, y/N for dev-loop ops). When non-nil it is consulted
 	// when neither --yes nor --force was supplied. The name is the target of the

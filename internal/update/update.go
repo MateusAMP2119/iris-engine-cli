@@ -31,6 +31,11 @@ import (
 // assets under <base>/releases/download/<tag>/.
 const gitHubBase = "https://github.com/MateusAMP2119/iris-lakehouse"
 
+// SnapshotTag is the fixed tag of the rolling prerelease the development branch
+// republishes on every merge. Unlike stable tags it never changes, so the
+// snapshot channel decides up-to-date by comparing binary bytes, not tags.
+const SnapshotTag = "snapshot"
+
 // maxDownloadBytes caps a single release download, so a runaway or hostile
 // response cannot exhaust memory. A published iris archive is a few tens of MB.
 const maxDownloadBytes = 512 << 20
@@ -97,6 +102,11 @@ type Updater struct {
 	goos     string
 	goarch   string
 	execPath func() (string, error)
+	// Snapshot, when true, targets the rolling SnapshotTag prerelease instead of
+	// the latest stable release. The snapshot tag never changes, so up-to-date is
+	// decided by comparing the fetched binary's bytes against the running
+	// executable rather than by tag equality.
+	Snapshot bool
 	// Progress, when non-nil, is invoked as each self-update stage completes, with a
 	// stable stage key (StageResolve, StageDownload, StageVerify, StageReplace) and a
 	// human detail string. It lets the CLI render a live journey; this package stays
@@ -121,11 +131,16 @@ func New() *Updater {
 // Run performs the self-update for a binary currently reporting version current.
 // A dev build is refused before any I/O. Otherwise it resolves the latest tag; an
 // equal tag reports up-to-date without downloading; a newer tag is downloaded,
-// checksum-verified, and atomically swapped over the running executable. The
+// checksum-verified, and atomically swapped over the running executable. With
+// Snapshot set, the rolling SnapshotTag prerelease is fetched instead and
+// up-to-date is decided by byte equality with the running executable. The
 // context bounds every network call.
 func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	if current == "dev" {
 		return Result{}, &DevBuildError{Version: current}
+	}
+	if u.Snapshot {
+		return u.runSnapshot(ctx, current)
 	}
 
 	tag, err := u.latestTag(ctx)
@@ -137,23 +152,7 @@ func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	}
 	u.report(StageResolve, tag)
 
-	asset := fmt.Sprintf("iris_%s_%s.tar.gz", u.goos, u.goarch)
-	downloadBase := u.baseURL + "/releases/download/" + tag + "/"
-
-	archive, err := u.download(ctx, downloadBase+asset)
-	if err != nil {
-		return Result{}, fmt.Errorf("download release archive: %w", err)
-	}
-	checksums, err := u.download(ctx, downloadBase+"checksums.txt")
-	if err != nil {
-		return Result{}, fmt.Errorf("download checksums: %w", err)
-	}
-	u.report(StageDownload, asset+"\t"+humanBytes(len(archive)))
-	if err := verifyChecksum(archive, checksums, asset); err != nil {
-		return Result{}, err
-	}
-	u.report(StageVerify, "OK")
-	binary, err := extractIris(archive)
+	binary, err := u.fetchVerifiedBinary(ctx, tag)
 	if err != nil {
 		return Result{}, err
 	}
@@ -167,6 +166,120 @@ func (u *Updater) Run(ctx context.Context, current string) (Result, error) {
 	}
 	u.report(StageReplace, "done")
 	return Result{Status: StatusUpdated, From: current, To: tag, Path: path}, nil
+}
+
+// runSnapshot performs the snapshot-channel self-update. The snapshot tag is
+// fixed, so it cannot signal freshness: the release is always fetched and
+// verified, and up-to-date means the fetched binary is byte-identical to the
+// running executable. On replace, To is the version string stamped into the
+// fetched binary (falling back to the tag when none is found), so the outcome
+// names the actual build installed.
+func (u *Updater) runSnapshot(ctx context.Context, current string) (Result, error) {
+	u.report(StageResolve, SnapshotTag)
+
+	binary, err := u.fetchVerifiedBinary(ctx, SnapshotTag)
+	if err != nil {
+		return Result{}, err
+	}
+
+	path, err := u.resolveExecutable()
+	if err != nil {
+		return Result{}, err
+	}
+	running, err := os.ReadFile(path) //nolint:gosec // G304: path is the resolved running executable, not user input.
+	if err != nil {
+		return Result{}, fmt.Errorf("read running executable: %w", err)
+	}
+	if bytes.Equal(running, binary) {
+		return Result{Status: StatusUpToDate, From: current, To: current}, nil
+	}
+
+	to := embeddedSnapshotVersion(binary)
+	if to == "" {
+		to = SnapshotTag
+	}
+	if err := replaceExecutable(path, binary); err != nil {
+		return Result{}, err
+	}
+	u.report(StageReplace, "done")
+	return Result{Status: StatusUpdated, From: current, To: to, Path: path}, nil
+}
+
+// fetchVerifiedBinary downloads tag's platform archive and checksums.txt,
+// verifies the archive's SHA-256, and returns the extracted iris binary. It
+// reports the download and verify stages; the caller owns resolve and replace.
+func (u *Updater) fetchVerifiedBinary(ctx context.Context, tag string) ([]byte, error) {
+	asset := fmt.Sprintf("iris_%s_%s.tar.gz", u.goos, u.goarch)
+	downloadBase := u.baseURL + "/releases/download/" + tag + "/"
+
+	archive, err := u.download(ctx, downloadBase+asset)
+	if err != nil {
+		return nil, fmt.Errorf("download release archive: %w", err)
+	}
+	checksums, err := u.download(ctx, downloadBase+"checksums.txt")
+	if err != nil {
+		return nil, fmt.Errorf("download checksums: %w", err)
+	}
+	u.report(StageDownload, asset+"\t"+humanBytes(len(archive)))
+	if err := verifyChecksum(archive, checksums, asset); err != nil {
+		return nil, err
+	}
+	u.report(StageVerify, "OK")
+	return extractIris(archive)
+}
+
+// embeddedSnapshotVersion extracts the ldflags-stamped snapshot version
+// ("v<maj>.<min>.<patch>-snapshot.<date>.<sha>") from a binary's bytes. The
+// literal "-snapshot." also appears in the binary as this package's own marker
+// string, so every occurrence is tried and only one bordered by a valid semver
+// prefix and date.sha suffix is accepted. Returns "" when none matches; the
+// caller falls back to the tag.
+func embeddedSnapshotVersion(binary []byte) string {
+	marker := []byte("-snapshot.")
+	for from := 0; ; {
+		idx := bytes.Index(binary[from:], marker)
+		if idx < 0 {
+			return ""
+		}
+		idx += from
+		from = idx + 1
+
+		start := idx
+		for start > 0 && isSemverByte(binary[start-1]) {
+			start--
+		}
+		if start == idx || start == 0 || binary[start-1] != 'v' {
+			continue
+		}
+		start--
+
+		end := idx + len(marker)
+		suffixStart := end
+		for end < len(binary) && isSnapshotSuffixByte(binary[end]) {
+			end++
+		}
+		// A dot only separates date from sha; trailing dots belong to whatever
+		// follows the stamp, not to the version.
+		for end > suffixStart && binary[end-1] == '.' {
+			end--
+		}
+		if end == suffixStart {
+			continue
+		}
+		return string(binary[start:end])
+	}
+}
+
+// isSemverByte reports whether b can appear in the numeric core of a semver
+// version ("0.5.1").
+func isSemverByte(b byte) bool {
+	return (b >= '0' && b <= '9') || b == '.'
+}
+
+// isSnapshotSuffixByte reports whether b can appear in a snapshot version's
+// "<date>.<sha>" suffix: digits, lowercase hex, and the separating dot.
+func isSnapshotSuffixByte(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || b == '.'
 }
 
 // report invokes the Progress hook when one is set. A nil hook is silent, keeping

@@ -53,6 +53,13 @@ curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash
 
 (raw GitHub equivalent: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash -s snapshot`)
 
+Already have iris installed? Switch channels in place — no installer needed:
+
+```sh
+iris update --snapshot   # hop onto the rolling development build
+iris update              # hop back to the latest stable release
+```
+
 `iris --version` reports a snapshot build as `v<next>-snapshot.<date>.<commit>`, so you always know exactly what you're running. The stable command above never picks up snapshots — GitHub's `latest` release excludes prereleases. To go back to stable, just re-run the normal install command.
 
 Have Go 1.25+? `go install` works too:

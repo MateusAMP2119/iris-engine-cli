@@ -37,7 +37,7 @@ func TestUpdateDevBuildRefuses(t *testing.T) {
 func TestUpdateUpToDate(t *testing.T) {
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)
-	a.runUpdate = func(_ context.Context, current string) (update.Result, error) {
+	a.runUpdate = func(_ context.Context, current string, _ bool) (update.Result, error) {
 		return update.Result{Status: update.StatusUpToDate, From: current, To: "v1.2.3"}, nil
 	}
 	code := a.run([]string{"update"})
@@ -46,5 +46,36 @@ func TestUpdateUpToDate(t *testing.T) {
 	}
 	if s := out.String(); !strings.Contains(s, "up to date") {
 		t.Errorf("up-to-date message missing from stdout:\n%s", s)
+	}
+}
+
+// TestUpdateSnapshotFlag proves `iris update --snapshot` selects the snapshot
+// channel: the flag reaches the update engine as snapshot=true (plain `iris
+// update` passes false), and the outcome renders the snapshot build it
+// installed.
+func TestUpdateSnapshotFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"update", "--snapshot"}, true},
+		{[]string{"update"}, false},
+	} {
+		var out, errb bytes.Buffer
+		a := newApp(&out, &errb)
+		var got bool
+		a.runUpdate = func(_ context.Context, current string, snapshot bool) (update.Result, error) {
+			got = snapshot
+			return update.Result{Status: update.StatusUpdated, From: current, To: "v1.2.4-snapshot.20260715.0a1b2c3d4e5f"}, nil
+		}
+		if code := a.run(tc.args); code != exitOK {
+			t.Fatalf("%v: exit = %d, want %d\nstdout: %s\nstderr: %s", tc.args, code, exitOK, out.String(), errb.String())
+		}
+		if got != tc.want {
+			t.Errorf("%v: engine saw snapshot=%v, want %v", tc.args, got, tc.want)
+		}
+		if tc.want && !strings.Contains(out.String(), "v1.2.4-snapshot.20260715.0a1b2c3d4e5f") {
+			t.Errorf("outcome does not name the installed snapshot build:\n%s", out.String())
+		}
 	}
 }

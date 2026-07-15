@@ -35,6 +35,7 @@ func (a *app) updateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE:  a.updateSelf(),
 	}
+	c.Flags().Bool("snapshot", false, "switch to the rolling development snapshot instead of the latest stable release")
 	return daemonless(c)
 }
 
@@ -48,24 +49,28 @@ func (a *app) updateCmd() *cobra.Command {
 func (a *app) updateSelf() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		jsonMode, _ := cmd.Flags().GetBool("json")
+		snapshot, _ := cmd.Flags().GetBool("snapshot")
 		p := a.newPainter(jsonMode)
 
 		run := a.runUpdate
 		if run == nil {
-			u := update.New()
-			// The staged journey is ceremony: wire the renderer only when styling is
-			// on, so piped and --json output stays the single plain outcome line and the
-			// updater keeps its stdlib-only silence.
-			if p.enabled {
-				u.Progress = func(stage, detail string) { a.renderUpdateStage(p, stage, detail) }
+			run = func(ctx context.Context, current string, snapshot bool) (update.Result, error) {
+				u := update.New()
+				u.Snapshot = snapshot
+				// The staged journey is ceremony: wire the renderer only when styling is
+				// on, so piped and --json output stays the single plain outcome line and the
+				// updater keeps its stdlib-only silence.
+				if p.enabled {
+					u.Progress = func(stage, detail string) { a.renderUpdateStage(p, stage, detail) }
+				}
+				return u.Run(ctx, current)
 			}
-			run = u.Run
 		}
 		ctx := cmd.Context()
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		res, err := run(ctx, buildinfo.Version)
+		res, err := run(ctx, buildinfo.Version, snapshot)
 		if err != nil {
 			return a.updateFault(err)
 		}

@@ -235,3 +235,90 @@ type failTransport struct{}
 func (failTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("network used on a dev build")
 }
+
+// TestSnapshotUpdateReplaces proves the snapshot channel end to end: with
+// Snapshot set, Run fetches the fixed "snapshot" tag (never resolving latest),
+// verifies the archive, replaces the running executable, and reports To as the
+// version string stamped inside the fetched binary.
+func TestSnapshotUpdateReplaces(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "iris")
+	if err := os.WriteFile(exe, []byte("OLD-SNAPSHOT-BINARY"), 0o755); err != nil {
+		t.Fatalf("seed exe: %v", err)
+	}
+	newBytes := []byte("ELF...version=v9.9.9-snapshot.20260101.abcdef123456...rest")
+	srv := releaseServer(t, SnapshotTag, tarGzWithIris(t, newBytes), "", nil)
+
+	u := testUpdater(srv, exe)
+	u.Snapshot = true
+	res, err := u.Run(context.Background(), "v9.9.8")
+	if err != nil {
+		t.Fatalf("Run: unexpected error: %v", err)
+	}
+	if res.Status != StatusUpdated {
+		t.Errorf("status = %v, want StatusUpdated", res.Status)
+	}
+	if res.To != "v9.9.9-snapshot.20260101.abcdef123456" {
+		t.Errorf("To = %q, want the version stamped in the fetched binary", res.To)
+	}
+	got, err := os.ReadFile(exe) //nolint:gosec // G304: exe is this test's own scratch path under t.TempDir(), never user or network input.
+	if err != nil {
+		t.Fatalf("read replaced exe: %v", err)
+	}
+	if !bytes.Equal(got, newBytes) {
+		t.Errorf("replaced exe = %q, want %q", got, newBytes)
+	}
+}
+
+// TestSnapshotUpToDateByteCompare proves the snapshot up-to-date decision: the
+// fixed tag cannot signal freshness, so when the fetched binary is
+// byte-identical to the running executable Run reports StatusUpToDate and
+// leaves the executable untouched.
+func TestSnapshotUpToDateByteCompare(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "iris")
+	same := []byte("IDENTICAL-SNAPSHOT-BYTES")
+	if err := os.WriteFile(exe, same, 0o755); err != nil {
+		t.Fatalf("seed exe: %v", err)
+	}
+	srv := releaseServer(t, SnapshotTag, tarGzWithIris(t, same), "", nil)
+
+	u := testUpdater(srv, exe)
+	u.Snapshot = true
+	res, err := u.Run(context.Background(), "v1.0.0-snapshot.20260101.abcdef123456")
+	if err != nil {
+		t.Fatalf("Run: unexpected error: %v", err)
+	}
+	if res.Status != StatusUpToDate {
+		t.Errorf("status = %v, want StatusUpToDate", res.Status)
+	}
+	if res.From != res.To || res.From != "v1.0.0-snapshot.20260101.abcdef123456" {
+		t.Errorf("From/To = %q/%q, want both the running version", res.From, res.To)
+	}
+}
+
+// TestEmbeddedSnapshotVersion proves the stamped-version scan accepts only a
+// well-formed "v<semver>-snapshot.<date>.<sha>" occurrence: the bare marker
+// literal this package itself embeds is skipped, and a binary with no valid
+// occurrence yields "".
+func TestEmbeddedSnapshotVersion(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"stamped", "junk v2.3.4-snapshot.20260715.0a1b2c3d4e5f junk", "v2.3.4-snapshot.20260715.0a1b2c3d4e5f"},
+		{"marker literal skipped, stamp found later", "-snapshot. then v0.5.1-snapshot.20260715.370e7596a05f", "v0.5.1-snapshot.20260715.370e7596a05f"},
+		{"bare marker only", "prefix -snapshot. suffix", ""},
+		{"missing v prefix", "0.5.1-snapshot.20260715.370e7596a05f", ""},
+		{"empty suffix", "v0.5.1-snapshot.!", ""},
+		{"nothing", "no marker at all", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := embeddedSnapshotVersion([]byte(tc.in)); got != tc.want {
+				t.Errorf("embeddedSnapshotVersion(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

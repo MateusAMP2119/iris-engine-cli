@@ -103,7 +103,7 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 	t.Run("update up-to-date piped is plain", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		a := newApp(&out, &errb)
-		a.runUpdate = func(_ context.Context, current string) (update.Result, error) {
+		a.runUpdate = func(_ context.Context, current string, _ bool) (update.Result, error) {
 			return update.Result{Status: update.StatusUpToDate, From: current, To: "v1.2.3"}, nil
 		}
 		if code := a.run([]string{"update"}); code != exitOK {
@@ -118,7 +118,7 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 	t.Run("update replaced piped is plain", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		a := newApp(&out, &errb)
-		a.runUpdate = func(_ context.Context, _ string) (update.Result, error) {
+		a.runUpdate = func(_ context.Context, _ string, _ bool) (update.Result, error) {
 			return update.Result{Status: update.StatusUpdated, From: "v1.0.0", To: "v2.0.0", Path: "/opt/iris/bin/iris"}, nil
 		}
 		if code := a.run([]string{"update"}); code != exitOK {
@@ -134,7 +134,7 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 		var out, errb bytes.Buffer
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true } // even a tty must stay plain under --json
-		a.runUpdate = func(_ context.Context, _ string) (update.Result, error) {
+		a.runUpdate = func(_ context.Context, _ string, _ bool) (update.Result, error) {
 			return update.Result{Status: update.StatusUpdated, From: "v1.0.0", To: "v2.0.0"}, nil
 		}
 		if code := a.run([]string{"update", "--json"}); code != exitOK {
@@ -187,7 +187,7 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 		var out, errb bytes.Buffer
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
-		a.runUpdate = func(_ context.Context, current string) (update.Result, error) {
+		a.runUpdate = func(_ context.Context, current string, _ bool) (update.Result, error) {
 			return update.Result{Status: update.StatusUpToDate, From: current, To: "v1.2.3"}, nil
 		}
 		if code := a.run([]string{"update"}); code != exitOK {
