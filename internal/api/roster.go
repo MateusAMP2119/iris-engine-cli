@@ -8,7 +8,7 @@ import (
 // This file mounts the fixed engine-state route roster and the data-surface
 // routes: the meta-roster collections with their item sub-routes --
 // /pipelines(/{name}), /runs(/{id}), /dead_letters(/{run_id}), /lanes,
-// /dependencies, /leader, /stats, /healthz, /provenance/{schema}/{table}/{pk}
+// /dependencies, /leader, /ps, /healthz, /provenance/{schema}/{table}/{pk}
 // -- the E14 graph and triage sub-routes (/workload, /runs/{id}/trace,
 // /pipelines/{name}/gate, /dead_letters/{run_id}/impact), and the data surface
 // (/data/{schema}/{table}, /q/{endpoint}). Every route is GET-only; the roster
@@ -16,17 +16,17 @@ import (
 // falls through to the mux's not_found envelope.
 //
 // The mounting, the auth split, and the status matrix live here; each route's
-// payload comes from a reader seam the daemon wires in, on the StatsSource
-// pattern: a seam interface in api, the daemon supplying the pgx-backed
-// implementation. Most of the roster serves a real payload today -- /leader off
+// payload comes from a reader seam the daemon wires in: a seam interface in
+// api, the daemon supplying the pgx-backed implementation. Most of the roster
+// serves a real payload today -- /leader off
 // the role reporter below, and /runs(/{id}), /runs/{id}/trace,
 // /pipelines/{name}/gate, /dead_letters/{run_id}/impact, /workload,
-// /provenance/..., /data, and /q off their wired readers (/healthz and /stats
-// are exact-path routes on the mux itself, api.go and stats.go). The exceptions
+// /provenance/..., /data, and /q off their wired readers (/healthz and /ps
+// are exact-path routes on the mux itself, api.go and ps.go). The exceptions
 // are the /pipelines and /dead_letters collections with their item routes,
 // /lanes, and /dependencies: nothing supplies a reader for those, so they answer
 // through serveUnwiredRead -- mounted, scope-checked, GET-enforced, but faulting
-// with the 500 internal envelope (the noStats/noControl doctrine: an unwired
+// with the 500 internal envelope (the unwired-seam doctrine: an unwired
 // seam is an internal fault, never a silent empty payload).
 
 // LeaderReport is the payload of GET /leader: the node's leadership role and
@@ -166,7 +166,7 @@ func (m *mux) serveLeader(w http.ResponseWriter, r *http.Request) {
 // mounted (scope-checked by authorize, GET-enforced here) but nothing supplies
 // its payload, so a request faults with the 500 internal envelope naming the
 // missing reader -- never a 404 (the route exists) and never a fabricated empty
-// payload (the noStats doctrine).
+// payload (the unwired-seam doctrine).
 func serveUnwiredRead(w http.ResponseWriter, r *http.Request, reader string) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")

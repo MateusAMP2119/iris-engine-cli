@@ -16,7 +16,6 @@ import (
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // The pinned tour strings the flow tests assert. They are the operator-facing
@@ -412,7 +411,7 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 		if len(steps) != 4 {
 			t.Fatalf("tour executed %d steps %q, want the 4 past install/start", len(steps), steps)
 		}
-		wantPrefixes := []string{"engine info", "declare apply pipelines/hello_iris", "pipeline run hello_iris", "data provenance demo.colors green"}
+		wantPrefixes := []string{"ps", "declare apply pipelines/hello_iris", "pipeline run hello_iris", "data provenance demo.colors green"}
 		for i, prefix := range wantPrefixes {
 			if !strings.HasPrefix(steps[i], prefix) {
 				t.Errorf("step[%d] = %q, want prefix %q (tour proceeds from the info step)", i, steps[i], prefix)
@@ -614,11 +613,6 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
-			key, kerr := daemon.MintEngineKey()
-			if kerr != nil {
-				t.Fatalf("MintEngineKey: %v", kerr)
-			}
-			a.newKeyReader = func(config.Settings) daemon.EngineKeyReader { return fakeKeyReader{key: key} }
 			// Scripted consents only: the steps run through the REAL in-process child
 			// runner. The bare mux answers apply/run/provenance with error envelopes,
 			// so the wrapper swallows exit codes to walk every step -- this test
@@ -650,7 +644,7 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 			mu.Lock()
 			paths := append([]string(nil), localPaths...)
 			mu.Unlock()
-			for _, wantPrefix := range []string{"/info", "/apply", "/pipeline/run", "/provenance/"} {
+			for _, wantPrefix := range []string{"/ps", "/apply", "/pipeline/run", "/provenance/"} {
 				if !hasPathWithPrefix(paths, wantPrefix) {
 					t.Errorf("the local workspace daemon never received %s* (served paths: %q); that step dialed elsewhere", wantPrefix, paths)
 				}

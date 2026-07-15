@@ -80,7 +80,7 @@ var wantTree = map[string][]string{
 	"run":        {"list", "show", "logs", "cancel"},
 	"data":       {"provenance"},
 	"workload":   {"show", "wipe"},
-	"engine":     {"start", "stop", "install", "uninstall", "info", "logs", "inspect", "stats", "connect", "service"},
+	"engine":     {"start", "stop", "install", "uninstall", "logs", "inspect", "connect", "service"},
 	"deadletter": {"list", "show", "replay", "drain"},
 	"endpoint":   {"apply", "remove", "list", "show"},
 	"pat":        {"create", "list", "revoke"},
@@ -91,12 +91,13 @@ func TestCommandTree(t *testing.T) {
 	t.Run("resource-first-command-tree", func(t *testing.T) {
 		root := testRoot()
 
-		// Top-level commands are exactly the nine resource nouns plus the three
+		// Top-level commands are exactly the nine resource nouns plus the four
 		// admitted root verbs: the lifecycle pair `update` (self-replace of the
-		// binary) and `uninstall` (self-removal of the binary), and the onboarding
-		// verb `quickstart` (the guided tour), each belonging to no resource noun:
-		// no other flat verbs, no extras.
-		wantTop := append(mapKeys(wantTree), "update", "uninstall", "quickstart")
+		// binary) and `uninstall` (self-removal of the binary), the onboarding
+		// verb `quickstart` (the guided tour), and the process-status verb `ps`
+		// (the docker-ps-shaped engine readout), each belonging to no resource
+		// noun: no other flat verbs, no extras.
+		wantTop := append(mapKeys(wantTree), "update", "uninstall", "quickstart", "ps")
 		assertSetEqual(t, "top-level nouns", childNames(root), wantTop)
 
 		// Each noun exposes exactly its documented verbs.

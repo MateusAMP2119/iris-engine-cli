@@ -51,16 +51,16 @@ func requireEmptyDir(t *testing.T, dir string) {
 	}
 }
 
-// TestQuickstartRootVerb proves `iris quickstart` is the third root verb beside
-// update/uninstall: the tree stays nine nouns plus three root verbs, and the
+// TestQuickstartRootVerb proves `iris quickstart` is a root verb beside
+// update/uninstall/ps: the tree stays nine nouns plus four root verbs, and the
 // verb is a runnable daemonless leaf (a bare invocation is valid, never a group
 // stub's usage error).
 func TestQuickstartRootVerb(t *testing.T) {
 	t.Run("quickstart-root-verb", func(t *testing.T) {
 		root := testRoot()
 
-		// Top level: the nine nouns plus exactly the three root verbs.
-		wantTop := append(mapKeys(wantTree), "update", "uninstall", "quickstart")
+		// Top level: the nine nouns plus exactly the four root verbs.
+		wantTop := append(mapKeys(wantTree), "update", "uninstall", "quickstart", "ps")
 		assertSetEqual(t, "top-level nouns and root verbs", childNames(root), wantTop)
 
 		qs := find(root, "quickstart")
@@ -255,7 +255,7 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 		var env quickstartEnvelope
 		decodeSingleJSON(t, []byte(out), &env)
 
-		wantOrder := []string{"install", "start", "info", "apply", "run", "provenance"}
+		wantOrder := []string{"install", "start", "ps", "apply", "run", "provenance"}
 		wantActs := []string{"engine", "engine", "engine", "pipeline", "pipeline", "pipeline"}
 		if len(env.Data.Steps) != len(wantOrder) {
 			t.Fatalf("envelope carries %d steps, want %d: %q", len(env.Data.Steps), len(wantOrder), out)

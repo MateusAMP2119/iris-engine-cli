@@ -9,8 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
@@ -31,11 +29,6 @@ const (
 	detachReadyTimeout = 30 * time.Second
 	stopGraceTimeout   = 10 * time.Second
 )
-
-// engineVersion is the engine's own version string reported by `iris engine info`.
-// It is a placeholder until the release-stamping build wiring lands; `info` also
-// reports the Go runtime version, which is real.
-const engineVersion = "0.0.0-dev"
 
 // installResult is the machine-readable outcome of `iris engine install`, the
 // payload of its --json data envelope. It names the mode and, in managed mode, the
@@ -77,156 +70,39 @@ func (a *app) engineInstall() runE {
 	}
 }
 
-// engineInfoResult is the machine-readable payload of `iris engine info`, the
-// --json data envelope: the local configuration (engine and Go version, control
-// socket, Postgres mode, object store path) merged with the engine key's PUBLIC
-// half and, when a daemon is reachable, its runtime readout from GET /info -- the
-// leadership role (naming the leader when known), the TCP listener, the data and
-// meta targets, the per-lane pass counts, and uptime, the engine's sole,
-// display-only wall-clock. It never carries private key material, a DSN, or a
-// credential.
-type engineInfoResult struct {
-	Version         string           `json:"version"`
-	Go              string           `json:"go"`
-	Socket          string           `json:"socket"`
-	TCP             string           `json:"tcp,omitempty"`
-	Mode            string           `json:"mode"`
-	ObjectsPath     string           `json:"objects_path"`
-	EngineKeyPublic string           `json:"engine_key_public"`
-	Role            string           `json:"role,omitempty"`
-	Leader          string           `json:"leader,omitempty"`
-	DataTarget      string           `json:"data_target,omitempty"`
-	MetaTarget      string           `json:"meta_target,omitempty"`
-	LanePasses      []api.LanePasses `json:"lane_passes,omitempty"`
-	Uptime          string           `json:"uptime,omitempty"`
-}
-
-// engineInfo is the handler for `iris engine info`: the engine readout. It reads
-// the engine key through an EngineKeyReader seam, derives the public half, and
-// shows only that -- the private half stays in meta and never reaches an output
-// stream. It then merges the daemon-held runtime readout (GET /info: role,
-// listeners, targets, lane passes, uptime) best-effort: info remains a real local
-// readout when no daemon is running (the daemonless install/key surface), and
-// reports the full field set against a live daemon. When the key cannot be read
-// the engine is not installed or unreachable, reported as operation-failed (exit
-// 4) with a clear message.
-func (a *app) engineInfo() runE {
-	return func(cmd *cobra.Command, _ []string) error {
-		settings := a.resolveTarget(cmd)
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
-
-		mk := a.newKeyReader
-		if mk == nil {
-			mk = daemon.NewEngineKeyReader
-		}
-		key, err := mk(settings).ReadEngineKey(ctx)
-		if err != nil {
-			a.logger.Debug("engine info: engine key unavailable", "err", err)
-			return &fault{
-				code:    exitOpFailed,
-				codeStr: "engine_unavailable",
-				message: `iris engine is not installed or not reachable; run "iris engine install" or target a running engine`,
-			}
-		}
-
-		res := engineInfoResult{
-			Version:         engineVersion,
-			Go:              runtime.Version(),
-			Socket:          settings.Socket,
-			Mode:            modeName(settings),
-			ObjectsPath:     settings.ObjectsPath,
-			EngineKeyPublic: key.PublicBase64(),
-		}
-		runtimeInfo, daemonUp := a.fetchDaemonInfo(cmd.Context(), settings)
-		if daemonUp {
-			res.Role = runtimeInfo.Role
-			res.Leader = runtimeInfo.Leader
-			res.TCP = runtimeInfo.TCP
-			res.DataTarget = runtimeInfo.DataTarget
-			res.MetaTarget = runtimeInfo.MetaTarget
-			res.LanePasses = runtimeInfo.LanePasses
-			res.Uptime = runtimeInfo.Uptime
-		}
-
-		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
-			return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
-		}
-		fmt.Fprintf(a.out, "engine version:    %s\n", res.Version)
-		fmt.Fprintf(a.out, "go version:        %s\n", res.Go)
-		fmt.Fprintf(a.out, "control socket:    %s\n", res.Socket)
-		fmt.Fprintf(a.out, "postgres mode:     %s\n", res.Mode)
-		fmt.Fprintf(a.out, "object store:      %s\n", res.ObjectsPath)
-		fmt.Fprintf(a.out, "engine key (pub):  %s\n", res.EngineKeyPublic)
-		if !daemonUp {
-			fmt.Fprintln(a.out, `daemon:            not reachable (run "iris engine start")`)
-			return nil
-		}
-		role := res.Role
-		if res.Leader != "" {
-			role += " (leader: " + res.Leader + ")"
-		}
-		fmt.Fprintf(a.out, "role:              %s\n", role)
-		if res.TCP != "" {
-			fmt.Fprintf(a.out, "tcp listener:      %s\n", res.TCP)
-		}
-		fmt.Fprintf(a.out, "data target:       %s\n", res.DataTarget)
-		fmt.Fprintf(a.out, "meta target:       %s\n", res.MetaTarget)
-		fmt.Fprintf(a.out, "lane passes:       %s\n", lanePassList(res.LanePasses))
-		fmt.Fprintf(a.out, "uptime:            %s\n", res.Uptime)
-		return nil
-	}
-}
-
-// fetchDaemonInfo reads the daemon's runtime info readout (GET /info)
-// best-effort: false when no daemon is reachable or the read fails, so `iris
-// engine info` stays a real local readout on a daemonless engine.
-func (a *app) fetchDaemonInfo(ctx context.Context, settings config.Settings) (api.InfoPayload, bool) {
+// fetchDaemonRole reads the daemon's liveness-plus-role probe (GET /healthz)
+// best-effort: false when no daemon is reachable or the read fails.
+func (a *app) fetchDaemonRole(ctx context.Context, settings config.Settings) (string, bool) {
 	client, base, overTCP := a.daemonHTTPClient(settings)
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/info", nil)
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
 	if err != nil {
-		a.logger.Debug("engine info: build daemon request", "err", err)
-		return api.InfoPayload{}, false
+		a.logger.Debug("role probe: build daemon request", "err", err)
+		return "", false
 	}
 	if overTCP && settings.Token != "" {
 		hreq.Header.Set("Authorization", "Bearer "+settings.Token)
 	}
 	resp, err := client.Do(hreq)
 	if err != nil {
-		a.logger.Debug("engine info: no iris daemon reachable", "socket", settings.Socket, "host", settings.Host, "err", err)
-		return api.InfoPayload{}, false
+		a.logger.Debug("role probe: no iris daemon reachable", "socket", settings.Socket, "host", settings.Host, "err", err)
+		return "", false
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		a.logger.Debug("engine info: daemon /info failed", "status", resp.StatusCode)
-		return api.InfoPayload{}, false
+		a.logger.Debug("role probe: daemon /healthz failed", "status", resp.StatusCode)
+		return "", false
 	}
 	var env struct {
-		Data api.InfoPayload `json:"data"`
+		Data api.Health `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		a.logger.Debug("engine info: decode daemon response", "err", err)
-		return api.InfoPayload{}, false
+		a.logger.Debug("role probe: decode daemon response", "err", err)
+		return "", false
 	}
-	return env.Data, true
-}
-
-// lanePassList renders the per-lane pass counts as "lane count" pairs in lane
-// order, or "none" while no lane has completed a pass.
-func lanePassList(passes []api.LanePasses) string {
-	if len(passes) == 0 {
-		return "none"
-	}
-	parts := make([]string, 0, len(passes))
-	for _, lp := range passes {
-		parts = append(parts, fmt.Sprintf("%s %d", lp.Lane, lp.Passes))
-	}
-	return strings.Join(parts, ", ")
+	return env.Data.Role, true
 }
 
 // uninstallResult is the machine-readable payload of `iris engine uninstall`, the
@@ -631,7 +507,7 @@ func (a *app) refuseLegacyWorkspaceState(settings config.Settings) error {
 	return nil
 }
 
-// modeName names the Postgres mode for `iris engine info`: managed when no admin
+// modeName names the Postgres mode: managed when no admin
 // DSN is configured, external otherwise. It never renders the DSN.
 func modeName(s config.Settings) string {
 	if s.Managed() {

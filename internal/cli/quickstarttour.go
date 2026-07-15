@@ -924,7 +924,6 @@ func tourStepArgv(cmd *cobra.Command, step quickstartStep) []string {
 func (a *app) runTourChild(ctx context.Context, args []string) int {
 	child := newAppWithLogger(a.out, a.errOut, a.logger)
 	child.forceLocalTarget = true
-	child.newKeyReader = a.newKeyReader
 	child.daemonTLSConfig = a.daemonTLSConfig
 	child.applyWarnings = a.applyWarnings
 	child.runUpdate = a.runUpdate
@@ -958,7 +957,7 @@ func (a *app) tourMaterializeEntry(e catalogEntry) error {
 }
 
 // waitEngineReady is the production waitForReady: a bounded, context-aware
-// poll of the daemon's /info readout until it reports leadership -- role
+// poll of the daemon's /healthz probe until it reports leadership -- role
 // leader, nothing less. `engine start -d` returns on socket-up while the
 // fresh engine is still winning its own election, and it passes
 // through unknown and a contending standby on the way; a mutation against
@@ -979,7 +978,7 @@ func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) err
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
-		if info, ok := a.fetchDaemonInfo(ctx, settings); ok && info.Role == "leader" {
+		if role, ok := a.fetchDaemonRole(ctx, settings); ok && role == "leader" {
 			return nil
 		}
 		select {
@@ -987,7 +986,7 @@ func (a *app) waitEngineReady(ctx context.Context, settings config.Settings) err
 			return ctx.Err()
 		case <-deadline.C:
 			return &fault{code: exitOpFailed, codeStr: "quickstart_engine_unready",
-				message: "quickstart: the engine is up but has not won leadership yet (its role is not leader); check `iris engine info` and resume any time: iris quickstart"}
+				message: "quickstart: the engine is up but has not won leadership yet (its role is not leader); check `iris ps` and resume any time: iris quickstart"}
 		case <-tick.C:
 		}
 	}
@@ -1040,7 +1039,8 @@ func (a *app) tourWrapUp(p painter, e catalogEntry) {
 	fmt.Fprintln(a.out, "That's the tour — the engine is still running and stays up after this terminal closes.")
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "What you used (the cheat-sheet):")
-	fmt.Fprintln(a.out, "  iris engine install | start -d | info | stop     the engine lifecycle")
+	fmt.Fprintln(a.out, "  iris engine install | start -d | stop            the engine lifecycle")
+	fmt.Fprintln(a.out, "  iris ps                                          the engine's runs and host load")
 	fmt.Fprintln(a.out, "  iris declare apply <path>                        register a declaration")
 	fmt.Fprintf(a.out, "  %-49strigger a manual run\n", "iris pipeline run "+e.ID)
 	fmt.Fprintf(a.out, "  %-49sask a row who wrote it\n", "iris data provenance "+e.Showcase.Table+" "+e.Showcase.PK)

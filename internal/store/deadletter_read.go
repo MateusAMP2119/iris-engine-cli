@@ -146,7 +146,7 @@ func (r *pgxDeadLetterReader) Consumptions(ctx context.Context) ([]ConsumptionFa
 // LaneMembers reads the persisted composer rows in lane then walk (pos) order,
 // reusing the stats source's lane query.
 func (r *pgxDeadLetterReader) LaneMembers(ctx context.Context) ([]LaneMember, error) {
-	rows, err := r.pool.query(ctx, statsLaneMembersSQL)
+	rows, err := r.pool.query(ctx, laneMembersSQL)
 	if err != nil {
 		return nil, fmt.Errorf("store: read lane members: %w", err)
 	}

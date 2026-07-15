@@ -40,7 +40,8 @@ func leafCommands() [][]string {
 		// blocks until signalled, covered by TestForegroundDefaultDetach. Sweeping
 		// either here would trigger a download or hang the sweep on a live daemon.
 		{"engine", "stop"}, {"engine", "uninstall"},
-		{"engine", "info"}, {"engine", "logs"}, {"engine", "inspect"}, {"engine", "stats"},
+		{"engine", "logs"}, {"engine", "inspect"},
+		{"ps"},
 		{"engine", "service", "install"}, {"engine", "service", "uninstall"},
 		{"deadletter", "list"}, {"deadletter", "show"}, {"deadletter", "replay"}, {"deadletter", "drain"},
 		{"endpoint", "apply"}, {"endpoint", "remove"}, {"endpoint", "list"}, {"endpoint", "show"},

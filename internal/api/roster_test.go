@@ -33,7 +33,7 @@ var engineStateRoutes = []string{
 	"/dependencies",
 	"/workload",
 	"/leader",
-	"/stats",
+	"/ps",
 	"/healthz",
 	"/provenance/analytics/orders/123",
 }
@@ -116,7 +116,7 @@ func TestEngineStateRouteRoster(t *testing.T) {
 		t.Run("routes outside the roster are 404 not_found", func(t *testing.T) {
 			for _, path := range []string{
 				"/",
-				"/metrics", // deliberately unrouted: a monitor consumes GET /stats instead.
+				"/metrics", // deliberately unrouted: a monitor consumes GET /ps instead.
 				"/nope",
 				"/pipelines/load_orders/nope",
 				"/pipelines/load_orders/gate/extra",

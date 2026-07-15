@@ -49,7 +49,7 @@ var rosterPaths = []string{
 	"/dependencies",
 	"/workload",
 	"/leader",
-	"/stats",
+	"/ps",
 	"/healthz",
 	"/provenance/analytics/orders/123",
 }
@@ -212,16 +212,16 @@ func TestTransportAuthSocketVsTCP(t *testing.T) {
 	})
 }
 
-// matrixStats is a stats handler that serves an empty rollup, so GET /stats can
-// prove a 200; failStats proves the 500 half.
-type matrixStats struct{ fail bool }
+// matrixPs is a ps handler that serves an empty readout, so GET /ps can
+// prove a 200; fail proves the 500 half.
+type matrixPs struct{ fail bool }
 
-// Stats serves an empty payload, or an engine fault when fail is set.
-func (s matrixStats) Stats(context.Context) (api.StatsPayload, error) {
+// Ps serves an empty payload, or an engine fault when fail is set.
+func (s matrixPs) Ps(context.Context, bool) (api.PsPayload, error) {
 	if s.fail {
-		return api.StatsPayload{}, errNoMatch
+		return api.PsPayload{}, errNoMatch
 	}
-	return api.StatsPayload{}, nil
+	return api.PsPayload{}, nil
 }
 
 // TestHTTPStatusMatrix proves the exact status matrix: 200 success, 400
@@ -237,13 +237,13 @@ func TestHTTPStatusMatrix(t *testing.T) {
 				"data-tok": {PATID: "d1", Scopes: []pat.Scope{pat.ScopeData}},
 				"full-tok": fullAuthority("p1"),
 			},
-			api.WithStats(matrixStats{}),
+			api.WithPs(matrixPs{}),
 		)
 		tcpClient := &http.Client{}
 		base := "http://" + srv.TCPAddr()
 
 		t.Run("200 success", func(t *testing.T) {
-			for _, path := range []string{"/healthz", "/leader", "/stats"} {
+			for _, path := range []string{"/healthz", "/leader", "/ps"} {
 				resp, env := fetch(t, socketClient, http.MethodGet, "http://iris"+path, "")
 				if resp.StatusCode != http.StatusOK || env.Data == nil {
 					t.Errorf("GET %s = %d (data %v), want 200 with a data envelope", path, resp.StatusCode, env.Data != nil)
@@ -309,10 +309,10 @@ func TestHTTPStatusMatrix(t *testing.T) {
 
 		t.Run("500 engine fault", func(t *testing.T) {
 			_, _, faultySocketClient := startReadServer(t, role, nil,
-				api.WithStats(matrixStats{fail: true}))
-			resp, env := fetch(t, faultySocketClient, http.MethodGet, "http://iris/stats", "")
+				api.WithPs(matrixPs{fail: true}))
+			resp, env := fetch(t, faultySocketClient, http.MethodGet, "http://iris/ps", "")
 			if resp.StatusCode != http.StatusInternalServerError {
-				t.Fatalf("GET /stats with a faulting rollup = %d, want 500", resp.StatusCode)
+				t.Fatalf("GET /ps with a faulting readout = %d, want 500", resp.StatusCode)
 			}
 			if env.Error == nil || env.Error.Code != "internal" {
 				t.Errorf("500 envelope = %+v, want code internal", env.Error)
@@ -331,8 +331,8 @@ func TestStandbyServesReads(t *testing.T) {
 		standbyRole := api.NewRoleState()
 		standbyRole.SetStandby("10.0.0.7:9000")
 
-		_, _, leaderClient := startReadServer(t, leaderRole, nil, api.WithStats(matrixStats{}))
-		_, _, standbyClient := startReadServer(t, standbyRole, nil, api.WithStats(matrixStats{}))
+		_, _, leaderClient := startReadServer(t, leaderRole, nil, api.WithPs(matrixPs{}))
+		_, _, standbyClient := startReadServer(t, standbyRole, nil, api.WithPs(matrixPs{}))
 
 		for _, path := range rosterPaths {
 			leaderResp, _ := fetch(t, leaderClient, http.MethodGet, "http://iris"+path, "")
@@ -349,7 +349,7 @@ func TestStandbyServesReads(t *testing.T) {
 		}
 
 		// The wired read routes are genuinely served on the standby.
-		for _, path := range []string{"/healthz", "/leader", "/stats"} {
+		for _, path := range []string{"/healthz", "/leader", "/ps"} {
 			resp, _ := fetch(t, standbyClient, http.MethodGet, "http://iris"+path, "")
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("GET %s on a standby = %d, want 200", path, resp.StatusCode)
@@ -359,7 +359,7 @@ func TestStandbyServesReads(t *testing.T) {
 }
 
 // TestStatsReadPATAccess proves a monitor with only the read scope can fetch GET
-// /stats over TCP.
+// /ps over TCP.
 func TestStatsReadPATAccess(t *testing.T) {
 	t.Run("stats-read-pat-access", func(t *testing.T) {
 		role := api.NewRoleState()
@@ -369,10 +369,10 @@ func TestStatsReadPATAccess(t *testing.T) {
 			map[string]api.Authority{
 				readTok: {PATID: "r1", Scopes: []pat.Scope{pat.ScopeRead}},
 			},
-			api.WithStats(matrixStats{}),
+			api.WithPs(matrixPs{}),
 		)
 		// We use the unix socket client for this claim (ambient full), but the
-		// important is the scope matrix allows read for /stats. A dedicated TCP
+		// important is the scope matrix allows read for /ps. A dedicated TCP
 		// read-only test is covered by the matrix in TestHTTPStatusMatrix using
 		// data vs full; here we assert explicitly a read PAT path would be allowed
 		// by requiredScope returning read.
@@ -381,13 +381,13 @@ func TestStatsReadPATAccess(t *testing.T) {
 			map[string]api.Authority{
 				readTok: {PATID: "r2", Scopes: []pat.Scope{pat.ScopeRead}},
 			},
-			api.WithStats(matrixStats{}),
+			api.WithPs(matrixPs{}),
 		)
 		tcp := &http.Client{}
 		base := "http://" + srv2.TCPAddr()
-		resp, env := fetch(t, tcp, http.MethodGet, base+"/stats", "Bearer "+readTok)
+		resp, env := fetch(t, tcp, http.MethodGet, base+"/ps", "Bearer "+readTok)
 		if resp.StatusCode != http.StatusOK || env.Error != nil {
-			t.Fatalf("read-scoped PAT GET /stats = %d err=%+v, want 200", resp.StatusCode, env.Error)
+			t.Fatalf("read-scoped PAT GET /ps = %d err=%+v, want 200", resp.StatusCode, env.Error)
 		}
 	})
 }

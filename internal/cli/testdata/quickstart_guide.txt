@@ -22,8 +22,8 @@ The engine — provision it and start it:
   2. Start the engine daemon in the background; it stays running after the tour.
      iris engine start -d
 
-  3. Read the engine readout: versions, socket, Postgres mode, role, uptime.
-     iris engine info
+  3. Read the engine readout: version, role, uptime, runs, and host load.
+     iris ps
 
 The pipeline — register, run, ask:
 

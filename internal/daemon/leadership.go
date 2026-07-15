@@ -441,7 +441,7 @@ func WithLanePlane(lanes *lanePlane) CandidateOption {
 }
 
 // WithPassCounter wires the leader-held per-lane pass counter: the candidate resets
-// it when it wins a leadership term, so `iris engine stats` never reports a
+// it when it wins a leadership term, so a readout never reports a
 // previous term's pass counts after a leader change (a leader-held runtime counter,
 // reset on restart and leader change; the restart half is structural -- the counter
 // is process memory). The lane loop's build composes the counter's Hook into the

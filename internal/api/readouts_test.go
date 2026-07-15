@@ -10,13 +10,12 @@ import (
 )
 
 // readoutPayloads is every read-API readout document the epic's invariants
-// close over: the stats rollup, the engine-info readout, the engine-inspect DDL
-// dump, and the pipeline-show readout. The invariant tests walk these types, so
-// a field added to any readout is checked by construction.
+// close over: the process-status readout, the engine-inspect DDL dump, and the
+// pipeline-show readout. The invariant tests walk these types, so a field added
+// to any readout is checked by construction.
 func readoutPayloads() map[string]reflect.Type {
 	return map[string]reflect.Type{
-		"stats":   reflect.TypeOf(api.StatsPayload{}),
-		"info":    reflect.TypeOf(api.InfoPayload{}),
+		"ps":      reflect.TypeOf(api.PsPayload{}),
 		"inspect": reflect.TypeOf(api.InspectPayload{}),
 		"show":    reflect.TypeOf(api.PipelineShowResult{}),
 	}
@@ -54,22 +53,22 @@ func jsonName(f reflect.StructField) string {
 	return strings.ToLower(f.Name)
 }
 
-// TestUptimeSoleWallClock proves uptime in the engine-info readout is the
-// engine's one and only wall-clock readout, and display-only: the InfoPayload's
+// TestUptimeSoleWallClock proves uptime in the process-status readout is the
+// engine's one and only wall-clock readout, and display-only: the PsEngine's
 // Uptime is a rendered string a caller cannot compute on -- never a time.Time
-// or a duration -- and no other field in any readout (stats, info, inspect,
+// or a duration -- and no other field in any readout (ps, inspect,
 // show) is time-typed or clock-named. Everything else is a count, a last-value,
 // or identity.
 func TestUptimeSoleWallClock(t *testing.T) {
-	uptime, ok := reflect.TypeOf(api.InfoPayload{}).FieldByName("Uptime")
+	uptime, ok := reflect.TypeOf(api.PsEngine{}).FieldByName("Uptime")
 	if !ok {
-		t.Fatal("InfoPayload carries no Uptime field; info must report uptime")
+		t.Fatal("PsEngine carries no Uptime field; ps must report uptime")
 	}
 	if uptime.Type.Kind() != reflect.String {
-		t.Errorf("InfoPayload.Uptime is %s, want a rendered display string (display-only, never computable)", uptime.Type)
+		t.Errorf("PsEngine.Uptime is %s, want a rendered display string (display-only, never computable)", uptime.Type)
 	}
 	if jsonName(uptime) != "uptime" {
-		t.Errorf("InfoPayload.Uptime wire name = %q, want %q", jsonName(uptime), "uptime")
+		t.Errorf("PsEngine.Uptime wire name = %q, want %q", jsonName(uptime), "uptime")
 	}
 
 	timeType := reflect.TypeOf(time.Time{})
@@ -84,7 +83,7 @@ func TestUptimeSoleWallClock(t *testing.T) {
 				t.Errorf("%s readout: %s.%s is %s; uptime is the engine's sole wall-clock readout and it is a display string", name, owner.Name(), f.Name, f.Type)
 			}
 			wire := jsonName(f)
-			if owner == reflect.TypeOf(api.InfoPayload{}) && wire == "uptime" {
+			if owner == reflect.TypeOf(api.PsEngine{}) && wire == "uptime" {
 				return // the one permitted wall-clock readout
 			}
 			for _, frag := range clockFragments {
@@ -96,7 +95,7 @@ func TestUptimeSoleWallClock(t *testing.T) {
 	}
 }
 
-// TestNoLivenessReadouts proves no readout -- stats, info, inspect, or pipeline
+// TestNoLivenessReadouts proves no readout -- ps, inspect, or pipeline
 // show -- carries a last-heartbeat or last-seen field: connection state is the
 // only liveness signal. The check walks every field of every readout payload,
 // so a liveness field added anywhere fails here.

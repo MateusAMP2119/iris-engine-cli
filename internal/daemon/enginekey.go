@@ -17,7 +17,8 @@ import (
 
 // This file holds the engine key: the ed25519 keypair minted once at `iris engine
 // install`, whose signature seals the tamper-evidence checkpoint chain. The private
-// half lives in meta; the public half is surfaced by `iris engine info`.
+// half lives in meta; the public half is what an offline auditor validates
+// checkpoints with (no CLI readout surfaces it today).
 //
 // # Where the private half lives
 //
@@ -43,8 +44,8 @@ const engineKeyRedacted = "EngineKey(REDACTED)"
 
 // ErrEngineNotInstalled is returned by an EngineKeyReader when the engine key
 // cannot be read: the engine is not installed, or its meta database is
-// unreachable. `iris engine info` maps it to an operation-failed exit with a clear
-// message. Callers test it with errors.Is.
+// unreachable. Callers map it to a clear operation failure and test it with
+// errors.Is.
 var ErrEngineNotInstalled = errors.New("daemon: engine not installed or its meta database is unreachable; the engine key could not be read")
 
 // EngineKey is the engine's ed25519 keypair. It holds the private key and exposes
@@ -91,7 +92,7 @@ func DecodeEngineKeyBytes(priv []byte) (EngineKey, error) {
 }
 
 // PublicBase64 returns the base64-encoded public half of the engine key: the value
-// `iris engine info` exposes and an offline auditor validates checkpoints with. It
+// an offline auditor validates checkpoints with. It
 // is the only material EngineKey exposes.
 func (k EngineKey) PublicBase64() string {
 	pub, _ := k.private.Public().(ed25519.PublicKey)
@@ -157,8 +158,8 @@ func (k EngineKey) Public() ed25519.PublicKey {
 	return append(ed25519.PublicKey(nil), pub...)
 }
 
-// EngineKeyReader reads the engine key back from where install stored it, so
-// `iris engine info` can derive and show its public half. The live meta-connection
+// EngineKeyReader reads the engine key back from where install stored it, so a
+// caller can derive its public half. The live meta-connection
 // reader lands with the daemon's connection wiring; a test fake and the
 // unwired production reader both satisfy it until then.
 type EngineKeyReader interface {
@@ -169,8 +170,7 @@ type EngineKeyReader interface {
 
 // NewEngineKeyReader returns the production engine-key reader for the given
 // settings: it opens a short-lived read connection to the engine_key meta table,
-// reads the stored private half, and derives the public half `iris engine info`
-// shows. It reaches meta the same way for either Postgres mode -- external mode
+// reads the stored private half, and derives the public half. It reaches meta the same way for either Postgres mode -- external mode
 // through the configured admin DSN, managed mode through the running managed
 // instance's engine-owned runtime files (never by starting a second postmaster, so
 // it never contends with a live daemon) -- and reports ErrEngineNotInstalled when
@@ -192,7 +192,7 @@ type metaEngineKeyReader struct {
 
 // ReadEngineKey loads the stored private half from meta and derives the EngineKey.
 // A load failure (engine not installed, meta unreachable) maps to
-// ErrEngineNotInstalled so `iris engine info` reports a clear operation failure; an
+// ErrEngineNotInstalled so a caller reports a clear operation failure; an
 // empty table (no key row yet) is the same "not installed" signal. Stored bytes
 // that are not a valid ed25519 private key are a distinct corruption error, not
 // masked as "not installed". Only the public half is ever exposed; the private
@@ -224,8 +224,8 @@ func loadEngineKeyBytes(ctx context.Context, s config.Settings) ([]byte, error) 
 	return store.ReadEngineKeyOnce(ctx, src)
 }
 
-// metaSourceForInfo resolves the admin-derived meta connection source for the
-// daemonless `iris engine info` key read. External mode derives it from the
+// metaSourceForInfo resolves the admin-derived meta connection source for a
+// daemonless engine-key read. External mode derives it from the
 // configured admin DSN (the same resolution every connection uses). Managed mode
 // reconstructs the running managed instance's localhost DSN from its engine-owned
 // runtime files -- the persisted superuser credential and the port the live
