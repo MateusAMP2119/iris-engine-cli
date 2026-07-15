@@ -126,9 +126,9 @@ type RunStarter interface {
 }
 
 // LaneRunner walks one lane's members in composer order, serially. It is the
-// one-goroutine-per-lane unit: RunPass performs a single ordered pass, and the
-// perpetual repetition and idle watermark of the lane loop layer on top in later
-// epics.
+// one-goroutine-per-lane unit: RunPass performs a single ordered pass; the
+// perpetual repetition and the idle watermark layer on top in the lane loop
+// (pass.go's Loop over events.go's Events).
 type LaneRunner struct {
 	lane    Lane
 	starter RunStarter

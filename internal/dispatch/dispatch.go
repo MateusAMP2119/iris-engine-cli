@@ -41,6 +41,12 @@ type Dispatcher struct {
 	reqs   chan request
 	done   chan struct{}
 
+	// events, when set, is bumped after every successfully executed write: the
+	// leader's meta-change watermark. Because every meta mutation rides Submit,
+	// this one bump site covers every engine-visible cause -- apply, manual run,
+	// replay, drain, wipe, and the loop's own run transitions.
+	events *Events
+
 	startOnce sync.Once
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
@@ -56,6 +62,13 @@ func New(conn store.MetaWriteConn) *Dispatcher {
 		reqs:   make(chan request),
 		done:   make(chan struct{}),
 	}
+}
+
+// NotifyEvents wires the leader's meta-change watermark: after every
+// successfully executed write, the dispatcher bumps it, waking any lane the
+// loop parked. Wire it before Start; a nil watermark leaves notification off.
+func (d *Dispatcher) NotifyEvents(e *Events) {
+	d.events = e
 }
 
 // Start launches the single dispatcher goroutine. It is idempotent; the goroutine
@@ -78,7 +91,15 @@ func (d *Dispatcher) loop(ctx context.Context) {
 		case <-d.done:
 			return
 		case req := <-d.reqs:
-			req.resp <- req.fn(d.writer)
+			err := req.fn(d.writer)
+			// A successful write is an engine-visible cause: bump the watermark
+			// BEFORE answering the submitter, so by the time a caller observes its
+			// mutation done, any lane parked on the prior sequence is already
+			// eligible (no lost-wake window between reply and bump).
+			if err == nil && d.events != nil {
+				d.events.Bump()
+			}
+			req.resp <- err
 		}
 	}
 }

@@ -114,6 +114,8 @@ func newLaneLoop(
 	workspace string,
 	registry store.RegistryReader,
 	manual store.ManualReader,
+	roots store.RootGateReader,
+	events *dispatch.Events,
 	runner exec.Runner,
 	journal dispatch.JournalHighWatermark,
 	objects *store.ObjectStore,
@@ -129,8 +131,11 @@ func newLaneLoop(
 	}
 	walk := laneWalkReader{registry: registry, manual: manual}
 	gate := lanePassGate{
-		gate:  dispatch.NewGate(consumedReader{manual: manual}),
-		edges: edgeReader{registry: registry, manual: manual},
+		gate:      dispatch.NewGate(consumedReader{manual: manual}),
+		edges:     edgeReader{registry: registry, manual: manual},
+		roots:     roots,
+		manual:    manual,
+		workspace: workspace,
 	}
 	runnerSeam := &laneExec{
 		workspace: workspace,
@@ -160,6 +165,9 @@ func newLaneLoop(
 	opts := []dispatch.LoopOption{dispatch.WithPostPass(post)}
 	if passCounter != nil {
 		opts = append(opts, dispatch.WithOnPass(passCounter.Hook()))
+	}
+	if events != nil {
+		opts = append(opts, dispatch.WithEvents(events))
 	}
 	return dispatch.NewLoop(walk, gate, runnerSeam, logger, opts...)
 }
@@ -193,12 +201,19 @@ func (r laneWalkReader) Walk(ctx context.Context) ([]dispatch.Lane, error) {
 	return dispatch.BuildWalk(rows, registered), nil
 }
 
-// lanePassGate resolves a pipeline's depends_on eligibility at its turn in a pass,
-// exactly like the manual path: it reads the pipeline's edges (each joined to its
-// upstream's latest run) and evaluates them over the run_inputs consumed check.
+// lanePassGate resolves a pipeline's eligibility at its turn in a pass. A gated
+// pipeline (with depends_on edges) resolves exactly like the manual path: its
+// edges, each joined to its upstream's latest run, evaluated over the run_inputs
+// consumed check. A root (edge-less) pipeline resolves through the root cause
+// gate instead: its latest run's stamped declaration checksum against the
+// current declaration, so a loop run starts only on an unconsumed cause -- never
+// back to back on nothing (issue #172).
 type lanePassGate struct {
-	gate  *dispatch.Gate
-	edges edgeReader
+	gate      *dispatch.Gate
+	edges     edgeReader
+	roots     store.RootGateReader
+	manual    store.ManualReader
+	workspace string
 }
 
 // Eligible resolves the pipeline's gate for this pass turn.
@@ -207,7 +222,39 @@ func (g lanePassGate) Eligible(ctx context.Context, pipeline string) (dispatch.D
 	if err != nil {
 		return dispatch.Decision{}, err
 	}
+	if len(edges) == 0 && g.roots != nil {
+		return g.eligibleRoot(ctx, pipeline)
+	}
 	return g.gate.Evaluate(ctx, pipeline, edges)
+}
+
+// eligibleRoot resolves a root pipeline's loop-pass eligibility through the root
+// cause gate: the latest run's stamped declaration checksum against the current
+// declaration file's. The reads happen only at an unparked lane's turn -- a
+// parked lane never reaches here -- so the file read and the latest-run query
+// are paid per cause, not per pass. A pipeline that unregistered mid-pass mints
+// no run (a closed decision, absence is the record).
+func (g lanePassGate) eligibleRoot(ctx context.Context, pipeline string) (dispatch.Decision, error) {
+	detail, found, err := g.roots.LatestRunDetail(ctx, pipeline)
+	if err != nil {
+		return dispatch.Decision{}, fmt.Errorf("root gate %q: %w", pipeline, err)
+	}
+	var latest *dispatch.RootRun
+	if found {
+		latest = &dispatch.RootRun{State: detail.State, DeclarationChecksum: detail.DeclarationChecksum}
+	}
+	target, registered, err := g.manual.PipelineRunTarget(ctx, pipeline)
+	if err != nil {
+		return dispatch.Decision{}, fmt.Errorf("root gate %q: read run target: %w", pipeline, err)
+	}
+	if !registered {
+		return dispatch.Decision{}, nil
+	}
+	sum, err := declarationChecksum(g.workspace, target.Folder)
+	if err != nil {
+		return dispatch.Decision{}, fmt.Errorf("root gate %q: %w", pipeline, err)
+	}
+	return dispatch.DecideRoot(latest, sum), nil
 }
 
 // laneExec mints, runs, and records the terminal state of a fresh cause=loop run. It

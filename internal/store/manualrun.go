@@ -47,6 +47,33 @@ type LatestRunInfo struct {
 	State RunState
 }
 
+// LatestRunDetail is a pipeline's most recent run as the root cause gate reads
+// it: id and lifecycle state like LatestRunInfo, plus the cause it was minted
+// for and the declaration checksum stamped at mint -- the value the gate
+// compares against the pipeline's current declaration to decide whether an
+// unconsumed cause exists.
+type LatestRunDetail struct {
+	// ID is the run's meta id.
+	ID int64
+	// State is the run's lifecycle state.
+	State RunState
+	// Cause is why the run was minted (runs.cause).
+	Cause RunCause
+	// DeclarationChecksum is the declaration hash stamped on the run
+	// (runs.declaration_checksum).
+	DeclarationChecksum string
+}
+
+// RootGateReader is the plain-MVCC read seam the lane loop's root cause gate
+// composes: the latest-run detail whose stamped declaration checksum the gate
+// compares against the current declaration. The pgx manual reader satisfies it;
+// a fake satisfies it in tests.
+type RootGateReader interface {
+	// LatestRunDetail returns a pipeline's most recent run (highest id) with its
+	// cause and stamped declaration checksum, and whether it has any run at all.
+	LatestRunDetail(ctx context.Context, pipeline string) (LatestRunDetail, bool, error)
+}
+
 // ManualReader is the plain-MVCC read seam the manual-run op composes: pipeline run
 // targets, latest-run lookups, the run_inputs consumed check, and the lane roster. A
 // pgx-pool-backed implementation and a fake both satisfy it; reads are never serialized
@@ -71,6 +98,7 @@ type ManualReader interface {
 const (
 	selectPipelineRunTargetSQL = `SELECT folder, run FROM pipelines WHERE name = $1`
 	selectLatestRunSQL         = `SELECT id, state FROM runs WHERE pipeline = $1 ORDER BY id DESC LIMIT 1`
+	selectLatestRunDetailSQL   = `SELECT id, state, cause, declaration_checksum FROM runs WHERE pipeline = $1 ORDER BY id DESC LIMIT 1`
 	selectConsumedSQL          = `SELECT EXISTS (
     SELECT 1 FROM run_inputs ri JOIN runs r ON r.id = ri.run_id
     WHERE r.pipeline = $1 AND ri.upstream_run_id = $2)`
@@ -140,6 +168,32 @@ func (r *pgxManualReader) LatestRun(ctx context.Context, pipeline string) (Lates
 	}
 	info.State = RunState(state)
 	return info, true, nil
+}
+
+// LatestRunDetail reads a pipeline's most recent run (highest id) with its cause
+// and stamped declaration checksum in one plain MVCC query, satisfying the root
+// cause gate's read seam.
+func (r *pgxManualReader) LatestRunDetail(ctx context.Context, pipeline string) (LatestRunDetail, bool, error) {
+	rows, err := r.pool.query(ctx, selectLatestRunDetailSQL, pipeline)
+	if err != nil {
+		return LatestRunDetail{}, false, fmt.Errorf("store: read latest run detail for %q: %w", pipeline, err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return LatestRunDetail{}, false, fmt.Errorf("store: read latest run detail for %q: %w", pipeline, err)
+		}
+		return LatestRunDetail{}, false, nil
+	}
+	var detail LatestRunDetail
+	var state, cause string
+	if err := rows.Scan(&detail.ID, &state, &cause, &detail.DeclarationChecksum); err != nil {
+		return LatestRunDetail{}, false, fmt.Errorf("store: scan latest run detail for %q: %w", pipeline, err)
+	}
+	detail.State = RunState(state)
+	detail.Cause = RunCause(cause)
+	return detail, true, nil
 }
 
 // Consumed answers the run_inputs already-consumed check in one plain MVCC query,

@@ -90,7 +90,7 @@ func TestLeaderDrivesLaneLoop(t *testing.T) {
 		set := storetest.NewLockSet()
 		role := api.NewRoleState()
 		ev := &loopEvents{}
-		build := func(dispatch.Submitter) *dispatch.Loop {
+		build := func(dispatch.Submitter, *dispatch.Events) *dispatch.Loop {
 			return dispatch.NewLoop(
 				loopWalkFake{lanes: []dispatch.Lane{{Name: "etl", Pipelines: []string{"a", "b"}}}},
 				loopGateFake{},

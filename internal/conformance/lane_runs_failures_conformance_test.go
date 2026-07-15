@@ -38,9 +38,11 @@ func ensurePython(t *testing.T) {
 // TestGoldenLaneRunsAndFailures drives the golden sample ingest lane (the three
 // pipelines under the ingest composer) through its run-lifecycle scenarios via the
 // PERPETUAL LANE LOOP: the dev run that lands journaled rows, per-pipeline watermarks
-// advancing independently across passes, an idle lane chaining cheap no-op passes,
-// forced failure with dead-lettering and depends_on propagation while the composer-only
-// member still runs, and run cancel that ends a hung pipeline and lets the lane proceed.
+// advancing independently on their own causes, an idle lane PARKING (no loop run
+// without an unconsumed cause -- the watermark layer of issue #172), a declaration
+// edit re-opening the root gate, forced failure with dead-lettering and depends_on
+// propagation while the composer-only member still runs, and run cancel that ends a
+// hung pipeline and lets the lane proceed.
 // All assertions are at conformance tier against the real binary, a live daemon (with
 // the wired lane loop), and real Postgres.
 //
@@ -225,14 +227,21 @@ if __name__ == "__main__": main()
 		for _, p := range pipes {
 			base[p] = waitState(t, meta, p, "succeeded", 90*time.Second)
 		}
-		// Each pipeline must advance its OWN watermark: a strictly newer succeeded run,
-		// resolved independently per pipeline (not one shared counter).
-		for _, p := range pipes {
-			waitSucceededAfter(t, meta, p, base[p], 60*time.Second)
+		// Each pipeline must advance its OWN watermark on its own cause: a manual run
+		// of one root advances that pipeline (and its dependents through the gate),
+		// resolved independently per pipeline (not one shared counter). The loop
+		// itself re-runs nothing: a consumed declaration is not a cause.
+		for _, p := range []string{"extract_orders", "reset_counters"} {
+			bin.Run(t, RunOptions{Args: []string{"pipeline", "run", p}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 		}
+		waitSucceededAfter(t, meta, "extract_orders", base["extract_orders"], 60*time.Second)
+		waitSucceededAfter(t, meta, "reset_counters", base["reset_counters"], 60*time.Second)
+		// load_orders depends_on extract_orders: the manual upstream run re-opens its
+		// gate, and the lane loop advances it -- without any manual run of load itself.
+		waitSucceededAfter(t, meta, "load_orders", base["load_orders"], 60*time.Second)
 	})
 
-	t.Run("idle-lane-chains-noop-passes", func(t *testing.T) {
+	t.Run("idle-lane-parks-no-reruns", func(t *testing.T) {
 		bin, ws, cleanup := setupLane(t)
 		defer cleanup()
 		writeScript(t, ws, "extract_orders", noopScript)
@@ -241,20 +250,58 @@ if __name__ == "__main__": main()
 		applyIngest(t, bin, ws)
 
 		meta := openMeta(t, ws)
-		// An idle lane keeps chaining passes: the succeeded-run count for a member climbs
-		// pass over pass, and every run exits 0 (cheap no-op). Observe several successive
-		// advances within a tight bound.
-		prev := waitState(t, meta, "reset_counters", "succeeded", 90*time.Second)
-		for i := 0; i < 3; i++ {
-			prev = waitSucceededAfter(t, meta, "reset_counters", prev, 30*time.Second)
+		// Every member runs once off the apply (the registration is the cause), then
+		// the lane PARKS: no loop run starts without an unconsumed cause (issue #172),
+		// so the run set stands still while nothing changes.
+		pipes := []string{"extract_orders", "reset_counters", "load_orders"}
+		for _, p := range pipes {
+			waitState(t, meta, p, "succeeded", 90*time.Second)
 		}
-		// No no-op run dead-lettered: every idle pass run exited 0.
+		var before int64
+		_ = meta.QueryRow(context.Background(), "SELECT coalesce(max(id),0) FROM runs").Scan(&before)
+		// Observation window: generous enough that the old back-to-back loop would
+		// have minted dozens of runs. Absence has no event to wait on, so this is a
+		// bounded settle, not a synchronization.
+		time.Sleep(5 * time.Second)
+		var after int64
+		_ = meta.QueryRow(context.Background(), "SELECT coalesce(max(id),0) FROM runs").Scan(&after)
+		if after != before {
+			t.Errorf("runs advanced from %d to %d while idle; want parked (no loop run without an unconsumed cause)", before, after)
+		}
+		// And no run dead-lettered along the way.
 		var dl int
 		_ = meta.QueryRow(context.Background(),
-			"SELECT count(*) FROM runs WHERE pipeline='reset_counters' AND state='dead_lettered'").Scan(&dl)
+			"SELECT count(*) FROM runs WHERE state='dead_lettered'").Scan(&dl)
 		if dl != 0 {
-			t.Errorf("idle no-op runs dead-lettered %d times; want 0 (every no-op run exits 0 cheaply)", dl)
+			t.Errorf("idle graph dead-lettered %d runs; want 0", dl)
 		}
+	})
+
+	t.Run("declaration-edit-is-a-cause", func(t *testing.T) {
+		bin, ws, cleanup := setupLane(t)
+		defer cleanup()
+		writeScript(t, ws, "extract_orders", noopScript)
+		writeScript(t, ws, "reset_counters", noopScript)
+		writeScript(t, ws, "load_orders", noopScript)
+		applyIngest(t, bin, ws)
+
+		meta := openMeta(t, ws)
+		base := waitState(t, meta, "reset_counters", "succeeded", 90*time.Second)
+
+		// Edit the declaration (a trailing comment changes its checksum) and re-apply:
+		// the changed declaration is an unconsumed cause, and the loop runs the root
+		// exactly once more.
+		decl := filepath.Join(ws, "pipelines", "ingest", "reset_counters", "iris-declare.yaml")
+		raw, err := os.ReadFile(decl) //nolint:gosec // G304: test-owned golden workspace path.
+		if err != nil {
+			t.Fatalf("read declaration: %v", err)
+		}
+		if err := os.WriteFile(decl, append(raw, []byte("\n# cause: edited\n")...), 0o644); err != nil { //nolint:gosec // G306: workspace declaration, matches the golden tree's mode.
+			t.Fatalf("edit declaration: %v", err)
+		}
+		bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/ingest/reset_counters"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+
+		waitSucceededAfter(t, meta, "reset_counters", base, 60*time.Second)
 	})
 
 	t.Run("failure-propagates-composer-runs", func(t *testing.T) {

@@ -110,3 +110,37 @@ func TestDispatcherSoleMetaWriter(t *testing.T) {
 		}
 	})
 }
+
+// TestDispatcherBumpsWatermark proves the dispatcher is the one bump site of the
+// meta-change watermark: a successfully executed write advances the sequence
+// before the submitter observes its result (no lost-wake window), and a failed
+// write advances nothing -- a mutation that did not land is not a cause.
+func TestDispatcherBumpsWatermark(t *testing.T) {
+	t.Run("dispatcher-bumps-watermark", func(t *testing.T) {
+		conn := &recordingWriteConn{}
+		events := dispatch.NewEvents()
+		d := dispatch.New(conn)
+		d.NotifyEvents(events)
+		ctx := context.Background()
+		d.Start(ctx)
+		defer d.Stop()
+
+		// A successful write bumps: by the time Submit returns, the sequence has
+		// advanced (the bump happens before the reply).
+		if err := d.Submit(ctx, func(_ *store.Writer) error { return nil }); err != nil {
+			t.Fatalf("Submit returned %v, want nil", err)
+		}
+		if got := events.Seq(); got != 1 {
+			t.Fatalf("Seq() after a successful write = %d, want 1 (bump before the submitter observes the result)", got)
+		}
+
+		// A failed write bumps nothing: the mutation did not land, so no cause.
+		wantErr := context.Canceled // any sentinel; the value only rides through
+		if err := d.Submit(ctx, func(_ *store.Writer) error { return wantErr }); err != wantErr {
+			t.Fatalf("Submit returned %v, want the closure's error", err)
+		}
+		if got := events.Seq(); got != 1 {
+			t.Fatalf("Seq() after a failed write = %d, want 1 (a failed mutation is not a cause)", got)
+		}
+	})
+}

@@ -198,13 +198,16 @@ func NewGate(reader ConsumedReader) *Gate { return &Gate{reader: reader} }
 // decision with Decide. A reader error aborts before any decision, so the gate never
 // decides on a half-read consumed check.
 func (g *Gate) Evaluate(ctx context.Context, dependent string, edges []Edge) (Decision, error) {
-	// The already-consumed check matters only for an upstream whose most recent run is
-	// a success; for any other disposition the flag is unused. Query run_inputs for
-	// exactly those edges -- never a stored cursor -- and abort on a read failure so
-	// the gate never decides on a half-read check.
+	// The already-consumed check matters for an upstream whose most recent run is a
+	// success (open vs up_to_date) or dead-lettered (poison once vs already
+	// propagated -- the propagated dead-letter records the poisoned run in
+	// run_inputs, so the same read answers both); for any other disposition the
+	// flag is unused. Query run_inputs for exactly those edges -- never a stored
+	// cursor -- and abort on a read failure so the gate never decides on a
+	// half-read check.
 	consumed := make([]bool, len(edges))
 	for i, e := range edges {
-		if e.Latest != UpstreamSucceeded {
+		if e.Latest != UpstreamSucceeded && e.Latest != UpstreamDeadLettered {
 			continue
 		}
 		ok, err := g.reader.Consumed(ctx, dependent, e.LatestRunID)
@@ -227,11 +230,20 @@ func evaluateEdge(e Edge, consumed bool) Verdict {
 	case UpstreamNone, UpstreamPending:
 		return VerdictPending
 	case UpstreamDeadLettered:
-		if e.awaited() {
-			return VerdictPoisoned
+		if !e.awaited() {
+			// A dead-letter that predates the edge is history: await the next run.
+			return VerdictPending
 		}
-		// A dead-letter that predates the edge is history: await the next run.
-		return VerdictPending
+		if consumed {
+			// The poison already propagated: the dependent's propagated dead-letter
+			// consumed exactly this run (run_inputs, written by the propagation
+			// path), so the rejection is recorded once and the edge awaits the
+			// upstream's next run (a replay or a fresh success). Without this the
+			// gate would re-poison every pass and the dispatcher would mint an
+			// endless chain of propagated dead-letters for one failure.
+			return VerdictPending
+		}
+		return VerdictPoisoned
 	case UpstreamSucceeded:
 		if !e.awaited() {
 			// A success that predates the edge is history: await the next success.

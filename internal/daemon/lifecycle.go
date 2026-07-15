@@ -323,8 +323,9 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// bookkeeping (failure propagation, then count-based retention pruning down to
 	// the resolved retain, each pruned run's log dying with its row). The run's data
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
-	laneBuild := func(submit dispatch.Submitter) *dispatch.Loop {
+	laneBuild := func(submit dispatch.Submitter, events *dispatch.Events) *dispatch.Loop {
 		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
+			client.RootGateReader(), events,
 			exec.NewOSRunner(), data, objects, runConn, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
 	}

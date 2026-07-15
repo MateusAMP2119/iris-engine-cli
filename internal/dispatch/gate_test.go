@@ -187,6 +187,7 @@ func TestGateAwaitsLatestSuccess(t *testing.T) {
 		{"pending upstream is pending", dispatch.Edge{Upstream: "a", Latest: dispatch.UpstreamPending, LatestRunID: 9}, false, false, dispatch.VerdictPending},
 		{"no upstream run is pending", dispatch.Edge{Upstream: "a", Latest: dispatch.UpstreamNone}, false, false, dispatch.VerdictPending},
 		{"dead-lettered upstream poisons", dispatch.Edge{Upstream: "a", Latest: dispatch.UpstreamDeadLettered, LatestRunID: 9}, false, false, dispatch.VerdictPoisoned},
+		{"already-propagated dead-letter is pending", dispatch.Edge{Upstream: "a", Latest: dispatch.UpstreamDeadLettered, LatestRunID: 9}, true, false, dispatch.VerdictPending},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

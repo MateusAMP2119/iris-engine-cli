@@ -151,7 +151,7 @@ type Candidate struct {
 	// leader never dispatches). Nil leaves the leader without a lane loop -- the
 	// election-only, control-only, and manual-only wiring uses this, so existing
 	// composition is unaffected.
-	laneLoopBuild func(dispatch.Submitter) *dispatch.Loop
+	laneLoopBuild func(dispatch.Submitter, *dispatch.Events) *dispatch.Loop
 
 	// lanes is the leader-side run-cancel plane over the lane loop's in-flight runs: on
 	// winning leadership the candidate installs the single-writer submitter so a POST
@@ -422,10 +422,12 @@ func WithPromotePlane(pp *promotePlane, submit dispatch.Submitter, state store.P
 // build, starts it once startup reconciliation is done, and stops it on demotion.
 // The loop reads the walk at each pass start and starts eligible pipelines in
 // composer order, one goroutine per lane, distinct lanes in parallel. build
-// receives the dispatcher as the single-writer submission seam and composes the
-// walk, gate, run-start, and post-pass bookkeeping over it. A nil build (the
-// default) leaves the leader without a lane loop.
-func WithLaneLoop(build func(dispatch.Submitter) *dispatch.Loop) CandidateOption {
+// receives the dispatcher as the single-writer submission seam and this term's
+// meta-change watermark (bumped by the dispatcher on every successful write, so
+// the loop parks idle lanes on it) and composes the walk, gate, run-start, and
+// post-pass bookkeeping over them. A nil build (the default) leaves the leader
+// without a lane loop.
+func WithLaneLoop(build func(dispatch.Submitter, *dispatch.Events) *dispatch.Loop) CandidateOption {
 	return func(c *Candidate) { c.laneLoopBuild = build }
 }
 
@@ -619,6 +621,13 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	}
 
 	d := dispatch.New(c.writeConn)
+	// This term's meta-change watermark: the dispatcher bumps it on every
+	// successful write (every engine-visible cause rides Submit), and the lane
+	// loop below parks idle lanes on it. Term-scoped like the dispatcher itself:
+	// a re-elected leader starts a fresh watermark, and its first pass runs
+	// unconditionally, so no cause is missed across a failover.
+	events := dispatch.NewEvents()
+	d.NotifyEvents(events)
 	d.Start(ctx)
 	defer d.Stop()
 
@@ -840,7 +849,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 	// its lane but never delays demotion (the loop exits promptly on cancel).
 	var stopLaneLoop func()
 	if c.laneLoopBuild != nil {
-		loop := c.laneLoopBuild(d)
+		loop := c.laneLoopBuild(d, events)
 		loopCtx, stopLoop := context.WithCancel(ctx)
 		loopDone := make(chan struct{})
 		go func() {

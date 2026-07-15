@@ -48,7 +48,7 @@ func TestLanePassCounterLeaderTerm(t *testing.T) {
 
 		// Term one: the leader drives the lane loop; each completed pass increments
 		// the lane's count through the loop's pass hook.
-		build := func(dispatch.Submitter) *dispatch.Loop {
+		build := func(dispatch.Submitter, *dispatch.Events) *dispatch.Loop {
 			return dispatch.NewLoop(
 				statsWalkFake{lanes: []dispatch.Lane{{Name: "etl", Pipelines: []string{"a"}}}},
 				statsGateFake{},
@@ -80,7 +80,7 @@ func TestLanePassCounterLeaderTerm(t *testing.T) {
 		// visible after the leader role is reported would be the previous term's,
 		// and the reset-on-leader-change contract forbids exactly that.
 		role2 := api.NewRoleState()
-		buildIdle := func(dispatch.Submitter) *dispatch.Loop {
+		buildIdle := func(dispatch.Submitter, *dispatch.Events) *dispatch.Loop {
 			return dispatch.NewLoop(statsWalkFake{}, statsGateFake{}, statsRunnerFake{}, nil,
 				dispatch.WithOnPass(pc.Hook()))
 		}

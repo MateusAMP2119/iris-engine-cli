@@ -12,10 +12,13 @@ import (
 
 // idleReadInterval bounds how long the perpetual loop waits before re-reading the
 // walk while WHOLLY idle (no lane running). It is not a dispatch timer and gates
-// nothing on a clock: the running path is event-driven on pass completions (clock
-// doctrine), and this bounded wait only wakes an otherwise-idle loop so a graph
-// applied to a cold leader -- which has no in-flight pass whose completion could
-// drive a re-read -- is picked up promptly rather than never.
+// nothing on a clock: the running path is event-driven on pass completions and
+// meta-change wakes (clock doctrine), and this bounded wait only wakes an
+// otherwise-idle loop as a safety net -- a graph change whose bump was somehow
+// missed, or a composition with no Events wired, is picked up promptly rather
+// than never. With the watermark wired, an idle iteration is the doctrine's
+// accepted hot idle loop kept cheap: the walk read alone, no gate evaluation and
+// no run for any parked lane.
 const idleReadInterval = 250 * time.Millisecond
 
 // This file is the perpetual lane loop: the leader-owned dispatch runtime that turns
@@ -27,6 +30,13 @@ const idleReadInterval = 250 * time.Millisecond
 // Pass semantics:
 //   - One goroutine per lane, a perpetual per-lane loop. Distinct lanes run in
 //     parallel with no engine cap; a laneless pipeline is its own lane (BuildWalk).
+//   - The loop is watermark-parked (events.go): a lane re-passes only when the
+//     meta-change sequence advanced since its last pass started -- every
+//     engine-visible cause bumps it through the single dispatcher -- so an idle
+//     graph dispatches nothing and costs nothing beyond the bounded walk re-read.
+//     Root (edge-less) pipelines are gated on their declaration (rootgate.go), so
+//     a pass on an unchanged graph starts no run: no loop run without an
+//     unconsumed cause.
 //   - Each pass reads the walk at pass start (a snapshot): a graph change mid-pass
 //     lands only at the next pass, and an in-flight run is never touched. A removed
 //     pipeline finishes its current run, then stops appearing.
@@ -185,6 +195,13 @@ type Loop struct {
 	post   PostPass
 	logger *slog.Logger
 
+	// events, when set, is the leader's meta-change watermark: a lane whose last
+	// pass started at the current sequence is parked (not re-spawned) until the
+	// sequence advances, and a wholly idle loop blocks on the wake channel instead
+	// of spinning. Nil events park nothing: every walk lane re-spawns at each pass
+	// boundary (the walk-only wiring tests use this).
+	events *Events
+
 	// onPass, when set, is invoked after each lane pass's post-pass bookkeeping
 	// completes: an observability hook the daemon and tests synchronize on. It never
 	// influences dispatch.
@@ -204,6 +221,13 @@ func WithPostPass(post PostPass) LoopOption {
 // post-pass bookkeeping completes. A nil hook is ignored.
 func WithOnPass(hook func(PassReport)) LoopOption {
 	return func(l *Loop) { l.onPass = hook }
+}
+
+// WithEvents sets the leader's meta-change watermark the loop parks lanes on: a
+// lane re-passes only when the sequence advanced since its last pass started.
+// Absent it, every walk lane re-spawns at each pass boundary.
+func WithEvents(e *Events) LoopOption {
+	return func(l *Loop) { l.events = e }
 }
 
 // NewLoop builds the perpetual lane loop over the walk read seam, the depends_on gate,
@@ -297,22 +321,44 @@ type laneDone struct{ lane string }
 
 // Run drives the perpetual dispatch loop until ctx is cancelled: one goroutine per
 // lane, each running that lane's pass, distinct lanes in parallel with no engine cap.
-// It reads the walk at each reconcile point (a pass boundary), starts a pass
-// goroutine for every walk lane not already running, then blocks until one lane
-// finishes its pass and reconciles again -- so the walk is re-read at each pass
-// boundary, a new lane starts looping, and a removed lane is not re-spawned once its
-// current pass finishes (its in-flight run finishes first). A lane whose run hangs
-// holds its lane indefinitely (its goroutine never finishes, so it is never
-// re-spawned), while every other lane keeps dispatching -- a hung or failed run is
-// isolated, never globally fatal, and no engine timer frees it (clock doctrine).
+// It reads the walk at each reconcile point (a pass boundary or a watermark wake),
+// starts a pass goroutine for every eligible walk lane not already running, then
+// blocks until one lane finishes its pass, the watermark advances, or ctx is
+// cancelled -- so the walk is re-read at each boundary, a new lane starts looping,
+// and a removed lane is not re-spawned once its current pass finishes (its in-flight
+// run finishes first). A lane whose run hangs holds its lane indefinitely (its
+// goroutine never finishes, so it is never re-spawned), while every other lane keeps
+// dispatching -- a hung or failed run is isolated, never globally fatal, and no
+// engine timer frees it (clock doctrine).
 //
-// It is clockless: it blocks on lane-pass completions and ctx, never on a timer. On ctx
+// With an Events watermark wired, a lane is eligible only when the sequence advanced
+// since its last pass STARTED (or it has never passed this term): a pass whose own
+// runs wrote meta re-passes once more and then parks on its first empty pass, so an
+// idle graph costs the bounded walk re-read and nothing else -- no gate query, no
+// run. Every engine-visible cause bumps the watermark through the single dispatcher,
+// so a parked lane wakes exactly when a cause lands. Without a watermark every walk
+// lane is always eligible (the walk-only wiring tests).
+//
+// It is clockless: it blocks on lane-pass completions, watermark wakes, and ctx --
+// the bounded idle re-read is a safety net, never a dispatch gate. On ctx
 // cancellation it returns promptly without joining in-flight lane goroutines -- those
 // observe ctx through their run seam and drain themselves -- so shutdown is not delayed
 // by a still-running (or hung) lane.
 func (l *Loop) Run(ctx context.Context) error {
 	running := map[string]bool{}
+	// lastSeq is each lane's watermark sequence at its last pass START (this term).
+	// Recording the sequence before the pass reads the walk means a bump landing
+	// mid-pass re-opens eligibility at the pass boundary: a change is never missed,
+	// at worst one extra (empty, cheap) pass runs.
+	lastSeq := map[string]uint64{}
 	done := make(chan laneDone)
+
+	// wake is the watermark's coalescing channel, nil (never ready) when no
+	// watermark is wired, so the selects below degrade to the legacy shape.
+	var wake <-chan struct{}
+	if l.events != nil {
+		wake = l.events.Wake()
+	}
 
 	for {
 		lanes, err := l.walk.Walk(ctx)
@@ -323,36 +369,57 @@ func (l *Loop) Run(ctx context.Context) error {
 			return fmt.Errorf("dispatch: read walk: %w", err)
 		}
 
-		// Start a pass goroutine for every walk lane not already running. A lane already
-		// running (its previous pass still in flight, e.g. a hung run) is left alone: it
-		// holds its own lane and is re-spawned only once its current pass finishes.
+		// Start a pass goroutine for every eligible walk lane not already running. A
+		// lane already running (its previous pass still in flight, e.g. a hung run) is
+		// left alone: it holds its own lane and is re-spawned only once its current
+		// pass finishes. A parked lane (watermark unchanged since its last pass
+		// started) is skipped without a gate query or a run.
+		walkNames := make(map[string]bool, len(lanes))
 		for _, lane := range lanes {
+			walkNames[lane.Name] = true
 			if running[lane.Name] {
 				continue
+			}
+			if l.events != nil {
+				if seq, passed := lastSeq[lane.Name]; passed && seq == l.events.Seq() {
+					continue // parked: no cause since this lane's last pass started
+				}
+				lastSeq[lane.Name] = l.events.Seq()
 			}
 			running[lane.Name] = true
 			l.spawnLanePass(ctx, lane, done)
 		}
+		// Forget the park state of lanes the walk no longer names, so a removed
+		// pipeline's entry does not accumulate and a re-added lane passes fresh.
+		for name := range lastSeq {
+			if !walkNames[name] && !running[name] {
+				delete(lastSeq, name)
+			}
+		}
 
-		// No lane to run: idle. Re-read the walk after a bounded wait so a graph applied
-		// to a cold (wholly idle) leader is picked up promptly -- while idle there is no
-		// in-flight pass whose completion could drive the re-read, so this wait is the
-		// only driver. Once any lane runs, each pass boundary re-reads the walk and picks
-		// up new lanes, and this idle path is not taken.
+		// No lane running: idle. Block until the watermark advances (a cause landed),
+		// or -- the safety net, and the only driver when no watermark is wired -- the
+		// bounded re-read elapses, so a graph applied to a cold leader is picked up
+		// promptly rather than never. An idle iteration with every lane parked costs
+		// the walk read alone.
 		if len(running) == 0 {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
+			case <-wake:
 			case <-time.After(idleReadInterval):
 			}
 			continue
 		}
 
 		// Block until one lane finishes a pass (reconcile: re-read the walk and re-spawn
-		// it) or ctx is cancelled (stop dispatching promptly).
+		// it), the watermark advances (a cause may unpark a lane other than the running
+		// ones -- reconcile without waiting for a possibly hung lane), or ctx is
+		// cancelled (stop dispatching promptly).
 		select {
 		case d := <-done:
 			delete(running, d.lane)
+		case <-wake:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
