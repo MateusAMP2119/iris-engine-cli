@@ -122,6 +122,22 @@ type PoisonedMember struct {
 	Decision Decision
 }
 
+// QueuedStarter starts and awaits a pipeline's enqueued cause=manual runs at the
+// member's turn in a lane pass, oldest first, so a lane-member manual run executes
+// at its lane's run boundary (same-lane serialization) exactly as the manual path
+// promised when it enqueued (manual.go's RunQueue: "the lane runner starts it in
+// turn"). The gate was already applied and the consumed upstreams recorded at
+// enqueue time, so the pickup only executes; it never re-gates. A pipeline with
+// nothing enqueued is a no-op. An error means a queued run could not be carried
+// out (ctx cancelled, or a read/exec/record fault) and stops the lane's pass; a
+// queued run that executes and dead-letters is not an error. The daemon's lane
+// plane supplies the meta+exec-backed implementation; a nil QueuedStarter skips
+// pickup (the walk-only wiring tests).
+type QueuedStarter interface {
+	// StartQueued starts and awaits pipeline's queued cause=manual runs, oldest first.
+	StartQueued(ctx context.Context, pipeline string) error
+}
+
 // PostPass is the dispatcher-owned bookkeeping the loop runs opportunistically after
 // a lane pass completes, never mid-pass: failure propagation for the pass's poisoned
 // gates, replay processing, snapshot-pin and journal-ceiling stamping, count-based
@@ -192,6 +208,7 @@ type Loop struct {
 	walk   WalkReader
 	gate   PassGate
 	runner FreshRunner
+	queued QueuedStarter
 	post   PostPass
 	logger *slog.Logger
 
@@ -230,6 +247,13 @@ func WithEvents(e *Events) LoopOption {
 	return func(l *Loop) { l.events = e }
 }
 
+// WithQueuedStarter sets the queued-manual pickup seam: at each member's turn the
+// pass starts that pipeline's enqueued cause=manual runs before evaluating the
+// gate. Absent it, no pickup runs (the walk-only wiring tests).
+func WithQueuedStarter(qs QueuedStarter) LoopOption {
+	return func(l *Loop) { l.queued = qs }
+}
+
 // NewLoop builds the perpetual lane loop over the walk read seam, the depends_on gate,
 // and the fresh-run seam. A nil logger discards output. Options add the post-pass
 // bookkeeping seam and the per-pass hook.
@@ -258,6 +282,15 @@ func (l *Loop) runLanePass(ctx context.Context, lane Lane) (PassReport, error) {
 	for _, pipeline := range lane.Pipelines {
 		if err := ctx.Err(); err != nil {
 			return report, err
+		}
+		// Queued-manual pickup first: an enqueued lane-member manual run executes at
+		// exactly this boundary (same-lane serial, "the lane runner starts it in
+		// turn"), before the gate is evaluated, so the gate then reads the manual
+		// run's outcome like any other latest run.
+		if l.queued != nil {
+			if err := l.queued.StartQueued(ctx, pipeline); err != nil {
+				return report, fmt.Errorf("dispatch: lane %q queued manual %q: %w", lane.Name, pipeline, err)
+			}
 		}
 		d, err := l.gate.Eligible(ctx, pipeline)
 		if err != nil {

@@ -215,6 +215,11 @@ func (c *Client) ManualReader() ManualReader { return c.manual }
 // declaration checksum.
 func (c *Client) RootGateReader() RootGateReader { return c.manual }
 
+// QueuedManualReader returns the plain-MVCC queued-manual reader (the pool): the
+// enqueued lane-member manual runs the lane loop starts in turn at each member's
+// lane boundary.
+func (c *Client) QueuedManualReader() QueuedManualReader { return c.manual }
+
 // ShowReader returns the plain-MVCC pipeline-show reader (the pool): the
 // declaration detail, role grants, runs, and gate-ledger input reads the `iris
 // pipeline show` readout composes.

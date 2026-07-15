@@ -2,6 +2,7 @@ package dispatch_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
@@ -170,6 +171,43 @@ func TestWakeUnparksIdleLoopPromptly(t *testing.T) {
 		<-done
 		if na, nb := runner.count("a"), runner.count("b"); na != 2 || nb != 2 {
 			t.Fatalf("dispatch counts a=%d b=%d, want 2 and 2 (one first pass + one per cause, each lane)", na, nb)
+		}
+	})
+}
+
+// fakeQueuedStarter records each pickup call into the shared event log, so the
+// queued-before-gate ordering at each member's turn is observable.
+type fakeQueuedStarter struct {
+	ev *eventLog
+}
+
+func (q *fakeQueuedStarter) StartQueued(_ context.Context, pipeline string) error {
+	q.ev.add("queued:" + pipeline)
+	return nil
+}
+
+// TestQueuedManualPickupAtMemberTurn proves the lane pass drains a member's
+// enqueued manual runs at exactly that member's turn, BEFORE its gate is
+// evaluated and before the next member advances: the pickup event lands ahead of
+// the member's own fresh run and interleaves per member in composer order.
+func TestQueuedManualPickupAtMemberTurn(t *testing.T) {
+	t.Run("queued-manual-pickup-at-member-turn", func(t *testing.T) {
+		ev := &eventLog{}
+		runner := newFakeRunner()
+		runner.ev = ev
+		loop := dispatch.NewLoop(
+			newFakeWalk(), newFakeGate(), runner, nil,
+			dispatch.WithQueuedStarter(&fakeQueuedStarter{ev: ev}),
+		)
+
+		lane := dispatch.Lane{Name: "etl", Pipelines: []string{"a", "b"}}
+		if err := loop.RunLanePass(context.Background(), lane); err != nil {
+			t.Fatalf("RunLanePass returned %v, want nil", err)
+		}
+
+		want := []string{"queued:a", "run:a", "queued:b", "run:b"}
+		if got := ev.snapshot(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("event order = %v, want %v (pickup at each member's turn, before its gate and fresh run)", got, want)
 		}
 	})
 }

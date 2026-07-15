@@ -74,6 +74,25 @@ type RootGateReader interface {
 	LatestRunDetail(ctx context.Context, pipeline string) (LatestRunDetail, bool, error)
 }
 
+// QueuedManualRun is one enqueued lane-member manual run awaiting its lane's run
+// boundary: the queued run's id and the artifact hash it was minted against (nil
+// for a dev run), everything the lane loop needs to start it.
+type QueuedManualRun struct {
+	// ID is the queued run's meta id.
+	ID int64
+	// ArtifactHash is the built artifact the run was minted for, nil for dev.
+	ArtifactHash *string
+}
+
+// QueuedManualReader is the plain-MVCC read seam the lane loop's queued-manual
+// pickup composes: the queued cause=manual runs of a pipeline, oldest first, that
+// the lane runner starts in turn at the member's boundary. The pgx manual reader
+// satisfies it; a fake satisfies it in tests.
+type QueuedManualReader interface {
+	// QueuedManualRuns returns pipeline's queued cause=manual runs, ascending by id.
+	QueuedManualRuns(ctx context.Context, pipeline string) ([]QueuedManualRun, error)
+}
+
 // ManualReader is the plain-MVCC read seam the manual-run op composes: pipeline run
 // targets, latest-run lookups, the run_inputs consumed check, and the lane roster. A
 // pgx-pool-backed implementation and a fake both satisfy it; reads are never serialized
@@ -99,6 +118,7 @@ const (
 	selectPipelineRunTargetSQL = `SELECT folder, run FROM pipelines WHERE name = $1`
 	selectLatestRunSQL         = `SELECT id, state FROM runs WHERE pipeline = $1 ORDER BY id DESC LIMIT 1`
 	selectLatestRunDetailSQL   = `SELECT id, state, cause, declaration_checksum FROM runs WHERE pipeline = $1 ORDER BY id DESC LIMIT 1`
+	selectQueuedManualRunsSQL  = `SELECT id, artifact_hash FROM runs WHERE pipeline = $1 AND state = 'queued' AND cause = 'manual' ORDER BY id`
 	selectConsumedSQL          = `SELECT EXISTS (
     SELECT 1 FROM run_inputs ri JOIN runs r ON r.id = ri.run_id
     WHERE r.pipeline = $1 AND ri.upstream_run_id = $2)`
@@ -194,6 +214,29 @@ func (r *pgxManualReader) LatestRunDetail(ctx context.Context, pipeline string) 
 	detail.State = RunState(state)
 	detail.Cause = RunCause(cause)
 	return detail, true, nil
+}
+
+// QueuedManualRuns reads pipeline's queued cause=manual runs (oldest first) in one
+// plain MVCC query, satisfying the lane loop's queued-manual pickup seam.
+func (r *pgxManualReader) QueuedManualRuns(ctx context.Context, pipeline string) ([]QueuedManualRun, error) {
+	rows, err := r.pool.query(ctx, selectQueuedManualRunsSQL, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("store: read queued manual runs for %q: %w", pipeline, err)
+	}
+	defer rows.Close()
+
+	var out []QueuedManualRun
+	for rows.Next() {
+		var q QueuedManualRun
+		if err := rows.Scan(&q.ID, &q.ArtifactHash); err != nil {
+			return nil, fmt.Errorf("store: scan queued manual run for %q: %w", pipeline, err)
+		}
+		out = append(out, q)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate queued manual runs for %q: %w", pipeline, err)
+	}
+	return out, nil
 }
 
 // Consumed answers the run_inputs already-consumed check in one plain MVCC query,
