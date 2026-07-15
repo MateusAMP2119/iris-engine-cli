@@ -606,6 +606,16 @@ func (a *app) refuseLegacyWorkspaceState(settings config.Settings) error {
 			return nil
 		}
 	}
+	// Compare symlink-resolved forms too: os.Getwd returns the resolved path
+	// while an IRIS_HOME-derived engine dir keeps the spelled form, so on macOS
+	// a cwd inside the engine home reached through /var -> /private/var would
+	// otherwise trip the guard against itself (a false positive that blocks a
+	// legitimate start; the same directory, two spellings).
+	if engineDir, eerr := filepath.EvalSymlinks(filepath.Dir(settings.Socket)); eerr == nil {
+		if resolved, lerr := filepath.EvalSymlinks(legacy); lerr == nil && resolved == engineDir {
+			return nil
+		}
+	}
 	// The engine-owned leaves earlier releases placed under <workspace>/.iris; a
 	// bare or unrelated .iris directory does not trip the guard.
 	for _, marker := range []string{config.FileName, config.SocketName, "iris.pid", "pg"} {
