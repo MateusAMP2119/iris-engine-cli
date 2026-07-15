@@ -98,6 +98,39 @@ func TestEngineStartRefusesLegacyWorkspaceState(t *testing.T) {
 		}
 	})
 
+	t.Run("the engine home reached through a symlink never trips the guard", func(t *testing.T) {
+		clearTargetEnv(t)
+		base := t.TempDir()
+		realDir := filepath.Join(base, "real")
+		if err := os.MkdirAll(realDir, 0o755); err != nil {
+			t.Fatalf("mkdir real cwd: %v", err)
+		}
+		link := filepath.Join(base, "link")
+		if err := os.Symlink(realDir, link); err != nil {
+			t.Fatalf("symlink cwd: %v", err)
+		}
+		// IRIS_HOME spelled THROUGH the symlink, cwd entered at the RESOLVED
+		// path: the two spellings name one directory, exactly the macOS
+		// /var -> /private/var case (os.Getwd resolves, IRIS_HOME does not).
+		// Same directory, so the guard must not fire (issue #186).
+		t.Setenv(config.EnvHome, filepath.Join(link, config.DirName))
+		seedFile(t, filepath.Join(realDir, config.DirName, config.FileName), "# engine home config\n")
+		t.Chdir(realDir)
+
+		var out, errb bytes.Buffer
+		code := newApp(&out, &errb).run([]string{"engine", "start"})
+		if code != exitOpFailed {
+			t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOpFailed, errb.String())
+		}
+		combined := out.String() + errb.String()
+		if strings.Contains(combined, "older iris") {
+			t.Errorf("the symlinked engine home tripped the legacy guard against itself:\n%s", combined)
+		}
+		if !strings.Contains(combined, "iris engine install") {
+			t.Errorf("start should have failed with install guidance, got:\n%s", combined)
+		}
+	})
+
 	t.Run("a bare unrelated .iris directory never trips the guard", func(t *testing.T) {
 		clearTargetEnv(t)
 		cwd := t.TempDir()
