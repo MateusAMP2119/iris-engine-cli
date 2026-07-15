@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file proves the apply op validates the dependency graph on the serialized

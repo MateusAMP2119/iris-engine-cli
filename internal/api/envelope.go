@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the response-side half of the read-API wire contract: the {

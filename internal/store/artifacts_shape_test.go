@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestArtifactsRowIsIndex proves the artifacts table's shape contract:

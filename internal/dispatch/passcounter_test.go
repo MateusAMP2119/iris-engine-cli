@@ -3,7 +3,7 @@ package dispatch_test
 import (
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 )
 
 // TestPassCounter proves the per-lane loop pass counter's mechanics: the hook counts

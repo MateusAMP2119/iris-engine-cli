@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // fakePATReader is a store.PATReader over a fixed record set keyed by token prefix.

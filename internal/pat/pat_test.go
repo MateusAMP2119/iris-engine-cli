@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
 )
 
 // This file proves the PAT leaf's pure logic: the scope algebra over {control, read,

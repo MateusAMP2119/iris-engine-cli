@@ -120,6 +120,12 @@ func (b *Binary) StartDaemon(t testing.TB, opts DaemonOptions) *Daemon {
 	args = append(args, opts.Args...)
 	cmd := exec.Command(b.path, args...)
 	env := cmd.Environ()
+	// Pin the engine home beside the daemon's socket: production resolves it
+	// from the fixed per-user ~/.iris (IRIS_HOME relocates it), and a test
+	// daemon must never read a developer's real engine home.
+	if !hasEnv(opts.Env, "IRIS_HOME=") {
+		env = append(env, "IRIS_HOME="+filepath.Dir(socket))
+	}
 	env = append(env, opts.Env...)
 	cmd.Env = env
 

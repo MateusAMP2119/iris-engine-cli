@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // TestJournalSelectOnly stands up a real Postgres cluster the engine has never

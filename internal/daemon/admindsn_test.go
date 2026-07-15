@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // ptr returns a pointer to s, for building config layers.

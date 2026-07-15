@@ -36,6 +36,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,7 +44,7 @@ import (
 // irisPkg is the import path of the iris command that Build compiles. Building
 // by import path (rather than a relative ./cmd/iris) keeps Build independent of
 // the caller's working directory within the module.
-const irisPkg = "github.com/MateusAMP2119/iris-engine-cli/cmd/iris"
+const irisPkg = "github.com/MateusAMP2119/iris-lakehouse/cmd/iris"
 
 // defaultRunTimeout bounds a single binary invocation so a hung process fails
 // the test promptly instead of the CI job's wall clock.
@@ -116,6 +117,19 @@ func (b *Binary) Run(t testing.TB, opts RunOptions) Result {
 	cmd := exec.CommandContext(ctx, b.path, opts.Args...)
 	cmd.Dir = opts.Dir
 	env := os.Environ()
+	// Pin the engine home to the invocation's workspace: production resolves the
+	// engine target from the fixed per-user ~/.iris (IRIS_HOME relocates it), and
+	// the suite relies on per-test isolation, so each invocation gets
+	// <Dir>/.iris as its engine home -- or a throwaway one when the invocation
+	// has no workspace -- unless the caller set IRIS_HOME itself. The binary must
+	// never read the machine's real ~/.iris.
+	if !hasEnv(opts.Env, "IRIS_HOME=") {
+		home := filepath.Join(t.TempDir(), ".iris")
+		if opts.Dir != "" {
+			home = filepath.Join(opts.Dir, ".iris")
+		}
+		env = append(env, "IRIS_HOME="+home)
+	}
 	env = append(env, opts.Env...)
 	cmd.Env = env
 	if opts.Stdin != nil {
@@ -170,6 +184,17 @@ func (r Result) DecodeJSON(t testing.TB, v any) {
 		t.Fatalf("--json: stdout carries content after the single JSON document (err=%v)\nstdout:\n%s",
 			err, r.Stdout)
 	}
+}
+
+// hasEnv reports whether env carries an entry with the given "KEY=" prefix, so
+// a caller-supplied variable is never shadowed by a runner-derived default.
+func hasEnv(env []string, prefix string) bool {
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // binName is the built binary's filename for the host platform.

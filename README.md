@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MateusAMP2119/iris-engine-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MateusAMP2119/iris-engine-cli/ci.yml?branch=development&style=for-the-badge&label=CI" alt="CI"></a>
+  <a href="https://github.com/MateusAMP2119/iris-lakehouse/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MateusAMP2119/iris-lakehouse/ci.yml?branch=development&style=for-the-badge&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=for-the-badge&logo=go" alt="Go 1.25+">
   <img src="https://img.shields.io/badge/Postgres-16%2B-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres 16+">
   <img src="https://img.shields.io/badge/cgo-free-brightgreen?style=for-the-badge" alt="cgo-free">
@@ -38,22 +38,22 @@ See [docs/CLOUDFLARE_INSTALL_SETUP.md](docs/CLOUDFLARE_INSTALL_SETUP.md) for exa
 **Current** (works immediately):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash
 ```
 
-The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where the engine workspace should live (`~/iris` by default), bootstraps the engine there, then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
+The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where your pipeline workspace should live (`~/iris` by default), bootstraps the engine at its fixed per-user home (`~/.iris` — every shell finds it, whatever directory you run `iris` from), then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
 
 Have Go 1.25+? `go install` works too:
 
 ```sh
-go install github.com/MateusAMP2119/iris-engine-cli/cmd/iris@latest
+go install github.com/MateusAMP2119/iris-lakehouse/cmd/iris@latest
 ```
 
 Or build from source:
 
 ```sh
-git clone https://github.com/MateusAMP2119/iris-engine-cli.git
-cd iris-engine-cli
+git clone https://github.com/MateusAMP2119/iris-lakehouse.git
+cd iris-lakehouse
 go build -o iris ./cmd/iris    # cgo-free static binary
 ```
 
@@ -83,7 +83,7 @@ Binary broken or missing? The script fallback does the same from outside:
 curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 ```
 
-(or the raw version: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/uninstall.sh | bash`)
+(or the raw version: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/uninstall.sh | bash`)
 
 ---
 

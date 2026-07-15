@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file proves the run-connection builder: a run whose pipeline role holds a

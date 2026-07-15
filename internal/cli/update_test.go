@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
 
 // TestUpdateDevBuildRefuses proves `iris update` refuses to self-replace an

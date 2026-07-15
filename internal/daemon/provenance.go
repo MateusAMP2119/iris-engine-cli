@@ -6,10 +6,10 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/archive"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/archive"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the daemon's provenance plane: the api.ProvenanceHandler behind

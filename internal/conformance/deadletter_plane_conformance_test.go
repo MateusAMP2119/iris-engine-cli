@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // itoa renders a run id as its decimal string, the form the CLI and the wire use.

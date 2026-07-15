@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestArtifactDataModeMatrix proves the artifact/data mode matrix: artifact

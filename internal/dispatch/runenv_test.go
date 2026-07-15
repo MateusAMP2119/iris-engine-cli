@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 )
 
 // hostEnvFrom builds a daemon-environment lookup over a fixed map: an absent key

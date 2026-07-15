@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // This file proves the three E14 read-route planes compose the store's plain-MVCC

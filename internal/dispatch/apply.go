@@ -13,8 +13,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // Applier persists declared pipelines and lane composers into the registry through

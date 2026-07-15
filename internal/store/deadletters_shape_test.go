@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestDeadLettersWorklistShape proves the dead_letters worklist table shape: one

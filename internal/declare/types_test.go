@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // boolPtr returns a pointer to b, for setting an explicit nullable modifier.

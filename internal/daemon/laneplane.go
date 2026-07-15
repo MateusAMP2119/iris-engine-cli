@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the daemon's leader-side perpetual lane-loop plane: the composition
@@ -398,11 +398,19 @@ func (p lanePostPass) propagateFailures(ctx context.Context, report dispatch.Pas
 	return nil
 }
 
+// pruneBatchSize bounds how many runs one prune transaction archives and
+// deletes. Chunking keeps a backlog drain (hundreds of thousands of runs beyond
+// retain after a long session) from paying one commit per run — the difference
+// between seconds and tens of minutes — while bounding transaction size so the
+// single writer is never held by one enormous batch.
+const pruneBatchSize = 256
+
 // pruneRetention enforces count-based retention over THIS lane's pipelines: it
 // reads the run census and the dead-letter-held set, selects the runs beyond the
 // newest `retain` per pipeline (dispatch.SelectPrunable, sparing held runs), and
-// prunes each through the single writer (archival summary + delete in one meta
-// transaction, then the per-run log). Scoping to the lane's own pipelines keeps
+// prunes them through the single writer in chunks of pruneBatchSize (each chunk
+// one atomic meta transaction of per-run archival summary + delete, then the
+// per-run logs). Scoping to the lane's own pipelines keeps
 // concurrent lane post-passes from pruning the same run: lanes never share a
 // pipeline. A pass with nothing beyond retain writes nothing. An error is
 // returned to the loop, which logs it and retries at the next pass boundary --
@@ -439,11 +447,12 @@ func (p lanePostPass) pruneRetention(ctx context.Context, report dispatch.PassRe
 	if err != nil {
 		return fmt.Errorf("lane post-pass %q: %w", report.Lane, err)
 	}
-	for _, rec := range records {
+	for start := 0; start < len(records); start += pruneBatchSize {
+		batch := records[start:min(start+pruneBatchSize, len(records))]
 		if err := p.submit.Submit(ctx, func(w *store.Writer) error {
-			return w.PruneRun(ctx, rec, p.deleteLog)
+			return w.PruneRuns(ctx, batch, p.deleteLog)
 		}); err != nil {
-			return fmt.Errorf("lane post-pass %q: prune run %d: %w", report.Lane, rec.RunID, err)
+			return fmt.Errorf("lane post-pass %q: prune batch of %d runs: %w", report.Lane, len(batch), err)
 		}
 	}
 	p.logger.Info("lane post-pass: pruned runs beyond retention", "lane", report.Lane, "count", len(records), "retain", p.retain)

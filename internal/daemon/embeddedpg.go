@@ -42,7 +42,7 @@ type pgInstance interface {
 
 // EmbeddedSupervisor is the production SupervisorFactory. It builds a managed-
 // Postgres supervisor that places the pinned build under the configured
-// <workspace>/.iris/pg directory and supervises it as a child subprocess. It
+// <engine home>/pg directory and supervises it as a child subprocess. It
 // satisfies daemon.SupervisorFactory, and is the factory a Manager is built with on
 // both engine paths that need Postgres: `iris engine install` (install.go) and the
 // daemon lifecycle (lifecycle.go).

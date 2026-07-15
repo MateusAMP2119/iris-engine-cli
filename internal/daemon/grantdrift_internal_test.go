@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file proves the leader's grant-drift pass: a ledgered grant Postgres

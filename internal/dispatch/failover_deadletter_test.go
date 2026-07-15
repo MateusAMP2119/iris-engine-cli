@@ -15,9 +15,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // latestUpstreamEdge derives a dependent's depends_on edge to upstream from the

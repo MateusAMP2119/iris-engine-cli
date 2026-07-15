@@ -3,7 +3,7 @@ package declare_test
 import (
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file proves data-PAT grant resolution at mint: the three --read/--endpoint

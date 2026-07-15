@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the live data-PAT read-role surface, the read-side analogue of the

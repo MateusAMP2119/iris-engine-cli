@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the dispatcher's snapshot-pin stamping. The pin is three values naming

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/golden"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/golden"
 )
 
 // runQuickstart drives `iris quickstart <args...>` with the two TTY seams

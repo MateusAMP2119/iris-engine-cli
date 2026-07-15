@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
 )
 
 // fakeVerifier accepts exactly one bearer token, so the TCP listener's PAT gate

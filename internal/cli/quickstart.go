@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
 )
 
 // quickstartStep is one canonical tour step: a stable id, a one-line
@@ -173,7 +173,7 @@ func (a *app) quickstartCmd() *cobra.Command {
 func (a *app) runQuickstart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		if v, ok := changedString(cmd, "host"); ok && v != "" {
-			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted), or point this workspace at a remote engine with iris engine connect <host>")
+			return a.usage("iris quickstart tours this machine and provisions a local engine, so --host is refused; drop --host and run the tour locally (a local --socket stays accepted), or point this machine at a remote engine with iris engine connect <host>")
 		}
 		cat, err := loadCatalog()
 		if err != nil {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // TestReplayRunMintsFreshRunAndExitsWorklist proves the replay write: a replay

@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // This file is the CLI side of `iris data provenance <schema.table> <pk>`: the

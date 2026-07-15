@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the daemon's run-trace plane: the api.RunTraceHandler behind GET

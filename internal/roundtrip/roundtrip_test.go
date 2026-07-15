@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
 )
 
 // gzipFormat is a representative archive-like format (compression) built only

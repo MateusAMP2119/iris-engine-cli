@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // ptrStr and ptrI64 build pointers for the nullable summary fields (artifact_hash,
@@ -235,6 +235,103 @@ func TestPruneRunSummarySameTxn(t *testing.T) {
 		}
 		if logDeleted {
 			t.Error("the run's log was deleted despite the meta transaction failing; the run still exists, so its log must survive")
+		}
+	})
+}
+
+// TestPruneRunsBatchesOneTransaction proves the batch pruner archives and
+// deletes MANY runs in exactly one atomic meta transaction: the statements are
+// the runs' per-run triples concatenated in order (each summary INSERT preceding
+// that run's DELETE), the per-run logs are deleted only after the one commit and
+// in batch order, an empty batch writes nothing, and an injected meta failure
+// rolls the whole chunk back deleting no log -- so a failed backlog drain leaves
+// every run and log intact for the next pass.
+func TestPruneRunsBatchesOneTransaction(t *testing.T) {
+	runAt := func(id int64) store.PrunableRun {
+		r := fullPrunableRun()
+		r.RunID = id
+		return r
+	}
+	batch := []store.PrunableRun{runAt(1), runAt(2), runAt(3)}
+
+	t.Run("many runs share one atomic transaction, triples in per-run order", func(t *testing.T) {
+		rec := storetest.NewWriteRecorder()
+		w := store.NewWriter(rec)
+		if err := w.PruneRuns(context.Background(), batch, nil); err != nil {
+			t.Fatalf("PruneRuns: %v", err)
+		}
+		txns := rec.Transactions()
+		if len(txns) != 1 {
+			t.Fatalf("PruneRuns issued %d transactions for 3 runs, want exactly one", len(txns))
+		}
+		stmts := txns[0]
+		if len(stmts) != 9 {
+			t.Fatalf("batch carries %d statements for 3 runs, want 9 (3 per run)", len(stmts))
+		}
+		for i, run := range batch {
+			triple := stmts[i*3 : i*3+3]
+			if !strings.Contains(triple[0].SQL, "INSERT INTO run_summaries") ||
+				!strings.Contains(triple[1].SQL, "DELETE FROM run_inputs") ||
+				!strings.Contains(triple[2].SQL, "DELETE FROM runs") {
+				t.Fatalf("run %d triple out of order (summary insert, inputs cascade, run delete):\n%v", run.RunID, triple)
+			}
+			if got := triple[0].Args[0]; got != run.RunID {
+				t.Errorf("triple %d archives run %v, want %d (batch must preserve input order)", i, got, run.RunID)
+			}
+		}
+	})
+
+	t.Run("logs are deleted after the one commit, in batch order", func(t *testing.T) {
+		rec := storetest.NewWriteRecorder()
+		w := store.NewWriter(rec)
+		var deleted []string
+		deleteLog := func(runID string) error {
+			if len(rec.Transactions()) != 1 {
+				t.Errorf("log hook ran with %d committed transactions, want the batch committed first", len(rec.Transactions()))
+			}
+			deleted = append(deleted, runID)
+			return nil
+		}
+		if err := w.PruneRuns(context.Background(), batch, deleteLog); err != nil {
+			t.Fatalf("PruneRuns: %v", err)
+		}
+		if want := []string{"1", "2", "3"}; !reflect.DeepEqual(deleted, want) {
+			t.Errorf("deleted logs = %v, want %v", deleted, want)
+		}
+	})
+
+	t.Run("an empty batch writes nothing", func(t *testing.T) {
+		rec := storetest.NewWriteRecorder()
+		w := store.NewWriter(rec)
+		if err := w.PruneRuns(context.Background(), nil, func(string) error {
+			t.Error("log hook called for an empty batch")
+			return nil
+		}); err != nil {
+			t.Fatalf("PruneRuns with empty batch: %v", err)
+		}
+		if got := len(rec.Statements()); got != 0 {
+			t.Errorf("empty batch recorded %d statements, want none", got)
+		}
+	})
+
+	t.Run("meta failure rolls back the whole chunk and deletes no log", func(t *testing.T) {
+		rec := storetest.NewWriteRecorder()
+		sentinel := errors.New("meta write failed")
+		rec.FailTx(sentinel)
+		w := store.NewWriter(rec)
+		logDeleted := false
+		err := w.PruneRuns(context.Background(), batch, func(string) error {
+			logDeleted = true
+			return nil
+		})
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("PruneRuns error = %v, want the injected meta failure", err)
+		}
+		if len(rec.Statements()) != 0 {
+			t.Errorf("a rolled-back batch recorded %d statements, want none (all-or-nothing)", len(rec.Statements()))
+		}
+		if logDeleted {
+			t.Error("a log was deleted despite the meta transaction failing; every run in the chunk still exists")
 		}
 	})
 }

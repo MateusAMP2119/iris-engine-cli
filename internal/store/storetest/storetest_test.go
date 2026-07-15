@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // TestRunStateWireValues pins the run-state constants to the exact tokens the

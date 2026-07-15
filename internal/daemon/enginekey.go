@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file holds the engine key: the ed25519 keypair minted once at `iris engine

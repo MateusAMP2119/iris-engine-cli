@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestResolveDrainTargetsScopedOnly proves drain resolves EXACTLY the entries the

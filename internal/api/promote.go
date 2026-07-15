@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the daemon's promote surface for the `iris pipeline promote`

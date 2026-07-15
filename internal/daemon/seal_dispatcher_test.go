@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/archive"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/archive"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // orderLog records the seal step's observable actions in the order they occur, so

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 )
 
 // writeScript writes an executable throwaway /bin/sh script into dir and returns

@@ -7,15 +7,16 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // This file generates the platform service unit `iris engine service install`
 // writes on demand (on demand, never auto-shipped: iris engine service install
 // installs a systemd/launchd unit wrapping the detached daemon, itself
 // service-ready (clean SIGTERM/SIGINT, no TTY, sane exit codes)). The unit wraps
-// `<binary> engine start --detach` rooted at the workspace, so the service manager
-// runs the same detached daemon the CLI does. It is generated only here and written
+// `<binary> engine start --detach` rooted at the unit-install invocation's
+// working directory (the workspace tree the daemon dispatches from), so the
+// service manager runs the same detached daemon the CLI does. It is generated only here and written
 // only by the service-install command (a structural sweep proves no other command
 // installs a unit or a boot autostart); `service uninstall` removes it, at the
 // ServiceUnitPath seam engine uninstall shares.
@@ -36,12 +37,12 @@ const serviceLaunchdLabel = "com.iris.engine"
 // serviceUnitPerm is the mode a generated unit file is written with. Unit files
 // carry no secret and must be readable by the service manager (which may run as a
 // different user), so they follow the conventional world-readable 0644 rather than
-// the owner-only mode the rest of the .iris tree uses.
+// the owner-only mode the rest of the engine home uses.
 const serviceUnitPerm os.FileMode = 0o644
 
 // serviceUnitDirPerm is the mode intermediate directories are created with for a
-// --path target outside the workspace: 0755, so a service manager running as a
-// different user can traverse to the world-readable unit file. The .iris tree's
+// --path target outside the engine home: 0755, so a service manager running as a
+// different user can traverse to the world-readable unit file. The engine home's
 // own 0700 is for engine-private state and would block that traversal.
 const serviceUnitDirPerm os.FileMode = 0o755
 
@@ -113,10 +114,16 @@ func HostServicePlatform() (ServicePlatform, bool) {
 	return ServicePlatformForGOOS(runtime.GOOS)
 }
 
-// WorkspaceRoot returns the workspace root the settings are rooted at (the parent
-// of the .iris tree), used as the service unit's WorkingDirectory so the daemon
-// starts in the same workspace the CLI ran from.
+// WorkspaceRoot returns the workspace tree the generated unit's daemon
+// dispatches from, used as the service unit's WorkingDirectory: the directory
+// `iris engine service install` was invoked in (the daemon's workspace is its
+// working directory, decoupled from the engine home the socket and state live
+// in). When the invoking directory cannot be resolved it falls back to the
+// engine home's parent.
 func WorkspaceRoot(s config.Settings) string {
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
 	return filepath.Dir(irisDir(s))
 }
 
@@ -137,7 +144,7 @@ func RenderServiceUnit(platform ServicePlatform, exePath, workspace, pidPath str
 
 // InstallServiceUnit generates the host platform's service unit wrapping the
 // detached daemon at exePath and writes it to unitPath, returning the path
-// written. An empty unitPath installs at the workspace-local ServiceUnitPath seam
+// written. An empty unitPath installs at the engine-home ServiceUnitPath seam
 // that engine uninstall also removes, so the two never disagree on the unit's
 // location. It is the single unit-installing entrypoint; a structural sweep proves
 // only the service-install command calls it.
@@ -153,7 +160,7 @@ func InstallServiceUnit(s config.Settings, exePath, unitPath string) (string, er
 	if err != nil {
 		return "", err
 	}
-	// Intermediate-directory mode: the workspace .iris tree stays owner-only (0700,
+	// Intermediate-directory mode: the engine home stays owner-only (0700,
 	// private engine state); a --path target outside it gets traversable 0755 so a
 	// service manager running as another user can reach the world-readable unit.
 	// MkdirAll leaves an existing directory's mode untouched, so this only sets the

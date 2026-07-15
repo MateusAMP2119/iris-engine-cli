@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // These tests pin the stats surface: the read-only rollup payload GET /stats

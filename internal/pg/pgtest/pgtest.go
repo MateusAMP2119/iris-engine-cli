@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // Recorder is a pg.DB that records the statements issued through it instead of

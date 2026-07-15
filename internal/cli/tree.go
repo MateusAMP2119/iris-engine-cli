@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // runE is the signature of a cobra command handler.
@@ -327,7 +327,7 @@ func (a *app) engineCmd() *cobra.Command {
 		Args: cobra.NoArgs, RunE: a.engineStats(),
 	}
 	connect := &cobra.Command{
-		Use: "connect [host]", Short: "Point this workspace at a remote engine: verify host and PAT, record them in .iris/iris.toml",
+		Use: "connect [host]", Short: "Point this machine at a remote engine: verify host and PAT, record them in the engine home's iris.toml",
 		Args: cobra.MaximumNArgs(1), RunE: a.engineConnect(),
 	}
 
@@ -335,12 +335,12 @@ func (a *app) engineCmd() *cobra.Command {
 		Use: "install", Short: "Generate and install the platform service unit (systemd/launchd)",
 		Args: cobra.NoArgs, RunE: a.engineServiceInstall(),
 	}
-	svcInstall.Flags().String("path", "", "write the unit to this path instead of the workspace-local default")
+	svcInstall.Flags().String("path", "", "write the unit to this path instead of the engine-home default")
 	svcUninstall := &cobra.Command{
 		Use: "uninstall", Short: "Remove the installed service unit",
 		Args: cobra.NoArgs, RunE: a.engineServiceUninstall(),
 	}
-	svcUninstall.Flags().String("path", "", "remove the unit at this path instead of the workspace-local default")
+	svcUninstall.Flags().String("path", "", "remove the unit at this path instead of the engine-home default")
 	service := a.group("service", "Manage the platform service unit",
 		daemonless(svcInstall), daemonless(svcUninstall))
 

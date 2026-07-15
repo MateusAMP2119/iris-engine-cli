@@ -9,7 +9,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // RecordedStatement is one statement a WriteRecorder captured: its SQL text and the

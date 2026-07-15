@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
 // decodeErr decodes an error envelope, including the leader hint the not_leader

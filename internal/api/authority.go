@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
 )
 
 // This file is the request-authority model of the read API: who a request acts

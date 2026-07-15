@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
 
 // esc is the ANSI escape byte; its presence in captured output means a color code

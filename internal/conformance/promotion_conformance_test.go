@@ -12,7 +12,7 @@ import (
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // TestPostPromotionWritesStillCaptured is the end-to-end proof of promotion's

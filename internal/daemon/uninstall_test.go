@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg/pgtest"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg/pgtest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // seedFile writes body to path, first creating the file's parent directory, so

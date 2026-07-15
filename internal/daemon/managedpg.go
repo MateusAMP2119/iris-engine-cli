@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // This file holds the managed-Postgres supervisor: the daemon-side machinery that,
@@ -49,9 +49,9 @@ const PinnedMajorVersion = 18
 // (engine-minted superuser CLI never sees).
 const ManagedSuperuser = "iris_engine"
 
-// pgDirName is the managed-Postgres subdirectory of the workspace .iris tree: the
+// pgDirName is the managed-Postgres subdirectory of the engine home: the
 // engine-managed cluster, hosting both the data and meta databases, lives under
-// <workspace>/.iris/pg.
+// <engine home>/pg.
 const pgDirName = "pg"
 
 // dataDirName is the Postgres data directory under the managed-Postgres directory;
@@ -82,18 +82,18 @@ const superuserPasswordPerm os.FileMode = 0o600
 var ErrPGVersionMismatch = errors.New("daemon: managed Postgres data directory version mismatch")
 
 // ManagedPGDir returns the managed-Postgres directory for the given settings:
-// <workspace>/.iris/pg, derived from the workspace .iris tree the control socket
-// lives in (the socket and the managed Postgres both sit under <workspace>/.iris).
-// It is the directory the pinned build's binaries and data directory are placed
-// under.
+// <engine home>/pg, derived from the engine home the control socket lives in
+// (the socket and the managed Postgres both sit under the engine home, ~/.iris
+// by default). It is the directory the pinned build's binaries and data
+// directory are placed under.
 func ManagedPGDir(s config.Settings) string {
 	return filepath.Join(irisDir(s), pgDirName)
 }
 
-// irisDir returns the workspace .iris directory the settings are rooted at, taken
-// as the directory the control socket sits in (config.Defaults places the socket at
-// <workspace>/.iris/iris.sock). Managed-Postgres placement tracks that same .iris
-// root so the whole engine state stays under one workspace directory.
+// irisDir returns the engine home the settings are rooted at, taken as the
+// directory the control socket sits in (config.Defaults places the socket at
+// <engine home>/iris.sock, ~/.iris by default). Managed-Postgres placement
+// tracks that same root so the whole engine state stays under one directory.
 func irisDir(s config.Settings) string {
 	return filepath.Dir(s.Socket)
 }
@@ -153,7 +153,7 @@ func CheckDataDirVersion(dataDir string, want int) error {
 // intent (socket-vs-TCP, the minted credential) and what the real supervisor turns
 // into an embedded-postgres configuration.
 type SupervisorConfig struct {
-	// Dir is the managed-Postgres directory (<workspace>/.iris/pg): where the
+	// Dir is the managed-Postgres directory (<engine home>/pg): where the
 	// pinned build's binaries are placed.
 	Dir string
 	// DataDir is the Postgres data directory (Dir/data): where initdb writes
@@ -219,7 +219,7 @@ func NewManager(settings config.Settings, newSup SupervisorFactory) *Manager {
 
 // Install performs the daemonless `iris engine install` managed-Postgres leg: in
 // managed mode it downloads and places the pinned, checksum-verified Postgres under
-// <workspace>/.iris/pg and materializes the data directory (recording PG_VERSION),
+// <engine home>/pg and materializes the data directory (recording PG_VERSION),
 // failing fast on a version-mismatched existing data directory. In external mode
 // there is no local instance to install, so it is a no-op. It is idempotent.
 //

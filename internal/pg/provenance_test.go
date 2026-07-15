@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // The provenance tests exercise the `iris data provenance` three-lookup walk

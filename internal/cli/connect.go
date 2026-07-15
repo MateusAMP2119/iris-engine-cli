@@ -15,13 +15,14 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // connectResult is the machine-readable payload of `iris engine connect`, the
 // --json data envelope: the verified host, the role its engine reported, and
-// the iris.toml the connection was recorded in. It never carries the token.
+// the engine home iris.toml the connection was recorded in. It never carries
+// the token.
 type connectResult struct {
 	Host   string `json:"host"`
 	Role   string `json:"role"`
@@ -29,14 +30,13 @@ type connectResult struct {
 }
 
 // engineConnect is the handler for `iris engine connect [host]`: point this
-// workspace at an existing remote engine instead of provisioning one locally.
+// machine at an existing remote engine instead of provisioning one locally.
 // It resolves the host (argument > --host/IRIS_HOST/iris.toml > interactive
 // prompt) and the PAT (--token/IRIS_TOKEN > interactive hidden prompt), proves
 // the pair against the engine's /healthz -- an unreachable host and a rejected
 // PAT are distinct faults, and nothing is recorded on either -- then records
-// host and token in the invoking directory's .iris/iris.toml (0600), the
-// configuration layer every subsequent command in this workspace resolves
-// through.
+// host and token in the engine home's iris.toml (0600), the configuration
+// layer every subsequent command on this machine resolves through.
 func (a *app) engineConnect() runE {
 	return func(cmd *cobra.Command, args []string) error {
 		settings := a.resolveTarget(cmd)
@@ -83,12 +83,12 @@ func (a *app) engineConnect() runE {
 			return err
 		}
 
-		wd, err := os.Getwd()
+		home, err := config.Home(os.Getenv)
 		if err != nil {
-			return &fault{code: exitOpFailed, codeStr: "connect_workspace",
-				message: fmt.Sprintf("engine connect: resolve the current directory: %v", err)}
+			return &fault{code: exitOpFailed, codeStr: "connect_home",
+				message: fmt.Sprintf("engine connect: resolve the engine home: %v", err)}
 		}
-		tomlPath := filepath.Join(wd, config.DirName, config.FileName)
+		tomlPath := filepath.Join(home, config.FileName)
 		if err := config.UpsertTOMLFile(tomlPath, map[string]string{"host": host, "token": token}); err != nil {
 			return &fault{code: exitOpFailed, codeStr: "connect_record",
 				message: fmt.Sprintf("engine connect: record the connection: %v", err)}
@@ -103,7 +103,7 @@ func (a *app) engineConnect() runE {
 		fmt.Fprintf(a.out, "%s\n", p.green(fmt.Sprintf("✓ connected to %s — role: %s", host, health.Role)))
 		fmt.Fprintf(a.out, "%s\n", p.green("✓ recorded host and token in "+tomlPath+" (0600)"))
 		fmt.Fprintln(a.out)
-		fmt.Fprintf(a.out, "Every iris command run in %s now targets the remote engine:\n", wd)
+		fmt.Fprintln(a.out, "Every iris command on this machine now targets the remote engine:")
 		fmt.Fprintln(a.out, "  iris pipeline list    what runs there")
 		fmt.Fprintln(a.out, "  iris run list         its run history")
 		fmt.Fprintln(a.out, "Override per invocation with --socket or --host; disconnect by removing the host and token lines from the file.")

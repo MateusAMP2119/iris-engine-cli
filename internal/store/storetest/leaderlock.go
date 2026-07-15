@@ -13,7 +13,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // ErrSessionEnded is returned by Acquire on a handle whose session has ended (a

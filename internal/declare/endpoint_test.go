@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/golden"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/golden"
 )
 
 // ordersSource returns the parsed analytics.orders table the golden endpoint's

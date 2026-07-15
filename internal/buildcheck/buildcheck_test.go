@@ -12,7 +12,7 @@ import (
 // irisPkg is the import path of the iris command the cgo-free build compiles.
 // Building by import path (rather than a relative ./cmd/iris) keeps the build
 // independent of the test's working directory within the module.
-const irisPkg = "github.com/MateusAMP2119/iris-engine-cli/cmd/iris"
+const irisPkg = "github.com/MateusAMP2119/iris-lakehouse/cmd/iris"
 
 // repoRoot is the module root relative to this package's directory
 // (internal/buildcheck): where the tests read go.mod and the CI workflow, and

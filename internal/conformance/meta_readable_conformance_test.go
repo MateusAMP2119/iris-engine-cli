@@ -16,8 +16,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // healthzRole issues GET /healthz over the daemon's socket and returns the reported

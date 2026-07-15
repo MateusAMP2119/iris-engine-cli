@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
 )
 
 // requireMetaAndData connects to the cluster the admin DSN dsn points at and fails

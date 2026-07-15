@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pat"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pat"
 )
 
 // startConnectDaemon stands up an in-process daemon with a TCP listener that
@@ -30,10 +30,10 @@ func startConnectDaemon(t *testing.T, goodToken string) string {
 	return srv.TCPAddr()
 }
 
-// readWorkspaceTOML loads the invoking directory's .iris/iris.toml.
-func readWorkspaceTOML(t *testing.T, dir string) config.TOML {
+// readEngineHomeTOML loads the engine home's iris.toml.
+func readEngineHomeTOML(t *testing.T, home string) config.TOML {
 	t.Helper()
-	res, err := config.LoadTOMLFile(filepath.Join(dir, config.DirName, config.FileName))
+	res, err := config.LoadTOMLFile(filepath.Join(home, config.FileName))
 	if err != nil {
 		t.Fatalf("load written iris.toml: %v", err)
 	}
@@ -42,11 +42,11 @@ func readWorkspaceTOML(t *testing.T, dir string) config.TOML {
 
 // TestEngineConnectRecords proves the happy path: `iris engine connect <host>
 // --token <pat>` verifies the pair against the live engine and records both in
-// the workspace's .iris/iris.toml (0600), reporting the engine's role.
+// the engine home's iris.toml (0600), reporting the engine's role. The command
+// runs from an unrelated directory: recording is cwd-independent.
 func TestEngineConnectRecords(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
 
 	var out, errb bytes.Buffer
@@ -58,14 +58,14 @@ func TestEngineConnectRecords(t *testing.T) {
 		t.Errorf("stdout misses the connected line:\n%s", out.String())
 	}
 
-	res := readWorkspaceTOML(t, ws)
+	res := readEngineHomeTOML(t, home)
 	if res.Layer.Host == nil || *res.Layer.Host != host {
 		t.Errorf("recorded host = %v, want %s", res.Layer.Host, host)
 	}
 	if res.Layer.Token == nil || *res.Layer.Token != "secret" {
 		t.Errorf("recorded token = %v, want secret", res.Layer.Token)
 	}
-	st, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName))
+	st, err := os.Stat(filepath.Join(home, config.FileName))
 	if err != nil {
 		t.Fatalf("stat iris.toml: %v", err)
 	}
@@ -77,9 +77,8 @@ func TestEngineConnectRecords(t *testing.T) {
 // TestEngineConnectJSON proves the --json surface: one data envelope carrying
 // the host, role, and config path -- and never the token.
 func TestEngineConnectJSON(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
 
 	var out, errb bytes.Buffer
@@ -96,8 +95,8 @@ func TestEngineConnectJSON(t *testing.T) {
 	if env.Data.Host != host {
 		t.Errorf("envelope host = %q, want %q", env.Data.Host, host)
 	}
-	if env.Data.Config != filepath.Join(ws, config.DirName, config.FileName) {
-		t.Errorf("envelope config = %q, want the workspace iris.toml", env.Data.Config)
+	if env.Data.Config != filepath.Join(home, config.FileName) {
+		t.Errorf("envelope config = %q, want the engine home iris.toml", env.Data.Config)
 	}
 	if strings.Contains(out.String(), "secret") {
 		t.Errorf("the token leaked into the --json envelope:\n%s", out.String())
@@ -107,9 +106,8 @@ func TestEngineConnectJSON(t *testing.T) {
 // TestEngineConnectTLS proves connect is scheme-aware like every TCP dial: an
 // https:// host verifies and records against a TLS-serving engine.
 func TestEngineConnectTLS(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	certFile, keyFile, pool := selfSignedCert(t)
 	srv := daemon.NewServer(
 		config.Settings{Socket: shortSocket(t), TCP: "127.0.0.1:0", TLSCert: certFile, TLSKey: keyFile},
@@ -125,7 +123,7 @@ func TestEngineConnectTLS(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 	}
-	res := readWorkspaceTOML(t, ws)
+	res := readEngineHomeTOML(t, home)
 	if res.Layer.Host == nil || *res.Layer.Host != "https://"+srv.TCPAddr() {
 		t.Errorf("recorded host = %v, want the https:// form kept", res.Layer.Host)
 	}
@@ -134,9 +132,8 @@ func TestEngineConnectTLS(t *testing.T) {
 // TestEngineConnectRejectedPAT proves a live engine rejecting the PAT is an
 // operation failure (exit 4) that names the fix and records nothing.
 func TestEngineConnectRejectedPAT(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "right")
 
 	var out, errb bytes.Buffer
@@ -147,7 +144,7 @@ func TestEngineConnectRejectedPAT(t *testing.T) {
 	if !strings.Contains(errb.String(), "rejected the PAT") {
 		t.Errorf("stderr misses the rejected-PAT guidance:\n%s", errb.String())
 	}
-	if _, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName)); err == nil {
+	if _, err := os.Stat(filepath.Join(home, config.FileName)); err == nil {
 		t.Error("a rejected PAT still recorded a connection")
 	}
 }
@@ -170,9 +167,8 @@ func (v controlOnlyVerifier) VerifyToken(_ context.Context, tok string) (api.Aut
 // records nothing -- scopes do not imply each other, so a control-only PAT
 // cannot pass the read-gated probe.
 func TestEngineConnectMissingScope(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	srv := daemon.NewServer(
 		config.Settings{Socket: shortSocket(t), TCP: "127.0.0.1:0"},
 		api.NewMux(),
@@ -188,7 +184,7 @@ func TestEngineConnectMissingScope(t *testing.T) {
 	if !strings.Contains(errb.String(), "lacks the read scope") {
 		t.Errorf("stderr misses the missing-scope guidance:\n%s", errb.String())
 	}
-	if _, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName)); err == nil {
+	if _, err := os.Stat(filepath.Join(home, config.FileName)); err == nil {
 		t.Error("a scope-refused PAT still recorded a connection")
 	}
 }
@@ -196,16 +192,15 @@ func TestEngineConnectMissingScope(t *testing.T) {
 // TestEngineConnectUnreachable proves an unreachable host is no-daemon (exit 3)
 // and records nothing.
 func TestEngineConnectUnreachable(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 
 	var out, errb bytes.Buffer
 	code := newApp(&out, &errb).run([]string{"engine", "connect", "127.0.0.1:1", "--token", "secret"})
 	if code != exitNoDaemon {
 		t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitNoDaemon, errb.String())
 	}
-	if _, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName)); err == nil {
+	if _, err := os.Stat(filepath.Join(home, config.FileName)); err == nil {
 		t.Error("an unreachable host still recorded a connection")
 	}
 }
@@ -243,9 +238,8 @@ func TestEngineConnectUsage(t *testing.T) {
 // and neither host nor token supplied, connect asks for both through the
 // injectable seams -- the host as a plain line, the PAT as the hidden read.
 func TestEngineConnectPrompts(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
 
 	var out, errb bytes.Buffer
@@ -271,7 +265,7 @@ func TestEngineConnectPrompts(t *testing.T) {
 	if !strings.Contains(askedSecret, "PAT") {
 		t.Errorf("secret prompt = %q, want it to name the PAT", askedSecret)
 	}
-	res := readWorkspaceTOML(t, ws)
+	res := readEngineHomeTOML(t, home)
 	if res.Layer.Host == nil || *res.Layer.Host != host {
 		t.Errorf("recorded host = %v, want %s", res.Layer.Host, host)
 	}
@@ -280,14 +274,13 @@ func TestEngineConnectPrompts(t *testing.T) {
 // TestEngineConnectUpserts proves a re-connect rewrites host and token in an
 // existing iris.toml while every other line survives verbatim.
 func TestEngineConnectUpserts(t *testing.T) {
-	clearTargetEnv(t)
-	ws := t.TempDir()
-	t.Chdir(ws)
+	home := clearTargetEnv(t)
+	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
 
-	tomlPath := filepath.Join(ws, config.DirName, config.FileName)
+	tomlPath := filepath.Join(home, config.FileName)
 	if err := os.MkdirAll(filepath.Dir(tomlPath), 0o755); err != nil {
-		t.Fatalf("mkdir .iris: %v", err)
+		t.Fatalf("mkdir the engine home: %v", err)
 	}
 	prior := "# kept comment\npg_dsn = \"postgres://iris@localhost/iris\"\nhost = \"stale.example:1\"\n"
 	if err := os.WriteFile(tomlPath, []byte(prior), 0o600); err != nil {
@@ -310,7 +303,7 @@ func TestEngineConnectUpserts(t *testing.T) {
 	if strings.Contains(content, "stale.example") {
 		t.Errorf("re-connect kept the stale host:\n%s", content)
 	}
-	res := readWorkspaceTOML(t, ws)
+	res := readEngineHomeTOML(t, home)
 	if res.Layer.Host == nil || *res.Layer.Host != host {
 		t.Errorf("recorded host = %v, want %s", res.Layer.Host, host)
 	}

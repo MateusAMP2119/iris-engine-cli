@@ -67,7 +67,7 @@ func NewSizeRotator(path string, maxBytes int64, generations int) (*SizeRotator,
 // open opens the active file for append and records its current size, so a rotator
 // resumed over an existing log rotates from the right offset.
 func (r *SizeRotator) open() error {
-	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, r.perm) //nolint:gosec // G304: path is the engine-owned daemon log under the workspace .iris tree, not user or network input.
+	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, r.perm) //nolint:gosec // G304: path is the engine-owned daemon log under the engine home, not user or network input.
 	if err != nil {
 		return fmt.Errorf("daemon: open rotating log %s: %w", r.path, err)
 	}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // daemonProbeTimeout bounds the reachability probe so a daemon-touching command

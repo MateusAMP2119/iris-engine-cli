@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestJournalCaptureAndWipe proves the journal capture and wipe contracts against

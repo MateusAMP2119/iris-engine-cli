@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // TestIrisTOMLEngineSettingsOnly proves that iris.toml is limited to

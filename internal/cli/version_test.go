@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
 )
 
 // runVersion executes the root command with a single flag and returns what it

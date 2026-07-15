@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/arch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/arch"
 )
 
 // writeSource writes a Go source file at root/rel, creating parent directories.

@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // TestEngineInfoShowsEngineKeyPublic drives the shipped binary and proves that

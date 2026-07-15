@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // discardLogger is the silent logger the post-pass fakes run under.
@@ -20,9 +20,10 @@ func discardLogger() *slog.Logger {
 
 // This file proves the lane post-pass drives count-based retention: after a pass,
 // each lane pipeline's runs beyond the newest `retain` are pruned through the
-// single writer (archival summary + delete in one meta transaction, log deleted
-// via the hook), runs held by outstanding dead letters are spared, the prune is
-// scoped to the lane's own pipelines, and a lane within retention writes nothing.
+// single writer in chunks of pruneBatchSize (per-run archival summary + delete
+// triples sharing one meta transaction per chunk, logs deleted via the hook),
+// runs held by outstanding dead letters are spared, the prune is scoped to the
+// lane's own pipelines, and a lane within retention writes nothing.
 
 // retentionReaderFake scripts the three retention reads and records what the
 // post-pass asked for.
@@ -90,18 +91,27 @@ func prunableRecord(id int64, pipeline string) store.PrunableRun {
 	return store.PrunableRun{RunID: id, Pipeline: pipeline, State: store.RunSucceeded, DeclarationChecksum: "c"}
 }
 
-// pruneBatches returns the recorded transactions that are prune batches (their
-// first statement archives into run_summaries), each keyed by the pruned run id.
+// pruneBatches returns the run ids pruned across the recorded transactions that
+// are prune batches (their first statement archives into run_summaries). A batch
+// carries one or more per-run statement triples -- summary insert, inputs
+// cascade, run delete, in that order -- and ids are collected in issue order.
 func pruneBatches(rec *storetest.WriteRecorder) []int64 {
 	var ids []int64
 	for _, tx := range rec.Transactions() {
 		if len(tx) == 0 || !strings.Contains(tx[0].SQL, "INSERT INTO run_summaries") {
 			continue
 		}
-		if len(tx) != 3 || !strings.Contains(tx[1].SQL, "DELETE FROM run_inputs") || !strings.Contains(tx[2].SQL, "DELETE FROM runs") {
-			return nil // malformed batch: summary insert, inputs cascade, run delete -- in that order
+		if len(tx)%3 != 0 {
+			return nil // malformed batch: statements must come in per-run triples
 		}
-		ids = append(ids, tx[0].Args[0].(int64))
+		for i := 0; i < len(tx); i += 3 {
+			if !strings.Contains(tx[i].SQL, "INSERT INTO run_summaries") ||
+				!strings.Contains(tx[i+1].SQL, "DELETE FROM run_inputs") ||
+				!strings.Contains(tx[i+2].SQL, "DELETE FROM runs") {
+				return nil // malformed triple: summary insert, inputs cascade, run delete -- in that order
+			}
+			ids = append(ids, tx[i].Args[0].(int64))
+		}
 	}
 	return ids
 }
@@ -128,14 +138,51 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			if err := post.AfterPass(context.Background(), report); err != nil {
 				t.Fatalf("AfterPass: %v", err)
 			}
-			// The newest 2 (runs 4, 5) survive; 1, 2, 3 are pruned, each in one atomic
-			// batch: summary insert, run_inputs cascade, run delete.
+			// The newest 2 (runs 4, 5) survive; 1, 2, 3 are pruned together in ONE
+			// atomic batch of per-run triples: summary insert, run_inputs cascade,
+			// run delete.
 			if got, want := pruneBatches(rec), []int64{1, 2, 3}; !reflect.DeepEqual(got, want) {
 				t.Errorf("pruned run batches = %v, want %v", got, want)
+			}
+			if got := len(rec.Transactions()); got != 1 {
+				t.Errorf("prune issued %d transactions for 3 runs, want 1 (runs within a chunk share a transaction)", got)
 			}
 			// Each pruned run's per-run log is deleted through the hook, by run id.
 			if got, want := logs.deleted, []string{"1", "2", "3"}; !reflect.DeepEqual(got, want) {
 				t.Errorf("deleted logs = %v, want %v", got, want)
+			}
+		})
+
+		t.Run("a backlog beyond one chunk prunes in pruneBatchSize transactions", func(t *testing.T) {
+			// 600 runs beyond retain: the drain must chunk (256, 256, 88), never one
+			// transaction per run (the pathological backlog case) and never one
+			// unbounded transaction holding the writer.
+			const backlog = 600
+			reader := &retentionReaderFake{records: map[int64]store.PrunableRun{}}
+			for id := int64(1); id <= backlog+2; id++ {
+				reader.census = append(reader.census, runRef(id, "p"))
+				if id <= backlog {
+					reader.records[id] = prunableRecord(id, "p")
+				}
+			}
+			rec := storetest.NewWriteRecorder()
+			logs := &pruneLogSpy{}
+			post := lanePostPass{
+				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
+				deleteLog: logs.delete, logger: discardLogger(),
+			}
+			if err := post.AfterPass(context.Background(), report); err != nil {
+				t.Fatalf("AfterPass: %v", err)
+			}
+			if got := len(pruneBatches(rec)); got != backlog {
+				t.Errorf("pruned %d runs, want %d", got, backlog)
+			}
+			wantTxs := (backlog + pruneBatchSize - 1) / pruneBatchSize
+			if got := len(rec.Transactions()); got != wantTxs {
+				t.Errorf("prune issued %d transactions for %d runs, want %d chunks of at most %d", got, backlog, wantTxs, pruneBatchSize)
+			}
+			if got := len(logs.deleted); got != backlog {
+				t.Errorf("deleted %d run logs, want %d (every pruned run's log dies with its row)", got, backlog)
 			}
 		})
 

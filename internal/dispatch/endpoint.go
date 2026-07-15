@@ -28,8 +28,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // PrepareVerifier prepare-verifies one derived endpoint statement against the data

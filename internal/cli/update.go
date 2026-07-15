@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/update"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
 
 // updateResult is the machine-readable payload of `iris update`, the --json data

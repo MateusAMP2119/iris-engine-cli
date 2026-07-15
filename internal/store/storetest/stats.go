@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file extends the meta-store fake with the stats read seam

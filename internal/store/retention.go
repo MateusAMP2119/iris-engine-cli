@@ -121,8 +121,8 @@ VALUES ($1, $2, $3, $4, $5, $6::json, $7, $8, $9, now()::text)`
 // (the ledger rows reference the run row). It is pure and closed: the batch names
 // only run_summaries, run_inputs, and runs -- never data_journal (capture rows
 // are bounded by the journal's own lifecycle) and never a DELETE against the
-// insert-only run_summaries. PruneRun submits the whole batch as one meta
-// transaction.
+// insert-only run_summaries. PruneRuns concatenates these per-run batches, in
+// order, into the one meta transaction it submits.
 func pruneStatements(s RunSummary) []Statement {
 	return []Statement{
 		{SQL: insertRunSummarySQL, Args: []any{
@@ -151,10 +151,39 @@ func pruneStatements(s RunSummary) []Statement {
 // survive intact for the next pass; the log is removed only once the run row is
 // durably gone.
 func (w *Writer) PruneRun(ctx context.Context, run PrunableRun, deleteLog func(runID string) error) error {
-	if err := w.execTx(ctx, pruneStatements(BuildRunSummary(run))); err != nil {
-		return fmt.Errorf("store: writer prune run %d: %w", run.RunID, err)
+	return w.PruneRuns(ctx, []PrunableRun{run}, deleteLog)
+}
+
+// PruneRuns archives and prunes a batch of runs in ONE atomic meta transaction:
+// each run's summary INSERT, run_inputs cascade, and run DELETE are concatenated
+// in per-run order into a single ExecTx batch, so the whole chunk commits or none
+// of it does and every per-run invariant of PruneRun (summary before delete,
+// inputs before run) holds within the batch. Batching exists for backlog drains:
+// a large prune pays one commit per chunk instead of one per run, which is the
+// difference between seconds and tens of minutes of pinned CPU when hundreds of
+// thousands of runs fall out of retention at once. Callers bound the chunk size;
+// PruneRuns submits whatever it is given as one transaction. An empty batch
+// writes nothing. Per-run log files are deleted only after the transaction
+// commits, in batch order; on a meta failure nothing is deleted and every log
+// survives for the next pass.
+func (w *Writer) PruneRuns(ctx context.Context, runs []PrunableRun, deleteLog func(runID string) error) error {
+	if len(runs) == 0 {
+		return nil
 	}
-	if deleteLog != nil {
+	stmts := make([]Statement, 0, 3*len(runs))
+	for _, run := range runs {
+		stmts = append(stmts, pruneStatements(BuildRunSummary(run))...)
+	}
+	if err := w.execTx(ctx, stmts); err != nil {
+		if len(runs) == 1 {
+			return fmt.Errorf("store: writer prune run %d: %w", runs[0].RunID, err)
+		}
+		return fmt.Errorf("store: writer prune %d runs: %w", len(runs), err)
+	}
+	if deleteLog == nil {
+		return nil
+	}
+	for _, run := range runs {
 		if err := deleteLog(runIDString(run.RunID)); err != nil {
 			return fmt.Errorf("store: writer prune run %d: delete log: %w", run.RunID, err)
 		}

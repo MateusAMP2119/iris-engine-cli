@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // The pinned tour strings the flow tests assert. They are the operator-facing
@@ -30,7 +30,7 @@ const (
 
 // workspacePromptFor is the pinned workspace question for a visible default:
 // the ENGINE act's opening line read.
-func workspacePromptFor(def string) string { return "Engine workspace [" + def + "]:" }
+func workspacePromptFor(def string) string { return "Pipeline workspace [" + def + "]:" }
 
 // tourApp builds an app for driving `iris quickstart` with both TTY seams
 // forced to tty.

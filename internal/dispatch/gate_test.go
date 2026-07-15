@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 )
 
 // succeeded builds an edge whose upstream's most recent run is an awaited success

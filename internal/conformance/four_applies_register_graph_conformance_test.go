@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
 )
 
 // TestFourAppliesRegisterGraph drives the real binary and proves that four

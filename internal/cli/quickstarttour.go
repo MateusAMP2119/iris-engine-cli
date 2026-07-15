@@ -19,10 +19,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/api"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/buildinfo"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // promptAnswer is the operator's answer to one tour question.
@@ -220,7 +220,7 @@ func actColor(p painter, id string) func(string) string {
 // the welcome (skipped for the installer's continuation, whose banner was the
 // welcome) it walks the acts -- chapter mark, one consent (THE ENGINE's
 // workspace question, or the act gate), then the act's steps straight through
-// the in-process runner. A reachable daemon on the workspace socket announces
+// the in-process runner. A reachable daemon on the engine socket announces
 // install/start as already done and skips them. Declines, EOF, and interrupts
 // abort clean (exit 0, resume hint); the first failing step surfaces its own
 // error and exit category; yes runs everything unattended in the invoking
@@ -380,23 +380,23 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 		}
 		var engineSettings config.Settings
 		if act.id == tourActEngine {
-			// The tour only ever targets the local workspace engine it provisions:
-			// an ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
+			// The tour only ever targets the local engine it provisions: an
+			// ambient host (IRIS_HOST or an iris.toml host -- the flag is refused
 			// outright) is announced once and ignored, both for this probe and
 			// inside every child step (the child apps resolve with forceLocalTarget
-			// set). Resolved after the workspace question so the socket default is
-			// the tour workspace's.
+			// set). The socket lives at the fixed engine home, so the workspace
+			// question above never moves it.
 			settings := a.resolveTarget(cmd)
 			if settings.Host != "" {
 				fmt.Fprintln(a.out, p.dim(fmt.Sprintf(
-					"Ignoring the configured remote host %s — the tour only targets the local workspace engine.", settings.Host)))
+					"Ignoring the configured remote host %s — the tour only targets the local engine.", settings.Host)))
 				settings.Host = ""
 			}
 			// Adaptive skip: every step is idempotent, so a daemon already answering
-			// on the workspace socket means install and start are done -- announce
+			// on the engine socket means install and start are done -- announce
 			// under the ENGINE chapter and skip, never ask anything extra.
 			if a.probeDaemon(ctx, settings) == nil {
-				fmt.Fprintf(a.out, "An engine is already running on this workspace's socket — %s and %s are already done; skipping ahead.\n",
+				fmt.Fprintf(a.out, "An engine is already running on this machine — %s and %s are already done; skipping ahead.\n",
 					strings.Join(steps[0].Argv, " "), strings.Join(steps[1].Argv, " "))
 				k += 2
 				steps = steps[2:]
@@ -498,15 +498,19 @@ func (a *app) renderTourStep(p painter, step quickstartStep) {
 	}
 }
 
-// openEngineWorkspace is THE ENGINE act's opener: the workspace question.
-// Interactive, it reads one line with a visible default -- `~/iris`, or the
-// invoking directory when that is already a workspace (.iris/ or pipelines/
-// present) -- expands `~` to the operator's home, creates the directory
-// (mkdir -p) and enters it, so every subsequent step operates on cwd exactly
-// like any command. The empty answer accepts the default AND consents to the
-// act; `q`, EOF, and an interrupt abort clean (errTourAborted). Under --yes it
-// never prompts: the invoking directory is the workspace, unchanged. A real
-// filesystem fault is a quickstart_workspace fault, exit 4.
+// openEngineWorkspace is THE ENGINE act's opener: the workspace question --
+// data placement only. The chosen directory holds the pipeline sources the
+// tour materializes and is the tree the daemon dispatches from; the engine's
+// socket, config, and state live at the fixed engine home (~/.iris), so every
+// shell finds the engine afterwards regardless of this answer. Interactive, it
+// reads one line with a visible default -- `~/iris`, or the invoking directory
+// when that is already a workspace (pipelines/ present) -- expands `~` to the
+// operator's home, creates the directory (mkdir -p) and enters it, so every
+// subsequent step operates on cwd exactly like any command. The empty answer
+// accepts the default AND consents to the act; `q`, EOF, and an interrupt
+// abort clean (errTourAborted). Under --yes it never prompts: the invoking
+// directory is the workspace, unchanged. A real filesystem fault is a
+// quickstart_workspace fault, exit 4.
 func (a *app) openEngineWorkspace(s *tourSession) error {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -522,7 +526,7 @@ func (a *app) openEngineWorkspace(s *tourSession) error {
 	if isWorkspaceDir(wd) {
 		def = wd
 	}
-	line, perr := askTourLine(s.ctx, s.input, "Engine workspace ["+def+"]:", def)
+	line, perr := askTourLine(s.ctx, s.input, "Pipeline workspace ["+def+"]:", def)
 	if perr != nil || s.ctx.Err() != nil {
 		a.reportPromptFault(perr)
 		return errTourAborted
@@ -587,14 +591,12 @@ func expandUserPath(path string) (string, error) {
 }
 
 // isWorkspaceDir reports whether dir already looks like an iris workspace: a
-// .iris/ engine directory or a pipelines/ source tree.
+// pipelines/ source tree. (A .iris/ directory is no longer a workspace marker:
+// engine state lives at the fixed engine home, and a workspace-local .iris is
+// legacy state `iris engine start` refuses with migration guidance.)
 func isWorkspaceDir(dir string) bool {
-	for _, marker := range []string{config.DirName, "pipelines"} {
-		if st, err := os.Stat(filepath.Join(dir, marker)); err == nil && st.IsDir() {
-			return true
-		}
-	}
-	return false
+	st, err := os.Stat(filepath.Join(dir, "pipelines"))
+	return err == nil && st.IsDir()
 }
 
 // tourDisclaimerBody is the heads-up copy: honest about maturity, concrete
@@ -604,7 +606,7 @@ func tourDisclaimerBody() string {
 		"Iris is in active development. Expect sharp edges.",
 		"",
 		"The tour runs real commands on this machine:",
-		"- provisions a managed Postgres inside the workspace you pick",
+		"- provisions a managed Postgres under the engine home (~/.iris)",
 		"- starts the iris engine daemon (it stays running after the tour)",
 		"- registers and runs one starter pipeline, then reads its provenance",
 		"",
@@ -691,17 +693,17 @@ func tourRemoteBody() string {
 		"- a PAT minted on that engine:  iris pat create --scope read",
 		"",
 		"Nothing is installed or started on this machine. The connection is",
-		"verified against the engine, then recorded in the workspace's",
-		".iris/iris.toml (0600); every iris command run there targets the",
-		"remote engine from then on.",
+		"verified against the engine, then recorded in the engine home's",
+		"iris.toml (~/.iris/iris.toml, 0600); every iris command on this",
+		"machine targets the remote engine from then on.",
 	}, "\n")
 }
 
 // tourConnectRemote is the tour's remote branch: the heads-up note, then the
-// host and PAT questions, the verification probe, the workspace question, and
-// the recorded connection -- `iris engine connect` walked as dialogue. A failed
-// probe explains itself and re-asks (the operator fixes a typo in place, the
-// engine's operator mints a missing PAT); `q`, EOF, and an interrupt abort
+// host and PAT questions, the verification probe, and the connection recorded
+// in the engine home's iris.toml -- `iris engine connect` walked as dialogue. A
+// failed probe explains itself and re-asks (the operator fixes a typo in place,
+// the engine's operator mints a missing PAT); `q`, EOF, and an interrupt abort
 // clean at any question, like every tour prompt.
 func (a *app) tourConnectRemote(s *tourSession) error {
 	if s.p.enabled {
@@ -713,7 +715,7 @@ func (a *app) tourConnectRemote(s *tourSession) error {
 		fmt.Fprintln(a.out)
 	}
 
-	var host string
+	var host, tomlPath string
 	var health api.Health
 	for {
 		line, perr := askTourLine(s.ctx, s.input, "Engine host (host:port, https://host:port for TLS):", "")
@@ -756,18 +758,15 @@ func (a *app) tourConnectRemote(s *tourSession) error {
 
 		fmt.Fprintf(a.out, "  %s\n", s.p.green(fmt.Sprintf("✓ connected to %s — role: %s", host, health.Role)))
 
-		// The workspace question: the directory whose .iris/iris.toml records
-		// the connection -- the same question THE ENGINE act opens with, because
-		// it anchors the same thing: where subsequent commands resolve from.
-		if err := a.openEngineWorkspace(s); err != nil {
-			return err
+		// The connection is recorded in the engine home's iris.toml -- the fixed
+		// per-user location every iris command resolves from, whatever directory
+		// it runs in.
+		home, herr := config.Home(os.Getenv)
+		if herr != nil {
+			return &fault{code: exitOpFailed, codeStr: "connect_home",
+				message: fmt.Sprintf("quickstart: resolve the engine home: %v", herr)}
 		}
-		wd, werr := os.Getwd()
-		if werr != nil {
-			return &fault{code: exitOpFailed, codeStr: "connect_workspace",
-				message: fmt.Sprintf("quickstart: resolve the workspace directory: %v", werr)}
-		}
-		tomlPath := filepath.Join(wd, config.DirName, config.FileName)
+		tomlPath = filepath.Join(home, config.FileName)
 		if err := config.UpsertTOMLFile(tomlPath, map[string]string{"host": host, "token": token}); err != nil {
 			return &fault{code: exitOpFailed, codeStr: "connect_record",
 				message: fmt.Sprintf("quickstart: record the connection: %v", err)}
@@ -776,23 +775,23 @@ func (a *app) tourConnectRemote(s *tourSession) error {
 		break
 	}
 
-	a.tourRemoteWrapUp(s.p, host)
+	a.tourRemoteWrapUp(s.p, host, tomlPath)
 	return nil
 }
 
-// tourRemoteWrapUp closes the remote branch: what the workspace now targets,
+// tourRemoteWrapUp closes the remote branch: what this machine now targets,
 // the first commands worth running against it, and how to disconnect -- plus
 // the note that the local sandbox tour is still one command away.
-func (a *app) tourRemoteWrapUp(p painter, host string) {
+func (a *app) tourRemoteWrapUp(p painter, host, tomlPath string) {
 	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "That's the setup — every iris command in this workspace now targets %s.\n", host)
+	fmt.Fprintf(a.out, "That's the setup — every iris command on this machine now targets %s.\n", host)
 	fmt.Fprintln(a.out)
 	fmt.Fprintln(a.out, "Worth running first:")
 	fmt.Fprintln(a.out, "  iris pipeline list                               what runs there")
 	fmt.Fprintln(a.out, "  iris run list                                    its run history")
 	fmt.Fprintln(a.out, "  iris data provenance <schema.table> <pk>         ask a row who wrote it (needs a data-scope PAT)")
 	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "Disconnect: remove the host and token lines from .iris/iris.toml.")
+	fmt.Fprintln(a.out, "Disconnect: remove the host and token lines from "+tomlPath+".")
 	fmt.Fprintln(a.out, "Want the local sandbox too? Run iris quickstart again and pick Local.")
 	if dir, off := a.executableDirOffPATH(); off {
 		fmt.Fprintln(a.out)
@@ -911,7 +910,7 @@ func tourStepArgv(cmd *cobra.Command, step quickstartStep) []string {
 // the tour receives only the categorical exit code. Every injectable seam is
 // carried across, so a harnessed parent stays harnessed through its steps. The
 // child resolves with forceLocalTarget set: an ambient IRIS_HOST or iris.toml
-// host never reaches a step -- the tour tours the local workspace engine only.
+// host never reaches a step -- the tour tours the local engine only.
 func (a *app) runTourChild(ctx context.Context, args []string) int {
 	child := newAppWithLogger(a.out, a.errOut, a.logger)
 	child.forceLocalTarget = true
@@ -951,7 +950,7 @@ func (a *app) tourMaterializeEntry(e catalogEntry) error {
 // waitEngineReady is the production waitForReady: a bounded, context-aware
 // poll of the daemon's /info readout until it reports leadership -- role
 // leader, nothing less. `engine start -d` returns on socket-up while the
-// fresh workspace engine is still winning its own election, and it passes
+// fresh engine is still winning its own election, and it passes
 // through unknown and a contending standby on the way; a mutation against
 // either exits 6, so the act holds until the readout says leader. A daemon
 // that never does inside the budget is a clear fault, exit 4: the tour never

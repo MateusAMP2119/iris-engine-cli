@@ -7,22 +7,22 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // This file holds the control-socket setup leg of `iris engine install`: create the
-// workspace .iris directory the Unix control socket lives in, and clear any stale
+// engine home the Unix control socket lives in, and clear any stale
 // socket file left by a prior run so a fresh daemon can bind cleanly. It is real
 // local filesystem I/O -- no database -- so it is proven directly against a temp
 // workspace.
 
-// socketDirPerm is the mode of the workspace .iris directory the control socket
+// socketDirPerm is the mode of the engine home the control socket
 // lives in. The control plane is local-only, guarded by filesystem permissions, so
 // the directory is owner-only.
 const socketDirPerm os.FileMode = 0o700
 
 // PrepareSocketDir sets up the engine's control socket location: it creates the
-// directory the socket path sits in (the workspace .iris tree) and removes a stale
+// directory the socket path sits in (the engine home) and removes a stale
 // socket file at the socket path if one is present, so a freshly started daemon can
 // bind without colliding with a previous run's socket. It is idempotent and never
 // touches any database.

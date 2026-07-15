@@ -16,7 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
 )
 
 // This file is the golden-sample acceptance spine: the three scenario contracts that

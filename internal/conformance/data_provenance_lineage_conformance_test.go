@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // TestDataProvenanceLineage drives the real iris binary end-to-end with a running

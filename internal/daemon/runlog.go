@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 )
 
 // This file holds the per-run log lifecycle helpers (per-run logs unrotated
@@ -25,14 +25,14 @@ import (
 // satisfies it.
 type RunLogPruneFunc func(runID string) error
 
-// RunLogWriter manages per-run log files under the workspace .iris/logs directory,
+// RunLogWriter manages per-run log files under the engine home's logs directory,
 // keyed by run id. Per-run logs are unrotated (a run's output is bounded); their
 // path is what runs.log_ref records and what DeleteOnPrune removes on prune.
 type RunLogWriter struct {
 	settings config.Settings
 }
 
-// NewRunLogWriter builds a RunLogWriter rooted at the settings' workspace .iris
+// NewRunLogWriter builds a RunLogWriter rooted at the settings' engine-home
 // tree.
 func NewRunLogWriter(s config.Settings) *RunLogWriter {
 	return &RunLogWriter{settings: s}
@@ -53,7 +53,7 @@ func (w *RunLogWriter) Create(runID string) (*os.File, string, error) {
 		return nil, "", err
 	}
 	path := w.Ref(runID)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm) //nolint:gosec // G304: path is the engine-owned run log under the workspace .iris tree, keyed by an engine-assigned run id, not user or network input.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm) //nolint:gosec // G304: path is the engine-owned run log under the engine home, keyed by an engine-assigned run id, not user or network input.
 	if err != nil {
 		return nil, "", fmt.Errorf("daemon: create run log %s: %w", path, err)
 	}

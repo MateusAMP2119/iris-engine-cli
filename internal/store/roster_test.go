@@ -3,8 +3,8 @@ package store_test
 import (
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // TestEighteenTableRoster proves the bootstrap DDL creates exactly twenty-one engine

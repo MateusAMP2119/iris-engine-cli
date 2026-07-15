@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file wires the full `iris engine uninstall` teardown: drop the meta database
@@ -172,7 +172,7 @@ func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, 
 }
 
 // ServiceUnitPath returns the workspace-local service-unit path for the settings:
-// <workspace>/.iris/iris.service. See ServiceUnitName for why this path is the
+// <engine home>/iris.service. See ServiceUnitName for why this path is the
 // convention service install and engine uninstall share.
 func ServiceUnitPath(s config.Settings) string {
 	return filepath.Join(irisDir(s), ServiceUnitName)

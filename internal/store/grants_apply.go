@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the access-ledger record path driven from a declaration or a

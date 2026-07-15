@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the meta read path for grant-drift detection: the plain-MVCC read

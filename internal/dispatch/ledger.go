@@ -3,8 +3,8 @@ package dispatch
 import (
 	"context"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file bridges the schema provisioner's ledger-recording seam (pg.LedgerRecorder)

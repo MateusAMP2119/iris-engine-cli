@@ -116,9 +116,12 @@ func TestForegroundDefaultDetach(t *testing.T) {
 			bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: ws, Timeout: 5 * time.Minute}).RequireExit(t, 0)
 
 			// Foreground (default): the CLI stays attached, blocking while it serves
-			// the socket, until SIGTERM brings it down cleanly.
+			// the socket, until SIGTERM brings it down cleanly. This exec bypasses
+			// Binary.Run, so it pins the engine home itself, exactly as Run does --
+			// without it the daemon would resolve the runner machine's real ~/.iris.
 			cmd := exec.Command(bin.Path(), "engine", "start")
 			cmd.Dir = ws
+			cmd.Env = append(os.Environ(), "IRIS_HOME="+filepath.Join(ws, ".iris"))
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			if err := cmd.Start(); err != nil {
@@ -128,7 +131,11 @@ func TestForegroundDefaultDetach(t *testing.T) {
 			readyCtx, cancelReady := context.WithTimeout(context.Background(), 20*time.Second)
 			if err := WaitForSocket(readyCtx, socket); err != nil {
 				cancelReady()
+				// Kill AND reap before reading stderr: exec.Cmd's copier goroutine
+				// writes the buffer until Wait returns, so a read before the reap is
+				// a data race under -race.
 				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
 				t.Fatalf("foreground daemon socket never became ready: %v\nstderr:\n%s", err, stderr.String())
 			}
 			cancelReady()
@@ -148,7 +155,10 @@ func TestForegroundDefaultDetach(t *testing.T) {
 					t.Errorf("foreground daemon did not exit cleanly on SIGTERM: %v\nstderr:\n%s", err, stderr.String())
 				}
 			case <-time.After(15 * time.Second):
+				// Kill and reap (via the pending Wait) before reading stderr; see the
+				// readiness failure path above for the race this avoids.
 				_ = cmd.Process.Kill()
+				<-waitErr
 				t.Fatalf("foreground daemon did not stop within the grace period on SIGTERM\nstderr:\n%s", stderr.String())
 			}
 			goneCtx, cancelGone := context.WithTimeout(context.Background(), 10*time.Second)

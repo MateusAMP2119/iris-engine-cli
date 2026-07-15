@@ -3,8 +3,8 @@ package declare_test
 import (
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/fixtures"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/fixtures"
 )
 
 // TestWorkspaceTreeDiscovery proves that, given a workspace tree, the engine

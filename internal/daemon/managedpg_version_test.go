@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/daemon"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
 // TestPGVersionMismatchFails proves the managed-Postgres version guard: when a data

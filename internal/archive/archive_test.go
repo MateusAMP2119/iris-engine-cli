@@ -13,10 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/archive"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/roundtrip"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/archive"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/roundtrip"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // harnessFormat builds a roundtrip.Format using only the archive package's

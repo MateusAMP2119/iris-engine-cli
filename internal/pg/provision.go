@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 )
 
 // This file is the pipeline-independent, idempotent schema provisioner: it walks

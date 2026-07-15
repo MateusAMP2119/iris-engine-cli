@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // scriptedTourInput returns a tourInputFunc answering from the given lines in
@@ -93,17 +93,17 @@ func TestTourEngineHomeFork(t *testing.T) {
 }
 
 // TestTourConnectRemote proves the tour's remote branch end to end against a
-// live in-process engine: host and PAT asked, verified, the workspace question
-// answered, and the connection recorded in that workspace's .iris/iris.toml.
+// live in-process engine: host and PAT asked, verified, and the connection
+// recorded in the engine home's iris.toml -- no workspace question, since the
+// engine home is fixed per user and cwd plays no part.
 func TestTourConnectRemote(t *testing.T) {
-	clearTargetEnv(t)
+	home := clearTargetEnv(t)
 	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "secret")
-	ws := filepath.Join(t.TempDir(), "remote-ws")
 
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)
-	s := newRemoteTourSession(host, "secret", ws)
+	s := newRemoteTourSession(host, "secret")
 
 	if err := a.tourConnectRemote(s); err != nil {
 		t.Fatalf("tourConnectRemote: %v\nstdout: %s\nstderr: %s", err, out.String(), errb.String())
@@ -115,7 +115,7 @@ func TestTourConnectRemote(t *testing.T) {
 		t.Errorf("stdout misses the remote wrap-up:\n%s", out.String())
 	}
 
-	res, err := config.LoadTOMLFile(filepath.Join(ws, config.DirName, config.FileName))
+	res, err := config.LoadTOMLFile(filepath.Join(home, config.FileName))
 	if err != nil {
 		t.Fatalf("load recorded iris.toml: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestTourConnectRemote(t *testing.T) {
 	if res.Layer.Token == nil || *res.Layer.Token != "secret" {
 		t.Errorf("recorded token = %v, want secret", res.Layer.Token)
 	}
-	st, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName))
+	st, err := os.Stat(filepath.Join(home, config.FileName))
 	if err != nil {
 		t.Fatalf("stat recorded iris.toml: %v", err)
 	}
@@ -138,14 +138,13 @@ func TestTourConnectRemote(t *testing.T) {
 // re-asks instead of ending the tour: a rejected PAT on the first attempt, the
 // corrected pair on the second, one recorded connection.
 func TestTourConnectRemoteRetries(t *testing.T) {
-	clearTargetEnv(t)
+	home := clearTargetEnv(t)
 	t.Chdir(t.TempDir())
 	host := startConnectDaemon(t, "right")
-	ws := filepath.Join(t.TempDir(), "remote-ws")
 
 	var out, errb bytes.Buffer
 	a := newApp(&out, &errb)
-	s := newRemoteTourSession(host, "wrong", host, "right", ws)
+	s := newRemoteTourSession(host, "wrong", host, "right")
 
 	if err := a.tourConnectRemote(s); err != nil {
 		t.Fatalf("tourConnectRemote: %v\nstderr: %s", err, errb.String())
@@ -156,7 +155,7 @@ func TestTourConnectRemoteRetries(t *testing.T) {
 	if !strings.Contains(out.String(), "try again") {
 		t.Errorf("stdout misses the retry guidance:\n%s", out.String())
 	}
-	res, err := config.LoadTOMLFile(filepath.Join(ws, config.DirName, config.FileName))
+	res, err := config.LoadTOMLFile(filepath.Join(home, config.FileName))
 	if err != nil {
 		t.Fatalf("load recorded iris.toml: %v", err)
 	}
@@ -181,16 +180,15 @@ func TestTourConnectRemoteAborts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			clearTargetEnv(t)
-			ws := t.TempDir()
-			t.Chdir(ws)
+			home := clearTargetEnv(t)
+			t.Chdir(t.TempDir())
 			var out, errb bytes.Buffer
 			a := newApp(&out, &errb)
 			s := newRemoteTourSession(tc.answers...)
 			if err := a.tourConnectRemote(s); !errors.Is(err, errTourAborted) {
 				t.Fatalf("err = %v, want errTourAborted", err)
 			}
-			if _, err := os.Stat(filepath.Join(ws, config.DirName, config.FileName)); err == nil {
+			if _, err := os.Stat(filepath.Join(home, config.FileName)); err == nil {
 				t.Error("an aborted remote branch still recorded a connection")
 			}
 		})

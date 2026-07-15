@@ -30,7 +30,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // DestructiveOp identifies one of the gated destructive operations. Engine-managed

@@ -5,7 +5,7 @@
 #   curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 #
 # Current (raw GitHub):
-#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-engine-cli/HEAD/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/uninstall.sh | bash
 #
 # Engine state (managed Postgres, meta schema, workspaces) is NOT touched here;
 # remove it first with `iris engine uninstall` while the binary still exists.

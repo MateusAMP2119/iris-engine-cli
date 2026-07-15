@@ -28,9 +28,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/build"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/build"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // BuildTarget is one registered pipeline's build input: its name (the artifacts row

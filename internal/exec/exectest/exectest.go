@@ -15,7 +15,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 )
 
 // Outcome scripts one fake subprocess: the bytes it streams to stdout and stderr

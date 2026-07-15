@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/golden"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/pg/pgtest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/golden"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg/pgtest"
 )
 
 // canonicalDDL is a representative CREATE / ALTER / GRANT / trigger DDL sequence

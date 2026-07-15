@@ -11,7 +11,7 @@ package main
 import (
 	"os"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/cli"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/cli"
 )
 
 func main() {

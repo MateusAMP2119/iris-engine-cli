@@ -12,8 +12,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store/storetest"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store/storetest"
 )
 
 // fakeSessionMaker mints a fresh session after failN failures, so a test can drive

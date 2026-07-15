@@ -3,7 +3,7 @@ package daemon
 import (
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 )
 
 // This file is the daemon-held in-flight run registry: the production

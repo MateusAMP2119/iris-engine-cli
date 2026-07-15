@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // Fake is an in-memory store.Store. The zero value is not usable; construct one

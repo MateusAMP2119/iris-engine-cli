@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/dispatch"
-	"github.com/MateusAMP2119/iris-engine-cli/internal/store"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // fakeEdgeReader resolves a pipeline's depends_on edges from a seeded map, so a manual

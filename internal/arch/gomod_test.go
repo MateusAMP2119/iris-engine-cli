@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MateusAMP2119/iris-engine-cli/internal/arch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/arch"
 )
 
 // TestParseGoMod proves the hand-rolled go.mod parser the allowlist check is
