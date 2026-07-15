@@ -43,6 +43,18 @@ curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/i
 
 The installer ends with one question — `Set up the engine now? (Y/n)` — and hands the ceremony to the binary it just installed: the guided tour asks where your pipeline workspace should live (`~/iris` by default), bootstraps the engine at its fixed per-user home (`~/.iris` — every shell finds it, whatever directory you run `iris` from), then opens the embedded pipeline catalog — curated starter pipelines shipped inside the binary — materializes and runs your pick, and closes by asking a row who wrote it. One consent per act; every step is the real command. Take it any time with `iris quickstart`; the installer only offers the tour when the installed release actually carries it.
 
+### Snapshot channel (bleeding edge)
+
+Want the newest code before it ships? Every merge to `development` automatically publishes a rolling [`snapshot` prerelease](https://github.com/MateusAMP2119/iris-lakehouse/releases/tag/snapshot) — same static binaries, same installer, no tests gate it, so it lands minutes after the merge:
+
+```sh
+curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash
+```
+
+(raw GitHub equivalent: `curl -fsSL https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD/install.sh | bash -s snapshot`)
+
+`iris --version` reports a snapshot build as `v<next>-snapshot.<date>.<commit>`, so you always know exactly what you're running. The stable command above never picks up snapshots — GitHub's `latest` release excludes prereleases. To go back to stable, just re-run the normal install command.
+
 Have Go 1.25+? `go install` works too:
 
 ```sh

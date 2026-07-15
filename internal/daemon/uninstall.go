@@ -17,9 +17,11 @@ import (
 // This file wires the full `iris engine uninstall` teardown: drop the meta database
 // (all captured provenance, endpoints, and access ledger with it), drop the data
 // journal and its dependent triggers on the data connection, delete the object
-// store under objects_path (artifact bytes and archived partitions), and remove the
-// control socket and the service unit -- leaving nothing behind. It is a
-// daemonless, local-machine-only teardown.
+// store under objects_path (artifact bytes and archived partitions), the managed
+// Postgres tree (binaries and the data directory, taking the meta and data
+// databases with it on a managed install), and the log directory, and remove the
+// control socket, the service unit, and the pidfile -- leaving nothing behind. It
+// is a daemonless, local-machine-only teardown.
 //
 // The database drops go through the same connection seams install uses (store.Execer,
 // pg.DB); the filesystem teardown is real. UninstallEngine composes both. The CLI
@@ -112,15 +114,17 @@ type UninstallReport struct {
 	MetaDropped bool
 	// JournalDropped reports whether the journal teardown was issued.
 	JournalDropped bool
-	// Removed lists the on-disk paths removed (object store, socket, service unit).
+	// Removed lists the on-disk paths removed (object store, managed Postgres
+	// tree, log directory, socket, service unit, pidfile).
 	Removed []string
 }
 
 // UninstallEngine performs the full `iris engine uninstall` teardown over deps:
 // refuse if a daemon candidate holds meta, then drop the meta database, drop the
-// journal on the data connection, and delete the object store, socket, and service
-// unit on disk. It returns ErrLiveCandidate unchanged when the guard refuses, so
-// the caller can surface its guidance.
+// journal on the data connection, and delete the on-disk engine state (the object
+// store, the managed Postgres tree, the log directory, the socket, the service
+// unit, and the pidfile). It returns ErrLiveCandidate unchanged when the guard
+// refuses, so the caller can surface its guidance.
 func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, error) {
 	log := deps.Logger
 	if log == nil {
@@ -159,7 +163,7 @@ func UninstallEngine(ctx context.Context, deps UninstallDeps) (UninstallReport, 
 		log.Info("engine uninstall: dropped data journal")
 	}
 
-	// Delete the object store, socket, and service unit on disk.
+	// Delete the on-disk engine state.
 	removed, err := RemoveEngineArtifacts(deps.Settings)
 	report.Removed = removed
 	if err != nil {
@@ -180,28 +184,44 @@ func ServiceUnitPath(s config.Settings) string {
 
 // RemoveEngineArtifacts deletes the engine's on-disk state for the settings: the
 // object store directory under objects_path (its artifact bytes and archived
-// partitions), the control socket, and the service unit -- each removed only if
-// present. It returns the paths it removed, in that order, and stops at the first
-// hard error. It is the real, daemonless filesystem half of uninstall, shared by
-// UninstallEngine and the CLI.
+// partitions), the managed Postgres tree (binaries and the data directory -- on a
+// managed install the meta and data databases go with it; absent on an
+// external-cluster install), the log directory, the control socket, the service
+// unit, and the pidfile -- each removed only if present. It returns the paths it
+// removed, in that order, and stops at the first hard error. It is the real,
+// daemonless filesystem half of uninstall, shared by UninstallEngine and the CLI.
+// The live-candidate guard runs before it, so the managed cluster and the pidfile
+// are never removed out from under a running daemon.
 func RemoveEngineArtifacts(s config.Settings) ([]string, error) {
 	var removed []string
 
-	// Object store: a directory tree of plain files (artifact bytes + archived
-	// partitions); remove it whole.
-	if s.ObjectsPath != "" {
-		switch _, err := os.Stat(s.ObjectsPath); {
+	// Directory trees, removed whole: the object store (artifact bytes + archived
+	// partitions), the managed Postgres tree (binaries + data directory), and the
+	// log directory. The engine-home-derived paths (pg, logs, pidfile) are
+	// resolved from the socket's directory, so they are skipped when no socket is
+	// configured rather than resolving relative to the working directory.
+	dirs := []string{s.ObjectsPath}
+	files := []string{s.Socket, ServiceUnitPath(s)}
+	if s.Socket != "" {
+		dirs = append(dirs, ManagedPGDir(s), LogsDir(s))
+		files = append(files, PIDPath(s))
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		switch _, err := os.Stat(dir); {
 		case err == nil:
-			if err := os.RemoveAll(s.ObjectsPath); err != nil {
-				return removed, fmt.Errorf("daemon: remove object store %s: %w", s.ObjectsPath, err)
+			if err := os.RemoveAll(dir); err != nil {
+				return removed, fmt.Errorf("daemon: remove %s: %w", dir, err)
 			}
-			removed = append(removed, s.ObjectsPath)
+			removed = append(removed, dir)
 		case !errors.Is(err, os.ErrNotExist):
-			return removed, fmt.Errorf("daemon: inspect object store %s: %w", s.ObjectsPath, err)
+			return removed, fmt.Errorf("daemon: inspect %s: %w", dir, err)
 		}
 	}
 
-	for _, path := range []string{s.Socket, ServiceUnitPath(s)} {
+	for _, path := range files {
 		if path == "" {
 			continue
 		}
