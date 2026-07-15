@@ -92,6 +92,7 @@ func (a *app) newRootCommand() *cobra.Command {
 		a.declareCmd(),
 		a.pipelineCmd(),
 		a.runCmd(),
+		a.psCmd(),
 		a.dataCmd(),
 		a.workloadCmd(),
 		a.engineCmd(),
@@ -310,10 +311,6 @@ func (a *app) engineCmd() *cobra.Command {
 		Args: cobra.NoArgs, RunE: a.engineUninstall(),
 	}
 	addConfirmFlags(uninstall)
-	info := &cobra.Command{
-		Use: "info", Short: "Show engine and version info, role, listeners, uptime",
-		Args: cobra.NoArgs, RunE: a.engineInfo(),
-	}
 	logs := &cobra.Command{
 		Use: "logs", Short: "Tail the daemon log",
 		Args: cobra.NoArgs, RunE: a.daemonStub("engine logs"),
@@ -321,10 +318,6 @@ func (a *app) engineCmd() *cobra.Command {
 	inspect := &cobra.Command{
 		Use: "inspect", Short: "Dump the engine-table DDL, read-only",
 		Args: cobra.NoArgs, RunE: a.engineInspect(),
-	}
-	stats := &cobra.Command{
-		Use: "stats", Short: "Show rollups: run, lane, and dead-letter counts",
-		Args: cobra.NoArgs, RunE: a.engineStats(),
 	}
 	connect := &cobra.Command{
 		Use: "connect [host]", Short: "Point this machine at a remote engine: verify host and PAT, record them in the engine home's iris.toml",
@@ -346,7 +339,7 @@ func (a *app) engineCmd() *cobra.Command {
 
 	return a.group("engine", "Manage the daemon, its state, and its service unit",
 		daemonless(start), daemonTouching(stop), daemonless(install), daemonless(uninstall),
-		daemonTouching(info), daemonTouching(logs), daemonTouching(inspect), daemonTouching(stats),
+		daemonTouching(logs), daemonTouching(inspect),
 		daemonTouching(connect), service)
 }
 

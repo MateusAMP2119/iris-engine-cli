@@ -239,12 +239,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	lanes := newLanePlane(logger, inflight)
 	passCounter := dispatch.NewPassCounter()
 
-	// The stats plane serves GET /stats (and `iris engine stats`) on any node: the
-	// meta-backed rollup over the reader pool composed with the leader-held per-lane
-	// pass counts -- the same counter the lane loop increments and the candidate resets
-	// each term, so the readout reports live loop passes. A standby answers with zero
-	// passes (it has dispatched none).
-	stats := NewStatsPlane(client.StatsSource(), passCounter, logger)
+	// The ps plane serves GET /ps (and `iris ps`) on any node: the run snapshot
+	// over the reader pool composed with the live leadership role and the
+	// host-load probe, so the readout reports what the engine is running and what
+	// it costs the host -- the daemon's own tree plus the managed Postgres's.
+	psp := NewPsPlane(role, client.Reader(), ManagedPostmasterPID(s), logger)
 
 	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
 	// `iris deadletter show` renders) on any node from the reader pool, and POST
@@ -252,15 +251,11 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// installed on winning leadership, cleared on demotion).
 	deadletters := newDeadletterPlane(client.DeadLetterReader(), client.RegistryReader(), logger)
 
-	// The engine-info plane serves GET /info (and `iris engine info`) on any node:
-	// the daemon-held runtime facts -- the live leadership role, the resolved
-	// listeners, the data/meta targets, the leader-held per-lane pass counts, and
-	// the display-only uptime. The inspect plane serves GET /inspect: the embedded
+	// The inspect plane serves GET /inspect: the embedded
 	// engine-table DDL dump, a pure render that touches no database. The pipeline-show
 	// plane serves GET /pipeline/show from the reader pool: the resolved declaration,
-	// role grants, recent runs, and the depends_on gate ledger. All three are reads,
+	// role grants, recent runs, and the depends_on gate ledger. Both are reads,
 	// served on any role, mutating nothing.
-	info := NewInfoPlane(role, passCounter, InfoConfig{Socket: s.Socket, TCP: s.TCP})
 	inspect := NewInspectPlane()
 	pipelineShow := NewShowPlane(client.ShowReader(), logger)
 
@@ -286,8 +281,8 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithEndpoints(endpointRegistry), api.WithEndpointReader(api.NewPoolReader(readPool)),
 		api.WithDataSource(dataSource), api.WithReadExecutor(readPool),
 		api.WithEndpointControl(endpointCtl), api.WithPATMint(patMint),
-		api.WithStats(stats),
-		api.WithInfo(info), api.WithInspect(inspect), api.WithPipelineShow(pipelineShow),
+		api.WithPs(psp),
+		api.WithInspect(inspect), api.WithPipelineShow(pipelineShow),
 		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
 		api.WithRuns(runs), api.WithRunTrace(runTrace), api.WithPipelineGate(pipelineGate),
 		api.WithRunLogs(NewRunLogsPlane(runLogs)),

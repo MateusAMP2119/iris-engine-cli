@@ -96,9 +96,9 @@ func quickstartActsFor(e catalogEntry) []tourAct {
 					Act:         tourActEngine,
 				},
 				{
-					ID:          "info",
-					Explanation: "Read the engine readout: versions, socket, Postgres mode, role, uptime.",
-					Argv:        []string{"iris", "engine", "info"},
+					ID:          "ps",
+					Explanation: "Read the engine readout: version, role, uptime, runs, and host load.",
+					Argv:        []string{"iris", "ps"},
 					Act:         tourActEngine,
 				},
 			},

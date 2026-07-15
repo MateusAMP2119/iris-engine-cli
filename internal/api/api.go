@@ -90,8 +90,7 @@ func NewMux(opts ...MuxOption) http.Handler {
 		promote:      noPromote{},
 		wipe:         noWipe{},
 		runCancel:    noRunCancel{},
-		stats:        noStats{},
-		info:         noInfo{},
+		ps:           noPs{},
 		inspect:      noInspect{},
 		pipelineShow: noPipelineShow{},
 		workloadShow: noWorkloadShow{},
@@ -125,8 +124,7 @@ type mux struct {
 	promote      PromoteHandler
 	wipe         WipeHandler
 	runCancel    RunCancelHandler
-	stats        StatsHandler
-	info         InfoHandler
+	ps           PsHandler
 	inspect      InspectHandler
 	pipelineShow PipelineShowHandler
 	workloadShow WorkloadShowHandler
@@ -154,13 +152,13 @@ type mux struct {
 	drain  DrainHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
-	// /q then answers the internal-fault envelope, per the noStats doctrine.
+	// /q then answers the internal-fault envelope, per the unwired-seam doctrine.
 	endpoints EndpointSource
 	qreader   EndpointReader
 	// datasrc and readexec are the /data serving seams (dataroute.go,
 	// readexec.go): the declared-table shape source and the shared read pool's
 	// statement executor. Both default nil (unwired): /data then answers the
-	// internal-fault envelope, per the noStats doctrine.
+	// internal-fault envelope, per the unwired-seam doctrine.
 	datasrc  DataSource
 	readexec ReadExecutor
 }
@@ -209,10 +207,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePipelineList(w, r)
 	case "/pipeline/show":
 		m.servePipelineShow(w, r)
-	case "/stats":
-		m.serveStats(w, r)
-	case "/info":
-		m.serveInfo(w, r)
+	case "/ps":
+		m.servePs(w, r)
 	case "/inspect":
 		m.serveInspect(w, r)
 	default:
@@ -220,7 +216,7 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Deliberately unrouted: /metrics stays a not_found like any unknown
-		// route (no metrics endpoint in core; a monitor consumes GET /stats
+		// route (no metrics endpoint in core; a monitor consumes GET /ps
 		// instead).
 		WriteError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path)
 	}

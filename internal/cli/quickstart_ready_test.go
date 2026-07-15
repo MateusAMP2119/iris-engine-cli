@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"net"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -11,15 +13,30 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
 
-// infoFunc adapts a function to the api.InfoHandler interface for the
-// integration-tier daemon fakes (startInfoDaemon lives beside the engine-info
-// readout tests).
-type infoFunc func(ctx context.Context) (api.InfoPayload, error)
+// scriptedRole adapts a function to the api.RoleReporter interface, so the
+// integration-tier daemon fakes can serve a scripted leadership role on
+// GET /healthz (the probe waitEngineReady polls).
+type scriptedRole struct{ fn func() api.Role }
 
-func (f infoFunc) Info(ctx context.Context) (api.InfoPayload, error) { return f(ctx) }
+func (s scriptedRole) Role() api.Role     { return s.fn() }
+func (s scriptedRole) LeaderHint() string { return "" }
+
+// startRoleDaemon stands up an in-process daemon over a unix socket serving the
+// REAL api mux with the scripted role reporter, so the tour's readiness poll
+// reads the same /healthz document a live daemon serves.
+func startRoleDaemon(t *testing.T, sock string, role api.RoleReporter) {
+	t.Helper()
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen unix %s: %v", sock, err)
+	}
+	srv := &http.Server{Handler: api.NewMux(api.WithRole(role)), ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+}
 
 // TestQuickstartEngineActWaitsForRole proves the ENGINE act closes only when
-// the daemon reports a leadership role: the tour polls the /info readout after
+// the daemon reports a leadership role: the tour polls the /healthz probe after
 // the act's steps, holds while the role is unknown, proceeds when it flips,
 // and a daemon that never reports a role is a clear fault (exit 4) that keeps
 // THE PIPELINE act shut.
@@ -30,35 +47,35 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 		t.Run("the act holds through unknown AND standby, proceeding only on leader", func(t *testing.T) {
 			chdirWorkspace(t)
 			sock := shortSocket(t)
-			var infoCalls atomic.Int64
-			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
+			var roleCalls atomic.Int64
+			startRoleDaemon(t, sock, scriptedRole{fn: func() api.Role {
 				// The real election shape: unknown, then a contending standby
 				// (`engine start -d` returns on socket-up while the fresh workspace
 				// engine is still winning its own election), then leader.
-				n := infoCalls.Add(1)
-				role := "unknown"
+				n := roleCalls.Add(1)
 				switch {
 				case n >= 4:
-					role = "leader"
+					return api.RoleLeader
 				case n >= 2:
-					role = "standby"
+					return api.RoleStandby
+				default:
+					return api.RoleUnknown
 				}
-				return api.InfoPayload{Role: role, Socket: sock, Uptime: "1s"}, nil
-			}))
+			}})
 
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)
 			events := scriptTour(a, proceeds(1), nil)
 			a.readyEvery = 10 * time.Millisecond
 			a.readyBudget = 2 * time.Second
-			a.waitForReady = a.waitEngineReady // the real poll, against the fake /info
+			a.waitForReady = a.waitEngineReady // the real poll, against the fake /healthz
 
 			code := a.run([]string{"quickstart", "--socket=" + sock})
 			if code != exitOK {
 				t.Fatalf("exit = %d, want %d\nstdout: %s\nstderr: %s", code, exitOK, out.String(), errb.String())
 			}
-			if n := infoCalls.Load(); n < 4 {
-				t.Errorf("/info polled %d times; the act closed before leadership (a standby readout must hold it)", n)
+			if n := roleCalls.Load(); n < 4 {
+				t.Errorf("/healthz polled %d times; the act closed before leadership (a standby readout must hold it)", n)
 			}
 			// The tour proceeded: THE PIPELINE's pick was asked and its steps ran.
 			if picks := pickEvents(*events); len(picks) != 1 {
@@ -72,11 +89,11 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 		t.Run("a daemon that never reports leadership is a clear fault, exit 4, PIPELINE shut", func(t *testing.T) {
 			chdirWorkspace(t)
 			sock := shortSocket(t)
-			startInfoDaemon(t, sock, infoFunc(func(context.Context) (api.InfoPayload, error) {
+			startRoleDaemon(t, sock, scriptedRole{fn: func() api.Role {
 				// A standby forever: reachable, healthy, never the leader -- a
 				// mutation would exit 6, so the act must not close on it.
-				return api.InfoPayload{Role: "standby", Socket: sock, Uptime: "1s"}, nil
-			}))
+				return api.RoleStandby
+			}})
 
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, true)

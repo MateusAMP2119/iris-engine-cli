@@ -28,7 +28,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
@@ -62,11 +61,6 @@ type app struct {
 	errOut   io.Writer
 	logger   *slog.Logger
 	jsonMode bool
-	// newKeyReader builds the engine-key reader `iris engine info` reads the public
-	// half through. It is nil in production (the handler falls back to
-	// daemon.NewEngineKeyReader) and injected by tests to drive info with no live
-	// meta.
-	newKeyReader func(config.Settings) daemon.EngineKeyReader
 	// daemonTLSConfig overrides the TLS client config the daemon-reachability probe
 	// uses for an https:// host. It is nil in production (standard verification
 	// against the system trust store) and injected by tests to trust a self-signed

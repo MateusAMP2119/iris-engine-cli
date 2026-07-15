@@ -73,7 +73,7 @@ type RunLogsHandler interface {
 // The default (unwired) read-route faults. A route reaching its no* handler means
 // the daemon has not wired the reader, so the request is a 500 internal fault
 // naming the missing reader -- never a 404 (the route exists) and never a
-// fabricated empty payload (the noStats/serveUnwiredRead doctrine).
+// fabricated empty payload (the unwired-seam (serveUnwiredRead) doctrine).
 var (
 	// ErrRunsUnavailable signals the runs collection reader is not wired.
 	ErrRunsUnavailable = errors.New("api: runs reader not wired")
