@@ -66,24 +66,36 @@ func TestIrisDirDefaultPaths(t *testing.T) {
 	})
 }
 
-// TestCandidateRequiresWorkspaceTree proves the per-host prerequisite: a daemon
-// candidate started on a host lacking the workspace tree the leader dispatches from
-// (pipeline folders, dev source, env_files) refuses to start.
-func TestCandidateRequiresWorkspaceTree(t *testing.T) {
-	t.Run("candidate-requires-workspace-tree", func(t *testing.T) {
-		missing := filepath.Join(t.TempDir(), "no-tree-here")
-		err := requireWorkspaceTree(missing)
+// TestCandidateEnsuresWorkspaceTree proves a missing workspace tree is created and a non-directory path refuses the candidate.
+func TestCandidateEnsuresWorkspaceTree(t *testing.T) {
+	t.Run("candidate-ensures-workspace-tree", func(t *testing.T) {
+		// Missing: created, including parents.
+		missing := filepath.Join(t.TempDir(), ".iris", "workspace")
+		if err := ensureWorkspaceTree(missing); err != nil {
+			t.Fatalf("ensureWorkspaceTree on missing path: %v, want creation", err)
+		}
+		fi, err := os.Stat(missing)
+		if err != nil || !fi.IsDir() {
+			t.Fatalf("workspace tree not created: fi=%v err=%v", fi, err)
+		}
+
+		// Existing dir is accepted (declarations may be absent until apply).
+		good := t.TempDir()
+		if err := ensureWorkspaceTree(good); err != nil {
+			t.Errorf("ensureWorkspaceTree on existing dir: %v", err)
+		}
+
+		// A non-directory occupying the path refuses the candidate.
+		file := filepath.Join(t.TempDir(), "workspace")
+		if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err = ensureWorkspaceTree(file)
 		if err == nil {
-			t.Fatal("requireWorkspaceTree on missing path succeeded, want refusal error")
+			t.Fatal("ensureWorkspaceTree on a file succeeded, want refusal error")
 		}
 		if !strings.Contains(err.Error(), "workspace tree") || !strings.Contains(err.Error(), "refuses to start") {
 			t.Errorf("error %q does not mention workspace tree refusal", err)
-		}
-
-		// Existing dir is accepted (candidate may start; declarations may be absent until apply).
-		good := t.TempDir()
-		if err := requireWorkspaceTree(good); err != nil {
-			t.Errorf("requireWorkspaceTree on existing dir: %v", err)
 		}
 	})
 }

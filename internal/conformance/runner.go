@@ -130,6 +130,10 @@ func (b *Binary) Run(t testing.TB, opts RunOptions) Result {
 		}
 		env = append(env, "IRIS_HOME="+home)
 	}
+	// Pin the dispatch workspace to opts.Dir: the suite lays pipelines/ and schemas/ there, while production defaults under the engine home (#203).
+	if !hasEnv(opts.Env, "IRIS_WORKSPACE=") && opts.Dir != "" {
+		env = append(env, "IRIS_WORKSPACE="+opts.Dir)
+	}
 	env = append(env, opts.Env...)
 	cmd.Env = env
 	if opts.Stdin != nil {
