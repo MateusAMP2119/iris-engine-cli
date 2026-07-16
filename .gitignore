@@ -4,3 +4,4 @@ api.test
 .idea/
 *.test
 
+.local/
