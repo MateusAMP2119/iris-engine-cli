@@ -1,24 +1,10 @@
 ┌─ iris ps ───────────────────────────────────────────────── leader · up 2h13m ┐
 │ ENGINE dev · pid 42 · CPU 3.2% · MEM 126.0MiB · 1 running · 1 queued         │
 │ ──────────────────────────────────────────────────────────────────────────── │
+│                                                                              │
 │ LANE       PIPELINES  QUEUED  RUNNING  CPU    MEM                            │
 │ ingest     3          1       1        51.0%  24.0MiB                        │
 │ reporting  1          0       0        -      -                              │
 │ solo       1          0       0        -      -                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 └─ q quit · ⏎ open lane · / search ────────────────────── remote 10.0.0.5:7433 ┘
