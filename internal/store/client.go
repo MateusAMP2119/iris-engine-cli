@@ -208,11 +208,6 @@ func (c *Client) PipelineLister() PipelineLister { return c.pipes }
 // pipeline run` op composes.
 func (c *Client) ManualReader() ManualReader { return c.manual }
 
-// RootGateReader returns the plain-MVCC root-cause-gate reader (the pool): the
-// latest-run detail read the lane loop's root gate compares against the current
-// declaration checksum.
-func (c *Client) RootGateReader() RootGateReader { return c.manual }
-
 // QueuedManualReader returns the plain-MVCC queued-manual reader (the pool): the
 // enqueued lane-member manual runs the lane loop starts in turn at each member's
 // lane boundary.

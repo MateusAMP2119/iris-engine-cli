@@ -114,7 +114,6 @@ func newLaneLoop(
 	workspace string,
 	registry store.RegistryReader,
 	manual store.ManualReader,
-	roots store.RootGateReader,
 	queued store.QueuedManualReader,
 	events *dispatch.Events,
 	runner exec.Runner,
@@ -132,11 +131,9 @@ func newLaneLoop(
 	}
 	walk := laneWalkReader{registry: registry, manual: manual}
 	gate := lanePassGate{
-		gate:      dispatch.NewGate(consumedReader{manual: manual}),
-		edges:     edgeReader{registry: registry, manual: manual},
-		roots:     roots,
-		manual:    manual,
-		workspace: workspace,
+		gate:   dispatch.NewGate(consumedReader{manual: manual}),
+		edges:  edgeReader{registry: registry, manual: manual},
+		latest: manual,
 	}
 	runnerSeam := &laneExec{
 		workspace: workspace,
@@ -155,14 +152,15 @@ func newLaneLoop(
 	if runLogs != nil {
 		deleteLog = runLogs.DeleteOnPrune
 	}
-	post := lanePostPass{
-		workspace: workspace,
-		submit:    submit,
-		manual:    manual,
-		retention: retention,
-		retain:    retain,
-		deleteLog: deleteLog,
-		logger:    logger,
+	post := &lanePostPass{
+		workspace:    workspace,
+		submit:       submit,
+		manual:       manual,
+		retention:    retention,
+		retain:       retain,
+		deleteLog:    deleteLog,
+		logger:       logger,
+		startedSince: map[string]int{},
 	}
 	opts := []dispatch.LoopOption{dispatch.WithPostPass(post), dispatch.WithQueuedStarter(runnerSeam)}
 	if passCounter != nil {
@@ -203,19 +201,25 @@ func (r laneWalkReader) Walk(ctx context.Context) ([]dispatch.Lane, error) {
 	return dispatch.BuildWalk(rows, registered), nil
 }
 
-// lanePassGate resolves a pipeline's eligibility at its turn in a pass. A gated
-// pipeline (with depends_on edges) resolves exactly like the manual path: its
-// edges, each joined to its upstream's latest run, evaluated over the run_inputs
-// consumed check. A root (edge-less) pipeline resolves through the root cause
-// gate instead: its latest run's stamped declaration checksum against the
-// current declaration, so a loop run starts only on an unconsumed cause -- never
-// back to back on nothing (issue #172).
+// lanePassGate resolves a pipeline's depends_on eligibility at its turn in a pass,
+// exactly like the manual path: it reads the pipeline's edges (each joined to its
+// upstream's latest run) and evaluates them over the run_inputs consumed check.
+//
+// An edge-less pipeline re-runs indefinitely by design -- the perpetual for-loop
+// -- with exactly one brake, the engine's own no-retry law: "a failed run is
+// never retried; re-execution is only ever an explicit replay". A pipeline whose
+// latest run carries an OUTSTANDING failed dead-letter starts no fresh loop run
+// (re-running a known-broken script back to back is a crash-loop, not
+// freshness); replay, drain, and a manual run are the surfaces that release the
+// brake -- each removes or supersedes the worklist row the brake reads. A
+// stopped run (operator cancel, wipe --force, crash reconciliation) never parks:
+// the operator ended one run, not the pipeline, and always-alive resumes. A
+// latest run still queued or running skips this turn (it is already in flight --
+// the queued-manual pickup runs ahead of this gate at the same turn).
 type lanePassGate struct {
-	gate      *dispatch.Gate
-	edges     edgeReader
-	roots     store.RootGateReader
-	manual    store.ManualReader
-	workspace string
+	gate   *dispatch.Gate
+	edges  edgeReader
+	latest store.ManualReader // latest-run state for the edge-less no-retry brake; nil = always eligible (shape tests)
 }
 
 // Eligible resolves the pipeline's gate for this pass turn.
@@ -224,39 +228,24 @@ func (g lanePassGate) Eligible(ctx context.Context, pipeline string) (dispatch.D
 	if err != nil {
 		return dispatch.Decision{}, err
 	}
-	if len(edges) == 0 && g.roots != nil {
-		return g.eligibleRoot(ctx, pipeline)
+	if len(edges) == 0 && g.latest != nil {
+		info, found, err := g.latest.LatestRun(ctx, pipeline)
+		if err != nil {
+			return dispatch.Decision{}, fmt.Errorf("lane gate %q: read latest run: %w", pipeline, err)
+		}
+		switch {
+		case found && (info.State == store.RunQueued || info.State == store.RunRunning):
+			// Already in flight: wait for its terminal transition.
+			return dispatch.Decision{}, nil
+		case found && info.State == store.RunDeadLettered && info.DeadLetterReason == store.ReasonFailed:
+			// Outstanding failure: never retried on its own -- replay, drain, or
+			// a manual run releases the brake. A stopped run or a drained
+			// failure carries no outstanding failed reason and falls through.
+			return dispatch.Decision{}, nil
+		}
+		return dispatch.Decision{Run: true}, nil
 	}
 	return g.gate.Evaluate(ctx, pipeline, edges)
-}
-
-// eligibleRoot resolves a root pipeline's loop-pass eligibility through the root
-// cause gate: the latest run's stamped declaration checksum against the current
-// declaration file's. The reads happen only at an unparked lane's turn -- a
-// parked lane never reaches here -- so the file read and the latest-run query
-// are paid per cause, not per pass. A pipeline that unregistered mid-pass mints
-// no run (a closed decision, absence is the record).
-func (g lanePassGate) eligibleRoot(ctx context.Context, pipeline string) (dispatch.Decision, error) {
-	detail, found, err := g.roots.LatestRunDetail(ctx, pipeline)
-	if err != nil {
-		return dispatch.Decision{}, fmt.Errorf("root gate %q: %w", pipeline, err)
-	}
-	var latest *dispatch.RootRun
-	if found {
-		latest = &dispatch.RootRun{State: detail.State, DeclarationChecksum: detail.DeclarationChecksum}
-	}
-	target, registered, err := g.manual.PipelineRunTarget(ctx, pipeline)
-	if err != nil {
-		return dispatch.Decision{}, fmt.Errorf("root gate %q: read run target: %w", pipeline, err)
-	}
-	if !registered {
-		return dispatch.Decision{}, nil
-	}
-	sum, err := declarationChecksum(g.workspace, target.Folder)
-	if err != nil {
-		return dispatch.Decision{}, fmt.Errorf("root gate %q: %w", pipeline, err)
-	}
-	return dispatch.DecideRoot(latest, sum), nil
 }
 
 // laneExec mints, runs, and records the terminal state of a fresh cause=loop run,
@@ -440,13 +429,25 @@ func (m *laneExec) childEnv(ctx context.Context, pipeline string, runID int64) [
 	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.runConn.dsnFor(ctx, pipeline, runID))
 }
 
+// pruneEveryRuns is the count-based prune cadence: a lane's retention prune runs
+// once per this many started runs (accumulated across its passes), batching what
+// per-pass pruning paid one census read and one writer transaction each for. The
+// cadence is a run count, never a clock (retention is count-based, doctrine), and
+// a lane's first started pass of a leadership term always prunes, so a backlog
+// left by a prior term drains immediately. Between prunes at most this many runs
+// linger beyond retain -- retention converges, it just amortizes.
+const pruneEveryRuns = 16
+
 // lanePostPass runs the dispatcher-owned bookkeeping after a lane pass completes,
 // never mid-pass: failure propagation (for each member whose gate poisoned this
 // pass, it mints a never-executed dead-lettered run (cause=propagated) recording
 // the immediate failed_upstream and the poisoned upstream run(s) for lineage) and
 // count-based retention pruning (each lane pipeline's runs beyond the newest
 // `retain` are archived into run_summaries and deleted, sparing runs held by
-// outstanding dead letters).
+// outstanding dead letters). A pass that started nothing runs no retention work
+// at all -- the run set it prunes cannot have grown -- so an empty pass costs the
+// post-pass zero reads and zero writes; started runs accumulate per lane and the
+// prune runs on the pruneEveryRuns cadence.
 type lanePostPass struct {
 	workspace string
 	submit    dispatch.Submitter
@@ -455,19 +456,43 @@ type lanePostPass struct {
 	retain    int64
 	deleteLog RunLogPruneFunc
 	logger    *slog.Logger
+
+	// mu guards startedSince: lanes post-pass concurrently (one goroutine each).
+	mu sync.Mutex
+	// startedSince counts each lane's started runs since its last prune; a lane
+	// absent from the map has not pruned this term (its first started pass is due).
+	startedSince map[string]int
 }
 
 // AfterPass propagates each poisoned member's failure to a downstream dead-letter,
-// then prunes the lane's run history down to the retention count.
-func (p lanePostPass) AfterPass(ctx context.Context, report dispatch.PassReport) error {
+// then prunes the lane's run history down to the retention count on the
+// count-based cadence.
+func (p *lanePostPass) AfterPass(ctx context.Context, report dispatch.PassReport) error {
 	if err := p.propagateFailures(ctx, report); err != nil {
 		return err
+	}
+	if len(report.Started) == 0 {
+		// Nothing started: the lane's run set did not grow, so there is nothing
+		// new to prune. Zero retention reads, zero writes.
+		return nil
+	}
+	p.mu.Lock()
+	n, pruned := p.startedSince[report.Lane]
+	n += len(report.Started)
+	due := !pruned || n >= pruneEveryRuns
+	if due {
+		n = 0
+	}
+	p.startedSince[report.Lane] = n
+	p.mu.Unlock()
+	if !due {
+		return nil
 	}
 	return p.pruneRetention(ctx, report)
 }
 
 // propagateFailures mints the propagated dead-letter for each poisoned member.
-func (p lanePostPass) propagateFailures(ctx context.Context, report dispatch.PassReport) error {
+func (p *lanePostPass) propagateFailures(ctx context.Context, report dispatch.PassReport) error {
 	for _, m := range report.Poisoned {
 		plan := dispatch.PlanPropagation(m.Decision)
 		if !plan.Propagate {
@@ -514,7 +539,7 @@ const pruneBatchSize = 256
 // pipeline. A pass with nothing beyond retain writes nothing. An error is
 // returned to the loop, which logs it and retries at the next pass boundary --
 // retention is opportunistic, never fatal to dispatch.
-func (p lanePostPass) pruneRetention(ctx context.Context, report dispatch.PassReport) error {
+func (p *lanePostPass) pruneRetention(ctx context.Context, report dispatch.PassReport) error {
 	if p.retention == nil {
 		return nil // retention read seam not wired (walk-only test composition)
 	}

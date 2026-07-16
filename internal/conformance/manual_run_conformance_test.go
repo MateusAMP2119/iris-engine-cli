@@ -46,10 +46,14 @@ func TestManualPipelineRun(t *testing.T) {
 	ws := shortWorkspace(t)
 	socket := filepath.Join(ws, ".iris", "iris.sock")
 
-	// gate_up is an upstream that never runs; gate_down gates on it, so gate_down is
-	// never eligible for a manual run. boom is an own-lane pipeline whose script fails,
-	// so a manual run of it dead-letters.
-	writePipelineDecl(t, ws, "gate_up", "name: gate_up\nrun: [\"true\"]\n")
+	// gate_up is an upstream that never SUCCEEDS: its script hangs forever, so its
+	// first (and only) loop run stays running -- never terminal, no engine timeout
+	// (clock doctrine) -- and gate_down's depends_on gate stays pending. The old
+	// fixture ran `true` and relied on the manual run racing ahead of the loop's
+	// first pass; the event-driven loop starts the pass the instant the apply
+	// lands, so the premise must hold structurally, not by timing. boom is an
+	// own-lane pipeline whose script fails, so a manual run of it dead-letters.
+	writePipelineDecl(t, ws, "gate_up", "name: gate_up\nrun: [\"sh\", \"-c\", \"sleep 100000\"]\n")
 	writePipelineDecl(t, ws, "gate_down", "name: gate_down\nrun: [\"true\"]\ndepends_on: [gate_up]\n")
 	writePipelineDecl(t, ws, "boom", "name: boom\nrun: [\"sh\", \"-c\", \"exit 7\"]\n")
 

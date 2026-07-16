@@ -247,16 +247,9 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 		t.Errorf("orphaned run %d dead_letters reason=%q after takeover, want stopped", orphanID, reason)
 	}
 
-	// Lanes resume on the new leader by consuming what is genuinely unconsumed:
-	// extract_orders' pre-kill success was never consumed by load_orders (the hung
-	// member held the lane ahead of it), so the new leader's first pass opens
-	// load's gate and dispatches it. extract_orders itself stays parked -- its
-	// consumed declaration is not a cause (issue #172) -- so its succeeded tip
-	// must NOT advance.
-	scWaitRunState(t, meta, "load_orders", "succeeded", 90*time.Second)
-	if tip := scMaxSucceeded(meta, "extract_orders"); tip != extractBaseline {
-		t.Errorf("extract_orders succeeded tip advanced from %d to %d across takeover; want parked (no loop run without an unconsumed cause)", extractBaseline, tip)
-	}
+	// Lanes resume: the new leader loops the sample graph, so extract_orders gets a
+	// succeeded run strictly newer than the pre-kill baseline.
+	scWaitSucceededAfter(t, meta, "extract_orders", extractBaseline, 90*time.Second)
 }
 
 // TestGoldenStandbyMutationExit6 is the golden-sample standby-rejection leg of
@@ -408,27 +401,19 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 		t.Fatalf("no journal stamps attributed to extract run %d or load run %d; writes must be captured", extractRun, loadRun)
 	}
 
-	// Step 3 continued (and step 10's idle shape): with every declaration consumed
-	// the lane PARKS -- no loop run without an unconsumed cause (issue #172). The
-	// run tip stands still over a settle window the old back-to-back loop would
-	// have filled with dozens of runs.
-	var idleTip int64
-	_ = meta.QueryRow(context.Background(), "SELECT coalesce(max(id),0) FROM runs").Scan(&idleTip)
-	time.Sleep(5 * time.Second)
-	var idleTipAfter int64
-	_ = meta.QueryRow(context.Background(), "SELECT coalesce(max(id),0) FROM runs").Scan(&idleTipAfter)
-	if idleTipAfter != idleTip {
-		t.Errorf("runs advanced from %d to %d while idle; want parked (no loop run without an unconsumed cause)", idleTip, idleTipAfter)
-	}
+	// Step 3 continued (and step 10's idle-chaining shape): the lane keeps looping
+	// unattended -- a later pass gives extract a strictly newer succeeded run.
+	scWaitSucceededAfter(t, meta, "extract_orders", extractRun, 60*time.Second)
 
 	// Step 4: the operator's wipe mutations run non-interactively and succeed against
 	// the live sample -- scoped wipe of one pipeline, then the bare wipe of the rest.
 	// (The exact revert invariants are proven by their own legs; here they must simply
-	// pass unattended.) The parked lane holds no runs in flight, and --force stays the
-	// unattended-safe form either way. The build+promote half of step 5 and its
-	// wipe-immunity invariant are proven over a compile-in-CI pipeline -- the golden
-	// sample's Python pipelines build via pyinstaller, which the conformance runner
-	// does not carry.
+	// pass unattended.) The lane loop keeps the sample pipelines perpetually in
+	// flight, so the destructive-op gate soft-blocks a --yes wipe; --force is the
+	// documented override, cancelling the in-flight loop runs and proceeding. The
+	// build+promote half of step 5 and its wipe-immunity invariant are proven over a
+	// compile-in-CI pipeline -- the golden sample's Python pipelines build via
+	// pyinstaller, which the conformance runner does not carry.
 	for _, mut := range [][]string{
 		{"workload", "wipe", "extract_orders", "--force"},
 		{"workload", "wipe", "--force"},
@@ -436,14 +421,9 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 		bin.Run(t, RunOptions{Args: mut, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 	}
 
-	// Re-derive after the wipe: the manual run is the operator's cause; load_orders
-	// follows through its depends_on gate on the LOOP's own dispatch, refilling
-	// analytics.orders for the endpoint read below.
-	bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "extract_orders"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
-
-	// Step 7: publish the declared endpoint and read it as a data PAT over TCP. The
-	// re-derivation lands analytics.orders rows, so wait until the table has rows to
-	// serve, then read through the show-once token.
+	// Step 7: publish the declared endpoint and read it as a data PAT over TCP. The lane
+	// keeps landing analytics.orders rows, so wait until the promoted/looped table has
+	// rows to serve, then read through the show-once token.
 	bin.Run(t, RunOptions{Args: []string{"endpoint", "apply"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 	pat := bin.Run(t, RunOptions{
 		Args:    []string{"--json", "pat", "create", "--scope", "data", "--endpoint", "orders_by_customer"},
@@ -506,7 +486,6 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	}
 
 	leaderBaseline := scMaxSucceeded(meta, "extract_orders")
-	loadBaseline := scMaxSucceeded(meta, "load_orders")
 	leaderPID := readDaemonPID(t, filepath.Join(ws, ".iris", "iris.pid"))
 	if err := syscall.Kill(leaderPID, syscall.SIGKILL); err != nil {
 		t.Fatalf("SIGKILL scenario leader (pid %d): %v", leaderPID, err)
@@ -514,16 +493,9 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	if !waitForLeader(t, standbySock) {
 		t.Fatalf("standby did not take over after the leader was killed (role=%q)", healthzRole(t, standbySock))
 	}
-	// Dispatch resumes on the new leader on the next CAUSE (a parked graph re-runs
-	// nothing by itself -- issue #172): a manual run of the root lands through the
-	// new leader, and the LOOP consumes its success to advance the dependent.
-	bin.Run(t, RunOptions{
-		Args:    []string{"--socket", standbySock, "pipeline", "run", "extract_orders"},
-		Dir:     wsStandby,
-		Timeout: time.Minute,
-	}).RequireExit(t, 0)
+	// Lanes resume on the new leader: extract_orders gets a succeeded run strictly newer
+	// than the last one seen before the kill.
 	scWaitSucceededAfter(t, meta, "extract_orders", leaderBaseline, 90*time.Second)
-	scWaitSucceededAfter(t, meta, "load_orders", loadBaseline, 90*time.Second)
 }
 
 // scWaitAnalyticsRows waits until analytics.orders has at least one row, so the

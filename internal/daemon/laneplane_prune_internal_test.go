@@ -32,11 +32,13 @@ type retentionReaderFake struct {
 	held    []int64
 	records map[int64]store.PrunableRun
 
-	askedIDs []int64 // ids handed to PrunableRunsByID
-	byIDCall int
+	askedIDs   []int64 // ids handed to PrunableRunsByID
+	byIDCall   int
+	censusCall int
 }
 
 func (f *retentionReaderFake) RetentionRuns(context.Context) ([]store.RetentionRunRef, error) {
+	f.censusCall++
 	return append([]store.RetentionRunRef(nil), f.census...), nil
 }
 
@@ -118,7 +120,10 @@ func pruneBatches(rec *storetest.WriteRecorder) []int64 {
 
 func TestLanePostPassRetentionPrune(t *testing.T) {
 	t.Run("lane-post-pass-retention-prune", func(t *testing.T) {
-		report := dispatch.PassReport{Lane: "etl", Pipelines: []string{"p"}}
+		// Started is non-empty: a pass that started nothing runs no retention work
+		// at all, and a lane's FIRST started pass is always due, so each subtest's
+		// single AfterPass call prunes immediately.
+		report := dispatch.PassReport{Lane: "etl", Pipelines: []string{"p"}, Started: []string{"p"}}
 
 		t.Run("runs beyond the newest retain are pruned atomically, logs die with rows", func(t *testing.T) {
 			reader := &retentionReaderFake{
@@ -131,7 +136,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			}
 			rec := storetest.NewWriteRecorder()
 			logs := &pruneLogSpy{}
-			post := lanePostPass{
+			post := &lanePostPass{startedSince: map[string]int{}, 
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: logs.delete, logger: discardLogger(),
 			}
@@ -167,7 +172,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			}
 			rec := storetest.NewWriteRecorder()
 			logs := &pruneLogSpy{}
-			post := lanePostPass{
+			post := &lanePostPass{startedSince: map[string]int{}, 
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: logs.delete, logger: discardLogger(),
 			}
@@ -197,7 +202,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := lanePostPass{
+			post := &lanePostPass{startedSince: map[string]int{}, 
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}
@@ -219,7 +224,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				records: map[int64]store.PrunableRun{1: prunableRecord(1, "p")},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := lanePostPass{
+			post := &lanePostPass{startedSince: map[string]int{}, 
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}
@@ -239,7 +244,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				census: []store.RetentionRunRef{runRef(1, "p"), runRef(2, "p")},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := lanePostPass{
+			post := &lanePostPass{startedSince: map[string]int{}, 
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}
@@ -254,9 +259,62 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			}
 		})
 
+		t.Run("an empty pass runs no retention work at all", func(t *testing.T) {
+			reader := &retentionReaderFake{census: []store.RetentionRunRef{
+				runRef(1, "p"), runRef(2, "p"), runRef(3, "p"),
+			}}
+			rec := storetest.NewWriteRecorder()
+			post := &lanePostPass{startedSince: map[string]int{}, submit: recorderSubmitter{rec: rec}, retention: reader, retain: 1, logger: discardLogger()}
+			// Started empty: the run set did not grow, so no census read, no
+			// held-set read, no write -- an empty pass costs the post-pass nothing,
+			// even with runs beyond retain lingering (they wait for a started pass).
+			empty := dispatch.PassReport{Lane: "etl", Pipelines: []string{"p"}}
+			if err := post.AfterPass(context.Background(), empty); err != nil {
+				t.Fatalf("AfterPass: %v", err)
+			}
+			if reader.censusCall != 0 {
+				t.Errorf("census read %d times on an empty pass, want 0", reader.censusCall)
+			}
+			if got := len(rec.Statements()); got != 0 {
+				t.Errorf("%d statements written on an empty pass, want 0", got)
+			}
+		})
+
+		t.Run("the prune amortizes on the started-run cadence", func(t *testing.T) {
+			reader := &retentionReaderFake{records: map[int64]store.PrunableRun{}}
+			rec := storetest.NewWriteRecorder()
+			post := &lanePostPass{startedSince: map[string]int{}, submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2, logger: discardLogger()}
+
+			// First started pass of the term: always due (drains a prior term's
+			// backlog immediately).
+			if err := post.AfterPass(context.Background(), report); err != nil {
+				t.Fatalf("AfterPass: %v", err)
+			}
+			if reader.censusCall != 1 {
+				t.Fatalf("census read %d times after the first started pass, want 1 (first pass is due)", reader.censusCall)
+			}
+
+			// Subsequent single-run passes accumulate without pruning until the
+			// cadence is reached; the census is read once more, at the threshold.
+			for i := 0; i < pruneEveryRuns-1; i++ {
+				if err := post.AfterPass(context.Background(), report); err != nil {
+					t.Fatalf("AfterPass (accumulating): %v", err)
+				}
+				if reader.censusCall != 1 {
+					t.Fatalf("census read %d times after %d accumulated runs, want still 1 (below the cadence)", reader.censusCall, i+1)
+				}
+			}
+			if err := post.AfterPass(context.Background(), report); err != nil {
+				t.Fatalf("AfterPass (threshold): %v", err)
+			}
+			if reader.censusCall != 2 {
+				t.Errorf("census read %d times at the cadence threshold, want 2 (one prune per %d started runs)", reader.censusCall, pruneEveryRuns)
+			}
+		})
+
 		t.Run("an unwired retention seam is a no-op, never a fault", func(t *testing.T) {
 			rec := storetest.NewWriteRecorder()
-			post := lanePostPass{submit: recorderSubmitter{rec: rec}, logger: discardLogger()}
+			post := &lanePostPass{startedSince: map[string]int{}, submit: recorderSubmitter{rec: rec}, logger: discardLogger()}
 			if err := post.AfterPass(context.Background(), report); err != nil {
 				t.Fatalf("AfterPass with no retention seam: %v", err)
 			}

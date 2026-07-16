@@ -320,7 +320,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
 	laneBuild := func(submit dispatch.Submitter, events *dispatch.Events) *dispatch.Loop {
 		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
-			client.RootGateReader(), client.QueuedManualReader(), events,
+			client.QueuedManualReader(), events,
 			exec.NewOSRunner(), data, objects, runConn, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
 	}

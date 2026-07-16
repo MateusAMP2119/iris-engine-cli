@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // passReports wires a WithOnPass hook that forwards each report on a channel,
@@ -208,6 +209,51 @@ func TestQueuedManualPickupAtMemberTurn(t *testing.T) {
 		want := []string{"queued:a", "run:a", "queued:b", "run:b"}
 		if got := ev.snapshot(); !reflect.DeepEqual(got, want) {
 			t.Fatalf("event order = %v, want %v (pickup at each member's turn, before its gate and fresh run)", got, want)
+		}
+	})
+}
+
+// bumpingRunner wraps the fake runner and bumps the watermark on every started
+// run, mirroring production: a run's meta writes ride the dispatcher, which bumps
+// after each successful write.
+type bumpingRunner struct {
+	inner  *fakeRunner
+	events *dispatch.Events
+}
+
+func (r *bumpingRunner) StartFresh(ctx context.Context, rec store.RunRecord) (dispatch.RunOutcome, error) {
+	r.events.Bump()
+	return r.inner.StartFresh(ctx, rec)
+}
+
+// TestRunningLaneSelfPerpetuates proves the for-loop semantics under the
+// watermark: a lane whose passes start runs re-passes back to back indefinitely
+// with no external cause and no timer -- its own run records advance the
+// watermark -- while parking still applies to a lane whose passes start nothing.
+func TestRunningLaneSelfPerpetuates(t *testing.T) {
+	t.Run("running-lane-self-perpetuates", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+
+		events := dispatch.NewEvents()
+		inner := newFakeRunner()
+		inner.entered = make(chan string)
+		runner := &bumpingRunner{inner: inner, events: events}
+		loop := dispatch.NewLoop(
+			newFakeWalk(dispatch.Lane{Name: "hot", Pipelines: []string{"a"}}),
+			newFakeGate(), runner, nil,
+			dispatch.WithEvents(events),
+		)
+		done := make(chan struct{})
+		go func() { defer close(done); _ = loop.Run(ctx) }()
+		defer func() { cancel(); <-done }()
+
+		// Five consecutive dispatches with NO external bump and no timer: each
+		// pass's own run writes re-open eligibility at the boundary.
+		for i := 0; i < 5; i++ {
+			if got := nextStart(ctx, t, inner); got != "a" {
+				t.Fatalf("dispatch %d = %q, want a (the running lane must chain passes indefinitely)", i+1, got)
+			}
 		}
 	})
 }
