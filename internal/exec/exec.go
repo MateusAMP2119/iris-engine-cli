@@ -38,6 +38,8 @@ type Spec struct {
 	Stdout io.Writer
 	// Stderr receives the subprocess's standard error; nil discards it.
 	Stderr io.Writer
+	// Stdin feeds the subprocess's standard input; nil means an empty stdin (the resident iteration protocol writes go-lines through it).
+	Stdin io.Reader
 }
 
 // ExitStatus is the terminal outcome of a subprocess.

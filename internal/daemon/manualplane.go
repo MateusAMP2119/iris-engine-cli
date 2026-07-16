@@ -364,13 +364,8 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	argv := dispatch.ResolveRunArgv(target.Argv, nil, m.objects)
 	// objects is this leader's (wired at candidate construction; a promoted failover
 	// leader therefore resolves built-run binaries from its own objects_path).
-	h, err := m.runner.Start(ctx, exec.Spec{
-		Dir:    filepath.Join(m.workspace, target.Folder),
-		Argv:   argv,
-		Env:    m.childEnv(ctx, rec.Pipeline, info.ID),
-		Stdout: sink,
-		Stderr: sink,
-	})
+	// The manual path speaks the iteration protocol too, one-shot: a resident answer records the outcome and then ends the process (an own-lane manual run never keeps a session).
+	ses, err := spawnResident(ctx, m.runner, "", filepath.Join(m.workspace, target.Folder), argv, m.childEnv(ctx, rec.Pipeline, info.ID))
 	if err != nil {
 		closeRunLog(sink)
 		// Nothing started: remove the queued run so meta carries no phantom.
@@ -379,11 +374,14 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		}
 		return dispatch.RunSucceeded, fmt.Errorf("start manual run for %q: %w", rec.Pipeline, err)
 	}
-	defer closeRunLog(sink)
+	ses.out.Set(sink)
+	defer func() {
+		ses.out.Set(nil)
+		closeRunLog(sink)
+	}()
 
-	if err := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.MarkRunRunning(ctx, runID, h.PGID(), logRef) }); err != nil {
-		_ = h.Kill()
-		_, _ = h.Wait()
+	if err := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.MarkRunRunning(ctx, runID, ses.handle.PGID(), logRef) }); err != nil {
+		ses.end()
 		return dispatch.RunSucceeded, fmt.Errorf("record manual run %s running: %w", runID, err)
 	}
 
@@ -391,11 +389,24 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	// once; untrack after it is reaped so a completed run is never a kill target. A
 	// nil registry (the shape tests) skips tracking.
 	if m.inflight != nil {
-		m.inflight.track(runID, h)
+		m.inflight.track(runID, ses.handle)
 		defer m.inflight.untrack(runID)
 	}
 
-	status, waitErr := h.Wait()
+	// Start the iteration; a write error means the process is gone and its exit reports through the select below.
+	_ = ses.sendGo(info.ID)
+
+	var status exec.ExitStatus
+	var waitErr error
+	select {
+	case ev := <-ses.scanner.done:
+		ses.end()
+		status = exec.ExitStatus{Code: ev.code}
+	case <-ses.exited:
+		status, waitErr = ses.status, ses.waitErr
+	case <-ctx.Done():
+		return dispatch.RunSucceeded, ctx.Err()
+	}
 	if waitErr != nil {
 		m.logger.Warn("manual run: output capture bound reached", "run", runID, "err", waitErr)
 	}

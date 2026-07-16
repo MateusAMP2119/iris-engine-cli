@@ -42,8 +42,9 @@ func TestLanePassGateForLoopWithNoRetryBrake(t *testing.T) {
 		manual := gateManualFake{
 			"healthy": {ID: 7, State: store.RunSucceeded},
 			"broken":  {ID: 8, State: store.RunDeadLettered, DeadLetterReason: store.ReasonFailed},
-			"stopped": {ID: 11, State: store.RunDeadLettered, DeadLetterReason: store.ReasonStopped},
-			"drained": {ID: 12, State: store.RunDeadLettered}, // worklist row drained away: no outstanding reason
+			"stopped":   {ID: 11, State: store.RunDeadLettered, DeadLetterReason: store.ReasonStopped, DeadLetterDetail: "run stopped: daemon terminated"},
+			"cancelled": {ID: 13, State: store.RunDeadLettered, DeadLetterReason: store.ReasonStopped, DeadLetterDetail: runCancelDetail},
+			"drained":   {ID: 12, State: store.RunDeadLettered}, // worklist row drained away: no outstanding reason
 			"waiting": {ID: 9, State: store.RunRunning},
 			"minted":  {ID: 10, State: store.RunQueued},
 		}
@@ -59,8 +60,9 @@ func TestLanePassGateForLoopWithNoRetryBrake(t *testing.T) {
 			{"fresh", true},    // never ran: first loop run
 			{"healthy", true},  // succeeded: run again immediately (for-loop)
 			{"broken", false},  // outstanding failure: never retried on its own
-			{"stopped", true},  // operator cancel ended one run, not the pipeline
-			{"drained", true},  // drain released the brake: the loop tries anew
+			{"stopped", true},    // crash-reconciliation stop: always-alive resumes
+			{"cancelled", false}, // operator cancel is a manual stop: not resurrected (#192)
+			{"drained", true},    // drain released the brake: the loop tries anew
 			{"waiting", false}, // running: already in flight
 			{"minted", false},  // queued: already minted, wait for its terminal
 		}

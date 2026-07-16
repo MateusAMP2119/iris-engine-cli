@@ -51,6 +51,8 @@ type LatestRunInfo struct {
 	State RunState
 	// DeadLetterReason is the outstanding dead_letters.reason, empty when none.
 	DeadLetterReason DeadLetterReason
+	// DeadLetterDetail is the outstanding dead_letters.error text; the lane gate reads it to tell an operator cancel (parks) from a crash-reconciliation stop (never parks).
+	DeadLetterDetail string
 }
 
 // QueuedManualRun is one enqueued lane-member manual run awaiting its lane's run
@@ -95,7 +97,7 @@ type ManualReader interface {
 // locking clause, no advisory-lock interplay.
 const (
 	selectPipelineRunTargetSQL = `SELECT folder, run FROM pipelines WHERE name = $1`
-	selectLatestRunSQL = `SELECT r.id, r.state, coalesce(d.reason, '')
+	selectLatestRunSQL = `SELECT r.id, r.state, coalesce(d.reason, ''), coalesce(d.error, '')
     FROM runs r LEFT JOIN dead_letters d ON d.run_id = r.id
     WHERE r.pipeline = $1 ORDER BY r.id DESC LIMIT 1`
 	selectQueuedManualRunsSQL  = `SELECT id, artifact_hash FROM runs WHERE pipeline = $1 AND state = 'queued' AND cause = 'manual' ORDER BY id`
@@ -163,7 +165,7 @@ func (r *pgxManualReader) LatestRun(ctx context.Context, pipeline string) (Lates
 	}
 	var info LatestRunInfo
 	var state, reason string
-	if err := rows.Scan(&info.ID, &state, &reason); err != nil {
+	if err := rows.Scan(&info.ID, &state, &reason, &info.DeadLetterDetail); err != nil {
 		return LatestRunInfo{}, false, fmt.Errorf("store: scan latest run for %q: %w", pipeline, err)
 	}
 	info.State = RunState(state)
