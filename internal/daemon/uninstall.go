@@ -195,17 +195,7 @@ func ServiceUnitPath(s config.Settings) string {
 func RemoveEngineArtifacts(s config.Settings) ([]string, error) {
 	var removed []string
 
-	// Directory trees, removed whole: the object store (artifact bytes + archived
-	// partitions), the managed Postgres tree (binaries + data directory), and the
-	// log directory. The engine-home-derived paths (pg, logs, pidfile) are
-	// resolved from the socket's directory, so they are skipped when no socket is
-	// configured rather than resolving relative to the working directory.
-	dirs := []string{s.ObjectsPath}
-	files := []string{s.Socket, ServiceUnitPath(s)}
-	if s.Socket != "" {
-		dirs = append(dirs, ManagedPGDir(s), LogsDir(s))
-		files = append(files, PIDPath(s))
-	}
+	dirs, files := engineArtifactPaths(s)
 	for _, dir := range dirs {
 		if dir == "" {
 			continue
@@ -234,4 +224,29 @@ func RemoveEngineArtifacts(s config.Settings) ([]string, error) {
 		removed = append(removed, path)
 	}
 	return removed, nil
+}
+
+// engineArtifactPaths lists the engine's on-disk state (dir trees and single files); the socket-derived paths are skipped when no socket is configured, and RemoveEngineArtifacts and EngineArtifactsPresent share this one list so presence and removal never disagree.
+func engineArtifactPaths(s config.Settings) (dirs, files []string) {
+	dirs = []string{s.ObjectsPath}
+	files = []string{s.Socket, ServiceUnitPath(s)}
+	if s.Socket != "" {
+		dirs = append(dirs, ManagedPGDir(s), LogsDir(s))
+		files = append(files, PIDPath(s))
+	}
+	return dirs, files
+}
+
+// EngineArtifactsPresent reports whether any on-disk engine state RemoveEngineArtifacts would remove exists, so a staged uninstall can skip the step (and its prompt) when there is nothing to tear down.
+func EngineArtifactsPresent(s config.Settings) bool {
+	dirs, files := engineArtifactPaths(s)
+	for _, path := range append(dirs, files...) {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
 }
