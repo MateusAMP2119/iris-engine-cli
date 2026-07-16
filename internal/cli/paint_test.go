@@ -152,8 +152,11 @@ func TestLifecycleCeremonyPlainWhenPiped(t *testing.T) {
 			t.Fatalf("exit = %d, want %d\n%s", code, exitOK, errb.String())
 		}
 		assertNoEsc(t, out.String())
-		if !strings.Contains(out.String(), "Uninstalled "+scratch+".") || !strings.Contains(out.String(), "Goodbye from iris.") {
-			t.Errorf("plain uninstall strings changed: %q", out.String())
+		if !strings.Contains(out.String(), "Step 3/3") || !strings.Contains(out.String(), "Binary removed") {
+			t.Errorf("plain uninstall step lines changed: %q", out.String())
+		}
+		if strings.Contains(out.String(), "█") || strings.Contains(out.String(), "░") {
+			t.Errorf("plain uninstall must carry no banner or progress bar: %q", out.String())
 		}
 	})
 
@@ -229,41 +232,54 @@ var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func stripANSI(s string) string { return ansiSeq.ReplaceAllString(s, "") }
 
-// TestUninstallBoxAligns proves the confirmation box stays aligned for any path
-// length: the top rule, the content line, and the bottom rule share one visible
-// width, and the content line carries both a left and a right border. Width is
-// measured on the unstyled text, so the magenta version never inflates it.
-func TestUninstallBoxAligns(t *testing.T) {
-	paths := []string{"/a", "/usr/local/bin/iris", "/very/long/nested/path/to/somewhere/deep/iris"}
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			var out bytes.Buffer
-			a := newApp(&out, io.Discard)
-			p := makePainter(false, func() bool { return true })
-			a.uninstallBox(p, "v0.3.2", path)
+// TestUninstallStepLinesAlign proves the staged step lines share one [✓] column
+// for any bullet text length, measured on the unstyled text so the green mark
+// never shifts it.
+func TestUninstallStepLinesAlign(t *testing.T) {
+	texts := []string{"Binary removed", "Iris engine stopped successfully.", "No engine state on disk; nothing to remove."}
+	var out bytes.Buffer
+	a := newApp(&out, io.Discard)
+	p := makePainter(false, func() bool { return true })
+	for _, text := range texts {
+		a.uninstallStepDone(p, text)
+	}
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != len(texts) {
+		t.Fatalf("step lines = %d, want %d:\n%s", len(lines), len(texts), out.String())
+	}
+	want := -1
+	for _, line := range lines {
+		plain := stripANSI(line)
+		col := strings.Index(plain, "[✓]")
+		if col < 0 {
+			t.Fatalf("step line missing its [✓] mark: %q", plain)
+		}
+		if want == -1 {
+			want = col
+		}
+		if col != want {
+			t.Errorf("misaligned [✓] column %d, want %d: %q", col, want, plain)
+		}
+	}
+}
 
-			lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
-			if len(lines) != 3 {
-				t.Fatalf("box = %d lines, want 3:\n%s", len(lines), out.String())
-			}
-			top, mid, bot := stripANSI(lines[0]), stripANSI(lines[1]), stripANSI(lines[2])
-			wt, wm, wb := utf8.RuneCountInString(top), utf8.RuneCountInString(mid), utf8.RuneCountInString(bot)
-			if wt != wm || wm != wb {
-				t.Errorf("misaligned widths top=%d mid=%d bot=%d for %q:\n%s", wt, wm, wb, path, out.String())
-			}
-			if !strings.HasPrefix(top, "  ┌") || !strings.HasSuffix(top, "┐") {
-				t.Errorf("top rule malformed: %q", top)
-			}
-			if !strings.HasPrefix(bot, "  └") || !strings.HasSuffix(bot, "┘") {
-				t.Errorf("bottom rule malformed: %q", bot)
-			}
-			if !strings.HasPrefix(mid, "  │") || !strings.HasSuffix(mid, "│") {
-				t.Errorf("content line missing a border: %q", mid)
-			}
-			if !strings.Contains(mid, "Uninstall v0.3.2 from "+path+"?") {
-				t.Errorf("content line lost its text: %q", mid)
-			}
-		})
+// TestFarewellBannerRowsUniform proves the FAREWELL! banner rows paint one color
+// per row and stay uniform in visible width.
+func TestFarewellBannerRowsUniform(t *testing.T) {
+	var out bytes.Buffer
+	farewellBanner(&out, makePainter(false, func() bool { return true }))
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != len(farewellBannerRows) {
+		t.Fatalf("banner = %d lines, want %d", len(lines), len(farewellBannerRows))
+	}
+	want := utf8.RuneCountInString(stripANSI(lines[0]))
+	for i, line := range lines {
+		if !strings.Contains(line, esc) {
+			t.Errorf("banner row %d carries no color: %q", i, line)
+		}
+		if got := utf8.RuneCountInString(stripANSI(line)); got != want {
+			t.Errorf("banner row %d width = %d, want %d", i, got, want)
+		}
 	}
 }
 

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
@@ -14,9 +16,7 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
 
-// scratchExecutable writes a throwaway file standing in for the running iris
-// binary and returns its path, so `iris uninstall` can remove a real file with no
-// risk to the test binary.
+// scratchExecutable writes a throwaway file standing in for the running iris binary, so removal never touches the test binary.
 func scratchExecutable(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "iris")
@@ -24,6 +24,26 @@ func scratchExecutable(t *testing.T) string {
 		t.Fatalf("write scratch executable: %v", err)
 	}
 	return path
+}
+
+// plantEngineState places one engine-owned artifact (the service unit) under the socket's engine dir so EngineArtifactsPresent reports state.
+func plantEngineState(t *testing.T, sock string) string {
+	t.Helper()
+	unit := daemon.ServiceUnitPath(config.Settings{Socket: sock})
+	if err := os.WriteFile(unit, []byte("unit\n"), 0o644); err != nil {
+		t.Fatalf("write service unit: %v", err)
+	}
+	return unit
+}
+
+// containsQuote reports whether out carries one of the built-in farewell quotes with its attribution.
+func containsQuote(out string) bool {
+	for _, q := range farewellQuotes {
+		if strings.Contains(out, q.text) && strings.Contains(out, q.author) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestUninstallRootVerb proves `iris uninstall` is a top-level lifecycle verb: a
@@ -59,11 +79,10 @@ func TestUninstallRootVerb(t *testing.T) {
 	})
 }
 
-// TestUninstallConsentGate proves the destructive consent gate: without --yes and
-// with no terminal to prompt, the command refuses with the standard
-// consent-required error (exit 4) and removes nothing; a declined interactive
-// prompt aborts cleanly (exit 0) with the "Aborted. Nothing removed." line and
-// removes nothing.
+// TestUninstallConsentGate proves the per-step consent gate: no terminal and no
+// --yes refuses with the standard consent-required error (exit 4) and removes
+// nothing; a declined interactive prompt aborts the remainder cleanly (exit 0)
+// and removes nothing.
 func TestUninstallConsentGate(t *testing.T) {
 	clearTargetEnv(t)
 
@@ -97,21 +116,53 @@ func TestUninstallConsentGate(t *testing.T) {
 				t.Fatalf("exit = %d, want %d (clean abort)\nstderr: %s", code, exitOK, errb.String())
 			}
 			if !strings.Contains(out.String(), "Aborted. Nothing removed.") {
-				t.Errorf("abort output should be 'Aborted. Nothing removed.': %s", out.String())
+				t.Errorf("abort output should say 'Aborted. Nothing removed.': %s", out.String())
 			}
 		})
 	})
 }
 
-// TestUninstallDaemonRunningRefused proves the reachable-daemon refusal: with a
-// live daemon on the resolved socket, `iris uninstall` refuses (exit 4) with
-// guidance to stop and uninstall the engine first, and removes nothing; --force
-// overrides the probe and removes the binary.
-func TestUninstallDaemonRunningRefused(t *testing.T) {
+// TestUninstallStopsEngine proves step 1: a recorded detached daemon is stopped
+// (SIGTERM by pidfile, pidfile reaped); a reachable daemon with no pidfile fails
+// the step (exit 4) naming it, while --force leaves it running and proceeds; and
+// no running engine passes clean.
+func TestUninstallStopsEngine(t *testing.T) {
 	clearTargetEnv(t)
 
-	t.Run("uninstall-daemon-running-refused", func(t *testing.T) {
-		t.Run("reachable daemon refuses without --force", func(t *testing.T) {
+	t.Run("uninstall-stops-engine", func(t *testing.T) {
+		t.Run("recorded detached daemon is stopped by pidfile", func(t *testing.T) {
+			sock := shortSocket(t)
+			settings := config.Settings{Socket: sock}
+			child := exec.Command("sleep", "60")
+			if err := child.Start(); err != nil {
+				t.Fatalf("start stand-in daemon: %v", err)
+			}
+			go func() { _ = child.Wait() }() // reap the child once signalled, so the stop's liveness poll sees it gone
+			t.Cleanup(func() { _ = child.Process.Kill() })
+			if err := daemon.WritePIDFile(settings, child.Process.Pid); err != nil {
+				t.Fatalf("write pidfile: %v", err)
+			}
+
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			code := a.run([]string{"--socket", sock, "uninstall", "--yes"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), "Iris engine stopped successfully.") {
+				t.Errorf("step 1 should report the stop: %s", out.String())
+			}
+			if err := child.Process.Signal(syscall.Signal(0)); err == nil {
+				t.Errorf("stand-in daemon should be gone after the stop")
+			}
+			if _, err := os.Stat(filepath.Join(filepath.Dir(sock), "iris.pid")); !os.IsNotExist(err) {
+				t.Errorf("pidfile should be reaped after the stop; stat err = %v", err)
+			}
+		})
+
+		t.Run("reachable undetached daemon fails step 1", func(t *testing.T) {
 			sock := shortSocket(t)
 			srv := daemon.NewServer(config.Settings{Socket: sock}, api.NewMux())
 			startInProcess(t, srv)
@@ -120,20 +171,19 @@ func TestUninstallDaemonRunningRefused(t *testing.T) {
 			var out, errb bytes.Buffer
 			a := newApp(&out, &errb)
 			a.executablePath = func() (string, error) { return scratch, nil }
-			a.confirm = func(_ string, _ bool) (bool, error) { return true, nil } // consent would pass; probe must win
 			code := a.run([]string{"--socket", sock, "uninstall", "--yes"})
 			if code != exitOpFailed {
-				t.Fatalf("exit = %d, want %d (daemon reachable)\nstderr: %s", code, exitOpFailed, errb.String())
+				t.Fatalf("exit = %d, want %d (unstoppable daemon)\nstderr: %s", code, exitOpFailed, errb.String())
 			}
-			if !strings.Contains(errb.String(), "engine stop") || !strings.Contains(errb.String(), "engine uninstall") {
-				t.Errorf("refusal should guide to `iris engine stop && iris engine uninstall`: %s", errb.String())
+			if !strings.Contains(errb.String(), "step 1/3") || !strings.Contains(errb.String(), "--force") {
+				t.Errorf("failure should name step 1/3 and offer --force: %s", errb.String())
 			}
 			if _, err := os.Stat(scratch); err != nil {
-				t.Errorf("scratch executable must be untouched on refusal: %v", err)
+				t.Errorf("scratch executable must be untouched when step 1 fails: %v", err)
 			}
 		})
 
-		t.Run("--force overrides a reachable daemon and removes", func(t *testing.T) {
+		t.Run("--force leaves a reachable daemon running and proceeds", func(t *testing.T) {
 			sock := shortSocket(t)
 			srv := daemon.NewServer(config.Settings{Socket: sock}, api.NewMux())
 			startInProcess(t, srv)
@@ -144,27 +194,143 @@ func TestUninstallDaemonRunningRefused(t *testing.T) {
 			a.executablePath = func() (string, error) { return scratch, nil }
 			code := a.run([]string{"--socket", sock, "uninstall", "--force"})
 			if code != exitOK {
-				t.Fatalf("exit = %d, want %d (--force removes)\nstderr: %s", code, exitOK, errb.String())
+				t.Fatalf("exit = %d, want %d (--force proceeds)\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), "Daemon left running (--force).") {
+				t.Errorf("step 1 should report the daemon was left running: %s", out.String())
 			}
 			if _, err := os.Stat(scratch); !os.IsNotExist(err) {
 				t.Errorf("scratch executable should be removed under --force; stat err = %v", err)
 			}
 		})
+
+		t.Run("no running engine passes clean", func(t *testing.T) {
+			deadSock := shortSocket(t)
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			code := a.run([]string{"--socket", deadSock, "uninstall", "--yes"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), "No running engine; nothing to stop.") {
+				t.Errorf("step 1 should report nothing to stop: %s", out.String())
+			}
+		})
 	})
 }
 
-// TestUninstallRemovesExecutable proves the removal itself: with consent (--yes)
-// and no reachable daemon, the resolved executable is deleted and the goodbye
-// lines are printed (exit 0); a declined prompt leaves the file untouched; a
-// permission failure surfaces sudo/uninstaller guidance (exit 4); and --json
-// carries the outcome on one data envelope.
+// TestUninstallEngineState proves step 2: on-disk engine state is removed behind
+// its own y/N (or --yes), absent state skips the step without a prompt, and a
+// decline aborts the remainder keeping the binary.
+func TestUninstallEngineState(t *testing.T) {
+	clearTargetEnv(t)
+
+	t.Run("uninstall-engine-state", func(t *testing.T) {
+		t.Run("--yes removes the engine state", func(t *testing.T) {
+			sock := shortSocket(t)
+			unit := plantEngineState(t, sock)
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			code := a.run([]string{"--socket", sock, "uninstall", "--yes"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+			}
+			if _, err := os.Stat(unit); !os.IsNotExist(err) {
+				t.Errorf("service unit should be removed; stat err = %v", err)
+			}
+			if !strings.Contains(out.String(), "Engine state removed.") {
+				t.Errorf("step 2 should report the removal: %s", out.String())
+			}
+		})
+
+		t.Run("absent engine state skips step 2 without a prompt", func(t *testing.T) {
+			deadSock := shortSocket(t)
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			var asked []string
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			a.confirm = func(q string, _ bool) (bool, error) { asked = append(asked, q); return true, nil }
+			code := a.run([]string{"--socket", deadSock, "uninstall"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+			}
+			if !strings.Contains(out.String(), "No engine state on disk; nothing to remove.") {
+				t.Errorf("step 2 should report nothing to remove: %s", out.String())
+			}
+			if len(asked) != 1 || !strings.Contains(asked[0], "Uninstall cli") {
+				t.Errorf("only step 3 should prompt when no engine state exists; asked = %q", asked)
+			}
+		})
+
+		t.Run("declined engine state aborts keeping state and binary", func(t *testing.T) {
+			sock := shortSocket(t)
+			unit := plantEngineState(t, sock)
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			a.confirm = func(q string, _ bool) (bool, error) {
+				return !strings.Contains(q, "Remove engine state"), nil // N to step 2
+			}
+			code := a.run([]string{"--socket", sock, "uninstall"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d (clean abort)\nstderr: %s", code, exitOK, errb.String())
+			}
+			if _, err := os.Stat(unit); err != nil {
+				t.Errorf("declined step 2 must keep the engine state: %v", err)
+			}
+			if _, err := os.Stat(scratch); err != nil {
+				t.Errorf("aborted sequence must keep the binary: %v", err)
+			}
+			if !strings.Contains(out.String(), "Aborted. Nothing removed.") {
+				t.Errorf("abort should report nothing removed: %s", out.String())
+			}
+		})
+
+		t.Run("declined step 3 reports the engine state already removed", func(t *testing.T) {
+			sock := shortSocket(t)
+			unit := plantEngineState(t, sock)
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			a.confirm = func(q string, _ bool) (bool, error) {
+				return strings.Contains(q, "Remove engine state"), nil // y to step 2, N to step 3
+			}
+			code := a.run([]string{"--socket", sock, "uninstall"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d (clean abort)\nstderr: %s", code, exitOK, errb.String())
+			}
+			if _, err := os.Stat(unit); !os.IsNotExist(err) {
+				t.Errorf("step 2 removal should have run; stat err = %v", err)
+			}
+			if _, err := os.Stat(scratch); err != nil {
+				t.Errorf("declined step 3 must keep the binary: %v", err)
+			}
+			if !strings.Contains(out.String(), "Engine state removed; the iris binary stays at "+scratch) {
+				t.Errorf("abort should report what was and was not removed: %s", out.String())
+			}
+		})
+	})
+}
+
+// TestUninstallRemovesExecutable proves step 3 and the outcomes: with consent the
+// resolved executable is deleted and the sequence closes with the version header,
+// the step lines, and a farewell quote from the built-in pool (exit 0); a
+// permission failure surfaces sudo/uninstaller guidance naming the step (exit 4);
+// and --json carries per-step statuses plus the final outcome on one envelope.
 func TestUninstallRemovesExecutable(t *testing.T) {
 	clearTargetEnv(t)
 
 	t.Run("uninstall-removes-executable", func(t *testing.T) {
 		deadSock := shortSocket(t)
 
-		t.Run("--yes removes and says goodbye", func(t *testing.T) {
+		t.Run("--yes removes and closes with a farewell quote", func(t *testing.T) {
 			scratch := scratchExecutable(t)
 			var out, errb bytes.Buffer
 			a := newApp(&out, &errb)
@@ -176,30 +342,17 @@ func TestUninstallRemovesExecutable(t *testing.T) {
 			if _, err := os.Stat(scratch); !os.IsNotExist(err) {
 				t.Errorf("executable should be removed; stat err = %v", err)
 			}
-			if !strings.Contains(out.String(), "Uninstalled "+scratch+".") {
-				t.Errorf("success output should name the removed path: %s", out.String())
+			for _, want := range []string{"[IRIS UNINSTALL v", "Step 1/3", "Step 2/3", "Step 3/3", "Binary removed", "Traces erased"} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("staged output missing %q: %s", want, out.String())
+				}
 			}
-			if !strings.Contains(out.String(), "Goodbye from iris.") {
-				t.Errorf("success output should print the goodbye line: %s", out.String())
-			}
-		})
-
-		t.Run("declined prompt leaves the file untouched", func(t *testing.T) {
-			scratch := scratchExecutable(t)
-			var out, errb bytes.Buffer
-			a := newApp(&out, &errb)
-			a.executablePath = func() (string, error) { return scratch, nil }
-			a.confirm = func(_ string, _ bool) (bool, error) { return false, nil }
-			code := a.run([]string{"--socket", deadSock, "uninstall"})
-			if code != exitOK {
-				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
-			}
-			if _, err := os.Stat(scratch); err != nil {
-				t.Errorf("declined uninstall must leave the file: %v", err)
+			if !containsQuote(out.String()) {
+				t.Errorf("success output should close with a quote from the built-in pool: %s", out.String())
 			}
 		})
 
-		t.Run("permission failure guides to sudo", func(t *testing.T) {
+		t.Run("permission failure guides to sudo naming the step", func(t *testing.T) {
 			if os.Geteuid() == 0 {
 				t.Skip("running as root: directory permissions do not block removal")
 			}
@@ -221,12 +374,12 @@ func TestUninstallRemovesExecutable(t *testing.T) {
 			if code != exitOpFailed {
 				t.Fatalf("exit = %d, want %d (permission denied)\nstderr: %s", code, exitOpFailed, errb.String())
 			}
-			if !strings.Contains(errb.String(), "sudo") {
-				t.Errorf("permission failure should suggest sudo: %s", errb.String())
+			if !strings.Contains(errb.String(), "sudo") || !strings.Contains(errb.String(), "step 3/3") {
+				t.Errorf("permission failure should suggest sudo and name step 3/3: %s", errb.String())
 			}
 		})
 
-		t.Run("--json carries the outcome on one envelope", func(t *testing.T) {
+		t.Run("--json carries per-step statuses on one envelope", func(t *testing.T) {
 			scratch := scratchExecutable(t)
 			var out, errb bytes.Buffer
 			a := newApp(&out, &errb)
@@ -236,16 +389,49 @@ func TestUninstallRemovesExecutable(t *testing.T) {
 				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 			}
 			var env struct {
-				Data struct {
-					Status string `json:"status"`
-					Path   string `json:"path"`
-				} `json:"data"`
+				Data uninstallCmdResult `json:"data"`
 			}
 			if err := json.Unmarshal(out.Bytes(), &env); err != nil {
 				t.Fatalf("stdout is not one JSON envelope: %v\n%s", err, out.String())
 			}
 			if env.Data.Status != "uninstalled" || env.Data.Path != scratch {
 				t.Errorf("json envelope = %+v, want status=uninstalled path=%s", env.Data, scratch)
+			}
+			wantSteps := map[string]string{stepStopEngine: "nothing_to_stop", stepEngineState: "nothing_to_remove", stepBinary: "removed"}
+			if len(env.Data.Steps) != 3 {
+				t.Fatalf("steps = %+v, want 3 entries", env.Data.Steps)
+			}
+			for _, s := range env.Data.Steps {
+				if wantSteps[s.Name] != s.Status {
+					t.Errorf("step %s status = %q, want %q", s.Name, s.Status, wantSteps[s.Name])
+				}
+			}
+			if strings.Contains(out.String(), "█") || containsQuote(out.String()) {
+				t.Errorf("--json output must carry no banner or quote: %s", out.String())
+			}
+		})
+
+		t.Run("--json aborted marks declined and skipped steps", func(t *testing.T) {
+			scratch := scratchExecutable(t)
+			var out, errb bytes.Buffer
+			a := newApp(&out, &errb)
+			a.executablePath = func() (string, error) { return scratch, nil }
+			a.confirm = func(_ string, _ bool) (bool, error) { return false, nil }
+			code := a.run([]string{"--socket", deadSock, "uninstall", "--json"})
+			if code != exitOK {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
+			}
+			var env struct {
+				Data uninstallCmdResult `json:"data"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+				t.Fatalf("stdout is not one JSON envelope: %v\n%s", err, out.String())
+			}
+			if env.Data.Status != "aborted" {
+				t.Errorf("json status = %q, want aborted", env.Data.Status)
+			}
+			if _, err := os.Stat(scratch); err != nil {
+				t.Errorf("aborted run must keep the binary: %v", err)
 			}
 		})
 	})

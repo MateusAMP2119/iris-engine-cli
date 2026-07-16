@@ -20,8 +20,7 @@ const (
 	ansiMagenta = "\033[1;35m"
 )
 
-// rainbowPalette is the per-letter color cycle of the "Goodbye" farewell,
-// matching uninstall.sh (R, Y, G, C, B, M, then wrapping).
+// rainbowPalette is the per-letter (and per-banner-row) color cycle, matching uninstall.sh (R, Y, G, C, B, M, wrapping).
 var rainbowPalette = []string{ansiRed, ansiYellow, ansiGreen, ansiCyan, ansiBlue, ansiMagenta}
 
 // painter renders the lifecycle-command terminal ceremony. When enabled its
@@ -61,9 +60,7 @@ func (p painter) magenta(s string) string { return p.paint(ansiMagenta, s) }
 func (p painter) yellow(s string) string  { return p.paint(ansiYellow, s) }
 func (p painter) dim(s string) string     { return p.paint(ansiDim, s) }
 
-// rainbow renders s one bright color per rune (cycling R, Y, G, C, B, M), the
-// farewell gradient of uninstall.sh. When disabled it returns s unchanged, so the
-// plain "Goodbye from iris." line stays byte-exact.
+// rainbow renders s one bright color per rune (cycling R, Y, G, C, B, M); disabled it returns s unchanged so plain lines stay byte-exact.
 func (p painter) rainbow(s string) string {
 	if !p.enabled {
 		return s
