@@ -102,14 +102,14 @@ func (a *app) uninstallSelf() runE {
 		if p.enabled {
 			a.uninstallHeaderBox(p, buildinfo.Version)
 		} else {
-			say("  [IRIS UNINSTALL %s]", buildinfo.Version)
+			say("[IRIS UNINSTALL %s]", buildinfo.Version)
 		}
 		say("")
 		say("  Starting complete uninstallation sequence...")
 		say("")
 
 		// Step 1/3: stop a recorded detached daemon; nothing recorded and nothing reachable passes clean.
-		say("%s", p.cyan("[1/3] Stopping Iris Engine"))
+		say("  %s", p.cyan("[1/3] Stopping Iris Engine"))
 		say("  • Checking for running processes...")
 		stopped := false
 		if pid, perr := daemon.ReadPIDFile(settings); perr == nil {
@@ -148,7 +148,7 @@ func (a *app) uninstallSelf() runE {
 		say("")
 
 		// Step 2/3: remove the on-disk engine state (the `iris engine uninstall` set); absent state skips without a prompt.
-		say("%s", p.cyan("[2/3] Removing Engine State"))
+		say("  %s", p.cyan("[2/3] Removing Engine State"))
 		if !daemon.EngineArtifactsPresent(settings) {
 			steps = append(steps, uninstallStep{Step: 2, Name: stepEngineState, Status: "nothing_to_remove"})
 			done("No engine state on disk; nothing to remove.")
@@ -183,7 +183,7 @@ func (a *app) uninstallSelf() runE {
 		say("")
 
 		// Step 3/3: remove the running binary itself.
-		say("%s", p.cyan("[3/3] Uninstalling Iris CLI"))
+		say("  %s", p.cyan("[3/3] Uninstalling Iris CLI"))
 		ok, cerr := a.uninstallConsent(fmt.Sprintf("Uninstall cli %s from %s?", buildinfo.Version, path), yes, force)
 		if cerr != nil {
 			return cerr
