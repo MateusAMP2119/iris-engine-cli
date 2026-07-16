@@ -99,7 +99,11 @@ func (a *app) uninstallSelf() runE {
 		}
 
 		say("")
-		say("  %s", p.cyan(fmt.Sprintf("[IRIS UNINSTALL v%s]", buildinfo.Version)))
+		if p.enabled {
+			a.uninstallHeaderBox(p, buildinfo.Version)
+		} else {
+			say("  [IRIS UNINSTALL %s]", buildinfo.Version)
+		}
 		say("")
 		say("  Starting complete uninstallation sequence...")
 		say("")
@@ -153,7 +157,7 @@ func (a *app) uninstallSelf() runE {
 			if settings.Socket != "" {
 				where = " under " + filepath.Dir(settings.Socket)
 			}
-			ok, cerr := a.uninstallConsent(fmt.Sprintf("Remove engine state%s (managed Postgres tree, object store, logs, socket, service unit)?", where), yes, force)
+			ok, cerr := a.uninstallConsent(fmt.Sprintf("Remove engine state%s?", where), yes, force)
 			if cerr != nil {
 				return cerr
 			}
@@ -289,6 +293,22 @@ func (a *app) uninstallProgressBar(p painter) {
 	fmt.Fprintln(a.out)
 }
 
+// uninstallHeaderBox draws the cyan header box on a terminal, version in magenta; borders sized on the unstyled interior so escapes never skew alignment.
+func (a *app) uninstallHeaderBox(p painter, version string) {
+	const leftPad, rightPad = "   ", "  "
+	plainInner := leftPad + "IRIS UNINSTALL " + version + rightPad
+	rule := strings.Repeat("─", utf8.RuneCountInString(plainInner))
+	styledInner := leftPad + "IRIS UNINSTALL " + p.magenta(version) + rightPad
+	bar := p.cyan("│")
+
+	fmt.Fprintln(a.out, p.cyan("  ┌"+rule+"┐"))
+	fmt.Fprintf(a.out, "  %s%s%s\n", bar, styledInner, bar)
+	fmt.Fprintln(a.out, p.cyan("  └"+rule+"┘"))
+}
+
+// irisPalette is the banner's per-row cool gradient (magenta into blue into cyan), the iris flower's colors.
+var irisPalette = []string{ansiMagenta, ansiMagenta, ansiBlue, ansiBlue, ansiCyan, ansiCyan}
+
 // farewellBannerRows is the block-art FAREWELL! mark, the installer banner's letterform family.
 var farewellBannerRows = []string{
 	"   ███████╗ █████╗ ██████╗ ███████╗██╗    ██╗███████╗██╗     ██╗     ██╗",
@@ -299,10 +319,10 @@ var farewellBannerRows = []string{
 	"   ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ ╚══╝╚══╝ ╚══════╝╚══════╝╚══════╝╚═╝",
 }
 
-// farewellBanner paints the FAREWELL! mark one rainbow color per row; callers gate it on an enabled painter.
+// farewellBanner paints the FAREWELL! mark one iris-gradient color per row; callers gate it on an enabled painter.
 func farewellBanner(w io.Writer, _ painter) {
 	for i, row := range farewellBannerRows {
-		fmt.Fprintf(w, "%s%s%s\n", rainbowPalette[i%len(rainbowPalette)], row, ansiReset)
+		fmt.Fprintf(w, "%s%s%s\n", irisPalette[i%len(irisPalette)], row, ansiReset)
 	}
 }
 
@@ -323,11 +343,17 @@ var farewellQuotes = []farewellQuote{
 	{"Seneca", "Every new beginning comes from some other beginning's end."},
 }
 
-// farewellQuote prints one random quote with attribution; terminal and plain runs alike (--json never reaches it).
+// farewellQuote prints one random quote, the attribution right-aligned under the quote's end; terminal and plain runs alike (--json never reaches it).
 func (a *app) farewellQuote(p painter) {
 	q := farewellQuotes[rand.IntN(len(farewellQuotes))] //nolint:gosec // G404: cosmetic quote pick, not security-sensitive.
-	fmt.Fprintf(a.out, "   %q\n", q.text)
-	fmt.Fprintf(a.out, "                  %s\n", p.dim("— "+q.author))
+	quoted := fmt.Sprintf("%q", q.text)
+	attr := "— " + q.author
+	pad := 3 + utf8.RuneCountInString(quoted) - utf8.RuneCountInString(attr)
+	if pad < 3 {
+		pad = 3
+	}
+	fmt.Fprintf(a.out, "   %s\n", quoted)
+	fmt.Fprintf(a.out, "%s%s\n", strings.Repeat(" ", pad), p.dim(attr))
 }
 
 // terminalConfirm prompts the step's question on stderr and reads y/N from stdin; no terminal returns errNotATerminal so the caller refuses instead of blocking.
@@ -336,7 +362,7 @@ func (a *app) terminalConfirm(question string, _ bool) (bool, error) {
 	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
 		return false, errNotATerminal
 	}
-	fmt.Fprintf(a.errOut, "%s (y/N): ", question)
+	fmt.Fprintf(a.errOut, "  %s (y/N): ", question)
 	line, rerr := bufio.NewReader(os.Stdin).ReadString('\n')
 	if rerr != nil && line == "" {
 		return false, nil // EOF with no answer is a decline, not an error.

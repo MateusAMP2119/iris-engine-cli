@@ -342,7 +342,7 @@ func TestUninstallRemovesExecutable(t *testing.T) {
 			if _, err := os.Stat(scratch); !os.IsNotExist(err) {
 				t.Errorf("executable should be removed; stat err = %v", err)
 			}
-			for _, want := range []string{"[IRIS UNINSTALL v", "Step 1/3", "Step 2/3", "Step 3/3", "Binary removed", "Traces erased"} {
+			for _, want := range []string{"[IRIS UNINSTALL ", "Step 1/3", "Step 2/3", "Step 3/3", "Binary removed", "Traces erased"} {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("staged output missing %q: %s", want, out.String())
 				}
