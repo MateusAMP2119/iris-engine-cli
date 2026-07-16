@@ -107,11 +107,13 @@ func (b *screenBuf) box(x, y, w, h int, sgr, title string) {
 	}
 }
 
-// render emits the frame as ANSI: cursor home, then per row the coalesced SGR
-// runs with a clear-to-EOL, rows joined by \r\n (raw mode does no output
-// post-processing), no trailing newline so the last row never scrolls. With a
-// disabled painter the emission is the same geometry with zero escape codes
-// beyond cursor addressing.
+// render emits the frame as ANSI: cursor home, then per row a clear-to-EOL
+// FIRST (an erase after a full-width row would eat the border's last column
+// in the terminal's wrap-pending state) and the coalesced SGR runs, rows
+// joined by \r\n (raw mode does no output post-processing), no trailing
+// newline so the last row never scrolls, and a clear-below at the end so a
+// frame shorter than the last one leaves no residue. With a disabled painter
+// the emission is the same geometry with zero SGR bytes.
 func (b *screenBuf) render(p painter) []byte {
 	var out strings.Builder
 	out.WriteString("\x1b[H")
@@ -119,6 +121,7 @@ func (b *screenBuf) render(p painter) []byte {
 		if y > 0 {
 			out.WriteString("\r\n")
 		}
+		out.WriteString("\x1b[K")
 		open := ""
 		for x := range b.w {
 			c := b.cells[y*b.w+x]
@@ -140,8 +143,8 @@ func (b *screenBuf) render(p painter) []byte {
 		if open != "" {
 			out.WriteString(ansiReset)
 		}
-		out.WriteString("\x1b[K")
 	}
+	out.WriteString("\x1b[J")
 	return []byte(out.String())
 }
 
@@ -211,27 +214,69 @@ func psColStyled(header string, n int, cell func(int) (string, string)) psColumn
 	return c
 }
 
+// psFrameHeight compacts the frame to its content: border, engine chrome, the
+// current table plus a breathing row, and the advisory line. The run detail
+// (a live log tail) and the search overlay (a centered float) keep the whole
+// terminal.
+func psFrameHeight(m *psModel, termH int) int {
+	if m.screen == psScreenRun || m.search != nil {
+		return termH
+	}
+	var rows int
+	switch m.screen {
+	case psScreenLanes:
+		rows = len(deriveLanes(m.snap))
+	case psScreenPipelines:
+		rows = len(derivePipelines(m.snap, m.lane))
+	case psScreenRuns:
+		rows = len(deriveRuns(m.snap, m.pipeline, m.showAll))
+	}
+	advisory := 0
+	if m.note != "" || m.warn != "" {
+		advisory = 1
+	}
+	// border(2) + engine line + rule + blank + header + rows + blank + advisory
+	h := 2 + 3 + 1 + rows + 1 + advisory
+	if h > termH {
+		h = termH
+	}
+	return h
+}
+
 // renderPsFrame composes the whole frame for the current model state: the
 // outer border carrying the breadcrumb, role, key hints, and target in its
 // edges (the issue's visual contract), the pinned engine line with its rule on
-// the table screens, and the body table or run detail inside.
+// the table screens, and the body table or run detail inside. Table screens
+// compact to their content height; the space below the frame stays blank.
 func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
-	b := newScreenBuf(w, h)
 	if w < psMinWidth || h < psMinHeight {
+		b := newScreenBuf(w, 1)
 		b.text(0, 0, "", "iris ps: terminal too small")
 		return b
 	}
+	h = psFrameHeight(m, h)
+	b := newScreenBuf(w, h)
 
 	// Body content renders into the inset region inside the border.
 	inner := newScreenBuf(w-4, h-2)
 	e := m.snap.ps.Engine
 	body := 0
 	if m.screen != psScreenRun {
-		// Engine status line pinned atop the table screens, rule below it.
-		inner.text(0, 0, "", fmt.Sprintf("ENGINE %s · pid %d · CPU %s · MEM %s · %d running · %d queued",
-			e.Version, e.PID, cpuText(e.Load), memText(e.Load), e.RunningRuns, e.QueuedRuns))
+		// Engine status line pinned atop the table screens, rule below it,
+		// one breathing row before the table.
+		x := 0
+		put := func(sgr, s string) {
+			inner.text(x, 0, sgr, s)
+			x += len([]rune(s))
+		}
+		put(ansiDim, "ENGINE ")
+		put(ansiCyan, e.Version)
+		put("", fmt.Sprintf(" · pid %d · CPU %s · MEM %s · ", e.PID, cpuText(e.Load), memText(e.Load)))
+		put(ansiCyan, fmt.Sprintf("%d running", e.RunningRuns))
+		put("", " · ")
+		put(ansiYellow, fmt.Sprintf("%d queued", e.QueuedRuns))
 		inner.hrule(1, ansiDim)
-		body = 2
+		body = 3
 	}
 	// One advisory line above the footer: a transient action note, or the
 	// standing soft-fetch warning while one is in force.
@@ -260,7 +305,7 @@ func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
 
 	// The border: breadcrumb and role in the top edge, key hints and target in
 	// the bottom edge -- the issue's title/footer contract.
-	b.borderRow(0, "┌", "┐", m.breadcrumb(), "", e.Role+" · up "+e.Uptime, psRoleSGR(e.Role))
+	b.borderRow(0, "┌", "┐", m.breadcrumb(), ansiCyan, e.Role+" · up "+e.Uptime, psRoleSGR(e.Role))
 	for y := 1; y < h-1; y++ {
 		b.text(0, y, ansiDim, "│")
 		b.text(w-1, y, ansiDim, "│")
@@ -368,7 +413,7 @@ func renderTable(b *screenBuf, y, bodyH int, cols []psColumn, selRow int, colorl
 	}
 
 	for i, c := range cols {
-		b.text(starts[i], y, "", c.header)
+		b.text(starts[i], y, ansiDim, c.header)
 	}
 	rows := len(cols[0].cells)
 	visible := bodyH - 1
@@ -383,6 +428,9 @@ func renderTable(b *screenBuf, y, bodyH int, cols []psColumn, selRow int, colorl
 			sgr := ""
 			if c.sgr != nil {
 				sgr = c.sgr[r]
+			}
+			if sgr == "" && c.cells[r] == "-" {
+				sgr = ansiDim // absent samples recede
 			}
 			b.text(starts[i], ry, sgr, c.cells[r])
 		}
@@ -500,9 +548,10 @@ func renderSearchOverlay(b *screenBuf, m *psModel) {
 	promptH := 3
 	resultsH := oh - promptH
 
-	b.box(ox, oy, leftW, resultsH, "", "results")
-	b.box(ox, oy+resultsH, leftW, promptH, "", "")
-	b.text(ox+2, oy+resultsH+1, "", "> "+string(s.query)+"▏")
+	b.box(ox, oy, leftW, resultsH, ansiDim, "results")
+	b.box(ox, oy+resultsH, leftW, promptH, ansiDim, "")
+	b.text(ox+2, oy+resultsH+1, ansiCyan, "> ")
+	b.text(ox+4, oy+resultsH+1, "", string(s.query)+"▏")
 
 	// Results list, bottom-anchored: the best hit (index 0) sits nearest the
 	// prompt; the selection renders inverted. The list windows over the hits
@@ -515,12 +564,13 @@ func renderSearchOverlay(b *screenBuf, m *psModel) {
 	for i := top; i < len(s.hits) && i-top < innerH; i++ {
 		h := s.hits[i]
 		ry := oy + resultsH - 2 - (i - top)
-		line := fmt.Sprintf("%-8s  %s", h.kind.kindTag(), h.label)
 		marker := "  "
 		if i == s.sel {
 			marker = "> "
 		}
-		b.text(ox+2, ry, "", marker+line)
+		b.text(ox+2, ry, "", marker)
+		b.text(ox+4, ry, ansiDim, fmt.Sprintf("%-8s", h.kind.kindTag()))
+		b.text(ox+14, ry, "", h.label)
 		if i == s.sel {
 			for x := ox + 1; x < ox+leftW-1; x++ {
 				b.cells[ry*b.w+x].sgr = ansiInverse
@@ -535,7 +585,7 @@ func renderSearchOverlay(b *screenBuf, m *psModel) {
 	if s.sel < len(s.hits) {
 		title = "preview · " + s.hits[s.sel].label
 	}
-	b.box(px, oy, pw, oh, "", title)
+	b.box(px, oy, pw, oh, ansiDim, title)
 	if s.sel < len(s.hits) {
 		renderSearchPreview(b, m, s.hits[s.sel], px+2, oy+1, pw-4, oh-2)
 	}

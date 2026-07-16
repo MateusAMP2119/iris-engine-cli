@@ -191,6 +191,19 @@ func (o *controlOrchestrator) apply(ctx context.Context, req api.ControlRequest)
 
 	switch decl.Kind {
 	case declare.KindPipeline:
+		// The folder surface gate (#192): a composer-declared surface bounds the member (subset) and makes declared writes sibling-exclusive; a refusal lands before any write, dry-run included.
+		comp, siblings, serr := folderContext(filepath.Dir(resolved))
+		if serr != nil {
+			return api.ControlResult{}, serr
+		}
+		if comp.HasSurface() {
+			if err := declare.ValidateSurface(comp); err != nil {
+				return api.ControlResult{}, err
+			}
+			if err := declare.ValidateMemberSurface(comp, decl.Pipeline, siblings); err != nil {
+				return api.ControlResult{}, err
+			}
+		}
 		if !req.DryRun {
 			folder, ferr := o.relFolder(resolved)
 			if ferr != nil {
@@ -206,12 +219,24 @@ func (o *controlOrchestrator) apply(ctx context.Context, req api.ControlRequest)
 		// The role rides AFTER schema provisioning: its schema USAGE and column
 		// grants resolve only once the declared schemas and tables exist.
 		if !req.DryRun {
-			if err := o.provisionPipelineRole(ctx, decl.Pipeline); err != nil {
+			// The role is granted the member's EFFECTIVE access: declared sides as declared, undeclared sides inherited from the folder surface minus sibling write claims.
+			reads, writes := declare.EffectiveAccess(comp, decl.Pipeline, siblings)
+			if err := o.provisionPipelineRole(ctx, decl.Pipeline, reads, writes); err != nil {
 				return api.ControlResult{}, err
 			}
 		}
 		return api.ControlResult{Kind: decl.Kind.String(), Target: decl.Pipeline.Name, DryRun: req.DryRun}, nil
 	case declare.KindComposer:
+		// Composer apply validates the whole folder against its surface (member subset plus pairwise write claims), so a shrinking surface refuses instead of stranding members.
+		if decl.Composer.HasSurface() {
+			members, merr := composerMembers(filepath.Dir(resolved), decl.Composer.Order)
+			if merr != nil {
+				return api.ControlResult{}, merr
+			}
+			if err := declare.ValidateComposerSurface(decl.Composer, members); err != nil {
+				return api.ControlResult{}, err
+			}
+		}
 		if !req.DryRun {
 			if err := o.applier.ApplyComposer(ctx, decl.Composer); err != nil {
 				return api.ControlResult{}, err
@@ -316,14 +341,14 @@ func (o *controlOrchestrator) unpromotedCount(ctx context.Context, pipeline stri
 // the persisted secret back and re-issues the idempotent DDL, so two applies
 // converge instead of racing fresh secrets. Ledger rewrites ride the single
 // writer (RegisterRole is idempotent, ReplaceGrants is a full-role rewrite, the
-// credential row is written only when freshly minted). Grants are the
-// declaration's reads and writes, exactly -- the run then connects as this role,
-// so Postgres enforces the declared access. Provisioning applies grants
+// credential row is written only when freshly minted). Grants are the member's
+// EFFECTIVE reads and writes under the folder surface (#192) -- the run then
+// connects as this role, so Postgres enforces the declared access. Provisioning applies grants
 // additively; a field removed from the declaration leaves its live grant behind
 // until a future revoking tier (mirroring the reported-not-revoked drift
 // doctrine). Unwired seams (nil submit/roleCreds/data) skip provisioning -- the
 // shape-test compositions.
-func (o *controlOrchestrator) provisionPipelineRole(ctx context.Context, p *declare.Pipeline) error {
+func (o *controlOrchestrator) provisionPipelineRole(ctx context.Context, p *declare.Pipeline, reads, writes []declare.Access) error {
 	if o.submit == nil || o.roleCreds == nil || o.data == nil {
 		return nil
 	}
@@ -341,7 +366,7 @@ func (o *controlOrchestrator) provisionPipelineRole(ctx context.Context, p *decl
 		minted = true
 	}
 
-	grants, err := declare.GrantsFromAccess(p.Reads, p.Writes)
+	grants, err := declare.GrantsFromAccess(reads, writes)
 	if err != nil {
 		return fmt.Errorf("declare apply: expand declared access for %q: %w", p.Name, err)
 	}
@@ -385,7 +410,7 @@ func (o *controlOrchestrator) provisionPipelineRole(ctx context.Context, p *decl
 		if err := w.RegisterRole(ctx, role, owner); err != nil {
 			return err
 		}
-		if err := w.RecordAccessGrants(ctx, role, p.Reads, p.Writes); err != nil {
+		if err := w.RecordAccessGrants(ctx, role, reads, writes); err != nil {
 			return err
 		}
 		if minted {

@@ -103,14 +103,16 @@ type Pipeline struct {
 	DependsOn []string `yaml:"depends_on"`
 }
 
-// Composer is a parsed lane composer: a lane folder's iris-declare.yaml carrying
-// the lane name and the lane's serial order. The deeper composer rules (folder
-// agreement, 2+ interlock) belong to a later task.
+// Composer is a parsed lane composer: the lane name, its serial order, and the optional folder surface (surface.go owns its rules).
 type Composer struct {
 	// Lane is the lane name; must match the composer's folder.
 	Lane string `yaml:"lane"`
 	// Order is the lane's serial walk: the member pipeline names, in order.
 	Order []string `yaml:"order"`
+	// Reads is the folder surface's read side; absent surface leaves members unconstrained.
+	Reads []Access `yaml:"reads"`
+	// Writes is the folder surface's write side.
+	Writes []Access `yaml:"writes"`
 }
 
 // Declaration is a parsed iris-declare.yaml discriminated by content: exactly
@@ -135,10 +137,10 @@ var pipelineFields = map[string]bool{
 const pipelineFieldList = "name, run, env, env_file, lane, reads, writes, depends_on"
 
 // composerFields is the whitelist for a lane composer.
-var composerFields = map[string]bool{"lane": true, "order": true}
+var composerFields = map[string]bool{"lane": true, "order": true, "reads": true, "writes": true}
 
 // composerFieldList is the human-readable rendering of composerFields.
-const composerFieldList = "lane, order"
+const composerFieldList = "lane, order, reads, writes"
 
 // ParseDeclaration parses an iris-declare.yaml document into a Declaration,
 // discriminating a pipeline (carries run) from a lane composer (carries order)

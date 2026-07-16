@@ -60,6 +60,7 @@ func (r *OSRunner) Start(ctx context.Context, spec Spec) (Handle, error) {
 	// read end when a copy stops -- delivering EPIPE to a child whose sink failed.
 	cmd.Stdout = spec.Stdout
 	cmd.Stderr = spec.Stderr
+	cmd.Stdin = spec.Stdin
 	// Setpgid puts the child in a new process group whose id equals its pid, so
 	// killing the negative pgid reaches the child and every descendant.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

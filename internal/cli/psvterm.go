@@ -19,12 +19,14 @@ import (
 // types), so the two decoders stay apart.
 
 // The alternate-screen control sequences the live view session writes: enter
-// switches to the alternate buffer, hides the cursor, and clears once; leave
-// restores the cursor and switches back, leaving the primary buffer exactly as
-// the command found it.
+// switches to the alternate buffer, disables autowrap (writing the border's
+// last column must never put the terminal in a wrap-pending state that a
+// later erase would eat), hides the cursor, and clears once; leave restores
+// autowrap and the cursor and switches back, leaving the primary buffer
+// exactly as the command found it.
 const (
-	psTermEnter = "\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H"
-	psTermLeave = "\x1b[?25h\x1b[?1049l"
+	psTermEnter = "\x1b[?1049h\x1b[?7l\x1b[?25l\x1b[2J\x1b[H"
+	psTermLeave = "\x1b[?7h\x1b[?25h\x1b[?1049l"
 )
 
 // psEscDelay is how long the key decoder waits after a bare ESC byte for the
