@@ -43,7 +43,7 @@ func TestApplyProvisionsPipelineRole(t *testing.T) {
 				roleCreds: credsFake{secrets: nil},
 				logger:    discardLogger(),
 			}
-			if err := o.provisionPipelineRole(ctx, pipelineDecl("load")); err != nil {
+			if err := o.provisionPipelineRole(ctx, pipelineDecl("load"), pipelineDecl("load").Reads, pipelineDecl("load").Writes); err != nil {
 				t.Fatalf("provisionPipelineRole: %v", err)
 			}
 
@@ -87,7 +87,7 @@ func TestApplyProvisionsPipelineRole(t *testing.T) {
 				roleCreds: newCredsFake(t, "iris_pipeline_load"),
 				logger:    discardLogger(),
 			}
-			if err := o.provisionPipelineRole(ctx, pipelineDecl("load")); err != nil {
+			if err := o.provisionPipelineRole(ctx, pipelineDecl("load"), pipelineDecl("load").Reads, pipelineDecl("load").Writes); err != nil {
 				t.Fatalf("provisionPipelineRole (re-apply): %v", err)
 			}
 			for _, s := range rec.Statements() {
@@ -110,7 +110,7 @@ func TestApplyProvisionsPipelineRole(t *testing.T) {
 				roleCreds: credsFake{secrets: nil},
 				logger:    discardLogger(),
 			}
-			if err := o.provisionPipelineRole(ctx, pipelineDecl("early")); err != nil {
+			if err := o.provisionPipelineRole(ctx, pipelineDecl("early"), pipelineDecl("early").Reads, pipelineDecl("early").Writes); err != nil {
 				t.Fatalf("provisionPipelineRole over absent tables: %v", err)
 			}
 			ddl := strings.Join(data.execs, "\n")
@@ -124,7 +124,7 @@ func TestApplyProvisionsPipelineRole(t *testing.T) {
 
 		t.Run("unwired seams skip provisioning", func(t *testing.T) {
 			o := &controlOrchestrator{logger: discardLogger()}
-			if err := o.provisionPipelineRole(ctx, pipelineDecl("shape")); err != nil {
+			if err := o.provisionPipelineRole(ctx, pipelineDecl("shape"), pipelineDecl("shape").Reads, pipelineDecl("shape").Writes); err != nil {
 				t.Fatalf("unwired provisioning errored: %v", err)
 			}
 		})

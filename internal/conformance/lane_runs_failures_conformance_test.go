@@ -299,12 +299,10 @@ if __name__ == "__main__": main()
 		defer cleanup()
 		// reset_counters (middle of composer order) hangs on its FIRST run only (a
 		// marker file in the pipeline folder), holding its lane; load waits behind
-		// it. extract runs+succeeds ahead of it. The marker matters because a
-		// cancelled (stopped) run never parks the pipeline -- the loop re-runs it
-		// on the next pass, and a script that hung every time would hold the lane
-		// again before load's turn whenever the first pass's walk snapshot raced
-		// the member applies (the event-driven loop starts passing the instant the
-		// first apply lands).
+		// it. extract runs+succeeds ahead of it. Since #192 an operator cancel is a
+		// manual stop that PARKS the pipeline (the loop does not resurrect it), so
+		// the marker only guards the pre-cancel window where the first pass's walk
+		// snapshot races the member applies.
 		writeScript(t, ws, "extract_orders", noopScript)
 		writeScript(t, ws, "reset_counters",
 			"import os, time\nif not os.path.exists(\"hang.marker\"):\n    open(\"hang.marker\", \"w\").close()\n    while True:\n        time.sleep(0.2)\n")
