@@ -33,6 +33,7 @@ const (
 	EnvRetain               = "IRIS_RETAIN"
 	EnvJournalPartitionRows = "IRIS_JOURNAL_PARTITION_ROWS"
 	EnvObjectsPath          = "IRIS_OBJECTS_PATH"
+	EnvWorkspace            = "IRIS_WORKSPACE"
 )
 
 // The built-in default numeric settings: run-history retention (keep the newest
@@ -57,6 +58,8 @@ const (
 	SocketName = "iris.sock"
 	// ObjectsDir is the default object-store directory name under the engine home.
 	ObjectsDir = "objects"
+	// WorkspaceDir is the default workspace directory name under the engine home; the daemon derives it from settings, never from its cwd (#203).
+	WorkspaceDir = "workspace"
 	// FileName is the optional configuration file's name under the engine home.
 	FileName = "iris.toml"
 )
@@ -103,6 +106,8 @@ type Settings struct {
 	TLSCert string
 	// TLSKey is the TLS key for the TCP listener, empty for plain TCP.
 	TLSKey string
+	// Workspace is the tree the daemon dispatches from (pipelines/, schemas/, env files); defaults to <engine home>/workspace.
+	Workspace string
 }
 
 // Managed reports whether the engine runs its own managed Postgres. That is the
@@ -128,6 +133,7 @@ type Layer struct {
 	TCP                  *string
 	TLSCert              *string
 	TLSKey               *string
+	Workspace            *string
 }
 
 // Resolve folds the four configuration sources into resolved Settings under
@@ -169,6 +175,9 @@ func Resolve(defaults, file, env, flags Layer) Settings {
 		if l.TLSKey != nil {
 			s.TLSKey = *l.TLSKey
 		}
+		if l.Workspace != nil {
+			s.Workspace = *l.Workspace
+		}
 	}
 	return s
 }
@@ -183,6 +192,7 @@ func Resolve(defaults, file, env, flags Layer) Settings {
 func Defaults(home string) Layer {
 	socket := filepath.Join(home, SocketName)
 	objects := filepath.Join(home, ObjectsDir)
+	workspace := filepath.Join(home, WorkspaceDir)
 	retain := DefaultRetain
 	journal := DefaultJournalPartitionRows
 	empty := ""
@@ -197,6 +207,7 @@ func Defaults(home string) Layer {
 		TCP:                  &empty,
 		TLSCert:              &empty,
 		TLSKey:               &empty,
+		Workspace:            &workspace,
 	}
 }
 
@@ -223,6 +234,9 @@ func FromEnv(getenv func(string) string) (Layer, error) {
 	}
 	if v := getenv(EnvObjectsPath); v != "" {
 		l.ObjectsPath = &v
+	}
+	if v := getenv(EnvWorkspace); v != "" {
+		l.Workspace = &v
 	}
 	if v := getenv(EnvRetain); v != "" {
 		n, err := parseInt(v)

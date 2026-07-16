@@ -76,7 +76,7 @@ func mapKeys(m map[string][]string) []string {
 // engine.service is the one documented sub-noun.
 var wantTree = map[string][]string{
 	"declare":    {"apply", "destroy"},
-	"pipeline":   {"build", "promote", "run", "list", "show"},
+	"pipeline":   {"build", "promote", "run", "stop", "list", "show"},
 	"run":        {"list", "show", "logs", "cancel"},
 	"data":       {"provenance"},
 	"workload":   {"show", "wipe"},

@@ -115,14 +115,10 @@ func HostServicePlatform() (ServicePlatform, bool) {
 }
 
 // WorkspaceRoot returns the workspace tree the generated unit's daemon
-// dispatches from, used as the service unit's WorkingDirectory: the directory
-// `iris engine service install` was invoked in (the daemon's workspace is its
-// working directory, decoupled from the engine home the socket and state live
-// in). When the invoking directory cannot be resolved it falls back to the
-// engine home's parent.
+// dispatches from, used as the service unit's WorkingDirectory: the resolved workspace setting, never the invoking directory (#203).
 func WorkspaceRoot(s config.Settings) string {
-	if wd, err := os.Getwd(); err == nil {
-		return wd
+	if s.Workspace != "" {
+		return s.Workspace
 	}
 	return filepath.Dir(irisDir(s))
 }

@@ -206,6 +206,11 @@ func (r *recordingCancel) CancelRun(_ context.Context, run string) error {
 	return nil
 }
 
+func (r *recordingCancel) CancelPipeline(_ context.Context, pipeline string) (string, error) {
+	r.last.Store(pipeline)
+	return "1", nil
+}
+
 // TestPollPs drives the real poller against the real api mux over a unix
 // socket: every tick reads the whole history and the pipeline listing, a
 // pointed focus tails the run's logs, a cancel request POSTs /run/cancel, and

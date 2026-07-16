@@ -122,18 +122,21 @@ func RemovePIDFile(s config.Settings) error {
 	return nil
 }
 
-// requireWorkspaceTree enforces the per-host prerequisite:
-// a daemon candidate started on a host lacking the workspace tree the leader dispatches
-// from (pipeline folders, dev source, env_files) refuses to start. The check is performed
-// with the resolved CWD early in Run so no managed PG or listeners are started for an
-// impossible candidate.
-func requireWorkspaceTree(workspace string) error {
+// ensureWorkspaceTree makes the dispatch workspace exist as a directory (creating a missing one under the engine-owned home) or refuses the candidate.
+func ensureWorkspaceTree(workspace string) error {
 	fi, err := os.Stat(workspace)
-	if err != nil {
-		return fmt.Errorf("daemon: workspace tree %s missing or inaccessible; candidate refuses to start: %w", workspace, err)
+	switch {
+	case err == nil:
+		if !fi.IsDir() {
+			return fmt.Errorf("daemon: workspace tree %s is not a directory; candidate refuses to start", workspace)
+		}
+		return nil
+	case os.IsNotExist(err):
+		if merr := os.MkdirAll(workspace, 0o755); merr != nil {
+			return fmt.Errorf("daemon: create workspace tree %s; candidate refuses to start: %w", workspace, merr)
+		}
+		return nil
+	default:
+		return fmt.Errorf("daemon: workspace tree %s inaccessible; candidate refuses to start: %w", workspace, err)
 	}
-	if !fi.IsDir() {
-		return fmt.Errorf("daemon: workspace tree %s is not a directory; candidate refuses to start", workspace)
-	}
-	return nil
 }

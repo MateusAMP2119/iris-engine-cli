@@ -72,13 +72,11 @@ func TestQuickstartActStructure(t *testing.T) {
 				t.Errorf("tour event order:\n got %q\nwant %q", got, want)
 			}
 
-			// Both chapter marks render, ENGINE before PIPELINE, each a 48-column
-			// light rule in the act's palette color.
+			// The one chapter mark renders as a 48-column light rule; the shop follows the act.
 			plain := stripANSI(out.String())
 			engineAt := strings.Index(plain, "── THE ENGINE ")
-			pipelineAt := strings.Index(plain, "── THE PIPELINE ")
-			if engineAt < 0 || pipelineAt < 0 || pipelineAt < engineAt {
-				t.Fatalf("chapter marks missing or out of order (engine %d, pipeline %d):\n%s", engineAt, pipelineAt, plain)
+			if engineAt < 0 {
+				t.Fatalf("ENGINE chapter mark missing:\n%s", plain)
 			}
 			for _, line := range strings.Split(plain, "\n") {
 				rule := strings.TrimPrefix(line, "  ")
@@ -91,9 +89,7 @@ func TestQuickstartActStructure(t *testing.T) {
 			if !strings.Contains(out.String(), ansiCyan+"── THE ENGINE ") {
 				t.Errorf("ENGINE mark is not painted cyan:\n%q", out.String())
 			}
-			if !strings.Contains(out.String(), ansiMagenta+"── THE PIPELINE ") {
-				t.Errorf("PIPELINE mark is not painted magenta:\n%q", out.String())
-			}
+
 		})
 
 		t.Run("marks are TTY-only; a piped tour still names its acts in plain text", func(t *testing.T) {

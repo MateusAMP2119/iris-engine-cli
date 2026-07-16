@@ -47,11 +47,12 @@ type tourAct struct {
 // entry: apply its pipeline folder, run it (the explanation carrying the
 // entry's own run note), then the provenance finale on the entry's showcase
 // table and pk.
+// quickstartPipelineSteps returns the picked sample's command sequence. The tour never executes these (#202); the wrap-up prints them for the operator.
 func quickstartPipelineSteps(e catalogEntry) []quickstartStep {
 	return []quickstartStep{
 		{
 			ID:          "apply",
-			Explanation: fmt.Sprintf("Register the %s sample: its pipeline, role, grants, and the %s table.", e.ID, e.Showcase.Table),
+			Explanation: fmt.Sprintf("Register the %s sample: its pipeline, role, grants, and the %s table. Registered pipelines loop forever by design.", e.ID, e.Showcase.Table),
 			Argv:        []string{"iris", "declare", "apply", "pipelines/" + e.ID},
 			Act:         tourActPipeline,
 		},
@@ -67,17 +68,17 @@ func quickstartPipelineSteps(e catalogEntry) []quickstartStep {
 			Argv:        []string{"iris", "data", "provenance", e.Showcase.Table, e.Showcase.PK},
 			Act:         tourActPipeline,
 		},
+		{
+			ID:          "stop",
+			Explanation: "Park the loop whenever you want the engine idle; a manual run resumes it.",
+			Argv:        []string{"iris", "pipeline", "stop", e.ID},
+			Act:         tourActPipeline,
+		},
 	}
 }
 
-// quickstartActsFor returns the canonical chaptered step table of the guided
-// first session for one catalog entry: THE ENGINE (install, start -d, info)
-// then THE PIPELINE (apply, run, provenance on the entry's showcase). Every
-// rendering -- the interactive tour, the plain act-headed guide, and the --json
-// envelope -- shares this one table. It is built fresh per call (no mutable
-// package state); openers are wired by the tour (tourActs), so the guide
-// renderings stay pure data.
-func quickstartActsFor(e catalogEntry) []tourAct {
+// quickstartActsFor returns the tour's step table: THE ENGINE only; nothing pipeline-shaped executes (#202), the wrap-up prints those commands instead.
+func quickstartActsFor(catalogEntry) []tourAct {
 	return []tourAct{
 		{
 			id:    tourActEngine,
@@ -102,11 +103,6 @@ func quickstartActsFor(e catalogEntry) []tourAct {
 					Act:         tourActEngine,
 				},
 			},
-		},
-		{
-			id:    tourActPipeline,
-			title: "THE PIPELINE",
-			steps: quickstartPipelineSteps(e),
 		},
 	}
 }
@@ -282,6 +278,14 @@ func (a *app) renderQuickstartGuide(cat *pipelineCatalog, selected catalogEntry)
 			b.WriteString("\n")
 		}
 	}
+	b.WriteString("The pipeline — when you're ready (the tour registers and runs nothing):\n")
+	b.WriteString("\n")
+	for _, s := range quickstartPipelineSteps(selected) {
+		n++
+		fmt.Fprintf(&b, "  %d. %s\n", n, s.Explanation)
+		fmt.Fprintf(&b, "     %s\n", strings.Join(s.Argv, " "))
+		b.WriteString("\n")
+	}
 	b.WriteString("Every step is idempotent and safe to re-run; stop the engine later with\n")
 	b.WriteString("`iris engine stop`.\n")
 	_, err := fmt.Fprint(a.out, b.String())
@@ -312,12 +316,13 @@ type quickstartGuide struct {
 	Catalog quickstartCatalogPayload `json:"catalog"`
 }
 
-// renderQuickstartJSON emits the guide as the one data envelope on stdout.
+// renderQuickstartJSON emits the guide as the one data envelope on stdout; pipeline steps ride along as the printed when-ready recipe (the tour executes only the engine act).
 func (a *app) renderQuickstartJSON(cat *pipelineCatalog, selected catalogEntry) error {
 	var steps []quickstartStep
 	for _, act := range quickstartActsFor(selected) {
 		steps = append(steps, act.steps...)
 	}
+	steps = append(steps, quickstartPipelineSteps(selected)...)
 	payload := quickstartCatalogPayload{Default: cat.defaultEntry().ID, Selected: selected.ID}
 	for _, e := range cat.Entries {
 		payload.Entries = append(payload.Entries, quickstartCatalogEntryPayload{

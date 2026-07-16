@@ -108,6 +108,12 @@ const (
 )
 INSERT INTO dead_letters (run_id, reason, error)
 SELECT id, $4, $5 FROM updated`
+	// deadLetterQueuedRunSQL is deadLetterRunSQL with the guard on queued: an operator stop parks a minted-but-unstarted run the same way.
+	deadLetterQueuedRunSQL = `WITH updated AS (
+    UPDATE runs SET state = $1 WHERE id = $2 AND state = $3 RETURNING id
+)
+INSERT INTO dead_letters (run_id, reason, error)
+SELECT id, $4, $5 FROM updated`
 	deleteQueuedRunSQL = "DELETE FROM runs WHERE id = $1 AND state = $2"
 	markRunRunningSQL  = "UPDATE runs SET state = $1, handle = $2, log_ref = NULLIF($3, '') WHERE id = $4 AND state = $5"
 )
@@ -139,6 +145,14 @@ func (w *Writer) MarkRunRunning(ctx context.Context, id string, pgid int, logRef
 func (w *Writer) DeadLetterRun(ctx context.Context, id string, reason DeadLetterReason, detail string) error {
 	if err := w.conn.Exec(ctx, deadLetterRunSQL, RunDeadLettered, id, RunRunning, reason, detail); err != nil {
 		return fmt.Errorf("store: writer dead-letter run %s: %w", id, err)
+	}
+	return nil
+}
+
+// DeadLetterQueuedRun dead-letters a queued never-started run in the same atomic CTE shape as DeadLetterRun, guarded on the queued state; an operator stop uses it to park a run the loop minted but has not started.
+func (w *Writer) DeadLetterQueuedRun(ctx context.Context, id string, reason DeadLetterReason, detail string) error {
+	if err := w.conn.Exec(ctx, deadLetterQueuedRunSQL, RunDeadLettered, id, RunQueued, reason, detail); err != nil {
+		return fmt.Errorf("store: writer dead-letter queued run %s: %w", id, err)
 	}
 	return nil
 }

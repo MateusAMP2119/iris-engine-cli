@@ -256,9 +256,9 @@ func TestQuickstartStepOrderConfirmed(t *testing.T) {
 			if !strings.Contains(stripANSI(out.String()), "Finale: iris data provenance demo.colors green") {
 				t.Errorf("no picked-entry finale preview before the steps\nstdout: %s", stripANSI(out.String()))
 			}
-			// The wrap-up leaves the engine running and says so.
-			if !strings.Contains(out.String(), "still running") {
-				t.Errorf("wrap-up does not note the engine is left running\nstdout: %s", out.String())
+			// The wrap-up leaves the engine running and idle, and says so.
+			if !strings.Contains(out.String(), "running and idle") {
+				t.Errorf("wrap-up does not note the engine is left running and idle\nstdout: %s", out.String())
 			}
 		})
 	})
@@ -408,10 +408,10 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 		}
 
 		steps := stepEvents(*events)
-		if len(steps) != 4 {
-			t.Fatalf("tour executed %d steps %q, want the 4 past install/start", len(steps), steps)
+		if len(steps) != 1 {
+			t.Fatalf("tour executed %d steps %q, want only ps past install/start", len(steps), steps)
 		}
-		wantPrefixes := []string{"ps", "declare apply pipelines/hello_iris", "pipeline run hello_iris", "data provenance demo.colors green"}
+		wantPrefixes := []string{"ps"}
 		for i, prefix := range wantPrefixes {
 			if !strings.HasPrefix(steps[i], prefix) {
 				t.Errorf("step[%d] = %q, want prefix %q (tour proceeds from the info step)", i, steps[i], prefix)
@@ -434,15 +434,12 @@ func TestQuickstartAdaptiveSkipRunningEngine(t *testing.T) {
 		if !strings.Contains(out.String(), "already") {
 			t.Errorf("tour does not announce install/start as already done\nstdout: %s", out.String())
 		}
-		// The skip is announced under the ENGINE chapter mark, after the
-		// workspace question opened it and before THE PIPELINE's mark.
+		// The skip is announced under the ENGINE chapter mark.
 		plain := stripANSI(out.String())
 		engineAt := strings.Index(plain, "── THE ENGINE ")
 		skipAt := strings.Index(plain, "already")
-		pipelineAt := strings.Index(plain, "── THE PIPELINE ")
-		if engineAt < 0 || pipelineAt < 0 || skipAt < engineAt || skipAt > pipelineAt {
-			t.Errorf("skip announcement not under the ENGINE chapter (engine mark %d, skip %d, pipeline mark %d):\n%s",
-				engineAt, skipAt, pipelineAt, plain)
+		if engineAt < 0 || skipAt < engineAt {
+			t.Errorf("skip announcement not under the ENGINE chapter (engine mark %d, skip %d):\n%s", engineAt, skipAt, plain)
 		}
 	})
 }
@@ -495,21 +492,18 @@ func TestQuickstartYesRunsUnattended(t *testing.T) {
 			t.Chdir(t.TempDir())
 			var out, errb bytes.Buffer
 			a := tourApp(&out, &errb, false)
-			events := scriptTour(a, nil, map[string]int{"pipeline run": 5})
+			events := scriptTour(a, nil, map[string]int{"engine start -d": 4})
 
 			code := a.run([]string{"quickstart", "--yes"})
-			if code != exitDeadLettered {
-				t.Fatalf("exit = %d, want %d (the failing step's own category)\nstderr: %s", code, exitDeadLettered, errb.String())
+			if code != exitOpFailed {
+				t.Fatalf("exit = %d, want %d (the failing step's own category)\nstderr: %s", code, exitOpFailed, errb.String())
 			}
-			if got, want := stepEvents(*events), canonicalStepArgvs()[:5]; !equalStrings(got, want) {
+			if got, want := stepEvents(*events), canonicalStepArgvs()[:2]; !equalStrings(got, want) {
 				t.Errorf("steps past the failure executed:\n got %q\nwant %q", got, want)
 			}
 			low := strings.ToLower(errb.String())
 			if !strings.Contains(low, strings.ToLower(wantResumeHint)) {
 				t.Errorf("failure carries no resume hint on stderr: %q", errb.String())
-			}
-			if !strings.Contains(errb.String(), wantDeadletterShow) {
-				t.Errorf("exit-5 failure does not teach the dead-letter lesson (%q): %q", wantDeadletterShow, errb.String())
 			}
 		})
 
@@ -644,7 +638,7 @@ func TestQuickstartIgnoresAmbientHost(t *testing.T) {
 			mu.Lock()
 			paths := append([]string(nil), localPaths...)
 			mu.Unlock()
-			for _, wantPrefix := range []string{"/ps", "/apply", "/pipeline/run", "/provenance/"} {
+			for _, wantPrefix := range []string{"/ps"} {
 				if !hasPathWithPrefix(paths, wantPrefix) {
 					t.Errorf("the local workspace daemon never received %s* (served paths: %q); that step dialed elsewhere", wantPrefix, paths)
 				}

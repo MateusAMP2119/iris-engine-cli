@@ -77,12 +77,12 @@ func TestQuickstartEngineActWaitsForRole(t *testing.T) {
 			if n := roleCalls.Load(); n < 4 {
 				t.Errorf("/healthz polled %d times; the act closed before leadership (a standby readout must hold it)", n)
 			}
-			// The tour proceeded: THE PIPELINE's pick was asked and its steps ran.
+			// The tour proceeded past the readiness hold: the shop pick was asked.
 			if picks := pickEvents(*events); len(picks) != 1 {
-				t.Errorf("act picks = %q, want exactly the PIPELINE pick", picks)
+				t.Errorf("act picks = %q, want exactly the shop pick", picks)
 			}
-			if steps := stepEvents(*events); len(steps) == 0 || !strings.HasPrefix(steps[len(steps)-1], "data provenance") {
-				t.Errorf("PIPELINE steps did not run to the finale: %q", steps)
+			if steps := stepEvents(*events); len(steps) == 0 || !strings.HasPrefix(steps[len(steps)-1], "ps") {
+				t.Errorf("engine steps did not run to the readout: %q", steps)
 			}
 		})
 

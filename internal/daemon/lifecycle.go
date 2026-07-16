@@ -80,14 +80,12 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		return ErrManagedNotInstalled
 	}
 
-	// Workspace tree is a per-host prerequisite for every candidate (S15): resolve
-	// early from CWD (the tree the daemon was started in) so a host lacking the
-	// pipelines/dev sources/env_files refuses before bringing up Postgres or listeners.
-	workspace, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("daemon: resolve workspace: %w", err)
+	// Workspace resolves from settings, never the daemon's cwd (#203); ensured early so an impossible candidate refuses before Postgres or listeners.
+	workspace := s.Workspace
+	if workspace == "" {
+		return fmt.Errorf("daemon: no workspace resolved; the engine home settings must supply one")
 	}
-	if err := requireWorkspaceTree(workspace); err != nil {
+	if err := ensureWorkspaceTree(workspace); err != nil {
 		return err
 	}
 
@@ -236,7 +234,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// running lane run's process group through the shared in-flight registry and
 	// dead-letters it as stopped through the single writer. The pass counter is the
 	// leader-held per-lane loop count, reset each leadership term.
-	lanes := newLanePlane(logger, inflight)
+	lanes := newLanePlane(logger, inflight, client.ManualReader())
 	passCounter := dispatch.NewPassCounter()
 
 	// The ps plane serves GET /ps (and `iris ps`) on any node: the run snapshot

@@ -47,19 +47,19 @@ const runCancelDetail = "run cancelled by iris run cancel"
 // path.
 type lanePlane struct {
 	logger   *slog.Logger
-	inflight *inflightRuns // shared registry: lane runs are tracked here, cancel reaches them here
+	inflight *inflightRuns      // shared registry: lane runs are tracked here, cancel reaches them here
+	latest   store.ManualReader // latest-run resolution for the pipeline-level stop
 
 	mu     sync.Mutex
 	submit dispatch.Submitter // installed on leadership, nil otherwise
 }
 
-// newLanePlane returns a lane plane over the shared in-flight registry. The cancel
-// mutation faults until a leader installs the single-writer submitter.
-func newLanePlane(logger *slog.Logger, inflight *inflightRuns) *lanePlane {
+// newLanePlane returns a lane plane over the shared in-flight registry and the latest-run reader; cancel mutations fault until a leader installs the single-writer submitter.
+func newLanePlane(logger *slog.Logger, inflight *inflightRuns, latest store.ManualReader) *lanePlane {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &lanePlane{logger: logger, inflight: inflight}
+	return &lanePlane{logger: logger, inflight: inflight, latest: latest}
 }
 
 // install wires the single-writer submitter (on winning leadership), so a cancel
@@ -106,6 +106,47 @@ func (p *lanePlane) CancelRun(ctx context.Context, runID string) error {
 		return fmt.Errorf("cancel run %s: dead-letter: %w", runID, err)
 	}
 	return nil
+}
+
+// CancelPipeline parks a pipeline's loop: inside one single-writer submission it resolves the pipeline's latest run and dead-letters it as stopped (running or queued alike), so the lane gate refuses further loop runs until a manual run, replay, or drain supersedes the stop (#202). An already-parked pipeline succeeds idempotently; a pipeline with no live run and no park reports not in flight so the CLI can retry into the loop's next mint.
+func (p *lanePlane) CancelPipeline(ctx context.Context, pipeline string) (string, error) {
+	p.mu.Lock()
+	submit := p.submit
+	p.mu.Unlock()
+	if submit == nil {
+		return "", dispatch.ErrRunNotInFlight
+	}
+	var runID string
+	var wasRunning bool
+	err := submit.Submit(ctx, func(w *store.Writer) error {
+		info, found, err := p.latest.LatestRun(ctx, pipeline)
+		if err != nil {
+			return fmt.Errorf("stop pipeline %q: read latest run: %w", pipeline, err)
+		}
+		if !found {
+			return fmt.Errorf("stop pipeline %q: %w", pipeline, dispatch.ErrRunNotInFlight)
+		}
+		runID = fmt.Sprintf("%d", info.ID)
+		switch {
+		case info.State == store.RunRunning:
+			wasRunning = true
+			return w.DeadLetterRun(ctx, runID, store.ReasonStopped, runCancelDetail)
+		case info.State == store.RunQueued:
+			return w.DeadLetterQueuedRun(ctx, runID, store.ReasonStopped, runCancelDetail)
+		case info.State == store.RunDeadLettered && info.DeadLetterReason == store.ReasonStopped && info.DeadLetterDetail == runCancelDetail:
+			return nil // already parked: idempotent success
+		default:
+			return fmt.Errorf("stop pipeline %q: %w", pipeline, dispatch.ErrRunNotInFlight)
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	// Kill after the park is durable: the process group dies knowing its terminal record is already written, and laneExec's own guarded transition no-ops.
+	if wasRunning {
+		p.inflight.kill(runID)
+	}
+	return runID, nil
 }
 
 // newLaneLoop builds the perpetual lane loop over the single dispatcher (submit), the

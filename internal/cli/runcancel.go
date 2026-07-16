@@ -19,10 +19,12 @@ import (
 // exit code follows the standard categories: success 0, no daemon reachable 3, not the
 // leader 6, any other failure (unknown or already-terminal run) 4.
 
-// runCancelReq is the POST /run/cancel body: the run to cancel.
+// runCancelReq is the POST /run/cancel body: the run to cancel, or the pipeline whose latest run to stop.
 type runCancelReq struct {
 	// Run is the running run to cancel.
-	Run string `json:"run"`
+	Run string `json:"run,omitempty"`
+	// Pipeline parks a pipeline by name (the leader resolves and stops its latest run).
+	Pipeline string `json:"pipeline,omitempty"`
 }
 
 // runCancelResult is the leader's reply: the cancelled run and its resulting terminal
@@ -44,6 +46,19 @@ func (a *app) runCancel() runE {
 			return a.usage(fmt.Sprintf("bad run ref %q: %v", run, perr))
 		}
 		return a.postRunCancel(cmd, runCancelReq{Run: run})
+	}
+}
+
+// pipelineStop is the handler for `iris pipeline stop <name>`: it parks the pipeline's loop through the leader's cancel route (#202), naming how to resume on success.
+func (a *app) pipelineStop() runE {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := a.postRunCancel(cmd, runCancelReq{Pipeline: args[0]}); err != nil {
+			return err
+		}
+		if jsonMode, _ := cmd.Flags().GetBool("json"); !jsonMode {
+			fmt.Fprintf(a.out, "parked %s; resume with \"iris pipeline run %s\"\n", args[0], args[0])
+		}
+		return nil
 	}
 }
 

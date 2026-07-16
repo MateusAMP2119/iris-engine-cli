@@ -25,9 +25,9 @@ The engine — provision it and start it:
   3. Open the live engine view: role, uptime, runs, and host load, refreshed every second. Press q to continue the tour (piped, the same command prints JSON).
      iris ps
 
-The pipeline — register, run, ask:
+The pipeline — when you're ready (the tour registers and runs nothing):
 
-  4. Register the hello_iris sample: its pipeline, role, grants, and the demo.colors table.
+  4. Register the hello_iris sample: its pipeline, role, grants, and the demo.colors table. Registered pipelines loop forever by design.
      iris declare apply pipelines/hello_iris
 
   5. Run it: the script upserts the seven rainbow colors into demo.colors; re-running layers a second provenance stamp on the same rows.
@@ -35,6 +35,9 @@ The pipeline — register, run, ask:
 
   6. Ask a row who wrote it: the authoring run, the layer stack, the hashes.
      iris data provenance demo.colors green
+
+  7. Park the loop whenever you want the engine idle; a manual run resumes it.
+     iris pipeline stop hello_iris
 
 Every step is idempotent and safe to re-run; stop the engine later with
 `iris engine stop`.

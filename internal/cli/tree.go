@@ -208,6 +208,10 @@ func (a *app) pipelineCmd() *cobra.Command {
 		Use: "run <name>", Short: "Trigger a manual one-off run",
 		Args: cobra.ExactArgs(1), RunE: a.pipelineRun(),
 	}
+	stop := &cobra.Command{
+		Use: "stop <name>", Short: "Park the pipeline's loop (a later manual run, replay, or drain resumes it)",
+		Args: cobra.ExactArgs(1), RunE: a.pipelineStop(),
+	}
 	list := &cobra.Command{
 		Use: "list", Short: "List pipelines with a queued or running run",
 		Args: cobra.NoArgs, RunE: a.pipelineList(),
@@ -219,7 +223,7 @@ func (a *app) pipelineCmd() *cobra.Command {
 	}
 
 	return a.group("pipeline", "Operate on a single pipeline",
-		daemonTouching(build), daemonTouching(promote), daemonTouching(run), daemonTouching(list), daemonTouching(show))
+		daemonTouching(build), daemonTouching(promote), daemonTouching(run), daemonTouching(stop), daemonTouching(list), daemonTouching(show))
 }
 
 // runCmd builds `iris run`: execution-record reads and cancel.

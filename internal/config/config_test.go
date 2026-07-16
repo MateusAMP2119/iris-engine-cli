@@ -140,6 +140,7 @@ func TestDocumentedEnvVarsRecognized(t *testing.T) {
 		{config.EnvToken, func(s config.Settings) string { return s.Token }},
 		{config.EnvPgDSN, func(s config.Settings) string { return s.PgDSN }},
 		{config.EnvObjectsPath, func(s config.Settings) string { return s.ObjectsPath }},
+		{config.EnvWorkspace, func(s config.Settings) string { return s.Workspace }},
 	}
 	for _, tc := range stringVars {
 		t.Run(tc.env, func(t *testing.T) {
@@ -257,6 +258,7 @@ func TestZeroConfigDefaults(t *testing.T) {
 		Retain:               config.DefaultRetain,
 		JournalPartitionRows: config.DefaultJournalPartitionRows,
 		ObjectsPath:          filepath.Join(home, "objects"),
+		Workspace:            filepath.Join(home, "workspace"),
 	}
 	if got != want {
 		t.Errorf("zero-config resolution = %+v, want the documented defaults %+v", got, want)

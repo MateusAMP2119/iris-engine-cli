@@ -4,6 +4,7 @@ package conformance
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,28 +13,17 @@ import (
 	"time"
 )
 
-// TestQuickstartFullTour drives `iris quickstart --yes` -- the real binary,
-// unattended, in a fresh directory that IS the workspace (--yes never prompts
-// and uses the invoking directory unchanged) -- through the whole first
-// session against a real Postgres: it bootstraps the engine, materializes and
-// applies the hello_iris sample, runs it, and `iris data provenance
-// demo.colors green` names the authoring run. The engine is left running
-// afterwards, and a second unattended run adopts it and exits 0.
+// TestQuickstartFullTour drives `iris quickstart --yes` (real binary, unattended, the invoking directory as workspace) and proves the #202 contract: the engine is up and idle, nothing is registered, nothing ever ran, the sample is staged, and the wrap-up's printed recipe then works for real through provenance and the park.
 func TestQuickstartFullTour(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)
 	ws := shortWorkspace(t)
 
-	// Fresh directory: under --yes the invoking directory is the workspace, so
-	// the whole session bootstraps right here without a single prompt (stdin is
-	// not a terminal here, which is exactly the piped --yes contract).
 	res := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes"}, Dir: ws, Timeout: 10 * time.Minute})
 	res.RequireExit(t, 0)
 
-	// The ceremony's end state: the engine is announced as left running and the
-	// cheat-sheet of what the session used closes the tour.
-	if out := string(res.Stdout); !strings.Contains(out, "still running") || !strings.Contains(out, "cheat-sheet") {
-		t.Errorf("tour did not close on the ceremony end state (engine left running + cheat-sheet)\nstdout:\n%s", out)
+	if out := string(res.Stdout); !strings.Contains(out, "running and idle") || !strings.Contains(out, "cheat-sheet") {
+		t.Errorf("tour did not close on the idle end state\nstdout:\n%s", out)
 	}
 
 	socket := filepath.Join(ws, ".iris", "iris.sock")
@@ -41,18 +31,21 @@ func TestQuickstartFullTour(t *testing.T) {
 		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
 	})
 
-	// The sample was materialized into the workspace itself, no demo subdir.
+	// Staged, not registered: the sample landed on disk and nowhere else.
 	if _, err := os.Stat(filepath.Join(ws, "pipelines", "hello_iris", "iris-declare.yaml")); err != nil {
-		t.Fatalf("quickstart did not materialize the sample declaration: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
+		t.Fatalf("quickstart did not stage the sample declaration: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
 	}
 	if _, err := os.Stat(filepath.Join(ws, "iris-quickstart-demo")); err == nil {
 		t.Fatal("quickstart created ./iris-quickstart-demo; the invoking directory is the workspace")
 	}
-
-	// The engine is left running: /healthz answers on the workspace socket.
 	assertEngineAnswering(t, socket)
+	assertNothingRegistered(t, socket)
+	assertNoRunsEver(t, bin, ws)
 
-	// The sample run landed the seven rainbow colors in demo.colors.
+	// The printed recipe works for real: register, run once, ask provenance.
+	bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/hello_iris"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+	bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "hello_iris"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	conn := connectPG(t, dataDSN(t, ws))
@@ -65,8 +58,6 @@ func TestQuickstartFullTour(t *testing.T) {
 		t.Errorf("demo.colors holds %d rows, want the 7 rainbow colors", colors)
 	}
 
-	// The finale's read answers for real: provenance on a row the run wrote names
-	// the authoring run and the sample pipeline.
 	prov := bin.Run(t, RunOptions{
 		Args:    []string{"--json", "data", "provenance", "demo.colors", "green"},
 		Dir:     ws,
@@ -88,20 +79,21 @@ func TestQuickstartFullTour(t *testing.T) {
 		t.Errorf("provenance pipeline = %q, want hello_iris", env.Data.Pipeline)
 	}
 
-	// A second unattended run is clean: every step is idempotent, the running
-	// engine is adopted (install/start skipped), and the tour exits 0 again.
+	// The recipe's last line parks the loop and the park holds.
+	bin.Run(t, RunOptions{Args: []string{"pipeline", "stop", "hello_iris"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+	first := newestRunID(t, bin, ws)
+	time.Sleep(3 * time.Second)
+	if again := newestRunID(t, bin, ws); again != first {
+		t.Errorf("parked loop advanced from run %s to %s", first, again)
+	}
+
+	// A second unattended run is clean: idempotent steps, running engine adopted.
 	again := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes"}, Dir: ws, Timeout: 5 * time.Minute})
 	again.RequireExit(t, 0)
 	assertEngineAnswering(t, socket)
 }
 
-// TestQuickstartPickedFullTour drives `iris quickstart --yes --pipeline
-// word_frequency` -- the real binary, unattended, a non-default catalog pick,
-// in a fresh directory that IS the workspace -- through the whole first
-// session against a real Postgres: it bootstraps the engine, materializes and
-// applies only the picked entry, runs it (the word counts computed wholly in
-// Postgres), and `iris data provenance demo.word_counts hope` names the
-// authoring run. A second unattended run exits 0.
+// TestQuickstartPickedFullTour drives `iris quickstart --yes --pipeline word_frequency`: only the pick is staged, nothing is registered or run by the tour, and the pick's recipe works for real.
 func TestQuickstartPickedFullTour(t *testing.T) {
 	freshDatabases(t)
 	bin := Build(t)
@@ -115,16 +107,19 @@ func TestQuickstartPickedFullTour(t *testing.T) {
 		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
 	})
 
-	// Only the picked entry materialized.
 	if _, err := os.Stat(filepath.Join(ws, "pipelines", "word_frequency", "iris-declare.yaml")); err != nil {
-		t.Fatalf("picked entry not materialized: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
+		t.Fatalf("picked entry not staged: %v\nstdout:\n%s\nstderr:\n%s", err, res.Stdout, res.Stderr)
 	}
 	if _, err := os.Stat(filepath.Join(ws, "pipelines", "hello_iris")); err == nil {
-		t.Error("unpicked hello_iris materialized; only the pick lands")
+		t.Error("unpicked hello_iris staged; only the pick lands")
 	}
 	assertEngineAnswering(t, socket)
+	assertNothingRegistered(t, socket)
+	assertNoRunsEver(t, bin, ws)
 
-	// The deterministic counts landed: 'hope' was counted.
+	bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/word_frequency"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+	bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "word_frequency"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	conn := connectPG(t, dataDSN(t, ws))
@@ -137,7 +132,6 @@ func TestQuickstartPickedFullTour(t *testing.T) {
 		t.Errorf("word 'hope' counted %d times, want at least 1", hopeN)
 	}
 
-	// The finale names the authoring run and the picked pipeline.
 	prov := bin.Run(t, RunOptions{
 		Args:    []string{"--json", "data", "provenance", "demo.word_counts", "hope"},
 		Dir:     ws,
@@ -159,7 +153,8 @@ func TestQuickstartPickedFullTour(t *testing.T) {
 		t.Errorf("provenance pipeline = %q, want word_frequency", env.Data.Pipeline)
 	}
 
-	// Re-running the picked tour is clean: idempotent steps, exit 0.
+	bin.Run(t, RunOptions{Args: []string{"pipeline", "stop", "word_frequency"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+
 	again := bin.Run(t, RunOptions{Args: []string{"quickstart", "--yes", "--pipeline", "word_frequency"}, Dir: ws, Timeout: 5 * time.Minute})
 	again.RequireExit(t, 0)
 	assertEngineAnswering(t, socket)
@@ -177,4 +172,53 @@ func assertEngineAnswering(t *testing.T, socket string) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("engine /healthz on %s = %d, want %d", socket, resp.StatusCode, http.StatusOK)
 	}
+}
+
+// assertNothingRegistered fails the test unless the full pipeline listing is empty (#202: the tour registers nothing).
+func assertNothingRegistered(t *testing.T, socket string) {
+	t.Helper()
+	resp, err := HTTPOverSocket(socket).Get("http://iris/pipeline/list?all=1")
+	if err != nil {
+		t.Fatalf("pipeline listing on %s: %v", socket, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"pipelines":[]`) {
+		t.Errorf("tour left pipelines registered: %s", body)
+	}
+}
+
+// assertNoRunsEver fails the test unless the whole run history is empty (#202: the tour fires nothing).
+func assertNoRunsEver(t *testing.T, bin *Binary, ws string) {
+	t.Helper()
+	res := bin.Run(t, RunOptions{Args: []string{"ps", "--all", "--json"}, Dir: ws, Timeout: time.Minute})
+	res.RequireExit(t, 0)
+	var env struct {
+		Data struct {
+			Runs []struct{} `json:"runs"`
+		} `json:"data"`
+	}
+	res.DecodeJSON(t, &env)
+	if len(env.Data.Runs) != 0 {
+		t.Errorf("tour left %d runs in the history, want none", len(env.Data.Runs))
+	}
+}
+
+// newestRunID reads the newest run id off the full history readout.
+func newestRunID(t *testing.T, bin *Binary, ws string) string {
+	t.Helper()
+	res := bin.Run(t, RunOptions{Args: []string{"ps", "--all", "--json"}, Dir: ws, Timeout: time.Minute})
+	res.RequireExit(t, 0)
+	var env struct {
+		Data struct {
+			Runs []struct {
+				ID string `json:"id"`
+			} `json:"runs"`
+		} `json:"data"`
+	}
+	res.DecodeJSON(t, &env)
+	if len(env.Data.Runs) == 0 {
+		t.Fatal("no runs in the history readout")
+	}
+	return env.Data.Runs[0].ID
 }

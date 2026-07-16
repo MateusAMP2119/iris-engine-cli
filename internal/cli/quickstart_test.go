@@ -255,8 +255,8 @@ func TestQuickstartJSONGuideEnvelope(t *testing.T) {
 		var env quickstartEnvelope
 		decodeSingleJSON(t, []byte(out), &env)
 
-		wantOrder := []string{"install", "start", "ps", "apply", "run", "provenance"}
-		wantActs := []string{"engine", "engine", "engine", "pipeline", "pipeline", "pipeline"}
+		wantOrder := []string{"install", "start", "ps", "apply", "run", "provenance", "stop"}
+		wantActs := []string{"engine", "engine", "engine", "pipeline", "pipeline", "pipeline", "pipeline"}
 		if len(env.Data.Steps) != len(wantOrder) {
 			t.Fatalf("envelope carries %d steps, want %d: %q", len(env.Data.Steps), len(wantOrder), out)
 		}

@@ -107,6 +107,8 @@ func (t *TOML) assign(key string, kind tomlValueKind, str string, num int64) err
 		return setString(&t.Layer.PgDSN, key, kind, str)
 	case "objects_path":
 		return setString(&t.Layer.ObjectsPath, key, kind, str)
+	case "workspace":
+		return setString(&t.Layer.Workspace, key, kind, str)
 	case "tcp":
 		return setString(&t.Layer.TCP, key, kind, str)
 	case "tls_cert":

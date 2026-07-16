@@ -358,45 +358,6 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 		}
 
 		steps := act.steps
-		if act.id == tourActPipeline {
-			// The shop: browse and pick interactively, unless the pick is already
-			// explicit (--pipeline) or unattended (--yes takes the selected entry).
-			// The production ceremony gets the arrow-key select; a harnessed seam
-			// or a terminal that refuses raw mode keeps the numbered dialogue.
-			if !yes && !explicit {
-				picked := false
-				if widgets && p.enabled {
-					opts := make([]clackOption, 0, len(cat.Entries))
-					for _, ce := range cat.Entries {
-						opts = append(opts, clackOption{label: ce.Name, hint: ce.Pitch})
-					}
-					choice, ans, ok := askClackSelect(ctx, a.out, p, "Pick a starter pipeline", opts)
-					if ok {
-						if ans != answerProceed || ctx.Err() != nil || choice < 1 || choice > len(cat.Entries) {
-							return a.tourAbort()
-						}
-						entry = cat.Entries[choice-1]
-						steps = quickstartPipelineSteps(entry)
-						picked = true
-					}
-				}
-				if !picked {
-					a.renderCatalogShop(p, cat)
-					choice, ans, perr := askTourPick(ctx, pick, pickQuestion(len(cat.Entries)), len(cat.Entries))
-					if perr != nil || ans != answerProceed || ctx.Err() != nil ||
-						choice < 1 || choice > len(cat.Entries) {
-						a.reportPromptFault(perr)
-						return a.tourAbort()
-					}
-					entry = cat.Entries[choice-1]
-					steps = quickstartPipelineSteps(entry)
-				}
-			}
-			// The picked entry explains itself -- description and finale preview --
-			// before its steps; the apply step's ordinary confirm is the
-			// confirmation, never an extra prompt.
-			a.renderEntryDetail(p, entry)
-		}
 		var engineSettings config.Settings
 		if act.id == tourActEngine {
 			// The tour only ever targets the local engine it provisions: an
@@ -431,11 +392,6 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 			}
 			k++
 			a.renderTourStep(p, step)
-			if step.ID == "apply" {
-				if err := a.tourMaterializeEntry(entry); err != nil {
-					return err
-				}
-			}
 			code := run(ctx, tourStepArgv(cmd, step))
 			if ctx.Err() != nil {
 				return a.tourAbort()
@@ -470,6 +426,39 @@ func (a *app) runQuickstartTour(cmd *cobra.Command, yes, fromInstaller bool, cat
 				return err
 			}
 		}
+	}
+
+	// Post-act shop: pick a sample to stage; nothing is registered or executed (#202), the wrap-up prints the commands.
+	if !yes && !explicit {
+		picked := false
+		if widgets && p.enabled {
+			opts := make([]clackOption, 0, len(cat.Entries))
+			for _, ce := range cat.Entries {
+				opts = append(opts, clackOption{label: ce.Name, hint: ce.Pitch})
+			}
+			choice, ans, ok := askClackSelect(ctx, a.out, p, "Pick a starter pipeline to stage (nothing runs yet)", opts)
+			if ok {
+				if ans != answerProceed || ctx.Err() != nil || choice < 1 || choice > len(cat.Entries) {
+					return a.tourAbort()
+				}
+				entry = cat.Entries[choice-1]
+				picked = true
+			}
+		}
+		if !picked {
+			a.renderCatalogShop(p, cat)
+			choice, ans, perr := askTourPick(ctx, pick, pickQuestion(len(cat.Entries)), len(cat.Entries))
+			if perr != nil || ans != answerProceed || ctx.Err() != nil ||
+				choice < 1 || choice > len(cat.Entries) {
+				a.reportPromptFault(perr)
+				return a.tourAbort()
+			}
+			entry = cat.Entries[choice-1]
+		}
+	}
+	a.renderEntryDetail(p, entry)
+	if err := a.tourMaterializeEntry(entry); err != nil {
+		return err
 	}
 
 	a.tourWrapUp(p, entry)
@@ -1036,14 +1025,17 @@ func (a *app) tourStepFailed(step quickstartStep, k, total, code int, e catalogE
 // NO_COLOR or a pipe, like every ceremony).
 func (a *app) tourWrapUp(p painter, e catalogEntry) {
 	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "That's the tour — the engine is still running and stays up after this terminal closes.")
+	fmt.Fprintln(a.out, "That's the tour — the engine is running and idle: nothing is registered, nothing fires until you say so.")
 	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "What you used (the cheat-sheet):")
-	fmt.Fprintln(a.out, "  iris engine install | start -d | stop            the engine lifecycle")
-	fmt.Fprintln(a.out, "  iris ps                                          the engine's runs and host load")
-	fmt.Fprintln(a.out, "  iris declare apply <path>                        register a declaration")
+	fmt.Fprintf(a.out, "The %s sample is staged in your workspace. When you're ready:\n", e.ID)
+	fmt.Fprintf(a.out, "  %-49sregister it (registered pipelines loop forever by design)\n", "iris declare apply pipelines/"+e.ID)
 	fmt.Fprintf(a.out, "  %-49strigger a manual run\n", "iris pipeline run "+e.ID)
 	fmt.Fprintf(a.out, "  %-49sask a row who wrote it\n", "iris data provenance "+e.Showcase.Table+" "+e.Showcase.PK)
+	fmt.Fprintf(a.out, "  %-49spark the loop; a manual run resumes it\n", "iris pipeline stop "+e.ID)
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "The rest of the cheat-sheet:")
+	fmt.Fprintln(a.out, "  iris engine install | start -d | stop            the engine lifecycle")
+	fmt.Fprintln(a.out, "  iris ps                                          the engine's runs and host load")
 	fmt.Fprintln(a.out, "  iris run list                                    run history (--graph for rails)")
 	fmt.Fprintln(a.out, "  iris deadletter list                             the failure worklist")
 	fmt.Fprintln(a.out)
