@@ -205,7 +205,13 @@ done
 
 		t.Run("legacy script ignores the protocol and reports through exit", func(t *testing.T) {
 			dir := t.TempDir()
-			argv := writeScript(t, dir, `echo "plain output"
+			// The script gates on a flag file: a switchSink discards output
+			// until a destination is set, so an instantly-echoing legacy
+			// process races the Set below on a fast machine. The gate keeps
+			// the script protocol-ignorant (it never reads stdin) while
+			// guaranteeing its output lands after the sink is attached.
+			argv := writeScript(t, dir, `while [ ! -f sink-ready ]; do sleep 0.02; done
+echo "plain output"
 exit 3
 `)
 			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
@@ -214,6 +220,9 @@ exit 3
 			}
 			sink := &lockedBuffer{}
 			ses.out.Set(sink)
+			if err := os.WriteFile(filepath.Join(dir, "sink-ready"), nil, 0o644); err != nil {
+				t.Fatalf("write flag: %v", err)
+			}
 			_ = ses.sendGo(1)
 			select {
 			case <-ses.exited:
