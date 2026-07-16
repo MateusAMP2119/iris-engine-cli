@@ -37,13 +37,12 @@ func (s *switchSink) Set(w io.Writer) {
 	s.mu.Unlock()
 }
 
-// Write forwards to the current destination, best-effort: capture never fails the process's output pipe.
+// Write forwards to the current destination under the lock (a Set waits out an in-flight write), best-effort: capture never fails the process's output pipe.
 func (s *switchSink) Write(p []byte) (int, error) {
 	s.mu.Lock()
-	w := s.w
-	s.mu.Unlock()
-	if w != nil {
-		_, _ = w.Write(p)
+	defer s.mu.Unlock()
+	if s.w != nil {
+		_, _ = s.w.Write(p)
 	}
 	return len(p), nil
 }

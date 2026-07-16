@@ -52,6 +52,15 @@ func newRunConnBuilder(dataDSN string, creds store.RoleCredentialReader, logger 
 // carrying the run id GUC, or the admin-derived fallback (warned) when the role
 // has no persisted credential.
 func (b *runConnBuilder) dsnFor(ctx context.Context, pipeline string, runID int64) string {
+	base := b.baseFor(ctx, pipeline)
+	if base == "" {
+		return ""
+	}
+	return pg.InjectRunID(base, runID)
+}
+
+// baseFor returns the pipeline's scoped connection WITHOUT a run id GUC -- the identity a resident session is spawned with, so a credential landing later (or rotating) changes the base and recycles the session.
+func (b *runConnBuilder) baseFor(ctx context.Context, pipeline string) string {
 	if b == nil {
 		return "" // no data connection wired at all (shape tests)
 	}
@@ -69,11 +78,8 @@ func (b *runConnBuilder) dsnFor(ctx context.Context, pipeline string, runID int6
 				b.logger.Warn("run conn: build scoped connection; falling back to the admin-derived DSN", "pipeline", pipeline, "err", cerr)
 				break
 			}
-			return pg.InjectRunID(conn.EnvValue(), runID)
+			return conn.EnvValue()
 		}
 	}
-	if b.fallback == "" {
-		return ""
-	}
-	return pg.InjectRunID(b.fallback, runID)
+	return b.fallback
 }

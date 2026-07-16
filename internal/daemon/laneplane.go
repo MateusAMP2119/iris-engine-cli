@@ -15,6 +15,7 @@ import (
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
@@ -359,7 +360,9 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 
 	argv := dispatch.ResolveRunArgv(target.Argv, artifactHash, m.objects)
 	dir := filepath.Join(m.workspace, target.Folder)
-	key := residentKey(dir, argv)
+	// The scoped-connection base joins the session key: a credential landing after a fallback spawn (or rotating) recycles the session onto the right identity at the next run.
+	base := m.runConn.baseFor(ctx, pipeline)
+	key := residentKey(dir, argv, base)
 
 	// A stale session (declared argv, artifact, or folder changed; or the process died between runs) is ended and replaced.
 	ses := m.residents.get(pipeline)
@@ -371,7 +374,7 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 	if ses == nil {
 		var err error
 		// The env (and the DSN's spawn-time run id GUC) is fixed at spawn; a resident script re-attributes each iteration itself via SET iris.run_id.
-		ses, err = spawnResident(ctx, m.runner, key, dir, argv, m.childEnv(ctx, pipeline, id))
+		ses, err = spawnResident(ctx, m.runner, key, dir, argv, residentEnv(base, id))
 		if err != nil {
 			closeRunLog(sink)
 			// Nothing started: remove the queued run so meta carries no phantom.
@@ -438,8 +441,9 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 			return dispatch.RunDeadLettered, nil
 		}
 	case <-ctx.Done():
-		// Term over: the runner's ctx watcher kills the group; the row is the next leader's to reconcile.
+		// Term over: end the session outright (the runner's ctx watcher kills the group too); the row is the next leader's to reconcile.
 		m.residents.drop(pipeline)
+		ses.end()
 		return dispatch.RunSucceeded, ctx.Err()
 	}
 
@@ -452,19 +456,18 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 	return dispatch.RunSucceeded, nil
 }
 
-// residentKey fingerprints what a resident process was spawned as; a changed key recycles the session at the next run.
-func residentKey(dir string, argv []string) string {
-	return dir + "\x00" + strings.Join(argv, "\x00")
+// residentKey fingerprints what a resident process was spawned as (folder, argv, connection base); a changed key recycles the session at the next run.
+func residentKey(dir string, argv []string, base string) string {
+	return dir + "\x00" + strings.Join(argv, "\x00") + "\x00" + base
 }
 
-// childEnv builds a lane run's environment: the inherited daemon environment plus
-// the run-scoped data connection under IRIS_DB_URL -- the pipeline's own
-// least-privilege login role, carrying the run id as the per-session iris.run_id
-// GUC so the capture trigger attributes every write to this run. A run with no
-// data connection wired still receives the variable, empty, so a run resolves
-// its connection from one place.
-func (m *laneExec) childEnv(ctx context.Context, pipeline string, runID int64) []string {
-	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.runConn.dsnFor(ctx, pipeline, runID))
+// residentEnv builds the spawn environment: the inherited daemon environment plus IRIS_DB_URL over base carrying the spawn-time run id GUC (an empty base stays empty).
+func residentEnv(base string, runID int64) []string {
+	v := ""
+	if base != "" {
+		v = pg.InjectRunID(base, runID)
+	}
+	return append(os.Environ(), dispatch.DBConnEnvVar+"="+v)
 }
 
 // pruneEveryRuns is the count-based prune cadence: a lane's retention prune runs

@@ -78,6 +78,9 @@ func loadSiblingPipelines(laneDir, own string) ([]*declare.Pipeline, error) {
 func composerMembers(laneDir string, order []string) (map[string]*declare.Pipeline, error) {
 	members := map[string]*declare.Pipeline{}
 	for _, name := range order {
+		if name != filepath.Base(name) || name == "." || name == ".." {
+			return nil, fmt.Errorf("declare apply: composer order entry %q is not a plain folder name", name)
+		}
 		path := filepath.Join(laneDir, name, "iris-declare.yaml")
 		raw, err := os.ReadFile(path) //nolint:gosec // G304: member pipeline folders under the leader's own workspace.
 		if err != nil {

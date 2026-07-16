@@ -405,6 +405,7 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	case <-ses.exited:
 		status, waitErr = ses.status, ses.waitErr
 	case <-ctx.Done():
+		ses.end()
 		return dispatch.RunSucceeded, ctx.Err()
 	}
 	if waitErr != nil {

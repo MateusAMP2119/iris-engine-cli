@@ -117,12 +117,29 @@ func TestResidentPipeline(t *testing.T) {
 				t.Fatalf("connect meta: %v", err)
 			}
 			defer func() { _ = meta.Close(ctx) }()
+			data, err := pgx.Connect(ctx, dataDSN(t, ws))
+			if err != nil {
+				t.Fatalf("connect data: %v", err)
+			}
+			defer func() { _ = data.Close(ctx) }()
 
-			// Wait for three succeeded loop runs: three protocol iterations.
-			var ids []int64
+			// The very first run can race role provisioning within the apply and spawn on the admin fallback; the base-keyed session recycles onto the scoped role at the next run, so wait for the role's backend before sampling iterations.
+			var mark int64
 			dl := time.Now().Add(120 * time.Second)
 			for time.Now().Before(dl) {
-				rows, err := meta.Query(ctx, "SELECT id FROM runs WHERE pipeline='res_writer' AND state='succeeded' ORDER BY id LIMIT 3")
+				var backends int
+				_ = data.QueryRow(ctx, "SELECT count(*) FROM pg_stat_activity WHERE usename='iris_pipeline_res_writer'").Scan(&backends)
+				if backends == 1 {
+					_ = meta.QueryRow(ctx, "SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_writer' AND state='succeeded'").Scan(&mark)
+					break
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+
+			// Three protocol iterations on the scoped session.
+			var ids []int64
+			for time.Now().Before(dl) {
+				rows, err := meta.Query(ctx, "SELECT id FROM runs WHERE pipeline='res_writer' AND state='succeeded' AND id>$1 ORDER BY id LIMIT 3", mark)
 				if err != nil {
 					t.Fatalf("read succeeded runs: %v", err)
 				}
@@ -141,10 +158,10 @@ func TestResidentPipeline(t *testing.T) {
 				time.Sleep(150 * time.Millisecond)
 			}
 			if len(ids) < 3 {
-				t.Fatalf("resident pipeline produced %d succeeded runs within 120s, want 3", len(ids))
+				t.Fatalf("resident pipeline produced %d succeeded runs on the scoped session within 120s, want 3", len(ids))
 			}
 
-			// One process: every iteration's run row carries the same process-group handle.
+			// One process: every sampled iteration's run row carries the same process-group handle.
 			var handles int
 			if err := meta.QueryRow(ctx,
 				"SELECT count(DISTINCT handle) FROM runs WHERE pipeline='res_writer' AND state='succeeded' AND id = ANY($1)", ids).Scan(&handles); err != nil {
@@ -153,12 +170,6 @@ func TestResidentPipeline(t *testing.T) {
 			if handles != 1 {
 				t.Errorf("succeeded iterations span %d process groups, want 1 (one resident PID)", handles)
 			}
-
-			data, err := pgx.Connect(ctx, dataDSN(t, ws))
-			if err != nil {
-				t.Fatalf("connect data: %v", err)
-			}
-			defer func() { _ = data.Close(ctx) }()
 
 			// Per-iteration attribution: each run journals its own insert, keyed by its own run id.
 			for _, id := range ids {
