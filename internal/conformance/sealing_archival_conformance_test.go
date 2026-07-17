@@ -95,11 +95,37 @@ func waitForCheckpoints(ctx context.Context, t *testing.T, metaConn *pgx.Conn, n
 	return cps
 }
 
+// sealTurnWorker writes the turn-protocol worker script beside an existing
+// pipeline declaration, so its `run: [sh, main.sh]` resolves inside the folder.
+// The seal legs' pipelines exist to mint terminal runs (seal is a post-terminal
+// step); the journal rows they seal are landed by the test's own attributed
+// admin connection, whose capture path is unchanged under #206.
+func sealTurnWorker(t *testing.T, ws, pipeline, script string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(ws, "pipelines", pipeline, "main.sh"), []byte(script), 0o644); err != nil { //nolint:gosec // G306: workspace script, dev-run convention.
+		t.Fatalf("write worker script for %s: %v", pipeline, err)
+	}
+}
+
+// sealSleepTurnScript is a sh resident that holds every turn open ~6s before
+// answering the bare done: long enough for the test to land attributed journal
+// rows while the manual run is still in the running state. It emits no rows, so
+// only the pre-minted manual run records; its quiet loop turns park the lane.
+const sealSleepTurnScript = `while read line; do
+  case "$line" in
+  *'"go"'*) turn=$(printf '%s' "$line" | sed 's/.*"turn"://;s/[^0-9].*//') ;;
+  *'"run"'*) sleep 6; printf '{"event":"done","turn":%s}\n' "$turn" ;;
+  esac
+done
+`
+
 // TestSealWaitsForInflightRun drives the real binary and a running daemon against
 // a real Postgres and proves sealing does not cut a partition mid-run: with a
-// tiny journal_partition_rows, a run whose writes cross the threshold while it is
-// still running causes no seal until the run reaches a terminal state; the run's
-// journal window stays wholly inside one sealed partition.
+// tiny journal_partition_rows, a run whose journal window crosses the threshold
+// while it is still running (the test lands rows through its own connection
+// attributed to the in-flight run's id -- the capture trigger is unchanged under
+// the turn protocol, #206) causes no seal until the run reaches a terminal
+// state; the run's journal window stays wholly inside one sealed partition.
 func TestSealWaitsForInflightRun(t *testing.T) {
 	t.Run("seal-waits-for-inflight-run", func(t *testing.T) {
 		freshDatabases(t)
@@ -148,7 +174,12 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 			_ = client.Exec(ctx, trig)
 		}
 
-		writePipelineDecl(t, ws, "sleeper", "name: sleeper\nrun: [\"sh\", \"-c\", \"sleep 6; exit 0\"]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		// The sleeper holds each turn open ~6s then answers done: the manual run
+		// stays running while the test crosses the threshold, then its terminal
+		// completes the turn (a bare `exit 0` would be a mid-turn death and
+		// dead-letter under #206).
+		writePipelineDecl(t, ws, "sleeper", "name: sleeper\nrun: [sh, main.sh]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		sealTurnWorker(t, ws, "sleeper", sealSleepTurnScript)
 
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", "sleeper")}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
@@ -165,8 +196,11 @@ func TestSealWaitsForInflightRun(t *testing.T) {
 		}
 		defer func() { _ = metaConn.Close(ctx) }()
 
+		// The loop's own first quiet turn may hold the lane ~6s (the sleep applies
+		// to every turn) before the queued manual run is picked up, so the poll
+		// window covers both turns.
 		var runID int64
-		deadline := time.Now().Add(15 * time.Second)
+		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
 			var state string
 			if err := metaConn.QueryRow(ctx,
@@ -367,7 +401,11 @@ func TestSealedPartitionExportsDrops(t *testing.T) {
 		cancel()
 		_ = waitForLeader(t, socket)
 
-		writePipelineDecl(t, ws, "writer", "name: writer\nrun: [\"sh\", \"-c\", \"exit 0\"]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		// The writer is a quiet turn-protocol resident: each manual run is one
+		// done-answering turn whose terminal drives the seal pass; its quiet loop
+		// turns record nothing and park the lane (#206).
+		writePipelineDecl(t, ws, "writer", "name: writer\nrun: [sh, main.sh]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		sealTurnWorker(t, ws, "writer", ShTurnDoneLoop)
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", "writer")}, Dir: ws}).RequireExit(t, 0)
 
 		dataDSN := dataSourceForWorkspace(t, ws)
@@ -524,7 +562,10 @@ func TestCheckpointChainValidates(t *testing.T) {
 		for _, trig := range pg.RenderCaptureTriggers("analytics", "orders") {
 			_ = client.Exec(ctx, trig)
 		}
-		writePipelineDecl(t, ws, "ckpt", "name: ckpt\nrun: [\"sh\", \"-c\", \"exit 0\"]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		// ckpt is a quiet turn-protocol resident: each manual run is one
+		// done-answering turn whose terminal drives the seal pass (#206).
+		writePipelineDecl(t, ws, "ckpt", "name: ckpt\nrun: [sh, main.sh]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		sealTurnWorker(t, ws, "ckpt", ShTurnDoneLoop)
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", "ckpt")}, Dir: ws}).RequireExit(t, 0)
 
 		dataConn, err := pgx.Connect(ctx, pg.InjectRunID(dataDSN, 0))
@@ -648,7 +689,11 @@ func TestEngineKeyStableAcrossRestart(t *testing.T) {
 			}
 		}
 		setupCapture()
-		writePipelineDecl(t, ws, "ckpt", "name: ckpt\nrun: [\"sh\", \"-c\", \"exit 0\"]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		// ckpt is a quiet turn-protocol resident: each manual run is one
+		// done-answering turn whose terminal drives the seal pass, before and after
+		// the daemon restart (#206).
+		writePipelineDecl(t, ws, "ckpt", "name: ckpt\nrun: [sh, main.sh]\nwrites:\n  - table: analytics.orders\n    fields: [id, amount]\n")
+		sealTurnWorker(t, ws, "ckpt", ShTurnDoneLoop)
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", filepath.Join("pipelines", "ckpt")}, Dir: ws}).RequireExit(t, 0)
 
 		// The key minted at install already lives in meta (no workspace key file).

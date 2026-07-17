@@ -91,6 +91,20 @@ func TestSwitchSink(t *testing.T) {
 	})
 }
 
+// awaitOutput polls until the buffer carries want: stderr rides its own pipe
+// pump, so a terminal frame on stdout can outrun the log write it followed.
+func awaitOutput(t *testing.T, buf *lockedBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.String(), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("output never carried %q: %q", want, buf.String())
+}
+
 // writeScript drops an executable shell script into dir and returns its argv.
 func writeScript(t *testing.T, dir, body string) []string {
 	t.Helper()
@@ -143,6 +157,7 @@ func TestResidentSessionRealProcess(t *testing.T) {
 			if res.kind != turnDone || len(res.rows) != 1 || res.rows[0].Table != "marts.daily" {
 				t.Fatalf("turn 1 = %+v, want done with one declared-write row", res)
 			}
+			awaitOutput(t, first, "turn 1 ran")
 			ses.out.Set(nil)
 
 			second := &lockedBuffer{}
@@ -151,6 +166,7 @@ func TestResidentSessionRealProcess(t *testing.T) {
 			if res.kind != turnDone || len(res.rows) != 1 || string(res.rows[0].Row) != `{"day":"d-2","sum":1}` {
 				t.Fatalf("turn 2 = %+v, want done echoing turn 2's row", res)
 			}
+			awaitOutput(t, second, "turn 2 ran")
 
 			if ses.dead() {
 				t.Fatal("session died between turns; the process must stay resident")

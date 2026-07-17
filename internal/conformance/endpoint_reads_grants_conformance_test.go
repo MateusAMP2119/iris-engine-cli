@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -18,8 +17,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // This file proves the read surface and its physical enforcement on a declared
@@ -31,8 +28,12 @@ import (
 // listener with the Bearer token: the granted projection serves via the /q declared
 // surface and the raw /data surface, and a read touching an ungranted field is
 // refused by Postgres itself (SQLSTATE 42501), surfaced as a 403 that never names
-// the missing field. No fakes, no manual meta rows, no ambient-socket shortcut: the
-// whole path is the real binary over the real transport.
+// the missing field. The three rows the reads serve land through the turn protocol
+// (#206): the workspace's one pipeline is a frame-speaking resident whose first
+// turn answers them as declared-write row frames, and the ENGINE performs the
+// inserts itself -- the pipeline holds no database credentials. No fakes, no manual
+// meta rows, no ambient-socket shortcut: the whole path is the real binary over the
+// real transport.
 
 // ordersEndpointEnv is the running fixture: a workspace, its daemon, the data DSN,
 // and the TCP base URL the read assertions hit.
@@ -125,8 +126,10 @@ func TestEndpointReadsAndGrants(t *testing.T) {
 }
 
 // startOrdersEndpointEnv builds the workspace, starts the daemon with TCP enabled,
-// provisions analytics.orders via `iris declare apply`, seeds three rows, and
-// publishes the endpoints via `iris endpoint apply`.
+// provisions analytics.orders via `iris declare apply` (which also registers the
+// seeder pipeline the loop lane starts as a resident), publishes the endpoints via
+// `iris endpoint apply`, and waits until the seeder's first producing turn landed
+// the three order rows through the engine's own data transaction.
 func startOrdersEndpointEnv(t *testing.T) ordersEndpointEnv {
 	t.Helper()
 	freshDatabases(t)
@@ -160,7 +163,7 @@ func startOrdersEndpointEnv(t *testing.T) ordersEndpointEnv {
 	bin.Run(t, RunOptions{Args: []string{"endpoint", "apply"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
 	dsn := dataDSN(t, ws)
-	seedOrders(t, dsn)
+	waitForSeededOrders(t, dsn)
 
 	return ordersEndpointEnv{bin: bin, ws: ws, socket: socket, tcpBase: "http://" + tcpAddr, dataDSN: dsn}
 }
@@ -271,26 +274,33 @@ func dataPATRoleForEndpoint(t *testing.T, env ordersEndpointEnv) string {
 	return role
 }
 
-// seedOrders inserts three rows into analytics.orders through the capture path (a
-// bare run id and wipe-eligible flag set on the session, as the engine injects), so
-// the endpoint reads have rows to serve.
-func seedOrders(t *testing.T, dsn string) {
+// waitForSeededOrders waits until the seeder pipeline's first producing turn landed
+// its three rows in analytics.orders. The rows arrive only through the turn
+// protocol -- row frames upserted by the engine on its own admin connection with the
+// run's exact attribution (#206) -- so their presence proves the engine-mediated
+// write path, and the reads then have rows to serve. Readiness is the observed row
+// count, never elapsed time.
+func waitForSeededOrders(t *testing.T, dsn string) {
 	t.Helper()
 	conn := connectData(t, dsn)
 	defer conn.Close(context.Background())
-	mustExec(t, conn, fmt.Sprintf("SET %s = '77001'", pg.RunIDSetting))
-	mustExec(t, conn, fmt.Sprintf("SET %s = 'on'", pg.WipeEligibleSetting))
-	mustExec(t, conn, `INSERT INTO analytics.orders (id, customer_id, amount, status) VALUES
-		(1, '3b241101-e2bb-4255-8caf-4136c566a962', 10.5, 'paid'),
-		(2, '3b241101-e2bb-4255-8caf-4136c566a962', 20.0, 'open'),
-		(3, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 30.0, 'open')`)
+	dl := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(dl) {
+		var n int
+		_ = conn.QueryRow(context.Background(), "SELECT count(*) FROM analytics.orders").Scan(&n)
+		if n == 3 {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("the seeder pipeline never landed its three rows within 2m; the engine-mediated write path did not deliver")
 }
 
 // writeOrdersWorkspace lays out a minimal workspace: schemas/analytics/orders, one
-// pipeline that declares it (so `declare apply` provisions the table), and two
-// endpoints -- orders_by_customer (projection id, customer_id, amount; self-consistent
-// with its customer_id filter) and orders_full (which also projects the ungranted
-// status column).
+// pipeline that declares it (so `declare apply` provisions the table) and seeds it
+// over the turn protocol, and two endpoints -- orders_by_customer (projection id,
+// customer_id, amount; self-consistent with its customer_id filter) and orders_full
+// (which also projects the ungranted status column).
 func writeOrdersWorkspace(t *testing.T, ws string) {
 	t.Helper()
 	writeFile(t, filepath.Join(ws, "schemas", "analytics", "orders", "table.yaml"), `schema: analytics
@@ -313,11 +323,59 @@ writes:
   - table: analytics.orders
     fields: [id, customer_id, amount, status]
 `)
+	// The seeder is a frame-speaking resident (#206): stdin carries the engine's
+	// go/row/run frames; the first turn answers the three order rows as
+	// declared-write row frames plus done, and every later turn answers a bare
+	// done -- quiet, so it mints no run rows and the lane parks. Stdout is
+	// protocol only; the process never opens a database connection.
 	writeFile(t, filepath.Join(ws, "pipelines", "orders_ingest", "main.go"), `package main
 
-import "fmt"
+// Frame-speaking seeder (#206): the first run frame is answered with the three
+// order rows as declared-write row frames plus done; every later turn answers a
+// bare done (quiet -- it mints no run rows and the lane parks). Stdout is
+// protocol only and no database connection is ever opened: the engine performs
+// the writes itself. Unmarshal matches JSON keys case-insensitively, so the
+// engine's lowercase "event"/"turn" frames land without struct tags.
 
-func main() { fmt.Println("noop for declare apply") }
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type frame struct {
+	Event string
+	Turn  int64
+}
+
+func main() {
+	var turn int64
+	seeded := false
+	in := bufio.NewScanner(os.Stdin)
+	for in.Scan() {
+		var f frame
+		if json.Unmarshal(in.Bytes(), &f) != nil {
+			continue
+		}
+		switch f.Event {
+		case "go":
+			turn = f.Turn
+		case "run":
+			if !seeded {
+				seeded = true
+				for _, r := range []string{
+					"{\"id\":1,\"customer_id\":\"3b241101-e2bb-4255-8caf-4136c566a962\",\"amount\":10.5,\"status\":\"paid\"}",
+					"{\"id\":2,\"customer_id\":\"3b241101-e2bb-4255-8caf-4136c566a962\",\"amount\":20.0,\"status\":\"open\"}",
+					"{\"id\":3,\"customer_id\":\"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",\"amount\":30.0,\"status\":\"open\"}",
+				} {
+					fmt.Printf("{\"event\":\"row\",\"table\":\"analytics.orders\",\"row\":%s}\n", r)
+				}
+			}
+			fmt.Printf("{\"event\":\"done\",\"turn\":%d}\n", turn)
+		}
+	}
+}
 `)
 	// orders_by_customer projects only columns the grant will cover; its filter
 	// (customer_id) and sort (id) are both in the projection, so a PAT granted the

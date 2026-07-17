@@ -30,6 +30,14 @@ import (
 // All assertions use the real CLI surface (`iris pipeline run`, `iris workload
 // wipe`, `iris data provenance`, `iris pipeline build`/`promote`) plus direct
 // reads of the data database for counts and journal state. No fakes.
+//
+// Under the turn protocol (#206) the writer pipelines are quiet residents:
+// stdout answers protocol frames only, quiet turns record nothing (the lane
+// parks between causes), and the pipeline role holds no database credentials.
+// The rows each leg asserts on are landed by the test's own admin connection
+// carrying iris.run_id and iris.wipe_eligible -- the capture trigger is
+// unchanged, so those stamps journal exactly as the engine's mediated turn
+// writes do.
 func TestJournalCaptureAndWipe(t *testing.T) {
 	bin := Build(t)
 
@@ -60,8 +68,8 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 		// Apply registers and provisions (table + capture triggers).
 		bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/w1"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
-		// Dev/disposable run via the engine (succeeds with "true"; we then land
-		// attributed rows using its real run id so journal drives wipe).
+		// Dev/disposable run via the engine (one quiet turn answering done; we then
+		// land attributed rows using its real run id so journal drives wipe).
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "w1"}, Dir: ws, Timeout: time.Minute})
 		res.RequireExit(t, 0)
 
@@ -77,9 +85,10 @@ func TestJournalCaptureAndWipe(t *testing.T) {
 		assertCount(ctxFor(t), t, conn, 2, "SELECT count(*) FROM testdata.items")
 		assertCount(ctxFor(t), t, conn, 2, "SELECT count(*) FROM public.data_journal WHERE undo='open'")
 
-		// Wipe via real CLI: should revert the landed rows. The lane loop keeps the
-		// pipeline perpetually in flight, so the destructive-op gate soft-blocks a
-		// --yes wipe; --force cancels the in-flight loop run and proceeds.
+		// Wipe via real CLI: should revert the landed rows. Quiet loop turns mint no
+		// run rows and the lane parks between causes (#206), so no perpetual in-flight
+		// loop run soft-blocks the wipe anymore; --force still covers any queued
+		// pickup racing the wipe.
 		wres := bin.Run(t, RunOptions{Args: []string{"workload", "wipe", "--force"}, Dir: ws, Timeout: time.Minute})
 		wres.RequireExit(t, 0)
 
@@ -603,9 +612,13 @@ func connectData(t *testing.T, dsn string) *pgx.Conn {
 // setupWriterPipeline creates under ws/ a minimal schemas/ + pipelines/<name>/
 // with a table.yaml (int PK for easy psql), a declaration using a supported
 // runtime (go) so that `pipeline build` succeeds for promote tests, plus a
-// trivial main.go. The actual row writes for assertions are driven by
-// landAttributed after the run record exists (so wipe/journal can be asserted
-// with real run ids). Different lanes for concurrent tests.
+// quiet turn-protocol resident main.go (#206): stdout answers each run frame
+// with a bare done (stdout is protocol only), stderr logs one fixed line per
+// turn (the run-log capture surface), and no database connection is ever
+// opened. Quiet turns record nothing, so the loop parks the lane between
+// causes; the actual row writes for assertions are driven by landAttributed
+// after the run record exists (so wipe/journal can be asserted with real run
+// ids). Different lanes for concurrent tests.
 func setupWriterPipeline(t *testing.T, ws, name, lane string, _, _ int) {
 	t.Helper()
 	schemaDir := filepath.Join(ws, "schemas", "testdata", "items")
@@ -643,9 +656,40 @@ writes:
 
 	mainGo := `package main
 
-import "fmt"
+// Quiet turn-protocol resident: answers every run frame with a bare done on
+// stdout (protocol only), logs one line per turn to stderr, opens no database
+// connection. Unmarshal matches JSON keys to fields case-insensitively, so the
+// engine's lowercase "event"/"turn" frames land without struct tags.
 
-func main() { fmt.Println("noop for test attribution") }
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+type frame struct {
+	Event string
+	Turn  int64
+}
+
+func main() {
+	var turn int64
+	in := bufio.NewScanner(os.Stdin)
+	for in.Scan() {
+		var f frame
+		if json.Unmarshal(in.Bytes(), &f) != nil {
+			continue
+		}
+		switch f.Event {
+		case "go":
+			turn = f.Turn
+		case "run":
+			fmt.Fprintln(os.Stderr, "noop for test attribution")
+			fmt.Printf("{\"event\":\"done\",\"turn\":%d}\n", turn)
+		}
+	}
+}
 `
 	if err := os.WriteFile(filepath.Join(pipeDir, "main.go"), []byte(mainGo), 0o644); err != nil {
 		t.Fatalf("write main.go: %v", err)
@@ -671,9 +715,11 @@ func latestRunForPipeline(t *testing.T, ws, pipeline string) int64 {
 }
 
 // landAttributed inserts two rows using a connection carrying the given runID
-// and the wipe-eligible setting, exactly as the engine injects for a run. This
-// simulates the writes "the dev run landed" so that wipe/journal tests can
-// assert revert behavior.
+// and the wipe-eligible setting -- the same iris.run_id/iris.wipe_eligible GUCs
+// the engine's turn commit applies (SET LOCAL) on its own admin connection
+// (#206), so the unchanged capture trigger journals these exactly like
+// engine-mediated writes. This simulates the writes "the dev run landed" so
+// that wipe/journal tests can assert revert behavior.
 func landAttributed(t *testing.T, admin *pgx.Conn, runID int64, wipeEligible bool, id1 int, v1 string, id2 int, v2 string) {
 	t.Helper()
 	// Use a fresh client conn with the injection, like other conformance legs.

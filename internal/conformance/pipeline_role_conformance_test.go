@@ -5,8 +5,6 @@ package conformance
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,66 +13,54 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// This file is the least-privilege pipeline-role leg: a declare apply provisions
-// the pipeline's own login role on the data database with exactly the declared
-// field grants, records it in the meta access ledger, and every run's
-// IRIS_DB_URL authenticates as that role -- never as the engine's admin
-// identity, and never able to reach the meta control database.
+// This file is the least-privilege pipeline-role leg under the turn protocol
+// (#206). Declare apply still provisions the pipeline's own login role on the
+// data database with exactly the declared field grants -- that grants ledger is
+// where the engine reads a pipeline's declared access from -- but no run ever
+// connects as the role. The predecessor contract asserted each run's
+// IRIS_DB_URL authenticated as the role; that variable is gone. The successor:
+// the pipeline process is handed no database credential of any kind, every
+// write reaches the database as a stdout row frame the engine upserts on its
+// own admin connection with the run's exact journal attribution, and the
+// pipeline role therefore holds zero backends while its pipeline demonstrably
+// writes.
 
-// setupRolePipeline writes a pipeline whose main prints the IRIS_DB_URL it was
-// handed, so the captured run log carries the identity the run connected as.
-func setupRolePipeline(t *testing.T, ws, name, lane string) {
+// setupRolePipeline writes a workspace whose pipeline is a frame-speaking
+// resident: each turn it logs the IRIS_DB_URL it sees to stderr (the run log),
+// answers one declared-write row keyed by the turn number, and echoes done.
+func setupRolePipeline(t *testing.T, ws, name string) {
 	t.Helper()
-	schemaDir := filepath.Join(ws, "schemas", "testdata", "items")
-	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
-		t.Fatalf("mkdir schema: %v", err)
-	}
-	tableYAML := "schema: testdata\ntable: items\ncolumns:\n  - name: id\n    type: int\n    primary_key: true\n  - name: val\n    type: text\n"
-	if err := os.WriteFile(filepath.Join(schemaDir, "table.yaml"), []byte(tableYAML), 0o644); err != nil {
-		t.Fatalf("write table.yaml: %v", err)
-	}
-	pipeDir := filepath.Join(ws, "pipelines", name)
-	if err := os.MkdirAll(pipeDir, 0o755); err != nil {
-		t.Fatalf("mkdir pipeline: %v", err)
-	}
-	decl := fmt.Sprintf("name: %s\nrun: [\"go\", \"run\", \"main.go\"]\nlane: %s\nwrites:\n  - table: testdata.items\n    fields: [id, val]\n", name, lane)
-	if err := os.WriteFile(filepath.Join(pipeDir, "iris-declare.yaml"), []byte(decl), 0o644); err != nil {
-		t.Fatalf("write decl: %v", err)
-	}
-	mainGo := "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() { fmt.Println(\"DBURL=\" + os.Getenv(\"IRIS_DB_URL\")) }\n"
-	if err := os.WriteFile(filepath.Join(pipeDir, "main.go"), []byte(mainGo), 0o644); err != nil {
-		t.Fatalf("write main.go: %v", err)
-	}
+	script := "import os\n" + PyTurnPrelude + `
+def on_turn(turn, rows):
+    sys.stderr.write("DBURL=[" + os.environ.get("IRIS_DB_URL", "") + "]\n")
+    sys.stderr.flush()
+    emit("testdata.items", {"id": turn, "val": "envprobe"})
+    done(turn)
+
+turn_loop(on_turn)
+`
+	decl := fmt.Sprintf("name: %s\nrun: [python, main.py]\nwrites:\n  - table: testdata.items\n    fields: [id, val]\n", name)
+	writeResidentWorkspace(t, ws, name, decl, script)
 }
 
-func TestRunsConnectAsPipelineRole(t *testing.T) {
+func TestPipelineRoleNeverConnects(t *testing.T) {
+	ensurePython(t)
 	freshDatabases(t)
 	bin := Build(t)
 
 	ws := shortWorkspace(t)
-	socket := filepath.Join(ws, ".iris", "iris.sock")
-	setupRolePipeline(t, ws, "wrole", "roles")
-
-	bin.Run(t, RunOptions{Args: []string{"engine", "install"}, Dir: ws, Timeout: 5 * time.Minute}).RequireExit(t, 0)
-	bin.Run(t, RunOptions{Args: []string{"engine", "start", "-d"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
-	t.Cleanup(func() {
-		bin.Run(t, RunOptions{Args: []string{"engine", "stop"}, Dir: ws, Timeout: 30 * time.Second})
-	})
-
-	readyCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	if err := WaitForSocket(readyCtx, socket); err != nil {
-		cancel()
-		t.Fatalf("socket not ready: %v", err)
-	}
-	cancel()
-	if !waitForLeader(t, socket) {
-		t.Fatal("never leader")
-	}
+	setupRolePipeline(t, ws, "wrole")
+	stop := startEngine(t, bin, ws)
+	defer stop()
 
 	bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/wrole"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
-	ctx, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel2()
+	ctx := context.Background()
+	meta, err := pgx.Connect(ctx, metaDSN(t, ws))
+	if err != nil {
+		t.Fatalf("connect meta db: %v", err)
+	}
+	defer func() { _ = meta.Close(ctx) }()
 	data, err := pgx.Connect(ctx, dataDSN(t, ws))
 	if err != nil {
 		t.Fatalf("connect data db: %v", err)
@@ -107,21 +93,60 @@ func TestRunsConnectAsPipelineRole(t *testing.T) {
 		}
 	})
 
-	t.Run("runs-authenticate-as-the-role-not-the-admin", func(t *testing.T) {
-		bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "wrole"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
+	t.Run("runs-hold-no-credentials-and-the-engine-writes", func(t *testing.T) {
+		bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "wrole"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 		runID := manualRunForPipeline(t, ws, "wrole")
 
+		var state string
+		if err := meta.QueryRow(ctx, "SELECT state FROM runs WHERE id=$1", runID).Scan(&state); err != nil {
+			t.Fatalf("read manual run state: %v", err)
+		}
+		if state != "succeeded" {
+			t.Fatalf("manual run %d ended %q, want succeeded", runID, state)
+		}
+
+		// No credential in the run environment: the run log (stderr only) carries
+		// the IRIS_DB_URL the worker saw -- empty, and no connection string of any
+		// identity anywhere in the log.
 		res := bin.Run(t, RunOptions{Args: []string{"run", "logs", strconv.FormatInt(runID, 10)}, Dir: ws, Timeout: 30 * time.Second})
 		res.RequireExit(t, 0)
 		out := string(res.Stdout)
-		if !strings.Contains(out, "DBURL=postgres://"+role+":") {
-			t.Errorf("the run's IRIS_DB_URL does not authenticate as the pipeline role:\n%s", out)
+		if !strings.Contains(out, "DBURL=[]") {
+			t.Errorf("the run saw a non-empty IRIS_DB_URL; pipelines hold no database credentials:\n%s", out)
 		}
-		if strings.Contains(out, "postgres://postgres:") || strings.Contains(out, "postgres://iris_admin:") {
-			t.Errorf("the run's IRIS_DB_URL carries the admin identity:\n%s", out)
+		if strings.Contains(out, "postgres://") {
+			t.Errorf("the run environment carries a connection string:\n%s", out)
 		}
-		if !strings.Contains(out, "iris.run_id") {
-			t.Errorf("the run's IRIS_DB_URL does not carry the iris.run_id attribution GUC:\n%s", out)
+
+		// The engine performed the run's write with exact attribution: the row
+		// frame landed in the journal keyed by this run id, and none of the run's
+		// journal rows were written by a pipeline role -- the engine's own
+		// connection wrote them.
+		var journaled int
+		if err := data.QueryRow(ctx,
+			`SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND schema='testdata' AND "table"='items'`, runID).Scan(&journaled); err != nil {
+			t.Fatalf("read journal for run %d: %v", runID, err)
+		}
+		if journaled == 0 {
+			t.Errorf("run %d journaled no writes; the engine must upsert the run's row frames", runID)
+		}
+		var asPipeline int
+		if err := data.QueryRow(ctx,
+			`SELECT count(*) FROM public.data_journal WHERE run_id=$1 AND pg_role LIKE 'iris_pipeline_%'`, runID).Scan(&asPipeline); err != nil {
+			t.Fatalf("read journal roles for run %d: %v", runID, err)
+		}
+		if asPipeline != 0 {
+			t.Errorf("run %d has %d journal rows written by a pipeline role, want 0 (the engine writes)", runID, asPipeline)
+		}
+
+		// Zero backends: the role exists (provisioned above) and its pipeline just
+		// wrote a row, yet the role never opened a connection.
+		var backends int
+		if err := data.QueryRow(ctx, "SELECT count(*) FROM pg_stat_activity WHERE usename=$1", role).Scan(&backends); err != nil {
+			t.Fatalf("read pg_stat_activity: %v", err)
+		}
+		if backends != 0 {
+			t.Errorf("pipeline role holds %d backends, want 0 (the engine mediates every database access)", backends)
 		}
 	})
 }

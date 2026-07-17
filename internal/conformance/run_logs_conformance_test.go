@@ -13,10 +13,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// This file is the per-run output capture leg: a real pipeline run's stdout is
-// captured into the run-id-keyed log, its path is recorded in runs.log_ref, and
-// `iris run logs <run>` streams it back. A run id with no captured output
-// answers honestly (operation failed), never an empty success.
+// This file is the per-run output capture leg: a real pipeline run's stderr is
+// captured into the run-id-keyed log (stdout is protocol-only under the turn
+// protocol, #206), its path is recorded in runs.log_ref, and `iris run logs
+// <run>` streams it back. A run id with no captured output answers honestly
+// (operation failed), never an empty success.
 
 func TestRunOutputCaptured(t *testing.T) {
 	freshDatabases(t)
@@ -50,14 +51,14 @@ func TestRunOutputCaptured(t *testing.T) {
 	// log; the manual run is terminal (the CLI blocked on it).
 	runID := manualRunForPipeline(t, ws, "wlog")
 
-	t.Run("run-logs-streams-captured-stdout", func(t *testing.T) {
-		// The pipeline's main.go prints a fixed line; the captured log must carry it.
+	t.Run("run-logs-streams-captured-stderr", func(t *testing.T) {
+		// The pipeline's script logs a fixed line to stderr; the captured log must carry it.
 		res := bin.Run(t, RunOptions{Args: []string{"run", "logs", strconv.FormatInt(runID, 10)}, Dir: ws, Timeout: 30 * time.Second})
 		if res.ExitCode != 0 {
 			t.Fatalf("run logs exited %d\nstdout:\n%s\nstderr:\n%s", res.ExitCode, res.Stdout, res.Stderr)
 		}
 		if !strings.Contains(string(res.Stdout), "noop for test attribution") {
-			t.Errorf("captured log does not carry the run's stdout:\n%s", res.Stdout)
+			t.Errorf("captured log does not carry the run's stderr line:\n%s", res.Stdout)
 		}
 	})
 

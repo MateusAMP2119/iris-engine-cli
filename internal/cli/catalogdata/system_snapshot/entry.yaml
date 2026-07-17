@@ -2,13 +2,14 @@ id: system_snapshot
 name: System Snapshot
 pitch: Capture this machine's uname and disk facts into a table.
 description: |
-  A snapshot of the machine the engine runs on: a POSIX-sh script collects
-  uname and df facts — operating system, architecture, hostname, root-disk
-  usage — and upserts them into demo.machine_facts through the engine-injected
-  IRIS_DB_URL. Each fact has a fixed primary key, so every run refreshes the
-  same rows and layers a new provenance stamp; a fact the machine cannot
-  answer degrades to 'unavailable' rather than failing the run.
-run_note: the script collects uname and df facts and upserts them into demo.machine_facts; re-running refreshes the same rows under a new provenance stamp
+  A snapshot of the machine the engine runs on: a POSIX-sh script speaks the
+  engine's turn protocol, probing uname and df facts — operating system,
+  architecture, hostname, root-disk usage — and answering them as row frames
+  that the engine upserts into demo.machine_facts. Each fact has a fixed
+  primary key, so every run refreshes the same rows and layers a new
+  provenance stamp; a fact the machine cannot answer degrades to
+  'unavailable' rather than failing the run.
+run_note: the script probes uname and df facts and answers them as row frames the engine upserts into demo.machine_facts; re-running refreshes the same rows under a new provenance stamp
 showcase:
   table: demo.machine_facts
   pk: hostname

@@ -10,7 +10,7 @@ The pipeline catalog (pick with --pipeline <id>; entry 1 is the default):
 
   1. hello_iris — Upsert the seven rainbow colors and ask a row who wrote it.
   2. system_snapshot — Capture this machine's uname and disk facts into a table.
-  3. word_frequency — Count every word of an 1891 Dickinson poem, wholly in Postgres.
+  3. word_frequency — Count every word of an 1891 Dickinson poem with plain POSIX text tools.
 
 The steps below use hello_iris.
 
@@ -30,7 +30,7 @@ The pipeline — when you're ready (the tour registers and runs nothing):
   4. Register the hello_iris sample: its pipeline, role, grants, and the demo.colors table. Registered pipelines loop forever by design.
      iris declare apply pipelines/hello_iris
 
-  5. Run it: the script upserts the seven rainbow colors into demo.colors; re-running layers a second provenance stamp on the same rows.
+  5. Run it: the script answers the seven rainbow colors as row frames and the engine upserts them into demo.colors; re-running layers a second provenance stamp on the same rows.
      iris pipeline run hello_iris
 
   6. Ask a row who wrote it: the authoring run, the layer stack, the hashes.
