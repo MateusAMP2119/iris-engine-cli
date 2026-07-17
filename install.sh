@@ -45,10 +45,10 @@ else
   G1='' G2='' G3='' G4='' G5='' G6=''
 fi
 
-say() { printf "   %s\n" "$1"; }
-ok() { printf "   ${GRN}✓${RST} %s\n" "$1"; }
-section() { printf "\n${CYN}%s${RST}\n" "$1"; }
-kv() { printf "   • %-15s: %s\n" "$1" "$2"; }
+say() { printf "     %s\n" "$1"; }
+ok() { printf "     ${GRN}✓${RST} %s\n" "$1"; }
+section() { printf "\n  ${CYN}%s${RST}\n" "$1"; }
+kv() { printf "     • %-15s: %s\n" "$1" "$2"; }
 
 # can_prompt: real tty exists; stdin is curl pipe so prompts use /dev/tty
 can_prompt() {
@@ -88,6 +88,7 @@ if [ -t 1 ]; then
     *' '*) cols=${sz#* } ;;
   esac
 fi
+printf '\n'
 if [ "$cols" -ge 128 ]; then
   banner_wide
 elif [ "$cols" -ge 92 ]; then
@@ -114,7 +115,7 @@ case "$os" in
     exit 1
     ;;
 esac
-printf "🔍 Detected platform: %s/%s\n" "$os" "$arch"
+printf "  🔍 Detected platform: %s/%s\n" "$os" "$arch"
 
 # Plan first, actions after; existing iris on PATH = announced upgrade
 installed=""
@@ -122,7 +123,7 @@ if command -v iris >/dev/null 2>&1; then
   installed=$(iris --version 2>/dev/null || true)
 fi
 dest="${IRIS_DEST:-${HOME}/.iris/bin}"
-printf "📋 Install plan\n"
+printf "  📋 Install plan\n"
 kv "OS/Arch" "${os} / ${arch}"
 kv "Method" "Prebuilt static binary"
 kv "Version" "${requested}"
@@ -152,7 +153,7 @@ curl -fsSL "${BASE}/checksums.txt" -o "${tmp}/checksums.txt"
     grep " ${asset}\$" checksums.txt | shasum -a 256 -c - >/dev/null
   fi
 )
-printf "   🔄 Verifying checksum... ${GRN}✓${RST} Verified\n"
+printf "     🔄 Verifying checksum... ${GRN}✓${RST} Verified\n"
 
 section "[2/3] Installing"
 say "📦 Extracting & placing binary..."
@@ -188,20 +189,20 @@ if [ -z "$on_path" ]; then
     ok "Added ~/.iris/bin to PATH (~/${rc##*/})"
     say "Restart your shell or run: source ${rc}"
   else
-    printf "   ${YLW}!${RST} %s\n" "${dest} is not on your PATH; add: export PATH=\"${dest}:\$PATH\""
+    printf "     ${YLW}!${RST} %s\n" "${dest} is not on your PATH; add: export PATH=\"${dest}:\$PATH\""
   fi
 fi
 if [ -n "$installed" ]; then
   prev=$(command -v iris 2>/dev/null || true)
   if [ -n "$prev" ] && [ "$prev" != "$bin" ]; then
-    printf "   ${YLW}!${RST} %s\n" "another iris remains at ${prev}; remove it or keep ${dest} first in PATH"
+    printf "     ${YLW}!${RST} %s\n" "another iris remains at ${prev}; remove it or keep ${dest} first in PATH"
   fi
 fi
 
 section "[3/3] Engine Setup"
 case "$requested" in
   snapshot*)
-    printf "   ${YLW}⚠️  Active Development Notice${RST}\n"
+    printf "     ${YLW}⚠️  Active Development Notice${RST}\n"
     say "This is a snapshot build. Features may change rapidly and some"
     say "functionality is still experimental."
     printf '\n'
@@ -224,11 +225,11 @@ if [ -z "$choice" ]; then
     say "3) Skip for now   (configure later with 'iris engine install' or 'iris engine connect')"
     printf '\n'
     while [ -z "$choice" ]; do
-      printf "   Enter choice [1]: " >/dev/tty
+      printf "     Enter choice [1]: " >/dev/tty
       IFS= read -r ans </dev/tty || ans=""
       case "${ans:-1}" in
         1 | 2 | 3) choice="${ans:-1}" ;;
-        *) printf "   %s\n" "Please answer 1, 2, or 3." >/dev/tty ;;
+        *) printf "     %s\n" "Please answer 1, 2, or 3." >/dev/tty ;;
       esac
     done
     printf '\n'
@@ -242,11 +243,16 @@ case "$choice" in
   1)
     say "• Selected: Local mode"
     say "🚀 Starting Iris Engine..."
-    if ! "$bin" engine install; then
+    # run_indented: stream cmd output shifted right, keep its exit code (no pipefail in POSIX sh)
+    run_indented() {
+      { "$@" 2>&1; echo "$?" >"${tmp}/rc"; } | sed 's/^/     /'
+      [ "$(cat "${tmp}/rc")" = "0" ]
+    }
+    if ! run_indented "$bin" engine install; then
       echo "iris: engine install failed; re-run 'iris engine install' manually." >&2
       exit 1
     fi
-    if ! "$bin" engine start -d; then
+    if ! run_indented "$bin" engine start -d; then
       echo "iris: engine start failed; re-run 'iris engine start -d' manually." >&2
       exit 1
     fi
@@ -259,12 +265,12 @@ case "$choice" in
     ;;
   2)
     say "• Selected: Remote mode"
-    printf "   Enter remote Iris endpoint (host:port): " >/dev/tty
+    printf "     Enter remote Iris endpoint (host:port): " >/dev/tty
     IFS= read -r endpoint </dev/tty || endpoint=""
     if [ -z "$endpoint" ]; then
       say "• No endpoint given. Run 'iris engine connect <host>' when ready."
     else
-      printf "   Enter PAT token (optional, hidden): " >/dev/tty
+      printf "     Enter PAT token (optional, hidden): " >/dev/tty
       stty -echo </dev/tty 2>/dev/null || true
       IFS= read -r token </dev/tty || token=""
       stty echo </dev/tty 2>/dev/null || true
@@ -290,7 +296,7 @@ iris_cmd="$bin"
 if [ -n "$on_path" ]; then
   iris_cmd="iris"
 fi
-printf "\n✨ Iris is ready! Try: %s --help\n\n" "$iris_cmd"
+printf "\n  ✨ Iris is ready! Try: %s --help\n\n" "$iris_cmd"
 
 # Random quote via awk (POSIX sh has no $RANDOM); attribution right-aligned
 n=$(awk 'BEGIN{srand(); print int(rand()*5)+1}')
@@ -316,7 +322,7 @@ case "$n" in
     author="— Seneca"
     ;;
 esac
-pad=$((3 + ${#quote} - ${#author}))
-if [ "$pad" -lt 3 ]; then pad=3; fi
-printf "   %s\n" "$quote"
+pad=$((5 + ${#quote} - ${#author}))
+if [ "$pad" -lt 5 ]; then pad=5; fi
+printf "     %s\n" "$quote"
 printf "%*s${DIM}%s${RST}\n" "$pad" "" "$author"
