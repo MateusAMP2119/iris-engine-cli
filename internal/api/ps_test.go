@@ -20,17 +20,21 @@ func leaderMux(opts ...api.MuxOption) http.Handler {
 	return api.NewMux(append([]api.MuxOption{api.WithRole(role)}, opts...)...)
 }
 
-// fixedPs is a PsHandler serving a canned payload, recording the all flag it
-// was asked for.
+// fixedPs is a PsHandler serving a canned payload, recording the all and
+// history flags it was asked for.
 type fixedPs struct {
-	payload api.PsPayload
-	err     error
-	lastAll *bool
+	payload     api.PsPayload
+	err         error
+	lastAll     *bool
+	lastHistory *bool
 }
 
-func (f *fixedPs) Ps(_ context.Context, all bool) (api.PsPayload, error) {
+func (f *fixedPs) Ps(_ context.Context, all, history bool) (api.PsPayload, error) {
 	if f.lastAll != nil {
 		*f.lastAll = all
+	}
+	if f.lastHistory != nil {
+		*f.lastHistory = history
 	}
 	return f.payload, f.err
 }
@@ -97,6 +101,46 @@ func TestPsRoute(t *testing.T) {
 		}
 		if !all {
 			t.Error("GET /ps?all=true asked the handler for all=false, want true")
+		}
+	})
+
+	t.Run("?history=1 asks the handler for history and round-trips it", func(t *testing.T) {
+		var history bool
+		withHistory := payload
+		withHistory.SampleTick = 7
+		withHistory.History = &api.PsHistory{
+			FineIntervalSeconds: 2, CoarseIntervalSeconds: 60,
+			Series: []api.PsSeries{{Key: "engine", CPU: []float64{api.PsHistoryNoSample, 2.5},
+				RSS: []int64{0, 1 << 20}, CoarseCPU: []float64{2.5}, CoarseRSS: []int64{1 << 20}}},
+		}
+		h := leaderMux(api.WithPs(&fixedPs{payload: withHistory, lastHistory: &history}))
+		resp, env := getPs(t, h, http.MethodGet, "/ps?history=1")
+		if resp.StatusCode != http.StatusOK || env.Data == nil {
+			t.Fatalf("GET /ps?history=1 = %d, want 200 with a data envelope", resp.StatusCode)
+		}
+		if !history {
+			t.Error("GET /ps?history=1 asked the handler for history=false, want true")
+		}
+		if env.Data.SampleTick != 7 {
+			t.Errorf("sample tick = %d, want 7", env.Data.SampleTick)
+		}
+		got := env.Data.History
+		if got == nil || len(got.Series) != 1 || got.Series[0].Key != "engine" {
+			t.Fatalf("history did not round-trip: %+v", got)
+		}
+		if got.Series[0].CPU[0] != api.PsHistoryNoSample || got.Series[0].CoarseCPU[0] != 2.5 {
+			t.Errorf("series values did not round-trip: %+v", got.Series[0])
+		}
+	})
+
+	t.Run("without ?history the handler is asked for none", func(t *testing.T) {
+		var history bool
+		h := leaderMux(api.WithPs(&fixedPs{payload: payload, lastHistory: &history}))
+		if resp, _ := getPs(t, h, http.MethodGet, "/ps?all=true"); resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /ps?all=true = %d, want 200", resp.StatusCode)
+		}
+		if history {
+			t.Error("a history-less GET asked the handler for history=true, want false")
 		}
 	})
 

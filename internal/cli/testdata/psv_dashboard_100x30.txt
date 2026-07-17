@@ -27,4 +27,4 @@
 │                        ││                                                                        │
 │                        ││                                                                        │
 ╰────────────────────────╯╰────────────────────────────────────────────────────────────── 4 lines ─╯
- tab panes · ↑↓ move · ⏎ unfold · / search · q quit                            remote 10.0.0.5:7433
+ tab panes · ↑↓ move · ⏎ unfold · / search · h history · q quit                remote 10.0.0.5:7433

@@ -237,13 +237,18 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	passCounter := dispatch.NewPassCounter()
 
 	// The ps plane serves GET /ps (and `iris ps`) on any node: the run snapshot
-	// over the reader pool composed with the live leadership role and the
-	// host-load probe, so the readout reports what the engine is running and what
-	// it costs the host -- the daemon's own tree plus the managed Postgres's.
-	// The resident turn counters (#206): quiet turns write no rows, so this
-	// in-memory tally is the ps readout's only trace of a quiet loop.
+	// over the reader pool composed with the live leadership role and the load
+	// collector's newest sample, so the readout reports what the engine is
+	// running and what it costs the host -- the daemon's own tree plus the
+	// managed Postgres's. The collector samples for the daemon's whole life,
+	// clients attached or not, so its in-memory history (?history=1) is what
+	// lets a fresh `iris ps` open with hours of load context instead of a blank
+	// graph. The resident turn counters (#206): quiet turns write no rows, so
+	// this in-memory tally is the ps readout's only trace of a quiet loop.
+	loads := newLoadHistory(client.Reader(), ManagedPostmasterPID(s), logger)
+	go loads.run(ctx)
 	turnTally := newTurnCounters()
-	psp := NewPsPlane(role, client.Reader(), ManagedPostmasterPID(s), turnTally, logger)
+	psp := NewPsPlane(role, client.Reader(), loads, turnTally, logger)
 
 	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
 	// `iris deadletter show` renders) on any node from the reader pool, and POST

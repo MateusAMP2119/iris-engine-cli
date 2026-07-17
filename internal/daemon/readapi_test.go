@@ -217,7 +217,7 @@ func TestTransportAuthSocketVsTCP(t *testing.T) {
 type matrixPs struct{ fail bool }
 
 // Ps serves an empty payload, or an engine fault when fail is set.
-func (s matrixPs) Ps(context.Context, bool) (api.PsPayload, error) {
+func (s matrixPs) Ps(context.Context, bool, bool) (api.PsPayload, error) {
 	if s.fail {
 		return api.PsPayload{}, errNoMatch
 	}
