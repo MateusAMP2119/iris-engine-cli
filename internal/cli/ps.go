@@ -76,9 +76,11 @@ func (a *app) ps() runE {
 		client := a.newPsDaemonClient(settings)
 
 		// One fetch either way: the JSON mode reads the route's default document
-		// (?all=true under --all); the live view starts from the history and
-		// filters client-side.
-		payload, err := client.fetchPs(cmd.Context(), all || live)
+		// (?all=true under --all); the live view starts from the whole run
+		// history plus the daemon's recorded load history (its rings open
+		// pre-seeded, so the graphs never restart with the client) and filters
+		// client-side.
+		payload, err := client.fetchPs(cmd.Context(), all || live, live)
 		if err != nil {
 			return a.psFetchFault(settings, err)
 		}
@@ -108,7 +110,7 @@ func (a *app) ps() runE {
 			// Raw mode refused despite an interactive stdin (rare): fall back
 			// to the JSON emit -- never a hung or key-less view. Refetch the
 			// default document so the envelope matches the route's default.
-			if payload, err = client.fetchPs(cmd.Context(), false); err != nil {
+			if payload, err = client.fetchPs(cmd.Context(), false, false); err != nil {
 				return a.psFetchFault(settings, err)
 			}
 		}

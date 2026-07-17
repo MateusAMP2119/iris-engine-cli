@@ -122,6 +122,37 @@ func TestPsFrameStyling(t *testing.T) {
 			}
 		})
 
+		t.Run("fitSamples compresses by per-cell maximum", func(t *testing.T) {
+			short := []float64{1, 2, 3}
+			if got := fitSamples(short, 5); len(got) != 3 {
+				t.Fatalf("fitSamples must pass a narrow history through, got %v", got)
+			}
+			wide := []float64{psNoSample, psNoSample, 10, 90, 5, 5, psNoSample, 20}
+			got := fitSamples(wide, 4)
+			if len(got) != 4 {
+				t.Fatalf("fitSamples width = %d, want 4", len(got))
+			}
+			// Cells of two: [absent absent] [10 90] [5 5] [absent 20] -- an
+			// all-absent share stays absent, a spike survives its share.
+			if got[0] != psNoSample || got[1] != 90 || got[2] != 5 || got[3] != 20 {
+				t.Errorf("fitSamples = %v, want [no-sample, 90, 5, 20]", got)
+			}
+		})
+
+		t.Run("the history toggle swaps the strips to the coarse rings", func(t *testing.T) {
+			m := newPsModel(psvFixture(), "")
+			m.coarse[""] = &psRing{cpu: []float64{90, 90, 90}, mem: []int64{1, 1, 1}}
+			live := m.stripCPU("", 10)
+			m.histView = true
+			hist := m.stripCPU("", 10)
+			if len(hist) != 3 || hist[0] != 90 {
+				t.Fatalf("history strip = %v, want the coarse ring", hist)
+			}
+			if len(live) == len(hist) && live[0] == hist[0] {
+				t.Error("live and history strips read the same ring")
+			}
+		})
+
 		t.Run("disabled painter emits no SGR", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			b := renderPsFrame(m, 150, 40, true)

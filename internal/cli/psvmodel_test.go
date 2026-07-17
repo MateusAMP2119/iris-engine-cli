@@ -303,6 +303,82 @@ func TestPsModelUpdate(t *testing.T) {
 			}
 		})
 
+		t.Run("a sample tick gates the ring push", func(t *testing.T) {
+			first := psvFixture()
+			first.ps.SampleTick = 3
+			m := newPsModel(first, "")
+			if eng := m.rings[""]; len(eng.cpu) != 1 {
+				t.Fatalf("engine ring after open = %+v, want one sample", eng.cpu)
+			}
+			same := psvFixture() // the collector has not ticked: no push
+			same.ps.SampleTick = 3
+			m.absorb(same)
+			if eng := m.rings[""]; len(eng.cpu) != 1 {
+				t.Fatalf("engine ring after a same-tick poll = %+v, want still one sample", eng.cpu)
+			}
+			next := psvFixture() // tick 5: the missed tick 4 fills absent
+			next.ps.SampleTick = 5
+			m.absorb(next)
+			eng := m.rings[""]
+			if len(eng.cpu) != 3 || eng.cpu[1] != psNoSample || eng.cpu[2] != 3.2 {
+				t.Fatalf("engine ring after a tick jump = %+v, want [3.2, no-sample, 3.2]", eng.cpu)
+			}
+		})
+
+		t.Run("a history payload re-seeds the rings", func(t *testing.T) {
+			s := psvFixture()
+			s.ps.SampleTick = 40
+			s.ps.History = &api.PsHistory{
+				FineIntervalSeconds: 2, CoarseIntervalSeconds: 60,
+				Series: []api.PsSeries{
+					{Key: "engine", CPU: []float64{1, 2, 3}, RSS: []int64{10, 20, 30},
+						CoarseCPU: []float64{9}, CoarseRSS: []int64{90}},
+					{Key: "lane:ingest", CPU: []float64{51}, RSS: []int64{24 << 20}},
+					{Key: "pipeline:load_orders", CPU: []float64{51}, RSS: []int64{24 << 20}},
+					{Key: "wat:unknown", CPU: []float64{7}, RSS: []int64{7}},
+				},
+			}
+			m := newPsModel(s, "")
+			if eng := m.rings[""]; len(eng.cpu) != 3 || eng.cpu[2] != 3 {
+				t.Fatalf("engine ring = %+v, want the wire fine series", eng.cpu)
+			}
+			if c := m.coarse[""]; c == nil || len(c.cpu) != 1 || c.cpu[0] != 9 || c.mem[0] != 90 {
+				t.Fatalf("engine coarse ring = %+v, want the wire coarse series", c)
+			}
+			if ing := m.rings["l:ingest"]; ing == nil || ing.cpu[0] != 51 {
+				t.Fatalf("lane ring = %+v, want the wire series under the l: key", ing)
+			}
+			if lo := m.rings["p:load_orders"]; lo == nil || lo.mem[0] != 24<<20 {
+				t.Fatalf("pipeline ring = %+v, want the wire series under the p: key", lo)
+			}
+			if len(m.rings) != 3 {
+				t.Errorf("rings = %d entries, want 3 (the unknown wire key is skipped)", len(m.rings))
+			}
+			if m.lastTick != 40 {
+				t.Errorf("lastTick = %d, want the payload's 40", m.lastTick)
+			}
+			// The next tick appends to the re-seeded ring, no re-seed needed.
+			live := psvFixture()
+			live.ps.SampleTick = 41
+			m.absorb(live)
+			if eng := m.rings[""]; len(eng.cpu) != 4 || eng.cpu[3] != 3.2 {
+				t.Fatalf("engine ring after the next tick = %+v, want the live sample appended", eng.cpu)
+			}
+		})
+
+		t.Run("h toggles the history view anywhere", func(t *testing.T) {
+			m := newPsModel(psvFixture(), "")
+			m.update(key('h'))
+			if !m.histView {
+				t.Fatal("h did not toggle the history view on")
+			}
+			m.update(psKey{kind: psKeyTab})
+			m.update(key('h'))
+			if m.histView {
+				t.Fatal("h did not toggle the history view back off")
+			}
+		})
+
 		t.Run("q and ctrl-c quit", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			m.update(key('q'))

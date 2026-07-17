@@ -252,6 +252,53 @@ func (b *screenBuf) renderHeatStrip(x, y, w int, samples []float64) {
 	}
 }
 
+// fitSamples compresses a history to at most w slots: when the recorded
+// history is wider than the strip, each cell carries the maximum of its share,
+// so a short spike stays visible at any zoom. A cell is absent only when its
+// whole share is absent.
+func fitSamples(samples []float64, w int) []float64 {
+	if w <= 0 || len(samples) <= w {
+		return samples
+	}
+	out := make([]float64, w)
+	for i := range out {
+		cell := float64(psNoSample)
+		for _, s := range samples[i*len(samples)/w : (i+1)*len(samples)/w] {
+			if s != psNoSample && (cell == psNoSample || s > cell) {
+				cell = s
+			}
+		}
+		out[i] = cell
+	}
+	return out
+}
+
+// stripRing resolves the ring a strip draws for the current view: the fine
+// ring live, the coarse (hours-deep) ring under the 'h' history toggle.
+func (m *psModel) stripRing(key string) *psRing {
+	if m.histView {
+		return m.coarse[key]
+	}
+	return m.rings[key]
+}
+
+// stripCPU is a strip's CPU samples for the current view, compressed to the
+// strip's width so the coarse history spans the strip instead of scrolling
+// off it.
+func (m *psModel) stripCPU(key string, w int) []float64 {
+	return fitSamples(m.stripRing(key).cpuSamples(), w)
+}
+
+// stripMem is a strip's memory samples for the current view, scaled to
+// percent-of-peak and compressed to the strip's width.
+func (m *psModel) stripMem(key string, w int) []float64 {
+	r := m.stripRing(key)
+	if r == nil {
+		return nil
+	}
+	return fitSamples(memStripSamples(r), w)
+}
+
 // memStripSamples rescales a ring's memory history to percent-of-peak, so the
 // heat ramp reads relative pressure within the visible window.
 func memStripSamples(r *psRing) []float64 {
@@ -474,7 +521,7 @@ func renderPsHeader(b *screenBuf, m *psModel) {
 	}
 	x = b.w - 1 - (fixed + stripW)
 	put(ansiDim, "CPU ")
-	b.renderHeatStrip(x, 0, stripW, m.rings[""].cpuSamples())
+	b.renderHeatStrip(x, 0, stripW, m.stripCPU("", stripW))
 	x += stripW
 	put("", cpu)
 	put(ansiDim, mem)
@@ -533,12 +580,16 @@ func psFooterHints(m *psModel) string {
 	if m.confirmCancel {
 		return "cancel run " + m.logsTarget() + "? y/N"
 	}
+	histHint := "h history"
+	if m.histView {
+		histHint = "h live"
+	}
 	switch m.pane {
 	case psPaneLanes:
 		if m.selPipeline == "" {
-			return "tab panes · ↑↓ move · ⏎ unfold · / search · q quit"
+			return "tab panes · ↑↓ move · ⏎ unfold · / search · " + histHint + " · q quit"
 		}
-		return "tab panes · ↑↓ move · ⏎ open runs · ← lane · / search · q quit"
+		return "tab panes · ↑↓ move · ⏎ open runs · ← lane · / search · " + histHint + " · q quit"
 	case psPaneTable:
 		if m.selPipeline == "" {
 			return "tab panes · ↑↓ move · ⏎ open runs · / search · q quit"
@@ -622,9 +673,8 @@ func renderRailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 			cpu, mem := cpuText(e.lane.load), memText(e.lane.load)
 			b.text(x+4, ry, ansiDim, cpu+" "+mem)
 			sx := x + 4 + len([]rune(cpu)) + 1 + len([]rune(mem)) + 1
-			if r := m.rings["l:"+e.lane.name]; r != nil {
-				b.renderHeatStrip(sx, ry, x+w-2-sx, r.cpu)
-			}
+			sw := x + w - 2 - sx
+			b.renderHeatStrip(sx, ry, sw, m.stripCPU("l:"+e.lane.name, sw))
 		case 2:
 			b.text(x+4, ry, psStateSGR(e.pipeline.latest), "●")
 			b.text(x+6, ry, "", e.pipeline.name)
@@ -714,19 +764,23 @@ func renderTablePane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 }
 
 // renderDetailPane paints the selected pipeline's chart box: CPU and MEM heat
-// strips over the poll history, and the TIME row that waits on issue #200.
+// strips over the recorded load history (recent detail live, the hours-deep
+// coarse history under the 'h' toggle), and the TIME row that waits on issue
+// #200.
 func renderDetailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 	name := m.detailPipeline()
-	borderSGR, titleSGR, title := paneChrome(false, colorless, name)
-	if name == "" {
-		title = ""
+	title := name
+	if name != "" && m.histView {
+		title += " · history"
 	}
+	borderSGR, titleSGR, title := paneChrome(false, colorless, title)
 	b.box(x, y, w, h, borderSGR, titleSGR, title)
 	if name == "" {
 		b.text(x+3, y+2, ansiDim, "no pipeline selected")
 		return
 	}
-	ring := m.rings["p:"+name]
+	key := "p:" + name
+	ring := m.stripRing(key)
 	if ring == nil {
 		ring = &psRing{}
 	}
@@ -757,8 +811,8 @@ func renderDetailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) 
 		b.renderHeatStrip(stripX, ry, stripW, samples)
 		b.text(x+w-3-len([]rune(val)), ry, "", val)
 	}
-	row(y+1, "CPU", ring.cpu, cpuVal)
-	row(y+2, "MEM", memStripSamples(ring), memVal)
+	row(y+1, "CPU", m.stripCPU(key, stripW), cpuVal)
+	row(y+2, "MEM", m.stripMem(key, stripW), memVal)
 	b.text(x+3, y+3, ansiDim, "TIME")
 	b.text(stripX, y+3, ansiDim, "run durations arrive with engine timestamps (#200)")
 }

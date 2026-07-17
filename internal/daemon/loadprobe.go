@@ -14,17 +14,17 @@ import (
 // This file is the daemon's host-load probe: the one place the engine samples
 // what it costs the machine. It shells out to the host's ps(1) -- present on
 // every darwin and linux host the daemon runs on -- with a single `ps -axo
-// pid=,pgid=,ppid=,rss=,pcpu=` snapshot, cgo-free and dependency-free. The ps
-// plane sums the rows two ways: the engine's load is the daemon's descendant
-// tree plus the managed postmaster's (Postgres daemonizes into its own session,
-// so parentage -- not the process group -- finds its backends), and each
-// running run's load is its recorded process-group id (runs.handle), the same
-// group a cancel kills. The probe is best-effort by contract: a host without ps
-// answers an error and the ps payload carries null load, never a fabricated
-// zero.
+// pid=,pgid=,ppid=,rss=,pcpu=` snapshot, cgo-free and dependency-free. The
+// load collector (loadhistory.go) sums the rows two ways: the engine's load is
+// the daemon's descendant tree plus the managed postmaster's (Postgres
+// daemonizes into its own session, so parentage -- not the process group --
+// finds its backends), and each running run's load is its recorded
+// process-group id (runs.handle), the same group a cancel kills. The probe is
+// best-effort by contract: a host without ps answers an error and the ps
+// payload carries null load, never a fabricated zero.
 
 // loadProbeTimeout bounds one ps(1) snapshot so a wedged host tool can never
-// stall the /ps route.
+// stall the collector's tick.
 const loadProbeTimeout = 3 * time.Second
 
 // procSample is one process's sampled host load: its process group and parent

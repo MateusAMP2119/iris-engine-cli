@@ -20,15 +20,19 @@ import (
 // This file is the daemon's process-status plane: the api.PsHandler behind GET
 // /ps (and therefore behind `iris ps` -- one route, one payload). It composes
 // the run snapshot (one plain-MVCC read over the reader pool), the live
-// leadership role, and the host-load probe: the engine load is the daemon's
-// descendant tree plus the managed postmaster's (Postgres daemonizes into its
-// own session, so parentage -- not the process group -- finds its backends),
-// and each running run's load is its recorded process group. It is a read,
-// served on any role, so a remote `iris ps` against a standby answers with the
-// standby's own facts.
+// leadership role, and the load collector's newest sample (loadhistory.go):
+// the engine load is the daemon's descendant tree plus the managed
+// postmaster's (Postgres daemonizes into its own session, so parentage -- not
+// the process group -- finds its backends), and each running run's load is its
+// recorded process group. Under ?history=1 the payload also carries the
+// collector's recorded history. It is a read, served on any role, so a remote
+// `iris ps` against a standby answers with the standby's own facts.
 //
-// Load is best-effort: a failed host probe logs at debug and the payload
-// carries null load -- absence over fabrication. Uptime keeps the display-only
+// Load is best-effort: a collector that could not probe its host holds no
+// sample and the payload carries null load -- absence over fabrication. The
+// load is at most one collector tick stale (the plane reads the collector, it
+// never probes in-request), and a run younger than the newest sample carries
+// null load until the next tick attributes it. Uptime keeps the display-only
 // wall-clock doctrine: rendered to a string here, so no computable time value
 // ever reaches the wire.
 
@@ -40,18 +44,16 @@ type RunSnapshotReader interface {
 }
 
 // psPlane is the api.PsHandler over the run reader, the role state, and the
-// host-load probe. managedPG reports the managed postmaster's live pid (0 for
-// none: external mode, or a stopped instance), so its tree is summed into the
-// engine load.
+// load collector (which owns the host probing and the managed-postmaster
+// summing the plane's readout reports).
 type psPlane struct {
-	role      api.RoleReporter
-	runs      RunSnapshotReader
-	probe     loadProber
-	managedPG func() int
-	counters  *turnCounters // resident turn tallies (#206); nil renders none
-	logger    *slog.Logger
-	pid       int
-	started   time.Time
+	role     api.RoleReporter
+	runs     RunSnapshotReader
+	loads    *loadHistory
+	counters *turnCounters // resident turn tallies (#206); nil renders none
+	logger   *slog.Logger
+	pid      int
+	started  time.Time
 }
 
 // compile-time proof the plane satisfies the mux's ps seam.
@@ -59,26 +61,23 @@ var _ api.PsHandler = (*psPlane)(nil)
 
 // NewPsPlane builds the ps handler the daemon wires into the api mux: role is
 // the daemon's live leadership role (nil reads unknown), runs the meta-backed
-// (or fake) run read seam, managedPG the managed postmaster's pid locator (nil
-// for none). The plane records its own pid at construction and counts uptime
+// (or fake) run read seam, loads the running load collector the readout's load
+// fields and history come from (nil reads as never sampled: null loads, no
+// history). The plane records its own pid at construction and counts uptime
 // from it: the plane is built at daemon start, so its age is the daemon's. A
 // nil logger discards output.
-func NewPsPlane(role api.RoleReporter, runs RunSnapshotReader, managedPG func() int, counters *turnCounters, logger *slog.Logger) api.PsHandler {
+func NewPsPlane(role api.RoleReporter, runs RunSnapshotReader, loads *loadHistory, counters *turnCounters, logger *slog.Logger) api.PsHandler {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	if managedPG == nil {
-		managedPG = func() int { return 0 }
-	}
 	return &psPlane{
-		role:      role,
-		runs:      runs,
-		probe:     psProbe{},
-		managedPG: managedPG,
-		counters:  counters,
-		logger:    logger,
-		pid:       os.Getpid(),
-		started:   time.Now(),
+		role:     role,
+		runs:     runs,
+		loads:    loads,
+		counters: counters,
+		logger:   logger,
+		pid:      os.Getpid(),
+		started:  time.Now(),
 	}
 }
 
@@ -104,9 +103,10 @@ func ManagedPostmasterPID(s config.Settings) func() int {
 }
 
 // Ps composes the current process-status payload: the engine block over the
-// live role and the host-load sample, and the run rows newest first -- queued
-// and running only, or the whole history under all.
-func (p *psPlane) Ps(ctx context.Context, all bool) (api.PsPayload, error) {
+// live role and the collector's newest load sample, and the run rows newest
+// first -- queued and running only, or the whole history under all. history
+// attaches the collector's recorded series to the payload.
+func (p *psPlane) Ps(ctx context.Context, all, history bool) (api.PsPayload, error) {
 	runs, err := p.runs.Runs(ctx, store.RunFilter{})
 	if err != nil {
 		p.logger.Error("ps run snapshot failed", "err", err)
@@ -127,23 +127,11 @@ func (p *psPlane) Ps(ctx context.Context, all bool) (api.PsPayload, error) {
 		}
 	}
 
-	// The load sample is best-effort: a host without ps(1) logs at debug and the
-	// payload carries null load, never a fabricated zero.
-	groupLoad := map[int]*api.PsLoad{}
-	if samples, perr := p.probe.Sample(ctx); perr != nil {
-		p.logger.Debug("ps host-load probe failed", "err", perr)
-	} else {
-		for _, s := range samples {
-			l := groupLoad[s.PGID]
-			if l == nil {
-				l = &api.PsLoad{}
-				groupLoad[s.PGID] = l
-			}
-			l.CPUPercent += s.CPUPercent
-			l.RSSBytes += s.RSSBytes
-		}
-		engine.Load = sumTrees(samples, p.pid, p.managedPG())
-	}
+	// The load is the collector's newest sample -- best-effort by the probe's
+	// contract, so a host it could not probe reads null, never a fabricated
+	// zero. The collector's values are read-only by contract, safe to marshal.
+	tick, engineLoad, groupLoad := p.loads.latest()
+	engine.Load = engineLoad
 
 	rows := make([]api.PsRun, 0, len(runs))
 	// The reader returns ascending ordering identity; the readout is newest first.
@@ -175,7 +163,11 @@ func (p *psPlane) Ps(ctx context.Context, all bool) (api.PsPayload, error) {
 		}
 		rows = append(rows, row)
 	}
-	return api.PsPayload{Engine: engine, Runs: rows, Residents: p.counters.snapshot()}, nil
+	payload := api.PsPayload{Engine: engine, Runs: rows, Residents: p.counters.snapshot(), SampleTick: tick}
+	if history {
+		payload.History = p.loads.snapshot()
+	}
+	return payload, nil
 }
 
 // sumTrees sums the host sample over the engine's process trees: every process

@@ -233,7 +233,7 @@ func TestPollPs(t *testing.T) {
 		}
 		mux := api.NewMux(
 			api.WithRole(role),
-			api.WithPs(psFunc(func(_ context.Context, all bool) (api.PsPayload, error) {
+			api.WithPs(psFunc(func(_ context.Context, all, _ bool) (api.PsPayload, error) {
 				sawAll.Store(all)
 				return psFixture(), nil
 			})),

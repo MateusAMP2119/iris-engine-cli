@@ -38,11 +38,20 @@ func leaderRoleState() *api.RoleState {
 // intp returns a pointer to c.
 func intp(c int) *int { return &c }
 
-// psTestPlane builds a plane over the fakes with a pinned pid and managed
-// postmaster (pid 200) so the load summing is assertable.
+// psTestLoads builds a collector over the fakes with a pinned pid (100) and
+// managed postmaster (pid 200) so the load summing is assertable, and drives
+// exactly one sample tick.
+func psTestLoads(runs RunSnapshotReader, probe loadProber) *loadHistory {
+	h := newLoadHistory(runs, func() int { return 200 }, nil)
+	h.probe = probe
+	h.pid = 100
+	h.sample(context.Background())
+	return h
+}
+
+// psTestPlane builds a plane over the fakes and a once-ticked collector.
 func psTestPlane(runs RunSnapshotReader, probe loadProber, role api.RoleReporter) *psPlane {
-	p := NewPsPlane(role, runs, func() int { return 200 }, nil, nil).(*psPlane)
-	p.probe = probe
+	p := NewPsPlane(role, runs, psTestLoads(runs, probe), nil, nil).(*psPlane)
 	p.pid = 100
 	return p
 }
@@ -71,7 +80,7 @@ func TestPsPlaneComposesReadout(t *testing.T) {
 
 	t.Run("default readout: queued and running, newest first, group-summed load", func(t *testing.T) {
 		p := psTestPlane(fakeRunReader{runs: runs}, fakeProbe{samples: samples}, leaderRoleState())
-		got, err := p.Ps(context.Background(), false)
+		got, err := p.Ps(context.Background(), false, false)
 		if err != nil {
 			t.Fatalf("Ps: %v", err)
 		}
@@ -106,7 +115,7 @@ func TestPsPlaneComposesReadout(t *testing.T) {
 
 	t.Run("all widens to the whole history with terminal exit codes", func(t *testing.T) {
 		p := psTestPlane(fakeRunReader{runs: runs}, fakeProbe{samples: samples}, leaderRoleState())
-		got, err := p.Ps(context.Background(), true)
+		got, err := p.Ps(context.Background(), true, false)
 		if err != nil {
 			t.Fatalf("Ps: %v", err)
 		}
@@ -124,7 +133,7 @@ func TestPsPlaneComposesReadout(t *testing.T) {
 
 	t.Run("a failed host probe yields null load, never zeros", func(t *testing.T) {
 		p := psTestPlane(fakeRunReader{runs: runs}, fakeProbe{err: errors.New("no ps binary")}, leaderRoleState())
-		got, err := p.Ps(context.Background(), false)
+		got, err := p.Ps(context.Background(), false, false)
 		if err != nil {
 			t.Fatalf("Ps: %v (the probe is best-effort, never a fault)", err)
 		}
@@ -140,7 +149,7 @@ func TestPsPlaneComposesReadout(t *testing.T) {
 
 	t.Run("a nil role reads unknown", func(t *testing.T) {
 		p := psTestPlane(fakeRunReader{}, fakeProbe{}, nil)
-		got, err := p.Ps(context.Background(), false)
+		got, err := p.Ps(context.Background(), false, false)
 		if err != nil {
 			t.Fatalf("Ps: %v", err)
 		}
@@ -154,8 +163,40 @@ func TestPsPlaneComposesReadout(t *testing.T) {
 
 	t.Run("a failed run read is a fault", func(t *testing.T) {
 		p := psTestPlane(fakeRunReader{err: errors.New("meta down")}, fakeProbe{}, leaderRoleState())
-		if _, err := p.Ps(context.Background(), false); err == nil {
+		if _, err := p.Ps(context.Background(), false, false); err == nil {
 			t.Fatal("Ps with a failing run read = nil error, want a fault")
+		}
+	})
+
+	t.Run("the sample tick rides every payload, history only on request", func(t *testing.T) {
+		p := psTestPlane(fakeRunReader{runs: runs}, fakeProbe{samples: samples}, leaderRoleState())
+		got, err := p.Ps(context.Background(), false, false)
+		if err != nil {
+			t.Fatalf("Ps: %v", err)
+		}
+		if got.SampleTick != 1 {
+			t.Errorf("sample tick = %d, want the collector's 1", got.SampleTick)
+		}
+		if got.History != nil {
+			t.Error("history rode a payload that did not ask for it")
+		}
+		got, err = p.Ps(context.Background(), false, true)
+		if err != nil {
+			t.Fatalf("Ps with history: %v", err)
+		}
+		if got.History == nil || len(got.History.Series) == 0 {
+			t.Fatalf("history = %+v, want the collector's series", got.History)
+		}
+	})
+
+	t.Run("a nil collector reads as never sampled", func(t *testing.T) {
+		p := NewPsPlane(leaderRoleState(), fakeRunReader{runs: runs}, nil, nil, nil).(*psPlane)
+		got, err := p.Ps(context.Background(), false, true)
+		if err != nil {
+			t.Fatalf("Ps: %v", err)
+		}
+		if got.SampleTick != 0 || got.Engine.Load != nil || got.History != nil {
+			t.Errorf("nil-collector payload = tick %d load %+v history %+v, want all absent", got.SampleTick, got.Engine.Load, got.History)
 		}
 	})
 }

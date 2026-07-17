@@ -32,6 +32,56 @@ type PsPayload struct {
 	// Residents are the leader's live resident workers' turn counters (#206):
 	// quiet-loop visibility held in memory, no rows. Present on the leader only.
 	Residents []PsResident `json:"residents,omitempty"`
+	// SampleTick is the daemon load collector's monotonic sample counter: it
+	// advances once per collector sample, so a poller can tell a fresh load
+	// reading from a repeat of the last one. Zero before the first sample (or
+	// on a daemon without a collector).
+	SampleTick uint64 `json:"sample_tick,omitempty"`
+	// History is the collector's recorded load history, present only under
+	// ?history=1. It is daemon memory, not persistence: it survives any number
+	// of client restarts and dies with the daemon.
+	History *PsHistory `json:"history,omitempty"`
+}
+
+// PsHistory is the daemon-held load history under ?history=1: one series per
+// sampled entity, on two grids. The fine grid holds one sample per collector
+// tick; the coarse grid holds one per-bucket maximum per aggregation bucket,
+// retaining hours where the fine grid retains minutes. The intervals are the
+// collector's fixed cadence configuration -- grid spacing, not wall-clock
+// readings -- so the display-only wall-clock doctrine holds.
+type PsHistory struct {
+	// FineIntervalSeconds is the fine grid's spacing: seconds per sample.
+	FineIntervalSeconds int `json:"fine_interval_seconds"`
+	// CoarseIntervalSeconds is the coarse grid's spacing: seconds per bucket.
+	CoarseIntervalSeconds int `json:"coarse_interval_seconds"`
+	// Series are the recorded entities' histories. Keys: "engine" for the
+	// engine's own load, "lane:<name>" and "pipeline:<name>" for the running
+	// runs summed under a lane or pipeline.
+	Series []PsSeries `json:"series"`
+}
+
+// PsHistoryNoSample marks a grid slot with no load sample (an idle entity, a
+// failed host probe) in a history series' CPU array. Absence over fabrication:
+// a client renders it as a gap, never a zero.
+const PsHistoryNoSample = -1
+
+// PsSeries is one entity's recorded load history, oldest first, newest last.
+// Every live series ends at the same tick (the collector pushes all series in
+// lockstep), so series of different lengths align from their ends. A slot with
+// no sample carries PsHistoryNoSample CPU and zero RSS.
+type PsSeries struct {
+	// Key names the entity: "engine", "lane:<name>", or "pipeline:<name>".
+	Key string `json:"key"`
+	// CPU is the fine grid's CPU history in percent of one core
+	// (PsHistoryNoSample for a sampleless tick).
+	CPU []float64 `json:"cpu"`
+	// RSS is the fine grid's resident-memory history in bytes.
+	RSS []int64 `json:"rss"`
+	// CoarseCPU is the coarse grid's CPU history: each slot the maximum fine
+	// sample of its bucket, so a short spike stays visible at this zoom.
+	CoarseCPU []float64 `json:"coarse_cpu"`
+	// CoarseRSS is the coarse grid's resident-memory history: per-bucket maxima.
+	CoarseRSS []int64 `json:"coarse_rss"`
 }
 
 // PsResident is one pipeline's turn readout under the turn protocol (#206): how
@@ -98,12 +148,13 @@ type PsRun struct {
 }
 
 // PsHandler serves the process-status readout. The daemon implements it over
-// the run reader, the leadership role, and its host-load probe; the mux depends
+// the run reader, the leadership role, and its load collector; the mux depends
 // only on this interface, so api never imports store/dispatch.
 type PsHandler interface {
 	// Ps returns the current process-status payload. all widens the run rows
-	// from queued+running to the whole history.
-	Ps(ctx context.Context, all bool) (PsPayload, error)
+	// from queued+running to the whole history; history attaches the recorded
+	// load history to the payload.
+	Ps(ctx context.Context, all, history bool) (PsPayload, error)
 }
 
 // ErrPsUnavailable is returned by the default (unwired) ps handler: a ps read
@@ -126,14 +177,14 @@ func WithPs(h PsHandler) MuxOption {
 // fault, never a silent empty payload.
 type noPs struct{}
 
-func (noPs) Ps(context.Context, bool) (PsPayload, error) {
+func (noPs) Ps(context.Context, bool, bool) (PsPayload, error) {
 	return PsPayload{}, ErrPsUnavailable
 }
 
-// servePs handles GET /ps[?all=true]: run the wired ps handler and render the
-// data envelope. It is a read, served on any role. An unwired handler is 500
-// internal; any read error is 500 internal too -- a ps read has no
-// operation-failure category of its own.
+// servePs handles GET /ps[?all=true][&history=1]: run the wired ps handler and
+// render the data envelope. It is a read, served on any role. An unwired
+// handler is 500 internal; any read error is 500 internal too -- a ps read has
+// no operation-failure category of its own.
 func (m *mux) servePs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET "+r.URL.Path+" only")
@@ -141,13 +192,14 @@ func (m *mux) servePs(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	for k := range q {
-		if k != "all" {
+		if k != "all" && k != "history" {
 			WriteError(w, http.StatusBadRequest, "bad_param", "unknown query parameter: "+k)
 			return
 		}
 	}
 	all := q.Get("all") == "true" || q.Get("all") == "1"
-	payload, err := m.ps.Ps(r.Context(), all)
+	history := q.Get("history") == "true" || q.Get("history") == "1"
+	payload, err := m.ps.Ps(r.Context(), all, history)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return

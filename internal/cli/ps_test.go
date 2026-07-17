@@ -20,9 +20,11 @@ import (
 
 // psFunc adapts a function to the api.PsHandler interface for the
 // integration-tier daemon fakes.
-type psFunc func(ctx context.Context, all bool) (api.PsPayload, error)
+type psFunc func(ctx context.Context, all, history bool) (api.PsPayload, error)
 
-func (f psFunc) Ps(ctx context.Context, all bool) (api.PsPayload, error) { return f(ctx, all) }
+func (f psFunc) Ps(ctx context.Context, all, history bool) (api.PsPayload, error) {
+	return f(ctx, all, history)
+}
 
 // startPsDaemon stands up an in-process daemon over a unix socket serving the
 // REAL api mux with the given ps handler -- the integration-tier "in-process
@@ -67,7 +69,7 @@ func TestPsParity(t *testing.T) {
 
 	t.Run("ps-cli-http-parity", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -129,7 +131,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("bare ps on a non-TTY stdout emits the route's JSON envelope", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -156,7 +158,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("a TTY without --json enters the live view", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -191,7 +193,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("--json on a TTY stays JSON, never the view", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -213,7 +215,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("a refused raw mode falls back to the JSON emit", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -238,7 +240,7 @@ func TestPsOutputMode(t *testing.T) {
 	t.Run("--all rides the JSON request as ?all=true, bare stays default", func(t *testing.T) {
 		sock := shortSocket(t)
 		var sawAll atomic.Bool
-		startPsDaemon(t, sock, psFunc(func(_ context.Context, all bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(_ context.Context, all, _ bool) (api.PsPayload, error) {
 			sawAll.Store(all)
 			return psFixture(), nil
 		}))
@@ -261,7 +263,7 @@ func TestPsOutputMode(t *testing.T) {
 	t.Run("the live view polls the whole history", func(t *testing.T) {
 		sock := shortSocket(t)
 		var sawAll atomic.Bool
-		startPsDaemon(t, sock, psFunc(func(_ context.Context, all bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(_ context.Context, all, _ bool) (api.PsPayload, error) {
 			sawAll.Store(all)
 			return psFixture(), nil
 		}))
@@ -304,7 +306,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("a failed live poll exits 3 with reachability guidance", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return psFixture(), nil
 		}))
 
@@ -335,7 +337,7 @@ func TestPsOutputMode(t *testing.T) {
 
 	t.Run("a reached daemon refusing the read exits 4 with its message", func(t *testing.T) {
 		sock := shortSocket(t)
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			return api.PsPayload{}, api.ErrPsUnavailable // the route 500s "api: ps not available"
 		}))
 
@@ -352,7 +354,7 @@ func TestPsOutputMode(t *testing.T) {
 	t.Run("a TTY stdout with a piped stdin resolves to JSON up front", func(t *testing.T) {
 		sock := shortSocket(t)
 		var fetches atomic.Int32
-		startPsDaemon(t, sock, psFunc(func(context.Context, bool) (api.PsPayload, error) {
+		startPsDaemon(t, sock, psFunc(func(context.Context, bool, bool) (api.PsPayload, error) {
 			fetches.Add(1)
 			return psFixture(), nil
 		}))

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
@@ -25,13 +26,16 @@ const (
 	psPaneLogs
 )
 
-// psRingCap bounds every load-history ring: at the 1s poll cadence this holds
-// four minutes, comfortably past the widest strip any layout renders.
+// psRingCap bounds every fine load-history ring, comfortably past the widest
+// strip any layout renders. The daemon's fine ring is deeper; a re-seed trims
+// to this.
 const psRingCap = 240
 
 // psNoSample marks a tick with no load sample in a ring (idle lane, absent
 // payload load); strips render it as an empty cell, never a fabricated zero.
-const psNoSample = -1
+// It is the same sentinel the wire history uses (api.PsHistoryNoSample), so
+// re-seeded slots need no translation.
+const psNoSample = api.PsHistoryNoSample
 
 // psRing is one entity's sampled load history, newest last. cpu holds
 // percentages (psNoSample for a sampleless tick), mem resident bytes.
@@ -100,14 +104,22 @@ type psModel struct {
 	follow        bool   // logs pane: tail follows new output
 	scroll        int    // logs pane: lines scrolled back when not following
 	confirmCancel bool   // logs pane: y/N cancel confirm armed
+	histView      bool   // strips: 'h' toggled the coarse hours-deep history in
 	note          string // transient action outcome, cleared on the next key
 	warn          string // standing soft-fetch warning, cleared by the next good poll
 
 	search *psSearch // non-nil while the search overlay is open
 
-	// rings holds every heat strip's history: key "" is the engine, "l:<name>"
-	// a lane, "p:<name>" a pipeline. Grown on absorb, born at view open.
-	rings map[string]*psRing
+	// rings holds every heat strip's fine history: key "" is the engine,
+	// "l:<name>" a lane, "p:<name>" a pipeline. Seeded from the daemon's
+	// recorded history and grown one slot per collector tick (the payload's
+	// sample_tick names the tick, so a poll that races the collector never
+	// double-counts). coarse holds the same keys' coarse (per-bucket-maximum)
+	// history, hours deep, refreshed only on a history re-seed -- exactly its
+	// own cadence. lastTick is the newest absorbed collector tick.
+	rings    map[string]*psRing
+	coarse   map[string]*psRing
+	lastTick uint64
 
 	snap   psSnapshot
 	target string // footer right slot: "remote <host>" or "local <socket>"
@@ -122,6 +134,7 @@ func newPsModel(first psSnapshot, target string) *psModel {
 		expanded: map[string]bool{},
 		follow:   true,
 		rings:    map[string]*psRing{},
+		coarse:   map[string]*psRing{},
 		snap:     first,
 		target:   target,
 	}
@@ -380,10 +393,86 @@ func (m *psModel) logsTargetIn(s psSnapshot) string {
 	return m.logsTarget()
 }
 
-// absorbRings pushes one tick of load history for the engine, every lane, and
+// absorbRings advances the load rings for one absorbed snapshot. A snapshot
+// carrying the daemon's recorded history re-seeds every ring from it (the
+// view-open backfill, and the periodic refresh that keeps the coarse rings
+// current). Otherwise the payload's sample_tick decides: unchanged means the
+// collector has not sampled since the last poll, so nothing is pushed (the 1s
+// poll outpaces the collector's tick on purpose); an advanced tick pushes one
+// slot, with any missed ticks filled absent first so the time axis stays
+// honest. A tick-less payload (a daemon without a collector) falls back to one
+// push per absorb, the pre-history behavior.
+func (m *psModel) absorbRings() {
+	if h := m.snap.ps.History; h != nil {
+		m.reseedRings(h)
+		m.lastTick = m.snap.ps.SampleTick
+		return
+	}
+	if tick := m.snap.ps.SampleTick; tick != 0 {
+		if tick <= m.lastTick {
+			return
+		}
+		if m.lastTick != 0 {
+			gaps := tick - m.lastTick - 1
+			if gaps > psRingCap {
+				gaps = psRingCap // deeper gaps fall off the ring anyway
+			}
+			for range gaps {
+				m.pushRingsAbsent()
+			}
+		}
+		m.lastTick = tick
+	}
+	m.pushRings()
+}
+
+// reseedRings replaces every ring with the daemon's recorded history: the fine
+// series trimmed to the client cap, the coarse series whole. The wire keys
+// ("engine", "lane:<name>", "pipeline:<name>") map onto the ring keys ("",
+// "l:<name>", "p:<name>"); an unrecognized key is skipped, never guessed.
+func (m *psModel) reseedRings(h *api.PsHistory) {
+	m.rings = map[string]*psRing{}
+	m.coarse = map[string]*psRing{}
+	for _, s := range h.Series {
+		key, ok := ringKeyFor(s.Key)
+		if !ok {
+			continue
+		}
+		fine := &psRing{cpu: append([]float64(nil), s.CPU...), mem: append([]int64(nil), s.RSS...)}
+		if len(fine.cpu) > psRingCap {
+			fine.cpu = fine.cpu[len(fine.cpu)-psRingCap:]
+			fine.mem = fine.mem[len(fine.mem)-psRingCap:]
+		}
+		m.rings[key] = fine
+		m.coarse[key] = &psRing{cpu: append([]float64(nil), s.CoarseCPU...), mem: append([]int64(nil), s.CoarseRSS...)}
+	}
+}
+
+// ringKeyFor maps a wire history series key onto the model's ring key.
+func ringKeyFor(wire string) (string, bool) {
+	switch {
+	case wire == "engine":
+		return "", true
+	case strings.HasPrefix(wire, "lane:"):
+		return "l:" + strings.TrimPrefix(wire, "lane:"), true
+	case strings.HasPrefix(wire, "pipeline:"):
+		return "p:" + strings.TrimPrefix(wire, "pipeline:"), true
+	}
+	return "", false
+}
+
+// pushRingsAbsent pushes one absent slot into every existing ring: a collector
+// tick the poller missed carries no knowable sample.
+func (m *psModel) pushRingsAbsent() {
+	for _, r := range m.rings {
+		r.push(psNoSample, 0)
+	}
+}
+
+// pushRings pushes one tick of load history for the engine, every lane, and
 // every pipeline seen in the snapshot. Entities without a sample this tick
 // push psNoSample so their strips show absence, not zero.
-func (m *psModel) absorbRings() {
+func (m *psModel) pushRings() {
 	ring := func(key string) *psRing {
 		r := m.rings[key]
 		if r == nil {
@@ -596,6 +685,8 @@ func (m *psModel) updateRune(r rune) {
 			m.follow = !m.follow
 			m.scroll = 0
 		}
+	case 'h':
+		m.histView = !m.histView
 	case 'c':
 		if m.pane == psPaneLogs {
 			if run, ok := findRun(m.snap, m.logsTarget()); ok && run.State == "running" {

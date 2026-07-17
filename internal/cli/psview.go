@@ -30,6 +30,12 @@ import (
 // psPollInterval is the live view's refresh cadence.
 const psPollInterval = time.Second
 
+// psHistoryRefreshPolls is how many polls ride between ?history=1 reads: the
+// view seeds its load rings from the daemon's recorded history once at open,
+// then re-seeds every this-many ticks so the coarse rings (sealed daemon-side
+// once a minute) stay current without the history document riding every poll.
+const psHistoryRefreshPolls = 60
+
 // psMaxLogLines bounds the log tail held client-side for the run detail
 // screen; scrollback beyond it is `iris run logs`' job.
 const psMaxLogLines = 2000
@@ -82,15 +88,22 @@ func (c *psDaemonClient) get(ctx context.Context, path string) (*http.Response, 
 	return c.client.Do(req)
 }
 
-// fetchPs reads the /ps readout. A transport failure returns the dial error
-// unwrapped (the caller classifies it no-daemon, exit 3); a reached daemon
-// answering non-200, or a body that does not decode, is a *psHTTPError
-// carrying the daemon's error message (operation-failed, exit 4). Never a
-// retry in either case.
-func (c *psDaemonClient) fetchPs(ctx context.Context, all bool) (api.PsPayload, error) {
-	path := "/ps"
+// fetchPs reads the /ps readout, with the daemon-held load history attached
+// under history. A transport failure returns the dial error unwrapped (the
+// caller classifies it no-daemon, exit 3); a reached daemon answering non-200,
+// or a body that does not decode, is a *psHTTPError carrying the daemon's
+// error message (operation-failed, exit 4). Never a retry in either case.
+func (c *psDaemonClient) fetchPs(ctx context.Context, all, history bool) (api.PsPayload, error) {
+	q := url.Values{}
 	if all {
-		path += "?" + url.Values{"all": {"true"}}.Encode()
+		q.Set("all", "true")
+	}
+	if history {
+		q.Set("history", "1")
+	}
+	path := "/ps"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
 	}
 	resp, err := c.get(ctx, path)
 	if err != nil {
@@ -231,9 +244,10 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 		focus     string
 		lastPipes []api.PipelineListItem
 		lastLogs  []string
+		ticks     int
 	)
-	poll := func() bool {
-		ps, err := c.fetchPs(ctx, true)
+	poll := func(history bool) bool {
+		ps, err := c.fetchPs(ctx, true, history)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false // the view is exiting; not an engine-gone verdict
@@ -273,7 +287,7 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 			return
 		case f := <-focusCh:
 			focus, lastLogs = f, nil
-			if focus != "" && !poll() { // fetch the tail now, not a tick later
+			if focus != "" && !poll(false) { // fetch the tail now, not a tick later
 				return
 			}
 		case id := <-cancelCh:
@@ -283,7 +297,10 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 				return
 			}
 		case <-tick.C:
-			if !poll() {
+			// One poll in psHistoryRefreshPolls re-reads the daemon's recorded
+			// history so the rings re-seed; the rest ride the light payload.
+			ticks++
+			if !poll(ticks%psHistoryRefreshPolls == 0) {
 				return
 			}
 		}
