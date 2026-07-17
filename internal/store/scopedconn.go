@@ -8,14 +8,7 @@ import (
 	"strings"
 )
 
-// This file is the pipeline-scoped connection the engine injects into a run at
-// spawn: the least-privilege Postgres connection string that authenticates as a
-// pipeline's engine-managed role, with the engine-minted credential, and targets
-// the data database. It is built here -- beside Secret, the one place a
-// credential's raw value is revealed -- so the secret never leaves store except
-// through the two deliberate exits it already has (the credentials write bind)
-// plus this one (the run-environment injection). Authors and consumers never
-// handle it; the engine mints, holds, and injects it.
+// Least-privilege scoped DSN over an engine-managed role, built beside Secret so the raw credential never leaves store outside its deliberate exits.
 
 // redactedScopedConn is what every formatting path renders in place of a scoped
 // connection string, so a stray %v, %s, %#v, or String() in a log line can never leak
@@ -39,14 +32,7 @@ type ScopedConnParams struct {
 	Options string
 }
 
-// ScopedConn is the least-privilege Postgres connection string the engine injects
-// into a pipeline run at spawn: it authenticates as the pipeline's engine-managed
-// role with the engine-minted credential and targets the data database. Its raw
-// value never leaves the process through a formatting or encoding path: it has
-// one unexported field, implements fmt.Formatter, fmt.Stringer, and
-// fmt.GoStringer to redact, and exposes the raw DSN only through EnvValue -- the
-// deliberate exit that injects it into the run's IRIS_DB_URL. Authors and
-// consumers never handle it.
+// ScopedConn is a least-privilege data-database DSN for an engine-managed role; the read pool builds one per data-surface login, runs never receive one (#206). Redacted by every fmt path; EnvValue is the sole raw exit.
 type ScopedConn struct {
 	// dsn is the raw scoped connection string. Unexported so no reflection-based
 	// encoder (encoding/json, etc.) can serialize it, keeping the credential-bearing
@@ -104,10 +90,7 @@ func BuildScopedConn(params ScopedConnParams, role string, secret Secret) (Scope
 	return ScopedConn{dsn: u.String()}, nil
 }
 
-// EnvValue returns the raw scoped connection string. It is the deliberate exit -- the
-// sole way the credential-bearing DSN leaves store -- used only to inject the
-// connection into a run's IRIS_DB_URL environment variable at spawn. No formatting or
-// encoding path reaches it.
+// EnvValue returns the raw DSN: the sole exit, consumed by the read pool.
 func (s ScopedConn) EnvValue() string { return s.dsn }
 
 // IsZero reports whether the scoped connection is the zero value (no connection held).

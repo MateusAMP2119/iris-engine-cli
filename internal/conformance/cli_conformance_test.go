@@ -282,7 +282,7 @@ func TestProvenanceCLIReadout(t *testing.T) {
 		pk := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
 		// Write the row through a connection carrying the author run id, exactly as
-		// the engine injects it at spawn (pg.InjectRunID sets the per-session
+		// an engine turn commit sets it (pg.InjectRunID is the harness's per-session
 		// iris.run_id GUC on the DSN; the capture trigger reads it in-transaction).
 		writeDSN := pg.InjectRunID(dataDSN(t, ws), authorRunID)
 		dataConn := connectPG(t, writeDSN)
