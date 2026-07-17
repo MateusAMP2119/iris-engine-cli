@@ -5,7 +5,6 @@ This makes these commands work:
 ```sh
 curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash            # stable
 curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash   # rolling development build
-curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 ```
 
 ## Current accurate steps (as of the latest Cloudflare UI)
@@ -41,7 +40,6 @@ Delete everything and paste this exact code:
 // Makes these work:
 //   curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash            (stable)
 //   curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash   (development build)
-//   curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 
 export default {
   async fetch(request) {
@@ -71,12 +69,7 @@ export default {
       });
     }
 
-    if (path === '/uninstall.sh') {
-      const target = `${base}/uninstall.sh`;
-      return Response.redirect(target, 302);
-    }
-
-    return new Response('Not found. Supported paths: /, /install.sh, /snapshot, /uninstall.sh', {
+    return new Response('Not found. Supported paths: /, /install.sh, /snapshot', {
       status: 404,
       headers: { 'content-type': 'text/plain' }
     });
@@ -147,8 +140,6 @@ if (path === '/' || path === '/install.sh') {
   });
 }
 ```
-
-Same for uninstall.sh.
 
 ---
 

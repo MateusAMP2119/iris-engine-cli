@@ -198,7 +198,7 @@ func (a *app) uninstallSelf() runE {
 				return &fault{
 					code:    exitOpFailed,
 					codeStr: "permission_denied",
-					message: fmt.Sprintf("iris uninstall: step 3/%d (remove binary) failed: cannot remove %s: permission denied; re-run with sudo, or use the curl uninstaller", uninstallSteps, path),
+					message: fmt.Sprintf("iris uninstall: step 3/%d (remove binary) failed: cannot remove %s: permission denied; re-run with sudo", uninstallSteps, path),
 				}
 			}
 			return &fault{

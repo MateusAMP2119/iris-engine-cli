@@ -4,10 +4,7 @@ import (
 	"os"
 )
 
-// The ANSI SGR codes for the lifecycle-command terminal ceremony. They match the
-// bright palette the curl installer and uninstaller paint (install.sh /
-// uninstall.sh): bright red/yellow/green/cyan/blue/magenta, plus dim and reset.
-// Raw escape codes keep this dependency-free.
+// ANSI SGR codes for the lifecycle ceremony, matching install.sh's palette; raw escapes keep this dependency-free.
 const (
 	ansiReset   = "\033[0m"
 	ansiDim     = "\033[2m"

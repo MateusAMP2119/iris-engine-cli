@@ -90,4 +90,4 @@ jobs:
             --prerelease \
             --latest=false \
             --notes-file notes.md \
-            dist/*.tar.gz dist/checksums.txt install.sh uninstall.sh
+            dist/*.tar.gz dist/checksums.txt install.sh

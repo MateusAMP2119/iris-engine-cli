@@ -83,11 +83,7 @@ Leaving? Iris removes itself (prompts first; refuses while a daemon runs until y
 iris uninstall
 ```
 
-Binary broken or missing? The script fallback does the same from outside:
-
-```sh
-curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
-```
+Binary broken? Remove it by hand — `rm ~/.iris/bin/iris` — then reinstall or delete `~/.iris` entirely.
 
 ---
 
