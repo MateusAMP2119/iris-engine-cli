@@ -276,9 +276,9 @@ func WithDeadletterPlane(dp *deadletterPlane) CandidateOption {
 // tree (pipeline folders resolve against it); manual is the plain-MVCC manual-run reader;
 // objects is this candidate's own object store (built-run argv resolves from the leader's
 // own objects_path); runner starts subprocesses. journal provides the data journal high id
-// for terminal window stamping. dbURL is the base scoped data-database connection a manual
-// run's IRIS_DB_URL is derived from (the same DSN the lane loop injects). A nil pp leaves
-// the candidate without a manual-run plane (the shape tests use).
+// for terminal window stamping. turnDB is the data-database turn seam a manual run's
+// protocol turn drives (#206). A nil pp leaves the candidate without a manual-run plane
+// (the shape tests use).
 func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, turnDB turnData, roleCreds store.RoleCredentialReader) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp

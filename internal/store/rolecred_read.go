@@ -5,12 +5,7 @@ import (
 	"fmt"
 )
 
-// This file is the meta read path for role credentials: the plain-MVCC read of
-// the engine-minted secret persisted for a login role (credentials.pg_role ->
-// secret). The run planes read a pipeline role's secret to build the scoped
-// IRIS_DB_URL each run connects with, and the apply path reads it back so a
-// re-apply reuses the persisted credential instead of minting a fresh one
-// (create-once, mirroring the read-pool credential).
+// Plain-MVCC read of a login role's persisted secret; apply reuses it create-once. Runs never receive it (#206: pipelines hold no credentials).
 
 // RoleCredentialReader is the plain-MVCC read seam for a login role's persisted
 // credential. A pgx-pool-backed implementation and a fake both satisfy it.

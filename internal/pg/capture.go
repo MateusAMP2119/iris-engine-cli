@@ -61,24 +61,21 @@ func RenderCaptureReachabilityGrants(role string) []string {
 // (insert/update/delete), the mode-tiered pre-image, the born undo state, and an
 // opaque recorded_at audit string. There is no post-image.
 //
-//   - Attribution. run_id rides the injected connection as the per-session setting
-//     iris.run_id, read here in-transaction with current_setting. InjectRunID
-//     (runid.go) puts it on the run-scoped DSN the daemon hands a run at spawn; this
-//     function only reads it. data_journal.run_id is NOT NULL, so a write with no run
-//     in session cannot be stamped and the write fails -- no row is ever keyed to a
-//     role without a run.
+//   - Attribution. run_id is the per-session iris.run_id setting, read here
+//     in-transaction with current_setting; the engine's CommitTurn sets it with
+//     SET LOCAL on each turn's data transaction (#206). data_journal.run_id is
+//     NOT NULL, so an unattributed write fails rather than stamping without a run.
 //   - Writer identity. The function is SECURITY DEFINER so the INSERT runs as the
 //     journal's owner: the journal grants no INSERT to anyone (only SELECT TO
 //     PUBLIC), so a pipeline role's write can only reach the journal through the
 //     owner-run trigger. Because the definer context masks current_user, the writing
 //     role is read from session_user (the connection's login role, unaffected by the
-//     definer boundary or a SET ROLE), which is the role Iris injected. search_path
+//     definer boundary or a SET ROLE) -- the engine's own writing identity. search_path
 //     is pinned so the definer function cannot be hijacked by a caller's search_path.
 //   - Mode-tiered payload. The trigger reads the write's wipe-eligibility
 //     in-transaction from the per-session setting iris.wipe_eligible
-//     (WipeEligibleSetting, injected on the run's connection at spawn beside
-//     iris.run_id); an absent setting defaults to wipe-eligible, the disposable
-//     registration default. A wipe-eligible write is born undo='open' (in wipe
+//     (WipeEligibleSetting); an absent setting defaults to wipe-eligible, the
+//     disposable registration default. A wipe-eligible write is born undo='open' (in wipe
 //     scope); a permanent-mode write is born undo='promoted' (out of scope, so a
 //     later wipe skips it). The pre_image carries the full prior row (to_json) only
 //     on a wipe-eligible update or delete, where undo can spend it on a wipe; it is

@@ -22,7 +22,7 @@ import (
 // the partitioned journal and the real iris.capture() function through the live pg
 // path, declares a user table with the three per-operation capture triggers, and mints
 // a dedicated pipeline writer role. Each subtest drives writes AS that role over a
-// connection carrying a run id (via pg.InjectRunID, as the engine injects it at spawn)
+// connection carrying a run id (via pg.InjectRunID, the harness's attributed form)
 // and the write's wipe-eligibility (the per-session iris.wipe_eligible setting the
 // trigger reads in-transaction), then asserts the live journal.
 //
@@ -131,7 +131,7 @@ func TestPayloadTiersAndModes(t *testing.T) {
 	writerBaseDSN := dsnTo(pg.DataDatabase, writer, writerpw)
 
 	// connFor opens a fresh writer connection carrying runID as the per-session
-	// iris.run_id setting (via pg.InjectRunID, the injected-connection mechanism) plus
+	// iris.run_id setting (via pg.InjectRunID, the harness's attributed form) plus
 	// the write's wipe-eligibility as iris.wipe_eligible -- exactly the two settings the
 	// engine injects on a run's data connection at spawn. A disposable run is
 	// wipe-eligible; a permanent run is not (its writes are born promoted).
