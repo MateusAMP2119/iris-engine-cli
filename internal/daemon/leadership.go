@@ -91,9 +91,6 @@ type Candidate struct {
 	// and the atomic turn commit an immediate manual run drives. Nil composes the
 	// shape tests (no feed; a producing turn dead-letters).
 	turnDB turnData
-	// turnGrants resolves a pipeline's declared reads and writes from the meta
-	// grants ledger for the turn protocol. Nil resolves no declared access.
-	turnGrants grantsReader
 	// roleCreds reads a pipeline role's persisted credential for the control
 	// orchestrator's provisioning path. Nil skips credential-backed provisioning.
 	roleCreds store.RoleCredentialReader
@@ -282,7 +279,7 @@ func WithDeadletterPlane(dp *deadletterPlane) CandidateOption {
 // for terminal window stamping. dbURL is the base scoped data-database connection a manual
 // run's IRIS_DB_URL is derived from (the same DSN the lane loop injects). A nil pp leaves
 // the candidate without a manual-run plane (the shape tests use).
-func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, turnDB turnData, turnGrants grantsReader, roleCreds store.RoleCredentialReader) CandidateOption {
+func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, turnDB turnData, roleCreds store.RoleCredentialReader) CandidateOption {
 	return func(c *Candidate) {
 		c.pipelines = pp
 		c.workspace = workspace
@@ -292,7 +289,6 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.runner = runner
 		c.journalHM = journal
 		c.turnDB = turnDB
-		c.turnGrants = turnGrants
 		c.roleCreds = roleCreds
 	}
 }
@@ -732,7 +728,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// store (the *pg.Client that also serves as the journal high-watermark), the
 		// meta seal read seam, the single dispatcher (checkpoint insert + archive
 		// flip), and the object store. Nil seams (the shape tests) leave sealing off.
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, c.turnGrants, reg, c.buildSealer(d), c.runLogs, c.logger)
+		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, reg, c.buildSealer(d), c.runLogs, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

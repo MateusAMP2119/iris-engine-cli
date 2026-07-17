@@ -194,7 +194,6 @@ func newLaneLoop(
 	runner exec.Runner,
 	journal dispatch.JournalHighWatermark,
 	data turnData,
-	grants grantsReader,
 	objects *store.ObjectStore,
 	counters *turnCounters,
 	passCounter *dispatch.PassCounter,
@@ -224,7 +223,6 @@ func newLaneLoop(
 		runner:    runner,
 		journal:   journal,
 		data:      data,
-		grants:    grants,
 		access:    newAccessCache(),
 		objects:   objects,
 		counters:  counters,
@@ -352,9 +350,8 @@ type laneExec struct {
 	queued    store.QueuedManualReader // enqueued lane-member manual runs; nil skips pickup (shape tests)
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	data      turnData      // data-database turn seam; nil composes shape tests (no feed, producing turns fault)
-	grants    grantsReader  // declared-access read seam; nil resolves no declared access
-	access    *accessCache  // per-pipeline declared-access cache keyed by declaration checksum
+	data      turnData     // data-database turn seam; nil composes shape tests (no feed, producing turns fault)
+	access    *accessCache // per-pipeline declared-access cache keyed by declaration checksum
 	objects   *store.ObjectStore
 	counters  *turnCounters // resident turn tallies for the ps readout; nil skips
 	runLogs   *RunLogWriter // per-run output capture; nil discards (shape tests)
@@ -377,7 +374,7 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 	if !found {
 		return dispatch.RunSucceeded, fmt.Errorf("lane turn %q: pipeline is not registered", rec.Pipeline)
 	}
-	sum, err := declarationChecksum(m.workspace, target.Folder)
+	raw, sum, err := declarationSource(m.workspace, target.Folder)
 	if err != nil {
 		return dispatch.RunSucceeded, fmt.Errorf("lane turn %q: %w", rec.Pipeline, err)
 	}
@@ -386,7 +383,7 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 	if err != nil {
 		return dispatch.RunSucceeded, fmt.Errorf("lane turn %q: start: %w", rec.Pipeline, err)
 	}
-	acc, err := m.access.resolve(ctx, m.grants, rec.Pipeline, sum)
+	acc, err := m.access.resolve(rec.Pipeline, sum, raw)
 	if err != nil {
 		return dispatch.RunSucceeded, fmt.Errorf("lane turn %q: %w", rec.Pipeline, err)
 	}
@@ -630,11 +627,11 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 		}
 		return dispatch.RunSucceeded, fmt.Errorf("lane run %q: start: %w", pipeline, err)
 	}
-	sum, err := declarationChecksum(m.workspace, target.Folder)
+	raw, sum, err := declarationSource(m.workspace, target.Folder)
 	if err != nil {
 		return dispatch.RunSucceeded, fmt.Errorf("lane run %q: %w", pipeline, err)
 	}
-	acc, err := m.access.resolve(ctx, m.grants, pipeline, sum)
+	acc, err := m.access.resolve(pipeline, sum, raw)
 	if err != nil {
 		return dispatch.RunSucceeded, fmt.Errorf("lane run %q: %w", pipeline, err)
 	}
@@ -887,15 +884,24 @@ func (p *lanePostPass) pruneRetention(ctx context.Context, report dispatch.PassR
 	return nil
 }
 
+// declarationSource reads the pipeline's declaration file and returns its raw
+// bytes plus their SHA-256 hex digest -- the value stamped as a run's
+// declaration_checksum, and the key under which the turn driver caches the
+// declaration's resolved access (the two always move together).
+func declarationSource(workspace, folder string) ([]byte, string, error) {
+	path := filepath.Join(workspace, folder, "iris-declare.yaml")
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: the declaration is an engine-registered pipeline folder under the leader's own workspace.
+	if err != nil {
+		return nil, "", fmt.Errorf("read declaration for checksum (%s): %w", path, err)
+	}
+	sum := sha256.Sum256(raw)
+	return raw, hex.EncodeToString(sum[:]), nil
+}
+
 // declarationChecksum reads the pipeline's declaration file and returns its SHA-256 hex
 // digest, the value stamped as a run's declaration_checksum (recorded on every run,
 // including a never-executed propagated one).
 func declarationChecksum(workspace, folder string) (string, error) {
-	path := filepath.Join(workspace, folder, "iris-declare.yaml")
-	raw, err := os.ReadFile(path) //nolint:gosec // G304: the declaration is an engine-registered pipeline folder under the leader's own workspace.
-	if err != nil {
-		return "", fmt.Errorf("read declaration for checksum (%s): %w", path, err)
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+	_, sum, err := declarationSource(workspace, folder)
+	return sum, err
 }

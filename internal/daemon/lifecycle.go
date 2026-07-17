@@ -322,14 +322,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		turnTally.reset() // a new leadership term starts a fresh turn account
 		return newLaneLoop(submit, inflight, residents, workspace, client.RegistryReader(), client.ManualReader(),
 			client.QueuedManualReader(), events,
-			exec.NewOSRunner(), data, data, client.ShowReader(), objects, turnTally, passCounter,
+			exec.NewOSRunner(), data, data, objects, turnTally, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
 	}
 
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, data, client.ShowReader(), client.RoleCredentialReader()),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, data, client.RoleCredentialReader()),
 		WithSealer(s.JournalPartitionRows, data, client.SealReader()),
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),

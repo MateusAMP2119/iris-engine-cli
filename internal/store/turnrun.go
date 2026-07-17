@@ -123,6 +123,21 @@ func (w *Writer) StampRunLogRef(ctx context.Context, id string, logRef string) e
 	return nil
 }
 
+// stampRunStartedSQL records a mint-first running run's process handle and log
+// reference once its subprocess exists, guarded on the running state.
+const stampRunStartedSQL = `UPDATE runs SET handle = $1, log_ref = NULLIF($2, '') WHERE id = $3 AND state = $4`
+
+// StampRunStarted records the process-group handle and log reference of a run
+// that was minted directly running (an immediate manual turn mints running so
+// the queued-manual pickup can never race it into a double execution); the
+// subprocess spawns after the mint, so the handle lands in this follow-up write.
+func (w *Writer) StampRunStarted(ctx context.Context, id string, pgid int, logRef string) error {
+	if err := w.conn.Exec(ctx, stampRunStartedSQL, pgid, logRef, id, RunRunning); err != nil {
+		return fmt.Errorf("store: writer stamp run started %s: %w", id, err)
+	}
+	return nil
+}
+
 // DeadLetterTurnRun mints a failed turn's run directly dead-lettered with its
 // worklist row and consumption ledger, one atomic meta transaction: a failed
 // turn always records (the dead-letter worklist is the product), even though a

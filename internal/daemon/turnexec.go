@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the daemon-side turn driver (#206): the one place a resident
@@ -32,13 +32,6 @@ type turnData interface {
 	CommitTurn(ctx context.Context, tc pg.TurnCommit) (pg.TurnStamps, error)
 }
 
-// grantsReader reads a role's field-level grants from the meta access ledger:
-// the declared reads and writes the turn protocol feeds and enforces.
-// store.ShowReader satisfies it.
-type grantsReader interface {
-	GrantsForRole(ctx context.Context, pgRole string) ([]store.Grant, error)
-}
-
 // declaredAccess is a pipeline's declared access resolved for the turn protocol:
 // the reads the feed covers and the writes the collector enforces.
 type declaredAccess struct {
@@ -46,46 +39,34 @@ type declaredAccess struct {
 	writes dispatch.WriteSet
 }
 
-// resolveDeclaredAccess reads the pipeline's declared reads and writes from the
-// grants ledger (the pipeline role's field grants, the same rows declare apply
-// records). A nil reader resolves to no declared access: no feed, and every
-// output row refused.
-func resolveDeclaredAccess(ctx context.Context, grants grantsReader, pipeline string) (declaredAccess, error) {
+// accessFromDeclaration resolves a pipeline's declared access straight from its
+// parsed declaration -- the same file the checksum is taken over, so the access
+// a turn enforces is exactly the declaration the run records. Reading the source
+// (never the grants ledger) keeps the resolution free of any apply-ordering
+// race: a registered pipeline always has its declaration on disk.
+func accessFromDeclaration(decl *declare.Pipeline) declaredAccess {
 	acc := declaredAccess{writes: dispatch.WriteSet{}}
-	if grants == nil {
-		return acc, nil
+	for _, r := range decl.Reads {
+		schema, table, ok := strings.Cut(r.Table, ".")
+		if !ok {
+			continue // validated at apply; a malformed entry grants nothing
+		}
+		acc.reads = append(acc.reads, pg.TurnRead{Schema: schema, Table: table, Fields: append([]string(nil), r.Fields...)})
 	}
-	rows, err := grants.GrantsForRole(ctx, pg.PipelineRoleName(pipeline))
-	if err != nil {
-		return declaredAccess{}, fmt.Errorf("turn access for %q: %w", pipeline, err)
-	}
-	readFields := map[string][]string{}
-	var readOrder []string
-	for _, g := range rows {
-		key := g.Schema + "." + g.Table
-		switch g.Access {
-		case store.AccessRead:
-			if _, seen := readFields[key]; !seen {
-				readOrder = append(readOrder, key)
-			}
-			readFields[key] = append(readFields[key], g.Field)
-		case store.AccessWrite:
-			if acc.writes[key] == nil {
-				acc.writes[key] = map[string]bool{}
-			}
-			acc.writes[key][g.Field] = true
+	for _, w := range decl.Writes {
+		if acc.writes[w.Table] == nil {
+			acc.writes[w.Table] = map[string]bool{}
+		}
+		for _, f := range w.Fields {
+			acc.writes[w.Table][f] = true
 		}
 	}
-	for _, key := range readOrder {
-		schema, table, _ := strings.Cut(key, ".")
-		acc.reads = append(acc.reads, pg.TurnRead{Schema: schema, Table: table, Fields: readFields[key]})
-	}
-	return acc, nil
+	return acc
 }
 
 // accessCache caches each pipeline's resolved declared access keyed by its
-// declaration checksum, so a turn costs no grants read until the declaration
-// changes (re-apply rewrites the grants and the checksum together).
+// declaration checksum, so a turn costs no re-parse until the declaration's
+// bytes change.
 type accessCache struct {
 	mu sync.Mutex
 	m  map[string]cachedAccess
@@ -102,17 +83,23 @@ func newAccessCache() *accessCache {
 	return &accessCache{m: map[string]cachedAccess{}}
 }
 
-// resolve returns the pipeline's declared access, reading through the cache.
-func (c *accessCache) resolve(ctx context.Context, grants grantsReader, pipeline, checksum string) (declaredAccess, error) {
+// resolve returns the pipeline's declared access for the declaration raw bytes
+// (whose checksum keys the cache), parsing on a miss. A declaration that parses
+// as something other than a pipeline resolves to no declared access.
+func (c *accessCache) resolve(pipeline, checksum string, raw []byte) (declaredAccess, error) {
 	c.mu.Lock()
 	got, ok := c.m[pipeline]
 	c.mu.Unlock()
 	if ok && got.checksum == checksum {
 		return got.access, nil
 	}
-	acc, err := resolveDeclaredAccess(ctx, grants, pipeline)
+	decl, err := declare.ParseDeclaration(raw)
 	if err != nil {
-		return declaredAccess{}, err
+		return declaredAccess{}, fmt.Errorf("turn access for %q: %w", pipeline, err)
+	}
+	acc := declaredAccess{writes: dispatch.WriteSet{}}
+	if decl.Kind == declare.KindPipeline && decl.Pipeline != nil {
+		acc = accessFromDeclaration(decl.Pipeline)
 	}
 	c.mu.Lock()
 	c.m[pipeline] = cachedAccess{checksum: checksum, access: acc}
