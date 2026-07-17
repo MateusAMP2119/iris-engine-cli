@@ -208,6 +208,7 @@ func (a *app) uninstallSelf() runE {
 			}
 		}
 		steps = append(steps, uninstallStep{Step: 3, Name: stepBinary, Status: "removed", Removed: []string{path}})
+		removeShellPathEntries()
 		if !jsonMode {
 			a.uninstallProgressBar(p, "🗑️  Removing binary and traces...")
 		}
@@ -346,6 +347,38 @@ func (a *app) terminalConfirm(question string, _ bool) (bool, error) {
 	}
 	ans := strings.ToLower(strings.TrimSpace(line))
 	return ans == "y" || ans == "yes", nil
+}
+
+// removeShellPathEntries strips the installer's "# iris" PATH block from shell rc files, best-effort.
+func removeShellPathEntries() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	for _, rc := range []string{".zshrc", ".bashrc"} {
+		p := filepath.Join(home, rc)
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile(p) //nolint:gosec // G304: fixed rc names under the user's own home.
+		if err != nil {
+			continue
+		}
+		var kept []string
+		changed := false
+		for _, line := range strings.Split(string(b), "\n") {
+			t := strings.TrimSpace(line)
+			if t == "# iris" || (strings.Contains(t, ".iris/bin") && strings.Contains(t, "PATH")) {
+				changed = true
+				continue
+			}
+			kept = append(kept, line)
+		}
+		if changed {
+			_ = os.WriteFile(p, []byte(strings.Join(kept, "\n")), info.Mode().Perm()) //nolint:gosec // G703: fixed rc names under the user's own home.
+		}
+	}
 }
 
 // resolveSelfPath resolves the running binary's real path through its symlinks so removal hits the actual file.

@@ -173,8 +173,23 @@ on_path=""
 case ":${PATH}:" in
   *":${dest}:"*) on_path=1 ;;
 esac
+# Not on PATH: wire it into the shell rc once (marked block, idempotent)
 if [ -z "$on_path" ]; then
-  printf "   ${YLW}!${RST} %s\n" "${dest} is not on your PATH; add: export PATH=\"${dest}:\$PATH\""
+  rc=""
+  case "${SHELL:-}" in
+    */zsh) rc="${HOME}/.zshrc" ;;
+    */bash) rc="${HOME}/.bashrc" ;;
+  esac
+  if [ -n "$rc" ] && [ -z "${IRIS_DEST:-}" ]; then
+    if ! grep -qs '\.iris/bin' "$rc"; then
+      printf '\n# iris\nexport PATH="$HOME/.iris/bin:$PATH"\n' >>"$rc"
+    fi
+    on_path=1
+    ok "Added ~/.iris/bin to PATH (~/${rc##*/})"
+    say "Restart your shell or run: source ${rc}"
+  else
+    printf "   ${YLW}!${RST} %s\n" "${dest} is not on your PATH; add: export PATH=\"${dest}:\$PATH\""
+  fi
 fi
 if [ -n "$installed" ]; then
   prev=$(command -v iris 2>/dev/null || true)
