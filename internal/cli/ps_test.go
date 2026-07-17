@@ -321,17 +321,24 @@ func TestPsOutputMode(t *testing.T) {
 		if code != exitNoDaemon {
 			t.Fatalf("engine-gone ps exit = %d, want %d", code, exitNoDaemon)
 		}
-		if s := errb.String(); !strings.Contains(s, "engine no longer reachable") || !strings.Contains(s, "iris engine start") {
-			t.Errorf("teardown line missing the reachability guidance: %s", s)
+		// The teardown line is the docker-ps-shaped connect message naming the
+		// exact target it lost.
+		if s := errb.String(); !strings.Contains(s, "Cannot connect to the iris engine at unix://"+sock) ||
+			!strings.Contains(s, "Is the engine running?") || !strings.Contains(s, "iris engine start") {
+			t.Errorf("teardown line missing the docker-shaped reachability guidance: %s", s)
 		}
 	})
 
-	t.Run("no daemon reachable exits 3", func(t *testing.T) {
+	t.Run("no daemon reachable exits 3 with the docker-shaped message", func(t *testing.T) {
 		sock := shortSocket(t) // nothing listening
 		var out, errb bytes.Buffer
 		code := newApp(&out, &errb).run([]string{"--socket", sock, "ps"})
 		if code != exitNoDaemon {
 			t.Fatalf("no-daemon ps exit = %d, want %d\nstderr: %s", code, exitNoDaemon, errb.String())
+		}
+		if s := errb.String(); !strings.Contains(s, "Cannot connect to the iris engine at unix://"+sock) ||
+			!strings.Contains(s, "Is the engine running?") {
+			t.Errorf("no-daemon line missing the docker-shaped connect message: %s", s)
 		}
 	})
 

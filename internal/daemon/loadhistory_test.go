@@ -4,10 +4,35 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
+
+// fakeLoadPersister is an in-memory loadPersister recording writes and prunes
+// and serving a scripted seed read.
+type fakeLoadPersister struct {
+	writes [][]pg.LoadBucket
+	prunes []int64
+	seed   []pg.LoadBucket
+	err    error
+}
+
+func (f *fakeLoadPersister) WriteLoadBuckets(_ context.Context, _ string, buckets []pg.LoadBucket) error {
+	f.writes = append(f.writes, buckets)
+	return f.err
+}
+
+func (f *fakeLoadPersister) ReadLoadHistory(context.Context, string, int64) ([]pg.LoadBucket, error) {
+	return f.seed, f.err
+}
+
+func (f *fakeLoadPersister) PruneLoadHistory(_ context.Context, before int64) error {
+	f.prunes = append(f.prunes, before)
+	return f.err
+}
 
 // loadTestFixture is the collector fixture: a running run (group 300) on the
 // ingest lane, a queued run (no live group), and a host sample where the
@@ -111,6 +136,111 @@ func TestLoadHistoryAbsenceAndLockstep(t *testing.T) {
 		// (born first) bounds them all.
 		if eng := byKey["engine"]; len(eng.CPU) == 0 {
 			t.Fatal("engine series vanished")
+		}
+	})
+}
+
+// TestLoadHistoryPersistsSeals proves the persistence path: a full bucket's
+// seal writes one row per live series (values for the sampled, NULL-shaped
+// absence for the unsampled), nothing writes between seals, and the retention
+// prune fires on its own sparser cadence.
+func TestLoadHistoryPersistsSeals(t *testing.T) {
+	t.Run("load-history-persists", func(t *testing.T) {
+		runs, probe := loadTestFixture()
+		p := &fakeLoadPersister{}
+		h := newLoadHistory(runs, func() int { return 200 }, p, nil)
+		h.probe = probe
+		h.pid = 100
+
+		for range loadCoarseBucketTicks - 1 {
+			h.sample(context.Background())
+		}
+		if len(p.writes) != 0 {
+			t.Fatalf("wrote %d batches before the bucket sealed, want none", len(p.writes))
+		}
+		h.runs = fakeRunReader{} // the run ends just before the seal
+		h.sample(context.Background())
+		if len(p.writes) != 1 {
+			t.Fatalf("wrote %d batches after the seal, want exactly one", len(p.writes))
+		}
+		byKey := map[string]pg.LoadBucket{}
+		for _, b := range p.writes[0] {
+			byKey[b.Series] = b
+		}
+		if e := byKey["engine"]; !e.Sampled || e.CPUMax != 52.0 || e.RSSMax != 50<<20 || e.Bucket == 0 {
+			t.Errorf("engine bucket = %+v, want the bucket's sampled maxima with a seal time", e)
+		}
+		if l := byKey["pipeline:load"]; !l.Sampled || l.CPUMax != 50 {
+			t.Errorf("pipeline bucket = %+v, want the run's max before it ended", l)
+		}
+		if len(p.prunes) != 0 {
+			t.Fatalf("pruned %d times after one seal, want none yet", len(p.prunes))
+		}
+
+		// Prune fires on the sparse cadence, cut at the retention window.
+		for range loadCoarseBucketTicks * (loadPersistPruneSeals - 1) {
+			h.sample(context.Background())
+		}
+		if len(p.prunes) != 1 {
+			t.Fatalf("pruned %d times after %d seals, want exactly one", len(p.prunes), loadPersistPruneSeals)
+		}
+		if cut := time.Now().Add(-loadPersistRetention).Unix(); p.prunes[0] > cut+60 || p.prunes[0] < cut-60 {
+			t.Errorf("prune cutoff = %d, want about now minus the retention window (%d)", p.prunes[0], cut)
+		}
+	})
+}
+
+// TestLoadHistorySeedsFromPersisted proves the seeding read: persisted buckets
+// replay into the coarse rings in order, missing steps and the downtime gap to
+// now fill as absent slots, and a failed read leaves the collector blank
+// rather than faulting.
+func TestLoadHistorySeedsFromPersisted(t *testing.T) {
+	t.Run("load-history-seeds", func(t *testing.T) {
+		now := time.Now().Unix()
+		p := &fakeLoadPersister{seed: []pg.LoadBucket{
+			// Three minutes ago, one minute's hole, then a NULL bucket two
+			// buckets before a two-minute downtime gap to now.
+			{Series: "engine", Bucket: now - 5*loadBucketSeconds, CPUMax: 40, RSSMax: 1 << 20, Sampled: true},
+			{Series: "engine", Bucket: now - 3*loadBucketSeconds, Sampled: false},
+			{Series: "pipeline:load", Bucket: now - 3*loadBucketSeconds, CPUMax: 70, RSSMax: 2 << 20, Sampled: true},
+		}}
+		h := newLoadHistory(fakeRunReader{}, nil, p, nil)
+		h.probe = fakeProbe{}
+		h.seed(context.Background())
+
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		eng := h.series["engine"]
+		if eng == nil {
+			t.Fatal("seed built no engine series")
+		}
+		// 40, hole, no-sample bucket, then the downtime gap (3 slots to now).
+		want := []float64{40, api.PsHistoryNoSample, api.PsHistoryNoSample, api.PsHistoryNoSample, api.PsHistoryNoSample, api.PsHistoryNoSample}
+		if len(eng.coarseCPU) != len(want) {
+			t.Fatalf("engine coarse = %v, want %d slots (bucket, hole, null bucket, 3-slot gap)", eng.coarseCPU, len(want))
+		}
+		for i, w := range want {
+			if eng.coarseCPU[i] != w {
+				t.Fatalf("engine coarse = %v, want %v", eng.coarseCPU, want)
+			}
+		}
+		if lo := h.series["pipeline:load"]; lo == nil || lo.coarseCPU[0] != 70 {
+			t.Errorf("pipeline series = %+v, want its persisted bucket first", lo)
+		}
+		if len(eng.cpu) != 0 {
+			t.Errorf("seed touched the fine ring: %v", eng.cpu)
+		}
+	})
+
+	t.Run("load-history-seed-failure-stays-blank", func(t *testing.T) {
+		p := &fakeLoadPersister{err: errors.New("data database down")}
+		h := newLoadHistory(fakeRunReader{}, nil, p, nil)
+		h.probe = fakeProbe{}
+		h.seed(context.Background())
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if len(h.series) != 0 {
+			t.Errorf("a failed seed built series %v, want a blank collector", h.series)
 		}
 	})
 }
