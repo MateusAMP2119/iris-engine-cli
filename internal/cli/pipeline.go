@@ -175,7 +175,7 @@ func (a *app) noDaemonFault() error {
 	return &fault{
 		code:    exitNoDaemon,
 		codeStr: "no_daemon",
-		message: `no Iris daemon reachable; start the engine with "iris engine start", or target a running daemon with --socket or --host`,
+		message: `Cannot connect to the iris engine. Is the engine running? Start it with "iris engine start", or target a running engine with --socket or --host`,
 	}
 }
 

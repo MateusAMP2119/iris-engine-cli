@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
@@ -44,7 +45,37 @@ const (
 	// loadCoarseRingCap bounds the coarse ring: at 60s buckets this holds 12
 	// hours of history.
 	loadCoarseRingCap = 720
+	// loadPersistRetention bounds the persisted history: buckets older than
+	// this are pruned. Wider than the ring so the table stays SQL-queryable
+	// past what the readout renders.
+	loadPersistRetention = 7 * 24 * time.Hour
+	// loadPersistPruneSeals spaces the retention prune: once per this many
+	// seals (about hourly at 60s buckets) rather than every seal.
+	loadPersistPruneSeals = 60
+	// loadSeedWindow is how far back the seeding read replays at start: the
+	// coarse ring's own depth, no more.
+	loadSeedWindow = loadSampleInterval * loadCoarseBucketTicks * loadCoarseRingCap
 )
+
+// loadBucketSeconds is one coarse bucket's span in seconds, the step the
+// seeding read sizes downtime gaps with.
+const loadBucketSeconds = int64(loadSampleInterval/time.Second) * loadCoarseBucketTicks
+
+// loadPersister is the collector's persistence seam: the data-database client
+// the sealed coarse buckets write through, read back from at start, and prune
+// on the retention window. *pg.Client satisfies it; nil keeps the collector
+// memory-only (tests, or a data database whose ensure failed).
+type loadPersister interface {
+	// WriteLoadBuckets persists one seal's buckets for node.
+	WriteLoadBuckets(ctx context.Context, node string, buckets []pg.LoadBucket) error
+	// ReadLoadHistory reads node's buckets sealed at or after since, in bucket order.
+	ReadLoadHistory(ctx context.Context, node string, since int64) ([]pg.LoadBucket, error)
+	// PruneLoadHistory deletes every node's buckets sealed before the cutoff.
+	PruneLoadHistory(ctx context.Context, before int64) error
+}
+
+// compile-time proof the data client satisfies the collector's persistence seam.
+var _ loadPersister = (*pg.Client)(nil)
 
 // loadSeries is one entity's recorded history: the fine ring, the coarse ring,
 // and the running partial bucket (the per-bucket maxima accumulated since the
@@ -125,40 +156,53 @@ type loadHistory struct {
 	probe     loadProber
 	runs      RunSnapshotReader
 	managedPG func() int
+	persist   loadPersister
+	node      string
 	logger    *slog.Logger
 	pid       int
 
 	mu          sync.Mutex
 	tick        uint64
 	bucketTicks int
+	seals       int
 	engineLoad  *api.PsLoad
 	groupLoad   map[int]*api.PsLoad
 	series      map[string]*loadSeries
 }
 
-// newLoadHistory builds the collector over the run reader and the managed
-// postmaster locator (nil for none), probing through the production ps(1)
-// probe. A nil logger discards output.
-func newLoadHistory(runs RunSnapshotReader, managedPG func() int, logger *slog.Logger) *loadHistory {
+// newLoadHistory builds the collector over the run reader, the managed
+// postmaster locator (nil for none), and the persistence seam (nil for
+// memory-only), probing through the production ps(1) probe. The node identity
+// is the sampling host's name -- ps(1) load is a per-host truth, so the
+// persisted rows carry it. A nil logger discards output.
+func newLoadHistory(runs RunSnapshotReader, managedPG func() int, persist loadPersister, logger *slog.Logger) *loadHistory {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if managedPG == nil {
 		managedPG = func() int { return 0 }
 	}
+	node, err := os.Hostname()
+	if err != nil || node == "" {
+		node = "unknown"
+	}
 	return &loadHistory{
 		probe:     psProbe{},
 		runs:      runs,
 		managedPG: managedPG,
+		persist:   persist,
+		node:      node,
 		logger:    logger,
 		pid:       os.Getpid(),
 		series:    map[string]*loadSeries{},
 	}
 }
 
-// run is the collector's goroutine: an immediate first sample (the first
-// readout should not wait a full interval), then one per tick until ctx ends.
+// run is the collector's goroutine: the persisted-history seed, an immediate
+// first sample (the first readout should not wait a full interval), then one
+// per tick until ctx ends.
 func (h *loadHistory) run(ctx context.Context) {
+	h.seed(ctx)
 	h.sample(ctx)
 	t := time.NewTicker(loadSampleInterval)
 	defer t.Stop()
@@ -169,6 +213,61 @@ func (h *loadHistory) run(ctx context.Context) {
 		case <-t.C:
 			h.sample(ctx)
 		}
+	}
+}
+
+// seed replays the persisted coarse buckets into the coarse rings, so a
+// restarted daemon opens with its recorded history instead of a blank window
+// (the whole point of persisting: engine restarts -- updates, crashes,
+// reboots -- stop truncating the readout). Buckets arrive in seal order;
+// missing steps between them, and the downtime gap between the newest bucket
+// and now, fill as absent slots so the time axis stays honest. Best-effort by
+// contract: a failed read logs at debug and the collector starts blank.
+func (h *loadHistory) seed(ctx context.Context) {
+	if h.persist == nil {
+		return
+	}
+	now := time.Now().Unix()
+	rows, err := h.persist.ReadLoadHistory(ctx, h.node, now-int64(loadSeedWindow/time.Second))
+	if err != nil {
+		h.logger.Debug("load collector history seed failed", "err", err)
+		return
+	}
+	bySeries := map[string][]pg.LoadBucket{}
+	for _, b := range rows {
+		bySeries[b.Series] = append(bySeries[b.Series], b)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for key, buckets := range bySeries {
+		s := newLoadSeries()
+		prev := int64(0)
+		absent := func(n int64) {
+			for ; n > 0 && int64(len(s.coarseCPU)) < loadCoarseRingCap; n-- {
+				s.coarseCPU = append(s.coarseCPU, api.PsHistoryNoSample)
+				s.coarseRSS = append(s.coarseRSS, 0)
+			}
+		}
+		for _, b := range buckets {
+			if prev != 0 {
+				absent((b.Bucket-prev)/loadBucketSeconds - 1)
+			}
+			cpu, rss := float64(api.PsHistoryNoSample), int64(0)
+			if b.Sampled {
+				cpu, rss = b.CPUMax, b.RSSMax
+			}
+			s.coarseCPU = append(s.coarseCPU, cpu)
+			s.coarseRSS = append(s.coarseRSS, rss)
+			prev = b.Bucket
+		}
+		if prev != 0 {
+			absent((now - prev) / loadBucketSeconds) // the downtime gap reaches the present
+		}
+		if len(s.coarseCPU) > loadCoarseRingCap {
+			s.coarseCPU = s.coarseCPU[len(s.coarseCPU)-loadCoarseRingCap:]
+			s.coarseRSS = s.coarseRSS[len(s.coarseRSS)-loadCoarseRingCap:]
+		}
+		h.series[key] = s
 	}
 }
 
@@ -225,6 +324,30 @@ func (h *loadHistory) sample(ctx context.Context) {
 		}
 	}
 
+	sealed, prune := h.record(engine, groups, entity)
+
+	// Persistence rides after the lock: one best-effort write per seal, and
+	// the retention prune on its own sparser cadence. A failed write loses at
+	// most one bucket row; the memory rings are untouched either way.
+	if h.persist == nil || len(sealed) == 0 {
+		return
+	}
+	if err := h.persist.WriteLoadBuckets(ctx, h.node, sealed); err != nil {
+		h.logger.Debug("load collector history write failed", "err", err)
+	}
+	if prune {
+		if err := h.persist.PruneLoadHistory(ctx, time.Now().Add(-loadPersistRetention).Unix()); err != nil {
+			h.logger.Debug("load collector history prune failed", "err", err)
+		}
+	}
+}
+
+// record takes one tick's attributed sample under the lock: the tick advances,
+// every live series takes exactly one slot (lockstep, so all series end at
+// this tick and align from their ends), and a full bucket seals. It returns
+// the sealed buckets for persistence (nil between seals) and whether this seal
+// is a prune tick.
+func (h *loadHistory) record(engine *api.PsLoad, groups map[int]*api.PsLoad, entity map[string]*api.PsLoad) (sealed []pg.LoadBucket, prune bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tick++
@@ -239,8 +362,6 @@ func (h *loadHistory) sample(ctx context.Context) {
 	for key := range entity {
 		ensure(key)
 	}
-	// Lockstep: every live series takes exactly one slot per tick, so all
-	// series end at this tick and align from their ends.
 	for key, s := range h.series {
 		if key == "engine" {
 			s.push(engine)
@@ -251,13 +372,25 @@ func (h *loadHistory) sample(ctx context.Context) {
 	h.bucketTicks++
 	if h.bucketTicks >= loadCoarseBucketTicks {
 		h.bucketTicks = 0
+		at := time.Now().Unix()
 		for key, s := range h.series {
+			// The partial's maxima are collected before seal() resets them.
+			sealed = append(sealed, pg.LoadBucket{
+				Series:  key,
+				Bucket:  at,
+				CPUMax:  max(s.bucketCPU, 0),
+				RSSMax:  s.bucketRSS,
+				Sampled: s.bucketCPU != api.PsHistoryNoSample,
+			})
 			s.seal()
 			if key != "engine" && s.dead() {
 				delete(h.series, key)
 			}
 		}
+		h.seals++
+		prune = h.seals%loadPersistPruneSeals == 0
 	}
+	return sealed, prune
 }
 
 // latest returns the newest sample: the tick counter, the engine load, and the

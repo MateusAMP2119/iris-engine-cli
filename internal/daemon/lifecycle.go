@@ -243,9 +243,20 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// managed Postgres's. The collector samples for the daemon's whole life,
 	// clients attached or not, so its in-memory history (?history=1) is what
 	// lets a fresh `iris ps` open with hours of load context instead of a blank
-	// graph. The resident turn counters (#206): quiet turns write no rows, so
-	// this in-memory tally is the ps readout's only trace of a quiet loop.
-	loads := newLoadHistory(client.Reader(), ManagedPostmasterPID(s), logger)
+	// graph. The collector's coarse buckets also persist into the engine-owned
+	// load-history table (best-effort: a data database that cannot host it
+	// keeps the collector memory-only), and seed the rings back at start, so
+	// an engine restart -- an update, a crash, a reboot -- no longer truncates
+	// the readout's window. The resident turn counters (#206): quiet turns
+	// write no rows, so this in-memory tally is the ps readout's only trace of
+	// a quiet loop.
+	var loadStore loadPersister
+	if err := pg.EnsureLoadHistory(ctx, data); err != nil {
+		logger.Warn("iris daemon: ensure load history; the ps history stays memory-only", "err", err)
+	} else {
+		loadStore = data
+	}
+	loads := newLoadHistory(client.Reader(), ManagedPostmasterPID(s), loadStore, logger)
 	go loads.run(ctx)
 	turnTally := newTurnCounters()
 	psp := NewPsPlane(role, client.Reader(), loads, turnTally, logger)

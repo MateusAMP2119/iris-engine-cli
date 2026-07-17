@@ -42,7 +42,7 @@ func intp(c int) *int { return &c }
 // managed postmaster (pid 200) so the load summing is assertable, and drives
 // exactly one sample tick.
 func psTestLoads(runs RunSnapshotReader, probe loadProber) *loadHistory {
-	h := newLoadHistory(runs, func() int { return 200 }, nil)
+	h := newLoadHistory(runs, func() int { return 200 }, nil, nil)
 	h.probe = probe
 	h.pid = 100
 	h.sample(context.Background())

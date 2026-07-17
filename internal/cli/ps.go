@@ -101,11 +101,7 @@ func (a *app) ps() runE {
 				if errors.As(lerr, &herr) {
 					return &fault{code: exitOpFailed, codeStr: herr.code, message: "ps: " + herr.Error()}
 				}
-				return &fault{
-					code:    exitNoDaemon,
-					codeStr: "no_daemon",
-					message: `ps: engine no longer reachable; start it with "iris engine start"`,
-				}
+				return a.noDaemonFaultAt(settings)
 			}
 			// Raw mode refused despite an interactive stdin (rare): fall back
 			// to the JSON emit -- never a hung or key-less view. Refetch the
@@ -121,14 +117,37 @@ func (a *app) ps() runE {
 
 // psFetchFault classifies a one-shot /ps read failure: a reached daemon's
 // refusal keeps its own message (operation-failed), a transport failure is
-// no-daemon with start guidance.
+// no-daemon with the docker-ps-shaped connect message naming the exact target.
 func (a *app) psFetchFault(settings config.Settings, err error) error {
 	var herr *psHTTPError
 	if errors.As(err, &herr) {
 		return &fault{code: exitOpFailed, codeStr: herr.code, message: "ps: " + herr.Error()}
 	}
 	a.logger.Debug("no iris daemon reachable", "op", "ps", "socket", settings.Socket, "host", settings.Host, "err", err)
-	return a.noDaemonFault()
+	return a.noDaemonFaultAt(settings)
+}
+
+// engineAddr renders the resolved engine target the way docker names its
+// daemon socket in connect errors: the remote host when one is set, else the
+// unix socket path.
+func engineAddr(s config.Settings) string {
+	if s.Host != "" {
+		return s.Host
+	}
+	return "unix://" + s.Socket
+}
+
+// noDaemonFaultAt is the docker-ps-shaped no-daemon fault naming the exact
+// resolved target ("Cannot connect to the Docker daemon at
+// unix:///var/run/docker.sock. Is the docker daemon running?" is the shape it
+// mirrors). Verbs that never resolved a target keep the address-less
+// noDaemonFault.
+func (a *app) noDaemonFaultAt(s config.Settings) error {
+	return &fault{
+		code:    exitNoDaemon,
+		codeStr: "no_daemon",
+		message: fmt.Sprintf(`Cannot connect to the iris engine at %s. Is the engine running? Start it with "iris engine start"`, engineAddr(s)),
+	}
 }
 
 // livePs resolves the live-view seam: the injected fake in tests, the real

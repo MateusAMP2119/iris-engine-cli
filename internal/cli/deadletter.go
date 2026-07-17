@@ -120,7 +120,7 @@ func (a *app) postReplay(cmd *cobra.Command, scope replayScope) error {
 		return &fault{
 			code:    exitNoDaemon,
 			codeStr: "no_daemon",
-			message: `no Iris daemon reachable; start the engine with "iris engine start", or target a running daemon with --socket or --host`,
+			message: `Cannot connect to the iris engine. Is the engine running? Start it with "iris engine start", or target a running engine with --socket or --host`,
 		}
 	}
 	defer func() {
@@ -310,7 +310,7 @@ func (a *app) postDrain(cmd *cobra.Command, scope drainScope) error {
 		return &fault{
 			code:    exitNoDaemon,
 			codeStr: "no_daemon",
-			message: `no Iris daemon reachable; start the engine with "iris engine start", or target a running daemon with --socket or --host`,
+			message: `Cannot connect to the iris engine. Is the engine running? Start it with "iris engine start", or target a running engine with --socket or --host`,
 		}
 	}
 	defer func() {
