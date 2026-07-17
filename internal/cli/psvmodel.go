@@ -3,6 +3,7 @@ package cli
 import (
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
@@ -75,6 +76,10 @@ type psSnapshot struct {
 	pipelines []api.PipelineListItem
 	logs      []string
 	logsRun   string
+	// staleAge marks a snapshot revived from the last-known-state cache (the
+	// engine was unreachable at open): how old the cached state is. Zero on a
+	// live snapshot. The view opens it under the unreachable banner.
+	staleAge time.Duration
 }
 
 // psModel is the dashboard's whole state. update() is the only mutator the
@@ -144,6 +149,9 @@ func newPsModel(first psSnapshot, target string) *psModel {
 		m.expanded[m.selLane] = true
 	}
 	m.clampTable()
+	if first.staleAge > 0 {
+		m.warn = psUnreachableWarn + " · cached " + first.staleAge.Truncate(time.Second).String() + " ago"
+	}
 	return m
 }
 
@@ -409,6 +417,12 @@ func (m *psModel) absorbRings() {
 		return
 	}
 	if tick := m.snap.ps.SampleTick; tick != 0 {
+		if tick < m.lastTick {
+			// The collector's counter went backwards: a restarted (or different)
+			// daemon answers now -- the reconnect case. Reset the gate so its
+			// samples land instead of being skipped until the counter catches up.
+			m.lastTick = 0
+		}
 		if tick <= m.lastTick {
 			return
 		}

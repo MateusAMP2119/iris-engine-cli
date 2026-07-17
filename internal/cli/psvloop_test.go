@@ -316,24 +316,35 @@ func TestPollPs(t *testing.T) {
 			t.Errorf("daemon cancelled %q, want 7", got)
 		}
 
-		// The daemon stopping mid-view ends the poller with the fatal message.
+		// The daemon stopping mid-view is an unreachable tick, not a teardown:
+		// the poller reports it and keeps ticking (the reconnect loop).
 		shutdown()
 		_ = ln.Close()
 		deadline = time.After(5 * time.Second)
 		for {
+			pm = waitPoll("an unreachable tick")
+			if pm.err != nil {
+				t.Fatalf("a stopped daemon must read unreachable, not fatal: %v", pm.err)
+			}
+			if pm.unreachable {
+				break
+			}
 			select {
-			case pm = <-polls:
-				if pm.err != nil {
-					select {
-					case <-done:
-					case <-time.After(5 * time.Second):
-						t.Fatal("the poller kept running after a fatal poll")
-					}
-					return
-				}
 			case <-deadline:
 				t.Fatal("the poller never reported the stopped daemon")
+			default:
 			}
+		}
+		select {
+		case <-done:
+			t.Fatal("the poller quit on an unreachable engine; it must keep retrying")
+		case <-time.After(50 * time.Millisecond):
+		}
+		cancel() // only the view's exit ends the reconnect loop
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the poller outlived its context")
 		}
 	})
 }

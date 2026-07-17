@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -81,14 +82,34 @@ func (a *app) ps() runE {
 		// pre-seeded, so the graphs never restart with the client) and filters
 		// client-side.
 		payload, err := client.fetchPs(cmd.Context(), all || live, live)
+
+		// An unreachable engine at open revives the target's last known state
+		// (when one is cached) instead of tearing down: the view opens
+		// read-only under the unreachable banner and the poller retries until
+		// the engine returns. A reached daemon REFUSING the read, and the
+		// machine surface (--json, pipes), keep the fault path.
+		var first psSnapshot
+		stale := false
 		if err != nil {
-			return a.psFetchFault(settings, err)
+			var herr *psHTTPError
+			if !live || errors.As(err, &herr) {
+				return a.psFetchFault(settings, err)
+			}
+			snap, savedAt, ok := client.cache.load()
+			if !ok {
+				return a.psFetchFault(settings, err)
+			}
+			first, stale = snap, true
+			first.staleAge = time.Since(savedAt)
 		}
 
 		if live {
-			first := psSnapshot{ps: payload}
-			if pipes, perr := client.fetchPipelines(cmd.Context()); perr == nil {
-				first.pipelines = pipes
+			if !stale {
+				first = psSnapshot{ps: payload}
+				if pipes, perr := client.fetchPipelines(cmd.Context()); perr == nil {
+					first.pipelines = pipes
+				}
+				client.cache.save(first) // the open itself is a fresh last known state
 			}
 			entered, lerr := a.livePs(cmd, client, first, psTarget(settings, client.overTCP))
 			if entered {

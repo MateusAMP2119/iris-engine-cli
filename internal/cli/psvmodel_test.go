@@ -325,6 +325,22 @@ func TestPsModelUpdate(t *testing.T) {
 			}
 		})
 
+		t.Run("a collector restart resets the tick gate", func(t *testing.T) {
+			first := psvFixture()
+			first.ps.SampleTick = 40
+			m := newPsModel(first, "")
+			back := psvFixture() // a restarted daemon answers with a small tick
+			back.ps.SampleTick = 2
+			m.absorb(back)
+			eng := m.rings[""]
+			if len(eng.cpu) != 2 || eng.cpu[1] != 3.2 {
+				t.Fatalf("engine ring after a tick regression = %+v, want the restarted collector's sample appended", eng.cpu)
+			}
+			if m.lastTick != 2 {
+				t.Errorf("lastTick = %d, want the restarted collector's 2", m.lastTick)
+			}
+		})
+
 		t.Run("a history payload re-seeds the rings", func(t *testing.T) {
 			s := psvFixture()
 			s.ps.SampleTick = 40

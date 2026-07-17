@@ -30,6 +30,10 @@ import (
 // psPollInterval is the live view's refresh cadence.
 const psPollInterval = time.Second
 
+// psUnreachableWarn is the standing banner while the poller cannot reach the
+// engine: the view keeps its last state and the poller keeps retrying.
+const psUnreachableWarn = "engine unreachable · showing last known state · retrying"
+
 // psHistoryRefreshPolls is how many polls ride between ?history=1 reads: the
 // view seeds its load rings from the daemon's recorded history once at open,
 // then re-seeds every this-many ticks so the coarse rings (sealed daemon-side
@@ -68,12 +72,13 @@ type psDaemonClient struct {
 	base    string
 	token   string
 	overTCP bool
+	cache   *psCache // last-known-state cache for this target; nil drops it
 }
 
 // newPsDaemonClient builds the ps client for the resolved target.
 func (a *app) newPsDaemonClient(s config.Settings) *psDaemonClient {
 	client, base, overTCP := a.daemonHTTPClient(s)
-	return &psDaemonClient{client: client, base: base, token: s.Token, overTCP: overTCP}
+	return &psDaemonClient{client: client, base: base, token: s.Token, overTCP: overTCP, cache: newPsCache(engineAddr(s))}
 }
 
 // get issues one GET against the daemon, presenting the PAT over TCP.
@@ -226,18 +231,24 @@ func drainClose(resp *http.Response) {
 }
 
 // psPollMsg is one poll outcome: a fresh snapshot (with a warning line when a
-// soft fetch failed), or the error that ends the view (the /ps read failed).
+// soft fetch failed), an unreachable tick (the engine did not answer; the view
+// keeps its last state and the poller keeps trying), or the error that ends
+// the view (the daemon answered and refused the read).
 type psPollMsg struct {
-	snap psSnapshot
-	warn string
-	err  error
+	snap        psSnapshot
+	warn        string
+	unreachable bool
+	err         error
 }
 
 // pollPs is the live view's poller goroutine: every tick it re-reads the /ps
 // history and the pipeline listing, plus the focused run's log tail, and ships
-// one snapshot. The /ps read failing ends the poller (and the view); the
-// listing and logs are soft -- their last good value rides along. Cancel
-// requests arrive on cancelCh and their outcomes return as notes.
+// one snapshot. A transport failure is an unreachable tick, not a teardown:
+// the poller keeps ticking and reconnects when the engine returns (the
+// docker-parity behavior the stale banner narrates). Only a reached daemon
+// REFUSING the read ends the poller (and the view). The listing and logs are
+// soft -- their last good value rides along. Cancel requests arrive on
+// cancelCh and their outcomes return as notes.
 func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 	focusCh <-chan string, cancelCh <-chan string, polls chan psPollMsg, notes chan<- string) {
 	var (
@@ -252,8 +263,13 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 			if ctx.Err() != nil {
 				return false // the view is exiting; not an engine-gone verdict
 			}
-			sendPoll(polls, psPollMsg{err: err})
-			return false
+			var herr *psHTTPError
+			if errors.As(err, &herr) {
+				sendPoll(polls, psPollMsg{err: err})
+				return false
+			}
+			sendPoll(polls, psPollMsg{unreachable: true})
+			return true // keep ticking: the view shows its last state until the engine returns
 		}
 		// The listing and the log tail are soft: their last good value rides
 		// along, but the failure is surfaced -- an empty lanes screen on a
@@ -274,6 +290,11 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 		snap := psSnapshot{ps: ps, pipelines: lastPipes}
 		if focus != "" {
 			snap.logs, snap.logsRun = lastLogs, focus
+		}
+		// A history-carrying poll (once a minute) refreshes the last-known-state
+		// cache: the snapshot a later unreachable-at-open view revives.
+		if ps.History != nil {
+			c.cache.save(snap)
 		}
 		sendPoll(polls, psPollMsg{snap: snap, warn: warn})
 		return true
@@ -386,6 +407,12 @@ func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 		case pm := <-v.polls:
 			if pm.err != nil {
 				return pm.err
+			}
+			if pm.unreachable {
+				// Keep the last state on screen under a standing banner; the
+				// poller is already retrying, and the next good poll clears it.
+				m.warn = psUnreachableWarn
+				continue
 			}
 			m.warn = pm.warn
 			m.absorb(pm.snap)
