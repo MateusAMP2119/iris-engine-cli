@@ -66,9 +66,8 @@ func AllowedDirectDependency(path string) bool {
 		"github.com/alexedwards/argon2id",
 		"golang.org/x/crypto",
 		"github.com/fergusstrange/embedded-postgres",
-		// Raw terminal mode for the quickstart widgets (clack-ceremony) and the
-		// `iris ps` live view (raw keys, terminal size) -- a permanent
-		// dependency of the CLI's interactive surfaces.
+		// Raw terminal mode for the `iris ps` live view (raw keys, terminal
+		// size) -- a permanent dependency of the CLI's interactive surfaces.
 		"golang.org/x/term":
 		return true
 	}

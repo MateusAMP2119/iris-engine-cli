@@ -31,7 +31,7 @@ One command, no dependencies. Installs the latest prebuilt static binary.
 curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
 ```
 
-The installer ends by offering `iris quickstart` — the guided tour of the first session. Take it any time later with the same command.
+The installer ends by printing the first commands of a real session — see [Getting started](#getting-started).
 
 ### Snapshot channel (bleeding edge)
 
@@ -94,8 +94,6 @@ curl -fsSL https://install.iris-lakehouse.bymarreco.com/uninstall.sh | bash
 
 ## Getting started
 
-New here? `iris quickstart` walks this whole section for you: it explains each step, asks before running it, and really runs it — ending with a live engine and a row you can trace. The rest of this section is the manual version.
-
 A pipeline is a folder: one script, one declaration:
 
 ```
@@ -150,7 +148,6 @@ Global flags everywhere: `--json` (machine output), `--socket`, `--host`, `--tok
 | `iris pat` | `create`, `list`, `revoke` | Personal access tokens (scopes: `control`, `read`, `data`) |
 | `iris engine` | `start`, `stop`, `install`, `uninstall`, `logs`, `inspect`, `connect`, `service …` | Daemon and host lifecycle |
 | `iris ps` | *(root verb)* | Engine process status: a live full-screen view on a terminal (lanes, pipelines, runs, log tails); the `GET /ps` JSON envelope when piped or under `--json` (`--all` widens the JSON runs to history) |
-| `iris quickstart` | *(root verb)* | Guided tour of the first session (`--yes` runs it unattended) |
 | `iris update` | *(root verb)* | Self-replace the installed binary with the latest release (`--snapshot` for the rolling build) |
 | `iris uninstall` | *(root verb)* | Remove the installed iris binary itself (prompts first; engine must be down) |
 

@@ -107,7 +107,7 @@ You can even run the full installer against the workers.dev URL for testing:
 curl -fsSL https://iris-install.mateus-costa464.workers.dev | bash
 ```
 
-(Use `IRIS_NO_SETUP=1` if you just want to test the download part.)
+(Use `IRIS_DEST=<dir>` to install into a throwaway directory while testing.)
 
 ### 4. Attach your real domain
 

@@ -13,8 +13,6 @@
 # Knobs:
 #   first argument       release tag to install ("snapshot" → rolling development build)
 #   IRIS_VERSION=<tag>   same as the argument; the argument wins if both are set
-#   IRIS_NO_SETUP=1      install only; never hand off to the setup tour
-#   IRIS_FORCE=1         legacy alias of IRIS_NO_SETUP
 #   IRIS_BASE_URL=<url>  fetch the asset + checksums from here (local testing)
 #   IRIS_DEST=<dir>      install into this directory (local testing)
 #   NO_COLOR             plain output
@@ -100,7 +98,7 @@ asset="iris_${os}_${arch}.tar.gz"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-section "[1/3] Downloading"
+section "[1/2] Downloading"
 say "Fetching ${asset}"
 curl -fsSL "${BASE}/${asset}" -o "${tmp}/${asset}"
 curl -fsSL "${BASE}/checksums.txt" -o "${tmp}/checksums.txt"
@@ -117,7 +115,7 @@ ok "Checksum verified"
 
 tar -xzf "${tmp}/${asset}" -C "$tmp"
 
-section "[2/3] Installing"
+section "[2/2] Installing"
 # Prefer /usr/local/bin; fall back to ~/.local/bin when not writable and sudo is unavailable.
 dest="/usr/local/bin"
 if [ -n "${IRIS_DEST:-}" ]; then
@@ -160,52 +158,10 @@ else
 fi
 printf "${DIM}%s${RST}\n" "$msg"
 
-section "[3/3] Starting setup"
-
-# Version gate: probe the installed binary itself before any handoff. A binary
-# that answers `quickstart --from-installer --json` gets the full continuation
-# handoff; one that only answers plain `quickstart --json` gets the flagless
-# handoff (an E15-era tour); anything older gets no handoff and no quickstart
-# next-step line -- an old binary is never offered a verb it lacks.
-handoff="none"
-if "${dest}/iris" quickstart --from-installer --json >/dev/null 2>&1; then
-  handoff="continuation"
-elif "${dest}/iris" quickstart --json >/dev/null 2>&1; then
-  handoff="plain"
-fi
-
-# The handoff: no shell question — the tour's own heads-up is the consent, and
-# declining it there is the same clean exit. Hand off only with a controlling
-# terminal (probed by opening /dev/tty, the uninstaller's rule) and neither
-# opt-out set; otherwise print the plain next-steps lines.
-can_prompt() {
-  [ -z "${IRIS_FORCE:-}" ] && [ -z "${IRIS_NO_SETUP:-}" ] && (: </dev/tty >/dev/tty) 2>/dev/null
-}
-
-if [ "$handoff" != "none" ] && can_prompt; then
-  say "Handing off to iris — the tour takes it from here (decline there to stop)"
-  echo ""
-  # The absolute path runs the tour even when dest is not on PATH yet, and the
-  # re-tied stdin satisfies its terminal gate -- stdout is never re-tied. exec
-  # replaces this shell, so the EXIT trap will not fire: clean up first.
-  rm -rf "$tmp"
-  trap - EXIT
-  if [ "$handoff" = "continuation" ]; then
-    exec "${dest}/iris" quickstart --from-installer </dev/tty
-  fi
-  exec "${dest}/iris" quickstart </dev/tty
-fi
-
 # Plain next steps: bare `iris` once dest is on PATH, the absolute path until
-# then. The quickstart line rides the version gate: it is offered only when a
-# probe passed.
+# then.
 iris_cmd="${dest}/iris"
 case ":${PATH}:" in
   *":${dest}:"*) iris_cmd="iris" ;;
 esac
-if [ "$handoff" != "none" ]; then
-  echo "Next: ${iris_cmd} quickstart   # 3-minute guided tour"
-  echo "  or: ${iris_cmd} engine install && ${iris_cmd} engine start -d"
-else
-  echo "Next: ${iris_cmd} engine install && ${iris_cmd} engine start -d"
-fi
+echo "Next: ${iris_cmd} engine install && ${iris_cmd} engine start -d"

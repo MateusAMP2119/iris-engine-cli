@@ -410,9 +410,9 @@ func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot,
 	ts.leave() // explicit: restored before any fault renders on stderr
 
 	// Unblock the stdin reader so it never outlives the view: an in-process
-	// caller (the quickstart tour) reads the same stdin next, and an orphaned
-	// Read would steal its keystrokes. Best-effort -- a stdin that supports no
-	// deadline keeps the old dies-with-the-process behavior.
+	// caller reading the same stdin next would have its keystrokes stolen by
+	// an orphaned Read. Best-effort -- a stdin that supports no deadline keeps
+	// the old dies-with-the-process behavior.
 	if derr := os.Stdin.SetReadDeadline(time.Now()); derr == nil {
 		// Drain until the decoder closes behind the unblocked reader.
 		for range keys { //nolint:revive // the draining itself is the work

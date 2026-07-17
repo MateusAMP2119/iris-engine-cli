@@ -19,12 +19,10 @@ The script builds with the release workflow's exact flags (CGO_ENABLED=0,
 repo's actual `install.sh` with `IRIS_BASE_URL=file://.local` — a knob the
 installer ships with. Everything downstream is the genuine release path:
 checksum verify, install to `/usr/local/bin` (or `~/.local/bin` fallback),
-upgrade-in-place detection, quickstart handoff (tour on a terminal, plain
-next-steps lines otherwise).
+upgrade-in-place detection, plain next-steps lines.
 
 ## Knobs (pass through to install.sh)
 
-- `IRIS_NO_SETUP=1` — install only, skip the quickstart handoff.
 - `IRIS_DEST=<dir>` — install somewhere other than `/usr/local/bin`.
 - `NO_COLOR=1` — plain output.
 

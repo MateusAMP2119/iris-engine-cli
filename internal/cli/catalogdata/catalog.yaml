@@ -1,7 +1,0 @@
-# The ordered pipeline-catalog index (specification section 8): exactly the
-# entry folders beneath this file, ids unique, entry 1 the default pick. The
-# shape is servable from a remote catalog later.
-entries:
-  - hello_iris
-  - system_snapshot
-  - word_frequency

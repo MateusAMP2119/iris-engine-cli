@@ -27,10 +27,9 @@ func isLeafCommand(c *cobra.Command) bool {
 
 // TestDaemonlessLifecycleCommands proves the daemonless roster: exactly `iris
 // engine install`, `engine start`, `engine service install`, `engine service
-// uninstall`, `engine uninstall`, the root lifecycle verbs `iris update`
+// uninstall`, `engine uninstall`, and the root lifecycle verbs `iris update`
 // (self-replace of the binary) and `iris uninstall`
-// (self-removal of the binary), and the onboarding root verb `iris quickstart`
-// (the tour runs before any engine exists) are classified runnable
+// (self-removal of the binary) are classified runnable
 // without a daemon; every other leaf command is
 // daemon-touching. The
 // classification is an explicit lifecycle annotation set at command construction
@@ -49,7 +48,6 @@ func TestDaemonlessLifecycleCommands(t *testing.T) {
 			"iris engine service uninstall": true,
 			"iris update":                   true,
 			"iris uninstall":                true,
-			"iris quickstart":               true,
 		}
 		gotDaemonless := map[string]bool{}
 

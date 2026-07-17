@@ -1,8 +1,0 @@
-name: hello_iris
-run: [sh, main.sh]
-reads:
-  - table: demo.colors
-    fields: [name, hex, wavelength_nm, noted_at]
-writes:
-  - table: demo.colors
-    fields: [name, hex, wavelength_nm, noted_at]

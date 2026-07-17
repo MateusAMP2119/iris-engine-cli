@@ -12,11 +12,9 @@ import (
 
 // This file is the terminal layer of the `iris ps` live view: the raw-mode +
 // alternate-screen session with its idempotent teardown, and the keypress
-// decoder feeding the view's event loop. Like clack.go it is hand rolled over
-// x/term and raw ANSI -- no TUI framework -- but it is a separate, smaller
-// surface: the clack widgets decode keys into widget answers (y/n, digits),
-// while the live view needs every printable rune verbatim (the search prompt
-// types), so the two decoders stay apart.
+// decoder feeding the view's event loop. It is hand rolled over x/term and
+// raw ANSI -- no TUI framework -- and decodes every printable rune verbatim
+// (the search prompt types).
 
 // The alternate-screen control sequences the live view session writes: enter
 // switches to the alternate buffer, disables autowrap (writing the border's
@@ -30,8 +28,7 @@ const (
 )
 
 // psEscDelay is how long the key decoder waits after a bare ESC byte for the
-// rest of a CSI sequence before classifying the ESC as a lone Escape press
-// (the same disambiguation window clack's readByteShort uses).
+// rest of a CSI sequence before classifying the ESC as a lone Escape press.
 const psEscDelay = 50 * time.Millisecond
 
 // psTermSession is one live-view terminal session: raw stdin for keypresses,
@@ -45,6 +42,10 @@ type psTermSession struct {
 	saved *term.State
 	once  sync.Once
 }
+
+// isTerminalForTest is a test seam (set only in tests via t.Cleanup) to force
+// openPsTerm to report non-terminal so the command falls back to the JSON path.
+var isTerminalForTest func(int) bool
 
 // openPsTerm puts stdin in raw mode and stdout on the alternate screen,
 // returning false -- take the JSON path instead, never a key-less view -- when
@@ -125,7 +126,7 @@ type psKey struct {
 // readPsKeys pumps raw bytes from in into the decoder until in fails (the
 // process is exiting, or the scripted test input is drained). It is the live
 // view's key-reader goroutine; blocked in Read it cannot be cancelled, so it
-// dies with the process -- the same limitation the clack widgets accept.
+// dies with the process.
 func readPsKeys(in io.Reader, keys chan<- psKey) {
 	bytes := make(chan byte)
 	go func() {

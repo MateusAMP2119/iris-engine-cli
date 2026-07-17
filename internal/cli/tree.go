@@ -101,7 +101,6 @@ func (a *app) newRootCommand() *cobra.Command {
 		a.patCmd(),
 		a.updateCmd(),
 		a.uninstallCmd(),
-		a.quickstartCmd(),
 	)
 	return root
 }

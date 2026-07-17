@@ -2,7 +2,7 @@
 # Build iris from the working tree, package it like a release asset, and run
 # the repo's own install.sh against it (IRIS_BASE_URL=file://). 1:1 with
 # `curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash`,
-# local bits. Extra knobs pass through: IRIS_NO_SETUP=1, IRIS_DEST, NO_COLOR.
+# local bits. Extra knobs pass through: IRIS_DEST, NO_COLOR.
 set -eu
 
 ROOT="$(git rev-parse --show-toplevel)"

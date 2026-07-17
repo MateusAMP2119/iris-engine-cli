@@ -22,12 +22,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
@@ -109,46 +108,11 @@ type app struct {
 	// real stdout); tests inject it to force styled or plain rendering without a real
 	// terminal.
 	isTTY func() bool
-	// stdinIsTTY reports whether the command's stdin is an interactive terminal,
-	// the second half of the quickstart interactivity gate (stdin AND stdout both
-	// TTY, --json off). It is nil in production (the gate falls back to
-	// stdinIsTerminal, an os.Stdin char-device stat, the same check
-	// terminalConfirm uses); tests inject it to drive either rendering without a
-	// real terminal.
+	// stdinIsTTY reports whether the command's stdin is an interactive terminal.
+	// It is nil in production (callers fall back to stdinIsTerminal, an os.Stdin
+	// char-device stat, the same check terminalConfirm uses); tests inject it to
+	// drive either rendering without a real terminal.
 	stdinIsTTY func() bool
-	// tourPick asks the quickstart shop's pick question -- which of the n
-	// catalog entries this session runs -- and returns the choice with the
-	// operator's answer. It is nil in production (the tour falls back to a
-	// terminal pick that writes the question to errOut and reads one line from
-	// the shared stdin reader, so a type-ahead line is never dropped between the
-	// pick and the next question); tests inject it to script the shop without a
-	// real terminal. It is distinct from the confirm seam, whose teardown-shaped
-	// signature does not fit the shop's numbered choice.
-	tourPick func(question string, n int) (choice int, ans promptAnswer, err error)
-	// tourInput reads one line answer to a quickstart-tour question that carries a
-	// visible default (the ENGINE act's workspace question). It is nil in
-	// production (the tour falls back to the shared-reader terminal line read
-	// beside tourPick); tests inject it to script the answer. The caller applies
-	// def to an empty answer; the seam only reads.
-	tourInput func(prompt, def string) (string, error)
-	// runStep executes one quickstart-tour step -- an iris command given as the
-	// argv after the program name -- and returns its exit-code category. It is nil
-	// in production (the tour falls back to a fresh in-process child app running
-	// the real command implementation, never a PATH lookup); tests inject it to
-	// record the executed steps and script their exit codes.
-	runStep func(ctx context.Context, args []string) int
-	// waitForReady blocks until the workspace daemon reports a leadership role,
-	// closing the quickstart tour's ENGINE act. It is nil in production (the tour
-	// falls back to waitEngineReady, the bounded
-	// context-aware poll of the /info readout); tests inject it to close the act
-	// instantly or exercise the real poll against a fake daemon.
-	waitForReady func(ctx context.Context, settings config.Settings) error
-	// readyBudget bounds waitEngineReady's whole poll (zero means the production
-	// ten seconds); tests shrink it to keep the timeout leg fast.
-	readyBudget time.Duration
-	// readyEvery is waitEngineReady's poll interval (zero means the production
-	// 250ms); tests shrink it beside readyBudget.
-	readyEvery time.Duration
 	// connectInput reads one line answer to an `iris engine connect` question
 	// (the host, when neither the argument nor the configuration supplied one).
 	// It is nil in production (the handler falls back to a plain stdin read);
@@ -165,13 +129,6 @@ type app struct {
 	// production (the handler falls back to runPsLive, the real alternate-screen
 	// view); tests inject it to drive the output-mode gate without a terminal.
 	psLive func(cmd *cobra.Command, c *psDaemonClient, first psSnapshot, target string) (bool, error)
-	// forceLocalTarget pins resolveTarget to the local engine: a host
-	// resolved from the IRIS_HOST environment or an iris.toml is dropped, leaving
-	// the unix socket (the flag surface cannot contribute one on this path:
-	// quickstart refuses --host outright). It is set only on the quickstart
-	// tour's child apps -- the tour only ever targets the local engine
-	// it provisions, never a remote -- and has no command-line spelling.
-	forceLocalTarget bool
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping
@@ -187,6 +144,31 @@ func newAppWithLogger(stdout, stderr io.Writer, logger *slog.Logger) *app {
 	return &app{out: stdout, errOut: stderr, logger: logger}
 }
 
+// stdoutTTY resolves the stdout half of an interactivity gate through the
+// injectable isTTY seam, falling back to the real stdout char-device stat.
+func (a *app) stdoutTTY() bool {
+	if a.isTTY != nil {
+		return a.isTTY()
+	}
+	return a.stdoutIsTerminal()
+}
+
+// stdinTTY resolves the stdin half of an interactivity gate through the
+// injectable stdinIsTTY seam, falling back to the real stdin char-device stat.
+func (a *app) stdinTTY() bool {
+	if a.stdinIsTTY != nil {
+		return a.stdinIsTTY()
+	}
+	return stdinIsTerminal()
+}
+
+// stdinIsTerminal reports whether the process stdin is an interactive terminal:
+// a char-device stat, the same detection terminalConfirm uses before prompting.
+func stdinIsTerminal() bool {
+	stat, err := os.Stdin.Stat()
+	return err == nil && stat.Mode()&os.ModeCharDevice != 0
+}
+
 // run builds and executes the command tree and maps the outcome to an exit-code
 // category, with a background context.
 func (a *app) run(args []string) int {
@@ -195,9 +177,7 @@ func (a *app) run(args []string) int {
 
 // runContext builds and executes the command tree under ctx and maps the outcome
 // to an exit-code category. On error it resolves the output mode -- honoring
-// exactly how pflag consumed --json -- and renders the error accordingly. The
-// quickstart tour re-enters here for each step it executes, with the tour's
-// signal-bound context threaded through.
+// exactly how pflag consumed --json -- and renders the error accordingly.
 func (a *app) runContext(ctx context.Context, args []string) int {
 	root := a.newRootCommand()
 	root.SetArgs(args)

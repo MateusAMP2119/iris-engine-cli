@@ -91,13 +91,12 @@ func TestCommandTree(t *testing.T) {
 	t.Run("resource-first-command-tree", func(t *testing.T) {
 		root := testRoot()
 
-		// Top-level commands are exactly the nine resource nouns plus the four
+		// Top-level commands are exactly the nine resource nouns plus the three
 		// admitted root verbs: the lifecycle pair `update` (self-replace of the
-		// binary) and `uninstall` (self-removal of the binary), the onboarding
-		// verb `quickstart` (the guided tour), and the process-status verb `ps`
-		// (the docker-ps-shaped engine readout), each belonging to no resource
-		// noun: no other flat verbs, no extras.
-		wantTop := append(mapKeys(wantTree), "update", "uninstall", "quickstart", "ps")
+		// binary) and `uninstall` (self-removal of the binary), and the
+		// process-status verb `ps` (the docker-ps-shaped engine readout), each
+		// belonging to no resource noun: no other flat verbs, no extras.
+		wantTop := append(mapKeys(wantTree), "update", "uninstall", "ps")
 		assertSetEqual(t, "top-level nouns", childNames(root), wantTop)
 
 		// Each noun exposes exactly its documented verbs.
