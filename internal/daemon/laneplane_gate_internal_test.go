@@ -40,13 +40,13 @@ func (gateManualFake) LaneRows(context.Context) ([]store.LaneEntry, error)   { r
 func TestLanePassGateForLoopWithNoRetryBrake(t *testing.T) {
 	t.Run("lane-pass-gate-for-loop-no-retry", func(t *testing.T) {
 		manual := gateManualFake{
-			"healthy": {ID: 7, State: store.RunSucceeded},
-			"broken":  {ID: 8, State: store.RunDeadLettered, DeadLetterReason: store.ReasonFailed},
+			"healthy":   {ID: 7, State: store.RunSucceeded},
+			"broken":    {ID: 8, State: store.RunDeadLettered, DeadLetterReason: store.ReasonFailed},
 			"stopped":   {ID: 11, State: store.RunDeadLettered, DeadLetterReason: store.ReasonStopped, DeadLetterDetail: "run stopped: daemon terminated"},
 			"cancelled": {ID: 13, State: store.RunDeadLettered, DeadLetterReason: store.ReasonStopped, DeadLetterDetail: runCancelDetail},
 			"drained":   {ID: 12, State: store.RunDeadLettered}, // worklist row drained away: no outstanding reason
-			"waiting": {ID: 9, State: store.RunRunning},
-			"minted":  {ID: 10, State: store.RunQueued},
+			"waiting":   {ID: 9, State: store.RunRunning},
+			"minted":    {ID: 10, State: store.RunQueued},
 		}
 		gate := lanePassGate{
 			edges:  edgeReader{registry: gateRegistryFake{}, manual: manual},
@@ -57,14 +57,14 @@ func TestLanePassGateForLoopWithNoRetryBrake(t *testing.T) {
 			pipeline string
 			wantRun  bool
 		}{
-			{"fresh", true},    // never ran: first loop run
-			{"healthy", true},  // succeeded: run again immediately (for-loop)
-			{"broken", false},  // outstanding failure: never retried on its own
+			{"fresh", true},      // never ran: first loop run
+			{"healthy", true},    // succeeded: run again immediately (for-loop)
+			{"broken", false},    // outstanding failure: never retried on its own
 			{"stopped", true},    // crash-reconciliation stop: always-alive resumes
 			{"cancelled", false}, // operator cancel is a manual stop: not resurrected (#192)
 			{"drained", true},    // drain released the brake: the loop tries anew
-			{"waiting", false}, // running: already in flight
-			{"minted", false},  // queued: already minted, wait for its terminal
+			{"waiting", false},   // running: already in flight
+			{"minted", false},    // queued: already minted, wait for its terminal
 		}
 		for _, tt := range tests {
 			t.Run(tt.pipeline, func(t *testing.T) {

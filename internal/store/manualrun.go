@@ -97,11 +97,11 @@ type ManualReader interface {
 // locking clause, no advisory-lock interplay.
 const (
 	selectPipelineRunTargetSQL = `SELECT folder, run FROM pipelines WHERE name = $1`
-	selectLatestRunSQL = `SELECT r.id, r.state, coalesce(d.reason, ''), coalesce(d.error, '')
+	selectLatestRunSQL         = `SELECT r.id, r.state, coalesce(d.reason, ''), coalesce(d.error, '')
     FROM runs r LEFT JOIN dead_letters d ON d.run_id = r.id
     WHERE r.pipeline = $1 ORDER BY r.id DESC LIMIT 1`
-	selectQueuedManualRunsSQL  = `SELECT id, artifact_hash FROM runs WHERE pipeline = $1 AND state = 'queued' AND cause = 'manual' ORDER BY id`
-	selectConsumedSQL          = `SELECT EXISTS (
+	selectQueuedManualRunsSQL = `SELECT id, artifact_hash FROM runs WHERE pipeline = $1 AND state = 'queued' AND cause = 'manual' ORDER BY id`
+	selectConsumedSQL         = `SELECT EXISTS (
     SELECT 1 FROM run_inputs ri JOIN runs r ON r.id = ri.run_id
     WHERE r.pipeline = $1 AND ri.upstream_run_id = $2)`
 	selectLaneRowsSQL = `SELECT lane, pipeline, pos FROM lanes ORDER BY lane, pos`

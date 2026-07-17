@@ -134,7 +134,9 @@ func TestDestructiveGateEnforce(t *testing.T) {
 }
 
 // gateDLReader is a store.DeadLetterReader over fixed worklist rows.
-type gateDLReader struct{ rows []store.DeadLetterWorklistEntry }
+type gateDLReader struct {
+	rows []store.DeadLetterWorklistEntry
+}
 
 func (r gateDLReader) Worklist(context.Context) ([]store.DeadLetterWorklistEntry, error) {
 	return r.rows, nil

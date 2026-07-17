@@ -136,7 +136,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			}
 			rec := storetest.NewWriteRecorder()
 			logs := &pruneLogSpy{}
-			post := &lanePostPass{startedSince: map[string]int{}, 
+			post := &lanePostPass{startedSince: map[string]int{},
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: logs.delete, logger: discardLogger(),
 			}
@@ -172,7 +172,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 			}
 			rec := storetest.NewWriteRecorder()
 			logs := &pruneLogSpy{}
-			post := &lanePostPass{startedSince: map[string]int{}, 
+			post := &lanePostPass{startedSince: map[string]int{},
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: logs.delete, logger: discardLogger(),
 			}
@@ -202,7 +202,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := &lanePostPass{startedSince: map[string]int{}, 
+			post := &lanePostPass{startedSince: map[string]int{},
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}
@@ -224,7 +224,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				records: map[int64]store.PrunableRun{1: prunableRecord(1, "p")},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := &lanePostPass{startedSince: map[string]int{}, 
+			post := &lanePostPass{startedSince: map[string]int{},
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}
@@ -244,7 +244,7 @@ func TestLanePostPassRetentionPrune(t *testing.T) {
 				census: []store.RetentionRunRef{runRef(1, "p"), runRef(2, "p")},
 			}
 			rec := storetest.NewWriteRecorder()
-			post := &lanePostPass{startedSince: map[string]int{}, 
+			post := &lanePostPass{startedSince: map[string]int{},
 				submit: recorderSubmitter{rec: rec}, retention: reader, retain: 2,
 				deleteLog: (&pruneLogSpy{}).delete, logger: discardLogger(),
 			}

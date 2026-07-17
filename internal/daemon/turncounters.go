@@ -24,8 +24,8 @@ type turnCounters struct {
 
 // turnCount is one pipeline's tally.
 type turnCount struct {
-	turns     uint64
-	sinceRun  uint64
+	turns    uint64
+	sinceRun uint64
 }
 
 // newTurnCounters builds an empty registry.

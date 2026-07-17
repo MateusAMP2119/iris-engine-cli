@@ -15,9 +15,9 @@ import (
 // stopHandle is a minimal exec.Handle whose kill is observable.
 type stopHandle struct{ killed bool }
 
-func (h *stopHandle) PGID() int                     { return 4242 }
+func (h *stopHandle) PGID() int                      { return 4242 }
 func (h *stopHandle) Wait() (exec.ExitStatus, error) { return exec.ExitStatus{}, nil }
-func (h *stopHandle) Kill() error                   { h.killed = true; return nil }
+func (h *stopHandle) Kill() error                    { h.killed = true; return nil }
 
 // TestLanePlaneCancelPipeline proves the pipeline-level park (#202): the latest run resolves and dead-letters inside one submission (running kills the group, queued parks without a kill), an already-parked pipeline succeeds idempotently, and nothing stoppable reports not in flight.
 func TestLanePlaneCancelPipeline(t *testing.T) {

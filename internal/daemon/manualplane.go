@@ -310,9 +310,9 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	data      turnData     // data-database turn seam (#206); nil composes shape tests (no feed, producing turns dead-letter)
-	access    *accessCache // per-pipeline declared-access cache keyed by declaration checksum
-	inflight  *inflightRuns // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
+	data      turnData       // data-database turn seam (#206); nil composes shape tests (no feed, producing turns dead-letter)
+	access    *accessCache   // per-pipeline declared-access cache keyed by declaration checksum
+	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
 	runLogs   *RunLogWriter  // per-run output capture; nil discards (shape tests)
 	logger    *slog.Logger
