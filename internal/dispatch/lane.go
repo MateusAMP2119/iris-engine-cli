@@ -31,10 +31,12 @@ type LaneRow struct {
 	Pos int64
 }
 
+// QueueLane names the shared serial queue lane for unplaced pipelines; no folder can be empty-named, so it never collides with a declared lane.
+const QueueLane = ""
+
 // Lane is one lane's runnable walk: its name and the registered pipelines to
 // start within it, in composer (pos) order. A named lane comes from the lanes
-// roster; an anonymous lane, named for its single pipeline, is minted for a
-// registered pipeline that no lane places.
+// roster; the QueueLane holds every pipeline no lane places.
 type Lane struct {
 	// Name is the lane's name (its own name, or the pipeline's for an anonymous lane).
 	Name string
@@ -48,10 +50,8 @@ type Lane struct {
 //
 // Within each lane the members are ordered by pos, and any name with no registered
 // pipeline is skipped; a lane left with no registered member contributes nothing and
-// is omitted. A registered pipeline that no lane row names is scheduled as its own
-// anonymous lane, named for itself and parallel with everything. Composer-unordered
-// pipelines get no declaration-order tiebreak: each such pipeline is its own lane,
-// never merged into a shared ordered walk.
+// is omitted. Pipelines no lane row names share the one QueueLane, walked serially
+// in name order: only a declared lane buys a walk goroutine of its own.
 //
 // registered maps each registered pipeline name to true. The returned lanes are
 // sorted by name for a stable result; that order is not an execution order --
@@ -87,11 +87,16 @@ func BuildWalk(rows []LaneRow, registered map[string]bool) []Lane {
 		lanes = append(lanes, Lane{Name: name, Pipelines: pipelines})
 	}
 
-	// A registered pipeline no lane row names becomes its own anonymous lane.
+	// Registered pipelines no lane row names share one serial queue lane.
+	var loose []string
 	for pipeline := range registered {
 		if registered[pipeline] && !placed[pipeline] {
-			lanes = append(lanes, Lane{Name: pipeline, Pipelines: []string{pipeline}})
+			loose = append(loose, pipeline)
 		}
+	}
+	if len(loose) > 0 {
+		sort.Strings(loose)
+		lanes = append(lanes, Lane{Name: QueueLane, Pipelines: loose})
 	}
 
 	sort.Slice(lanes, func(i, j int) bool { return lanes[i].Name < lanes[j].Name })

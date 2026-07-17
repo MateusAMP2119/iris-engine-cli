@@ -102,10 +102,10 @@ func TestBuildWalkRunnerSkipsUnregisteredNames(t *testing.T) {
 	})
 }
 
-// TestBuildWalkAbsentPipelineAnonymousLane proves a registered pipeline named in no
-// lane is scheduled as its own anonymous lane, named for itself.
-func TestBuildWalkAbsentPipelineAnonymousLane(t *testing.T) {
-	t.Run("absent-pipeline-anonymous-lane", func(t *testing.T) {
+// TestBuildWalkAbsentPipelineQueueLane proves a registered pipeline named in no
+// lane is scheduled in the shared queue lane, not a lane of its own.
+func TestBuildWalkAbsentPipelineQueueLane(t *testing.T) {
+	t.Run("absent-pipeline-queue-lane", func(t *testing.T) {
 		rows := []dispatch.LaneRow{
 			{Lane: "etl", Pipeline: "a", Pos: 0},
 			{Lane: "etl", Pipeline: "b", Pos: 1},
@@ -115,31 +115,29 @@ func TestBuildWalkAbsentPipelineAnonymousLane(t *testing.T) {
 
 		got := dispatch.BuildWalk(rows, registered)
 		want := []dispatch.Lane{
+			{Name: dispatch.QueueLane, Pipelines: []string{"solo"}},
 			{Name: "etl", Pipelines: []string{"a", "b"}},
-			{Name: "solo", Pipelines: []string{"solo"}},
 		}
 		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("BuildWalk = %v, want %v (solo in its own anonymous lane)", got, want)
+			t.Fatalf("BuildWalk = %v, want %v (solo in the shared queue lane)", got, want)
 		}
 	})
 }
 
-// TestBuildWalkNoDeclarationOrderTiebreak proves composer-unordered pipelines get no
-// implicit declaration-order tiebreak: each stays in its own lane rather than being
-// merged into one ordered walk.
-func TestBuildWalkNoDeclarationOrderTiebreak(t *testing.T) {
-	t.Run("no-declaration-order-tiebreak", func(t *testing.T) {
+// TestBuildWalkLoosePipelinesShareQueueLane proves composer-unordered pipelines all
+// land in the one shared queue lane, walked serially in name order, so a declared
+// lane is the only thing that buys a walk goroutine of its own.
+func TestBuildWalkLoosePipelinesShareQueueLane(t *testing.T) {
+	t.Run("loose-pipelines-share-queue-lane", func(t *testing.T) {
 		// Three registered pipelines, none placed by a composer (no lane rows).
-		registered := map[string]bool{"alpha": true, "beta": true, "gamma": true}
+		registered := map[string]bool{"gamma": true, "alpha": true, "beta": true}
 
 		got := dispatch.BuildWalk(nil, registered)
 		want := []dispatch.Lane{
-			{Name: "alpha", Pipelines: []string{"alpha"}},
-			{Name: "beta", Pipelines: []string{"beta"}},
-			{Name: "gamma", Pipelines: []string{"gamma"}},
+			{Name: dispatch.QueueLane, Pipelines: []string{"alpha", "beta", "gamma"}},
 		}
 		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("BuildWalk = %v, want %v (each unordered pipeline its own lane, none sequenced)", got, want)
+			t.Fatalf("BuildWalk = %v, want %v (all loose pipelines in one queue lane, name order)", got, want)
 		}
 	})
 }
