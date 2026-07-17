@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
@@ -94,6 +97,61 @@ const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
+// systemdAutostartUnitTemplate renders the opt-in autostart variant: the
+// FOREGROUND daemon under systemd's own supervision (no forking wrapper --
+// the service manager is the babysitter), restarted on failure, enablable at
+// login. Autostart is never the default: only `engine service install
+// --autostart` renders this.
+const systemdAutostartUnitTemplate = `[Unit]
+Description=Iris engine daemon
+After=network.target
+
+[Service]
+Type=exec
+WorkingDirectory=%[2]s
+ExecStart=%[1]s engine start
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`
+
+// launchdAutostartPlistTemplate renders the opt-in autostart variant: the
+// FOREGROUND daemon under launchd's supervision, started at load and login
+// (RunAtLoad), restarted only when it fails (KeepAlive/SuccessfulExit=false,
+// so `iris engine stop` and `launchctl bootout` do not fight the manager),
+// its output landing in the engine's own daemon log.
+const launchdAutostartPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%[4]s</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%[1]s</string>
+		<string>engine</string>
+		<string>start</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>%[2]s</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>%[3]s</string>
+	<key>StandardErrorPath</key>
+	<string>%[3]s</string>
+</dict>
+</plist>
+`
+
 // ServicePlatformForGOOS maps a GOOS to its init system: linux to systemd, darwin
 // to launchd. Other platforms are unsupported (reported by the false return),
 // matching the daemon's unix-only surface.
@@ -138,21 +196,65 @@ func RenderServiceUnit(platform ServicePlatform, exePath, workspace, pidPath str
 	}
 }
 
+// RenderAutostartServiceUnit renders the opt-in autostart unit text for
+// platform: the FOREGROUND daemon under the service manager's own supervision,
+// started at login, restarted on failure -- the docker-parity always-on shape.
+// logPath is where launchd lands the foreground daemon's output (systemd owns
+// its journal). An unsupported platform is an error, never a silent empty
+// unit.
+func RenderAutostartServiceUnit(platform ServicePlatform, exePath, workspace, logPath string) (string, error) {
+	switch platform {
+	case ServiceSystemd:
+		return fmt.Sprintf(systemdAutostartUnitTemplate, exePath, workspace), nil
+	case ServiceLaunchd:
+		return fmt.Sprintf(launchdAutostartPlistTemplate, exePath, workspace, logPath, serviceLaunchdLabel), nil
+	default:
+		return "", fmt.Errorf("daemon: no service unit for platform %q (systemd/launchd only)", platform)
+	}
+}
+
+// LaunchAgentPath is the ~/Library/LaunchAgents path an autostart plist must
+// live at: launchd's login scan reads only that directory, so an autostart
+// install on darwin defaults there (a plain install keeps the engine-home
+// seam).
+func LaunchAgentPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("daemon: resolve the launch-agent directory: %w", err)
+	}
+	return filepath.Join(home, "Library", "LaunchAgents", serviceLaunchdLabel+".plist"), nil
+}
+
 // InstallServiceUnit generates the host platform's service unit wrapping the
-// detached daemon at exePath and writes it to unitPath, returning the path
-// written. An empty unitPath installs at the engine-home ServiceUnitPath seam
-// that engine uninstall also removes, so the two never disagree on the unit's
-// location. It is the single unit-installing entrypoint; a structural sweep proves
-// only the service-install command calls it.
-func InstallServiceUnit(s config.Settings, exePath, unitPath string) (string, error) {
+// daemon at exePath and writes it to unitPath, returning the path written.
+// autostart renders the always-on variant (foreground daemon, login start,
+// restart on failure) instead of the on-demand default. An empty unitPath
+// installs at the engine-home ServiceUnitPath seam that engine uninstall also
+// removes -- except a darwin autostart install, which must default to the
+// ~/Library/LaunchAgents path launchd's login scan reads. It is the single
+// unit-installing entrypoint; a structural sweep proves only the
+// service-install command calls it.
+func InstallServiceUnit(s config.Settings, exePath, unitPath string, autostart bool) (string, error) {
 	platform, ok := HostServicePlatform()
 	if !ok {
 		return "", fmt.Errorf("daemon: service install is unsupported on %s (systemd/launchd only)", runtime.GOOS)
 	}
 	if unitPath == "" {
 		unitPath = ServiceUnitPath(s)
+		if autostart && platform == ServiceLaunchd {
+			var err error
+			if unitPath, err = LaunchAgentPath(); err != nil {
+				return "", err
+			}
+		}
 	}
-	unit, err := RenderServiceUnit(platform, exePath, WorkspaceRoot(s), PIDPath(s))
+	var unit string
+	var err error
+	if autostart {
+		unit, err = RenderAutostartServiceUnit(platform, exePath, WorkspaceRoot(s), LogPath(s))
+	} else {
+		unit, err = RenderServiceUnit(platform, exePath, WorkspaceRoot(s), PIDPath(s))
+	}
 	if err != nil {
 		return "", err
 	}
@@ -188,4 +290,72 @@ func UninstallServiceUnit(unitPath string) (bool, error) {
 		return false, fmt.Errorf("daemon: remove service unit %s: %w", unitPath, err)
 	}
 	return true, nil
+}
+
+// ServiceCtl runs one init-system control command (systemctl, launchctl). The
+// production implementation shells out; tests inject a recorder.
+type ServiceCtl func(name string, args ...string) error
+
+// OSServiceCtl is the production ServiceCtl: it runs the command and folds its
+// combined output into the error, so a refusing init system explains itself.
+func OSServiceCtl() ServiceCtl {
+	return func(name string, args ...string) error {
+		out, err := exec.Command(name, args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("daemon: %s %s: %w (%s)", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+}
+
+// ActivateServiceUnit hands the written unit to the host's init system and
+// starts it: systemd reloads, then enables --now by absolute path (the symlink
+// carries the iris.service name); launchd boots the agent out first (a
+// re-install must not fail on an already-loaded job; the bootout error is
+// deliberately dropped) and bootstraps the plist into the user's gui domain.
+// Called only for an autostart install -- activation is as opt-in as the
+// render.
+func ActivateServiceUnit(platform ServicePlatform, unitPath string, ctl ServiceCtl) error {
+	switch platform {
+	case ServiceSystemd:
+		if err := ctl("systemctl", "--user", "daemon-reload"); err != nil {
+			return err
+		}
+		return ctl("systemctl", "--user", "enable", "--now", unitPath)
+	case ServiceLaunchd:
+		domain := "gui/" + strconv.Itoa(os.Getuid())
+		_ = ctl("launchctl", "bootout", domain+"/"+serviceLaunchdLabel)
+		return ctl("launchctl", "bootstrap", domain, unitPath)
+	default:
+		return fmt.Errorf("daemon: no service activation for platform %q (systemd/launchd only)", platform)
+	}
+}
+
+// DeactivateServiceUnit asks the host's init system to stop and forget the
+// unit: systemd disables --now by the iris.service name, launchd boots the
+// labeled agent out of the user's gui domain. A unit that was never activated
+// makes the init system grumble; the caller treats that as best-effort noise,
+// so uninstall stays idempotent.
+func DeactivateServiceUnit(platform ServicePlatform, ctl ServiceCtl) error {
+	switch platform {
+	case ServiceSystemd:
+		return ctl("systemctl", "--user", "disable", "--now", ServiceUnitName)
+	case ServiceLaunchd:
+		return ctl("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+serviceLaunchdLabel)
+	default:
+		return fmt.Errorf("daemon: no service deactivation for platform %q (systemd/launchd only)", platform)
+	}
+}
+
+// ResolveServiceUnitPath resolves where an installed unit lives for uninstall:
+// the darwin autostart LaunchAgents path when a unit sits there, else the
+// engine-home seam -- mirroring install's own defaulting, so install and
+// uninstall never disagree on the unit's location.
+func ResolveServiceUnitPath(s config.Settings) string {
+	if agent, err := LaunchAgentPath(); err == nil {
+		if _, serr := os.Stat(agent); serr == nil {
+			return agent
+		}
+	}
+	return ServiceUnitPath(s)
 }

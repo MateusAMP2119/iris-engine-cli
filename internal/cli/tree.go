@@ -332,6 +332,7 @@ func (a *app) engineCmd() *cobra.Command {
 		Args: cobra.NoArgs, RunE: a.engineServiceInstall(),
 	}
 	svcInstall.Flags().String("path", "", "write the unit to this path instead of the engine-home default")
+	svcInstall.Flags().Bool("autostart", false, "also enable and start the unit: the engine runs at login and restarts on failure (docker-style always-on)")
 	svcUninstall := &cobra.Command{
 		Use: "uninstall", Short: "Remove the installed service unit",
 		Args: cobra.NoArgs, RunE: a.engineServiceUninstall(),

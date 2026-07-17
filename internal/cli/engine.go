@@ -345,8 +345,9 @@ func (a *app) engineStop() runE {
 // install`/`uninstall`: the action taken and the unit path it acted on. It carries
 // no secret.
 type serviceResult struct {
-	Status string `json:"status"`
-	Unit   string `json:"unit"`
+	Status    string `json:"status"`
+	Unit      string `json:"unit"`
+	Autostart bool   `json:"autostart,omitempty"`
 }
 
 // engineServiceInstall is the handler for `iris engine service install`: a
@@ -368,7 +369,8 @@ func (a *app) engineServiceInstall() runE {
 			}
 		}
 		unitPath, _ := cmd.Flags().GetString("path")
-		written, err := daemon.InstallServiceUnit(settings, exe, unitPath)
+		autostart, _ := cmd.Flags().GetBool("autostart")
+		written, err := daemon.InstallServiceUnit(settings, exe, unitPath, autostart)
 		if err != nil {
 			a.logger.Error("engine service install failed", "err", err)
 			return &fault{
@@ -377,10 +379,28 @@ func (a *app) engineServiceInstall() runE {
 				message: fmt.Sprintf("engine service install failed: %v", err),
 			}
 		}
-		a.logger.Info("engine service unit installed", "unit", written)
-		res := serviceResult{Status: "installed", Unit: written}
+		// Autostart is the docker-parity opt-in: the written unit is also
+		// handed to the init system and started, so the engine is up from here
+		// on -- login, crash, reboot -- until service uninstall.
+		if autostart {
+			platform, _ := daemon.HostServicePlatform()
+			if err := daemon.ActivateServiceUnit(platform, written, daemon.OSServiceCtl()); err != nil {
+				a.logger.Error("engine service activation failed", "err", err)
+				return &fault{
+					code:    exitOpFailed,
+					codeStr: "service_install_failed",
+					message: fmt.Sprintf("engine service unit written to %s but activation failed: %v", written, err),
+				}
+			}
+		}
+		a.logger.Info("engine service unit installed", "unit", written, "autostart", autostart)
+		res := serviceResult{Status: "installed", Unit: written, Autostart: autostart}
 		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
 			return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
+		}
+		if autostart {
+			fmt.Fprintf(a.out, "iris engine service unit installed at %s and started (runs at login, restarts on failure)\n", written)
+			return nil
 		}
 		fmt.Fprintf(a.out, "iris engine service unit installed at %s\n", written)
 		return nil
@@ -396,7 +416,15 @@ func (a *app) engineServiceUninstall() runE {
 		settings := a.resolveTarget(cmd)
 		unitPath, _ := cmd.Flags().GetString("path")
 		if unitPath == "" {
-			unitPath = daemon.ServiceUnitPath(settings)
+			unitPath = daemon.ResolveServiceUnitPath(settings)
+		}
+		// Ask the init system to stop and forget the unit first, best-effort:
+		// a never-activated unit makes it grumble, which must not block the
+		// file removal (uninstall stays idempotent).
+		if platform, ok := daemon.HostServicePlatform(); ok {
+			if derr := daemon.DeactivateServiceUnit(platform, daemon.OSServiceCtl()); derr != nil {
+				a.logger.Debug("engine service deactivation skipped", "err", derr)
+			}
 		}
 		removed, err := daemon.UninstallServiceUnit(unitPath)
 		if err != nil {

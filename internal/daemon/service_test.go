@@ -1,8 +1,11 @@
 package daemon_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -101,7 +104,7 @@ func TestServiceInstallOnDemand(t *testing.T) {
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
 			unitPath := filepath.Join(tmp, "iris.unit")
 
-			written, err := daemon.InstallServiceUnit(s, exe, unitPath)
+			written, err := daemon.InstallServiceUnit(s, exe, unitPath, false)
 			if err != nil {
 				t.Fatalf("InstallServiceUnit: %v", err)
 			}
@@ -147,7 +150,7 @@ func TestServiceInstallOnDemand(t *testing.T) {
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
 			unitPath := filepath.Join(base, "sub", "systemd", "iris.service")
 
-			if _, err := daemon.InstallServiceUnit(s, exe, unitPath); err != nil {
+			if _, err := daemon.InstallServiceUnit(s, exe, unitPath, false); err != nil {
 				t.Fatalf("InstallServiceUnit(nested --path): %v", err)
 			}
 
@@ -180,7 +183,7 @@ func TestServiceInstallOnDemand(t *testing.T) {
 
 			// An empty target path installs at the agreed workspace-local seam that
 			// engine uninstall also removes, so the two never disagree on location.
-			written, err := daemon.InstallServiceUnit(s, exe, "")
+			written, err := daemon.InstallServiceUnit(s, exe, "", false)
 			if err != nil {
 				t.Fatalf("InstallServiceUnit(default path): %v", err)
 			}
@@ -189,6 +192,114 @@ func TestServiceInstallOnDemand(t *testing.T) {
 			}
 			if _, err := os.Stat(daemon.ServiceUnitPath(s)); err != nil {
 				t.Errorf("unit not written at the default seam: %v", err)
+			}
+		})
+	})
+}
+
+// TestAutostartServiceUnit proves the opt-in always-on variant: the rendered
+// units run the FOREGROUND daemon under the service manager's supervision,
+// start at login, restart on failure only, and the activation/deactivation
+// hand the exact expected commands to the init system.
+func TestAutostartServiceUnit(t *testing.T) {
+	t.Run("autostart-service-unit", func(t *testing.T) {
+		exe := "/usr/local/bin/iris"
+		ws := "/data/warehouse"
+		logPath := "/home/u/.iris/logs/daemon.log"
+
+		t.Run("systemd autostart supervises the foreground daemon", func(t *testing.T) {
+			unit, err := daemon.RenderAutostartServiceUnit(daemon.ServiceSystemd, exe, ws, logPath)
+			if err != nil {
+				t.Fatalf("RenderAutostartServiceUnit(systemd): %v", err)
+			}
+			for _, want := range []string{
+				"Type=exec",
+				"ExecStart=" + exe + " engine start\n", // foreground: no --detach
+				"Restart=on-failure",
+				"WorkingDirectory=" + ws,
+				"WantedBy=default.target",
+			} {
+				if !strings.Contains(unit, want) {
+					t.Errorf("systemd autostart unit missing %q:\n%s", want, unit)
+				}
+			}
+			if strings.Contains(unit, "--detach") || strings.Contains(unit, "PIDFile") {
+				t.Errorf("systemd autostart unit must supervise the foreground daemon, not a forking wrapper:\n%s", unit)
+			}
+		})
+
+		t.Run("launchd autostart runs at login and restarts on failure only", func(t *testing.T) {
+			unit, err := daemon.RenderAutostartServiceUnit(daemon.ServiceLaunchd, exe, ws, logPath)
+			if err != nil {
+				t.Fatalf("RenderAutostartServiceUnit(launchd): %v", err)
+			}
+			for _, want := range []string{
+				"<key>RunAtLoad</key>\n\t<true/>",
+				"<key>SuccessfulExit</key>", // restart on failure only: stop never fights launchd
+				"<key>StandardOutPath</key>\n\t<string>" + logPath + "</string>",
+			} {
+				if !strings.Contains(unit, want) {
+					t.Errorf("launchd autostart plist missing %q:\n%s", want, unit)
+				}
+			}
+			if strings.Contains(unit, "--detach") {
+				t.Errorf("launchd autostart plist must run the foreground daemon:\n%s", unit)
+			}
+		})
+
+		t.Run("activation hands the init system the exact commands", func(t *testing.T) {
+			var got [][]string
+			ctl := func(name string, args ...string) error {
+				got = append(got, append([]string{name}, args...))
+				return nil
+			}
+			if err := daemon.ActivateServiceUnit(daemon.ServiceSystemd, "/u/iris.service", ctl); err != nil {
+				t.Fatalf("ActivateServiceUnit(systemd): %v", err)
+			}
+			want := [][]string{
+				{"systemctl", "--user", "daemon-reload"},
+				{"systemctl", "--user", "enable", "--now", "/u/iris.service"},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("systemd activation = %v, want %v", got, want)
+			}
+
+			got = nil
+			domain := "gui/" + strconv.Itoa(os.Getuid())
+			if err := daemon.ActivateServiceUnit(daemon.ServiceLaunchd, "/u/agent.plist", ctl); err != nil {
+				t.Fatalf("ActivateServiceUnit(launchd): %v", err)
+			}
+			want = [][]string{
+				{"launchctl", "bootout", domain + "/com.iris.engine"},
+				{"launchctl", "bootstrap", domain, "/u/agent.plist"},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("launchd activation = %v, want %v", got, want)
+			}
+
+			got = nil
+			if err := daemon.DeactivateServiceUnit(daemon.ServiceSystemd, ctl); err != nil {
+				t.Fatalf("DeactivateServiceUnit(systemd): %v", err)
+			}
+			if want := [][]string{{"systemctl", "--user", "disable", "--now", daemon.ServiceUnitName}}; !reflect.DeepEqual(got, want) {
+				t.Errorf("systemd deactivation = %v, want %v", got, want)
+			}
+		})
+
+		t.Run("a re-installed launchd agent survives an already-loaded bootout failure", func(t *testing.T) {
+			calls := 0
+			ctl := func(_ string, args ...string) error {
+				calls++
+				if args[0] == "bootout" {
+					return errors.New("Boot-out failed: 5: Input/output error")
+				}
+				return nil
+			}
+			if err := daemon.ActivateServiceUnit(daemon.ServiceLaunchd, "/u/agent.plist", ctl); err != nil {
+				t.Fatalf("activation must drop the bootout error: %v", err)
+			}
+			if calls != 2 {
+				t.Errorf("activation made %d calls, want bootout then bootstrap", calls)
 			}
 		})
 	})
