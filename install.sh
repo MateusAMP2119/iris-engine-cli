@@ -35,8 +35,7 @@ if [ -n "${IRIS_BASE_URL:-}" ]; then
   requested="${IRIS_VERSION:-latest} (from ${BASE})"
 fi
 
-# Ceremony colors: only on a terminal and never when NO_COLOR is set. G1..G6 are
-# the banner's per-row ocean gradient (#667eea → #764ba2), truecolor.
+# Colors only on terminal, never under NO_COLOR; G1..G6 = ocean gradient rows
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   DIM='\033[2m' GRN='\033[1;32m' CYN='\033[1;36m' YLW='\033[1;33m' RST='\033[0m'
   G1='\033[38;2;102;126;234m' G2='\033[38;2;105;115;219m' G3='\033[38;2;108;106;205m'
@@ -51,16 +50,12 @@ ok() { printf "   ${GRN}✓${RST} %s\n" "$1"; }
 section() { printf "\n${CYN}%s${RST}\n" "$1"; }
 kv() { printf "   • %-15s: %s\n" "$1" "$2"; }
 
-# can_prompt: a controlling terminal exists to ask questions on (stdin is the
-# script itself under `curl | bash`, so prompts go through /dev/tty).
+# can_prompt: real tty exists; stdin is curl pipe so prompts use /dev/tty
 can_prompt() {
   (: </dev/tty >/dev/tty) 2>/dev/null
 }
 
-# Banner: the `npx oh-my-logo "IRIS LAKEHOUSE" ocean --filled --letter-spacing 2`
-# mark, pre-rendered (the installer cannot assume Node). Width-adaptive: one row
-# needs 128 columns, the stacked IRIS / LAKEHOUSE pair needs 92, anything
-# narrower gets plain text.
+# Banner: pre-rendered oh-my-logo art (no Node dep); ≥128 cols wide, ≥92 stacked, else plain
 banner_wide() {
   printf "${G1}%s${RST}\n" '  ██╗  ██████╗   ██╗  ███████╗       ██╗        █████╗   ██╗  ██╗  ███████╗  ██╗  ██╗   ██████╗   ██╗   ██╗  ███████╗  ███████╗'
   printf "${G2}%s${RST}\n" '  ██║  ██╔══██╗  ██║  ██╔════╝       ██║       ██╔══██╗  ██║ ██╔╝  ██╔════╝  ██║  ██║  ██╔═══██╗  ██║   ██║  ██╔════╝  ██╔════╝'
@@ -85,8 +80,7 @@ banner_stacked() {
   printf "${G6}%s${RST}\n" '  ╚══════╝  ╚═╝  ╚═╝  ╚═╝  ╚═╝  ╚══════╝  ╚═╝  ╚═╝   ╚═════╝    ╚═════╝   ╚══════╝  ╚══════╝'
 }
 
-# Terminal width: `stty size` through /dev/tty, because inside $(...) stdout is
-# a pipe and tput would report the 80-column default instead of the terminal.
+# Width via stty on /dev/tty: tput inside $() sees pipe, lies 80
 cols=${COLUMNS:-80}
 if [ -t 1 ]; then
   sz=$(stty size </dev/tty 2>/dev/null || true)
@@ -122,8 +116,7 @@ case "$os" in
 esac
 printf "🔍 Detected platform: %s/%s\n" "$os" "$arch"
 
-# The install plan: what will happen, before anything does. An iris already on
-# PATH turns the run into an announced upgrade.
+# Plan first, actions after; existing iris on PATH = announced upgrade
 installed=""
 if command -v iris >/dev/null 2>&1; then
   installed=$(iris --version 2>/dev/null || true)
@@ -200,8 +193,7 @@ case "$requested" in
     ;;
 esac
 
-# The menu answers through /dev/tty (stdin is the curl pipe); IRIS_ENGINE_SETUP
-# answers it headless, and no terminal at all skips setup rather than guessing.
+# Menu reads /dev/tty; IRIS_ENGINE_SETUP answers headless; no tty = skip
 choice=""
 case "${IRIS_ENGINE_SETUP:-}" in
   local) choice=1 ;;
@@ -285,8 +277,7 @@ if [ -n "$on_path" ]; then
 fi
 printf "\n✨ Iris is ready! Try: %s --help\n\n" "$iris_cmd"
 
-# Closing quote, picked by awk: POSIX sh has no $RANDOM. Attribution
-# right-aligned under the quote's end, the same shape `iris uninstall` closes with.
+# Random quote via awk (POSIX sh has no $RANDOM); attribution right-aligned
 n=$(awk 'BEGIN{srand(); print int(rand()*5)+1}')
 case "$n" in
   1)

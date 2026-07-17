@@ -104,7 +104,7 @@ func (a *app) uninstallSelf() runE {
 			say("[IRIS UNINSTALL %s]", buildinfo.Version)
 		}
 		say("")
-		say("  Starting complete uninstallation sequence...")
+		say("  🛠️  Starting complete uninstallation sequence...")
 		say("")
 
 		// Step 1/3: stop a recorded detached daemon; nothing recorded and nothing reachable passes clean.
@@ -209,7 +209,7 @@ func (a *app) uninstallSelf() runE {
 		}
 		steps = append(steps, uninstallStep{Step: 3, Name: stepBinary, Status: "removed", Removed: []string{path}})
 		if !jsonMode {
-			a.uninstallProgressBar(p, "Uninstalling...")
+			a.uninstallProgressBar(p, "🗑️  Removing binary and traces...")
 		}
 		done("Binary removed")
 		done("Traces erased")
@@ -294,13 +294,13 @@ func (a *app) uninstallProgressBar(p painter, prefix string) {
 func (a *app) uninstallHeaderBox(p painter, version string) {
 	const leftPad, rightPad = "   ", "  "
 	plainInner := leftPad + "IRIS UNINSTALL " + version + rightPad
-	rule := strings.Repeat("─", utf8.RuneCountInString(plainInner))
+	rule := strings.Repeat("═", utf8.RuneCountInString(plainInner))
 	styledInner := leftPad + "IRIS UNINSTALL " + p.magenta(version) + rightPad
-	bar := p.cyan("│")
+	bar := p.cyan("║")
 
-	fmt.Fprintln(a.out, p.cyan("  ┌"+rule+"┐"))
+	fmt.Fprintln(a.out, p.cyan("  ╔"+rule+"╗"))
 	fmt.Fprintf(a.out, "  %s%s%s\n", bar, styledInner, bar)
-	fmt.Fprintln(a.out, p.cyan("  └"+rule+"┘"))
+	fmt.Fprintln(a.out, p.cyan("  ╚"+rule+"╝"))
 }
 
 // farewellQuote is one entry of the farewell pool.

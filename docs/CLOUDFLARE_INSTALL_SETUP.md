@@ -48,19 +48,19 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Always fetch the real script from the repo
+    // Stable channel: script from repo HEAD
     const base = 'https://raw.githubusercontent.com/MateusAMP2119/iris-lakehouse/HEAD';
+    // Snapshot channel: script from the snapshot release assets, so it always matches the snapshot binary
+    const snap = 'https://github.com/MateusAMP2119/iris-lakehouse/releases/download/snapshot';
 
     if (path === '/' || path === '/install.sh') {
       const target = `${base}/install.sh`;
       return Response.redirect(target, 302);
     }
 
-    // Snapshot channel: same installer, version pinned to the rolling
-    // "snapshot" prerelease. Served inline (not a redirect) so the pin
-    // line can be prepended to the script body.
+    // Served inline (not a redirect) so the version pin line can be prepended
     if (path === '/snapshot') {
-      const res = await fetch(`${base}/install.sh`);
+      const res = await fetch(`${snap}/install.sh`);
       if (!res.ok) {
         return new Response('Upstream fetch of install.sh failed', { status: 502 });
       }
