@@ -116,6 +116,10 @@ const (
 	// RunDeadLettered is a run that failed to a dead-lettered terminal state.
 	// The lane still proceeds to its next member: order never gates.
 	RunDeadLettered
+	// RunQuiet is a turn that ended done with nothing to record (#206): no
+	// output rows, no run row, no meta write of any kind. A pass whose members
+	// were all quiet advances no watermark, so its lane parks until a cause lands.
+	RunQuiet
 )
 
 // RunStarter starts one pipeline run and blocks until it reaches a terminal

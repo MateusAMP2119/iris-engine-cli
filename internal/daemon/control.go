@@ -521,6 +521,11 @@ func (o *controlOrchestrator) provision(ctx context.Context, dryRun bool) error 
 	if err := o.data.EnsureCaptureFunction(ctx); err != nil {
 		return fmt.Errorf("declare apply: ensure capture function: %w", err)
 	}
+	// The turn-protocol feed-position table self-heals the same way: ensured on
+	// every non-dry-run apply, so an upgraded home gains it without a fresh install.
+	if err := pg.EnsureTurnPositions(ctx, o.data); err != nil {
+		return fmt.Errorf("declare apply: ensure turn positions: %w", err)
+	}
 	if plan.Empty() {
 		return nil
 	}

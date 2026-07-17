@@ -48,6 +48,7 @@ type psPlane struct {
 	runs      RunSnapshotReader
 	probe     loadProber
 	managedPG func() int
+	counters  *turnCounters // resident turn tallies (#206); nil renders none
 	logger    *slog.Logger
 	pid       int
 	started   time.Time
@@ -62,7 +63,7 @@ var _ api.PsHandler = (*psPlane)(nil)
 // for none). The plane records its own pid at construction and counts uptime
 // from it: the plane is built at daemon start, so its age is the daemon's. A
 // nil logger discards output.
-func NewPsPlane(role api.RoleReporter, runs RunSnapshotReader, managedPG func() int, logger *slog.Logger) api.PsHandler {
+func NewPsPlane(role api.RoleReporter, runs RunSnapshotReader, managedPG func() int, counters *turnCounters, logger *slog.Logger) api.PsHandler {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -74,6 +75,7 @@ func NewPsPlane(role api.RoleReporter, runs RunSnapshotReader, managedPG func() 
 		runs:      runs,
 		probe:     psProbe{},
 		managedPG: managedPG,
+		counters:  counters,
 		logger:    logger,
 		pid:       os.Getpid(),
 		started:   time.Now(),
@@ -173,7 +175,7 @@ func (p *psPlane) Ps(ctx context.Context, all bool) (api.PsPayload, error) {
 		}
 		rows = append(rows, row)
 	}
-	return api.PsPayload{Engine: engine, Runs: rows}, nil
+	return api.PsPayload{Engine: engine, Runs: rows, Residents: p.counters.snapshot()}, nil
 }
 
 // sumTrees sums the host sample over the engine's process trees: every process

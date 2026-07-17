@@ -4,7 +4,6 @@ package conformance
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// This file proves the resident-pipeline contract (#192) end to end: a script that speaks the iteration protocol (stdin "go <run_id>", stdout "done <status>") iterates N runs on ONE process and ONE Postgres backend with per-iteration run rows and journal attribution; an operator cancel parks the pipeline until a manual run; and the folder surface refuses out-of-bound and sibling-conflicting declarations at apply.
+// This file proves the resident-pipeline contract under the turn protocol (#206, extending #192) end to end: a script that speaks the JSON frame protocol (stdin go/row/run, stdout row frames and a done terminal) iterates N turns on ONE process with per-turn run rows, engine-mediated writes, and exact journal attribution -- the pipeline itself holds no database credentials; an operator stop parks the pipeline until a manual run; and the folder surface refuses out-of-bound and sibling-conflicting declarations at apply.
 
 // residentSchemaYAML declares the testdata.items table the resident writer targets.
 const residentSchemaYAML = "schema: testdata\ntable: items\ncolumns:\n  - name: id\n    type: int\n    primary_key: true\n  - name: val\n    type: text\n"
@@ -71,31 +70,16 @@ func startEngine(t *testing.T, bin *Binary, ws string) func() {
 	return stop
 }
 
-// residentWriterScript is a protocol-speaking resident: ONE psql coprocess (one backend) held across iterations; each go re-attributes via SET iris.run_id and inserts one row keyed by the run id.
-const residentWriterScript = `import os, subprocess, sys
+// residentWriterScript is a frame-speaking resident: per turn it answers one
+// declared-write row keyed by the turn number and echoes done. It opens no
+// database connection -- the engine performs the write with the run's exact
+// attribution (#206).
+const residentWriterScript = PyTurnPrelude + `
+def on_turn(turn, rows):
+    emit("testdata.items", {"id": turn, "val": "iter"})
+    done(turn)
 
-url = os.environ.get("IRIS_DB_URL", "")
-if not url:
-    print("missing IRIS_DB_URL", file=sys.stderr)
-    sys.exit(2)
-p = subprocess.Popen(["psql", url, "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1"],
-                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-for line in sys.stdin:
-    parts = line.split()
-    if len(parts) != 2 or parts[0] != "go":
-        continue
-    rid = int(parts[1])
-    p.stdin.write("SET iris.run_id = %d;\nINSERT INTO testdata.items (id, val) VALUES (%d, 'iter');\n\\echo ITER_OK\n" % (rid, rid))
-    p.stdin.flush()
-    ok = False
-    while True:
-        out = p.stdout.readline()
-        if not out:
-            break
-        if out.strip() == "ITER_OK":
-            ok = True
-            break
-    print("done 0" if ok else "done 1", flush=True)
+turn_loop(on_turn)
 `
 
 func TestResidentPipeline(t *testing.T) {
@@ -123,20 +107,9 @@ func TestResidentPipeline(t *testing.T) {
 			}
 			defer func() { _ = data.Close(ctx) }()
 
-			// The very first run can race role provisioning within the apply and spawn on the admin fallback; the base-keyed session recycles onto the scoped role at the next run, so wait for the role's backend before sampling iterations.
+			// Sample three producing turns: each mints its own run row at commit.
 			var mark int64
 			dl := time.Now().Add(120 * time.Second)
-			for time.Now().Before(dl) {
-				var backends int
-				_ = data.QueryRow(ctx, "SELECT count(*) FROM pg_stat_activity WHERE usename='iris_pipeline_res_writer'").Scan(&backends)
-				if backends == 1 {
-					_ = meta.QueryRow(ctx, "SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_writer' AND state='succeeded'").Scan(&mark)
-					break
-				}
-				time.Sleep(150 * time.Millisecond)
-			}
-
-			// Three protocol iterations on the scoped session.
 			var ids []int64
 			for time.Now().Before(dl) {
 				rows, err := meta.Query(ctx, "SELECT id FROM runs WHERE pipeline='res_writer' AND state='succeeded' AND id>$1 ORDER BY id LIMIT 3", mark)
@@ -158,7 +131,7 @@ func TestResidentPipeline(t *testing.T) {
 				time.Sleep(150 * time.Millisecond)
 			}
 			if len(ids) < 3 {
-				t.Fatalf("resident pipeline produced %d succeeded runs on the scoped session within 120s, want 3", len(ids))
+				t.Fatalf("resident pipeline produced %d succeeded runs within 120s, want 3", len(ids))
 			}
 
 			// One process: every sampled iteration's run row carries the same process-group handle.
@@ -183,25 +156,40 @@ func TestResidentPipeline(t *testing.T) {
 				}
 			}
 
-			// One backend: the resident process holds a single data connection across iterations.
+			// No pipeline credentials (#206): the worker process never connects to
+			// the data database, so its role holds ZERO backends.
 			var backends int
 			if err := data.QueryRow(ctx,
 				"SELECT count(*) FROM pg_stat_activity WHERE usename='iris_pipeline_res_writer'").Scan(&backends); err != nil {
 				t.Fatalf("read pg_stat_activity: %v", err)
 			}
-			if backends != 1 {
-				t.Errorf("pipeline role holds %d backends, want 1 (one persistent connection)", backends)
+			if backends != 0 {
+				t.Errorf("pipeline role holds %d backends, want 0 (the engine mediates every database access)", backends)
 			}
 		})
 
-		t.Run("cancel-parks-until-manual-run", func(t *testing.T) {
+		t.Run("stop-parks-until-manual-run", func(t *testing.T) {
 			ensurePython(t)
 			freshDatabases(t)
 			bin := Build(t)
 			ws := shortWorkspace(t)
-			// Hangs on its FIRST run only (marker file); after the cancel park, a manual run takes the marker branch and succeeds.
-			script := "import os, time\nif not os.path.exists(\"hang.marker\"):\n    open(\"hang.marker\", \"w\").close()\n    while True:\n        time.sleep(0.2)\n"
-			decl := "name: res_park\nrun: [python, main.py]\n"
+			// Hangs on its FIRST turn only (marker file), answering nothing -- under
+			// the turn protocol a hung turn holds its lane with NO run row, so the
+			// operator surface is the pipeline-level stop. After the park, a manual
+			// run takes the marker branch, produces a row, and succeeds.
+			script := "import os\n" + PyTurnPrelude + `
+import time
+def on_turn(turn, rows):
+    if not os.path.exists("hang.marker"):
+        open("hang.marker", "w").close()
+        while True:
+            time.sleep(0.2)
+    emit("testdata.items", {"id": turn, "val": "released"})
+    done(turn)
+
+turn_loop(on_turn)
+`
+			decl := "name: res_park\nrun: [python, main.py]\nwrites:\n  - table: testdata.items\n    fields: [id, val]\n"
 			writeResidentWorkspace(t, ws, "res_park", decl, script)
 			stop := startEngine(t, bin, ws)
 			defer stop()
@@ -214,48 +202,56 @@ func TestResidentPipeline(t *testing.T) {
 			}
 			defer func() { _ = meta.Close(ctx) }()
 
-			var hungID int64
+			// The hung turn leaves no run row; the marker file is the observable
+			// proof the worker took its first turn and is now holding the lane.
+			marker := filepath.Join(ws, "pipelines", "res_park", "hang.marker")
 			dl := time.Now().Add(90 * time.Second)
 			for time.Now().Before(dl) {
-				_ = meta.QueryRow(ctx, "SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_park' AND state='running'").Scan(&hungID)
-				if hungID != 0 {
+				if _, err := os.Stat(marker); err == nil {
 					break
 				}
 				time.Sleep(150 * time.Millisecond)
 			}
-			if hungID == 0 {
-				t.Fatal("no running run to cancel within 90s")
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatal("worker never took its first turn within 90s")
 			}
-			bin.Run(t, RunOptions{Args: []string{"run", "cancel", fmt.Sprint(hungID)}, Dir: ws, Timeout: 20 * time.Second}).RequireExit(t, 0)
 
-			var state string
+			// The pipeline-level stop parks: it mints the park row (a quiet loop has
+			// no run to dead-letter) and kills the hung worker.
+			bin.Run(t, RunOptions{Args: []string{"pipeline", "stop", "res_park"}, Dir: ws, Timeout: 20 * time.Second}).RequireExit(t, 0)
+
+			var parkID int64
+			var state, reason string
 			dl = time.Now().Add(20 * time.Second)
 			for time.Now().Before(dl) {
-				_ = meta.QueryRow(ctx, "SELECT state FROM runs WHERE id=$1", hungID).Scan(&state)
-				if state == "dead_lettered" {
+				_ = meta.QueryRow(ctx,
+					"SELECT r.id, r.state, coalesce(d.reason,'') FROM runs r LEFT JOIN dead_letters d ON d.run_id=r.id WHERE r.pipeline='res_park' ORDER BY r.id DESC LIMIT 1").Scan(&parkID, &state, &reason)
+				if state == "dead_lettered" && reason == "stopped" {
 					break
 				}
 				time.Sleep(150 * time.Millisecond)
 			}
-			if state != "dead_lettered" {
-				t.Fatalf("cancelled run %d state=%q, want dead_lettered", hungID, state)
+			if state != "dead_lettered" || reason != "stopped" {
+				t.Fatalf("park row = (state %q, reason %q), want a dead_lettered stopped run", state, reason)
 			}
 
-			// Parked: the loop must not resurrect the pipeline on its own.
+			// Parked: the loop must not resurrect the pipeline on its own, and the
+			// killed hung turn must not have minted a failed dead letter over the park.
 			time.Sleep(3 * time.Second)
-			var afterCancel int64
-			_ = meta.QueryRow(ctx, "SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_park'").Scan(&afterCancel)
-			if afterCancel != hungID {
-				t.Fatalf("loop resurrected the cancelled pipeline: max run id %d, want the cancelled %d", afterCancel, hungID)
+			var afterStop int64
+			_ = meta.QueryRow(ctx, "SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_park'").Scan(&afterStop)
+			if afterStop != parkID {
+				t.Fatalf("loop resurrected the stopped pipeline: max run id %d, want the park row %d", afterStop, parkID)
 			}
 
-			// A manual run releases the park; the loop resumes afterwards (a later cause=loop run appears).
+			// A manual run releases the park; the loop resumes afterwards (a later
+			// producing cause=loop run appears).
 			bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "res_park"}, Dir: ws, Timeout: 2 * time.Minute}).RequireExit(t, 0)
 			dl = time.Now().Add(90 * time.Second)
 			var loopID int64
 			for time.Now().Before(dl) {
 				_ = meta.QueryRow(ctx,
-					"SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_park' AND cause='loop' AND state='succeeded' AND id>$1", hungID).Scan(&loopID)
+					"SELECT coalesce(max(id),0) FROM runs WHERE pipeline='res_park' AND cause='loop' AND state='succeeded' AND id>$1", parkID).Scan(&loopID)
 				if loopID != 0 {
 					break
 				}

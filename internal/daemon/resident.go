@@ -6,39 +6,79 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 )
 
-// This file is the resident-pipeline machinery (#192): a pipeline process may stay alive across runs, iterating on a line protocol -- the engine writes "go <run_id>" to its stdin, the script answers "done <status>" on stdout -- so spawn and connect costs are paid once, not per iteration. A process that simply exits is a legacy one-shot run, byte-for-byte today's behavior.
+// This file is the resident-pipeline session machinery under the turn protocol
+// (#206, extending #192): a pipeline process stays alive across turns, iterating
+// on the JSON Lines protocol -- the engine writes go/row/run frames to its stdin,
+// the process answers row frames and one done/error terminal on stdout -- so
+// spawn costs are paid once, not per turn. stdout is protocol-only (every line is
+// a frame; a non-frame line is a protocol violation the turn driver dead-letters
+// with the line quoted); stderr stays free-form log, captured per turn and tailed
+// for process-death detail. The session holds the pipes and the exit state; the
+// pure frame semantics live in dispatch's turn model.
 
-// residentDoneWord is the stdout protocol verb a resident script answers an iteration with ("done <int>").
-const residentDoneWord = "done"
-
-// residentGoWord is the stdin protocol verb the engine starts an iteration with ("go <run_id>").
-const residentGoWord = "go"
-
-// scanBufferCap bounds the protocol scanner's partial-line buffer; a longer unterminated line is flushed to the log as-is.
+// scanBufferCap bounds the frame scanner's partial-line buffer; a longer
+// unterminated line is delivered as one oversized line (it fails frame parse, so
+// the protocol's violation path bounds it).
 const scanBufferCap = 1 << 20
 
-// switchSink is a concurrency-safe output writer whose destination swaps per iteration; a nil destination discards.
-type switchSink struct {
-	mu sync.Mutex
-	w  io.Writer
+// frameLinesCap bounds the scanner's undelivered-lines channel. A turn's frames
+// are consumed live by the turn driver; only stray output between turns can back
+// up, and past the cap it is dropped (counted) rather than blocking the pipe.
+const frameLinesCap = 4096
+
+// stderrTailCap bounds the retained stderr tail used as process-death detail.
+const stderrTailCap = 2048
+
+// tailRing retains the last stderrTailCap bytes written through it.
+type tailRing struct {
+	mu  sync.Mutex
+	buf []byte
 }
 
-// Set points the sink at the current iteration's log (nil between iterations).
+// Write appends p, keeping only the tail.
+func (r *tailRing) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buf = append(r.buf, p...)
+	if over := len(r.buf) - stderrTailCap; over > 0 {
+		r.buf = append(r.buf[:0], r.buf[over:]...)
+	}
+	return len(p), nil
+}
+
+// String returns the retained tail.
+func (r *tailRing) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return string(r.buf)
+}
+
+// switchSink is a concurrency-safe output writer whose destination swaps per
+// turn; a nil destination discards. Every write also feeds the tail ring, so a
+// process death between turns still carries recent stderr in its detail.
+type switchSink struct {
+	tail tailRing
+	mu   sync.Mutex
+	w    io.Writer
+}
+
+// Set points the sink at the current turn's log buffer (nil between turns).
 func (s *switchSink) Set(w io.Writer) {
 	s.mu.Lock()
 	s.w = w
 	s.mu.Unlock()
 }
 
-// Write forwards to the current destination under the lock (a Set waits out an in-flight write), best-effort: capture never fails the process's output pipe.
+// Write forwards to the current destination under the lock (a Set waits out an
+// in-flight write), best-effort: capture never fails the process's output pipe.
 func (s *switchSink) Write(p []byte) (int, error) {
+	_, _ = s.tail.Write(p)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.w != nil {
@@ -47,26 +87,29 @@ func (s *switchSink) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// doneEvent is one parsed "done <status>" protocol line.
-type doneEvent struct {
-	code int
+// Tail returns the retained stderr tail.
+func (s *switchSink) Tail() string { return s.tail.String() }
+
+// frameScanner splits a resident process's stdout into protocol lines and
+// delivers each on the lines channel. stdout is protocol-only under the turn
+// protocol, so there is no log routing here; a line arriving while no turn is
+// consuming backs up to frameLinesCap and is then dropped (counted), never
+// blocking the process's pipe.
+type frameScanner struct {
+	mu      sync.Mutex
+	buf     []byte
+	lines   chan string
+	dropped atomic.Int64
 }
 
-// protocolScanner splits a resident process's stdout into lines, consuming "done <int>" protocol lines onto done and forwarding everything else to sink.
-type protocolScanner struct {
-	mu   sync.Mutex
-	buf  []byte
-	sink io.Writer
-	done chan doneEvent
+// newFrameScanner builds the stdout frame scanner.
+func newFrameScanner() *frameScanner {
+	return &frameScanner{lines: make(chan string, frameLinesCap)}
 }
 
-// newProtocolScanner builds the stdout scanner over the per-iteration sink.
-func newProtocolScanner(sink io.Writer) *protocolScanner {
-	return &protocolScanner{sink: sink, done: make(chan doneEvent, 1)}
-}
-
-// Write buffers to line boundaries, routing protocol lines to done and log lines to the sink; it never errors (capture is best-effort).
-func (p *protocolScanner) Write(b []byte) (int, error) {
+// Write buffers to line boundaries and delivers whole lines; it never errors
+// (capture is best-effort) and never blocks on a full channel.
+func (p *frameScanner) Write(b []byte) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.buf = append(p.buf, b...)
@@ -75,53 +118,47 @@ func (p *protocolScanner) Write(b []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		line := p.buf[:i+1]
-		if code, ok := parseDoneLine(string(line[:i])); ok {
-			select {
-			case p.done <- doneEvent{code: code}: // a second done for one go is a protocol violation; the extra is dropped
-			default:
-			}
-		} else {
-			_, _ = p.sink.Write(line)
-		}
+		p.deliver(string(bytes.TrimSuffix(p.buf[:i], []byte("\r"))))
 		p.buf = p.buf[i+1:]
 	}
 	if len(p.buf) > scanBufferCap {
-		_, _ = p.sink.Write(p.buf)
+		p.deliver(string(p.buf))
 		p.buf = nil
 	}
 	return len(b), nil
 }
 
-// parseDoneLine reports whether a stdout line is a protocol "done <int>" answer and its status code.
-func parseDoneLine(line string) (int, bool) {
-	fields := strings.Fields(line)
-	if len(fields) != 2 || fields[0] != residentDoneWord {
-		return 0, false
+// deliver hands one line to the channel, dropping (counted) when full.
+func (p *frameScanner) deliver(line string) {
+	select {
+	case p.lines <- line:
+	default:
+		p.dropped.Add(1)
 	}
-	code, err := strconv.Atoi(fields[1])
-	if err != nil {
-		return 0, false
-	}
-	return code, true
 }
 
-// residentSession is one live pipeline process iterating in place: its handle, protocol pipes, and terminal state once it exits.
+// residentSession is one live pipeline process iterating in place: its handle,
+// protocol pipes, per-session turn counter, and terminal state once it exits.
 type residentSession struct {
-	key     string
-	handle  exec.Handle
-	stdin   *os.File
-	scanner *protocolScanner
-	out     *switchSink
-	exited  chan struct{}
-	status  exec.ExitStatus
-	waitErr error
+	key       string
+	handle    exec.Handle
+	stdin     *os.File
+	scanner   *frameScanner
+	out       *switchSink
+	exited    chan struct{}
+	status    exec.ExitStatus
+	waitErr   error
+	turn      int64
+	cancelled atomic.Bool
 }
 
-// spawnResident starts a pipeline process wired for the iteration protocol: stdin over an OS pipe, stdout through the protocol scanner, stderr to the switchable sink.
+// spawnResident starts a pipeline process wired for the turn protocol: stdin over
+// an OS pipe, stdout through the frame scanner, stderr to the switchable sink.
+// The child environment carries no database credentials -- the engine mediates
+// every database access (#206).
 func spawnResident(ctx context.Context, runner exec.Runner, key, dir string, argv, env []string) (*residentSession, error) {
 	out := &switchSink{}
-	scanner := newProtocolScanner(out)
+	scanner := newFrameScanner()
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("resident stdin pipe: %w", err)
@@ -135,25 +172,46 @@ func spawnResident(ctx context.Context, runner exec.Runner, key, dir string, arg
 	s := &residentSession{key: key, handle: h, stdin: pw, scanner: scanner, out: out, exited: make(chan struct{})}
 	go func() {
 		s.status, s.waitErr = h.Wait()
-		_ = pw.Close() // unblock any go-line writer once the process is gone
+		_ = pw.Close() // unblock any frame writer once the process is gone
 		close(s.exited)
 	}()
 	return s, nil
 }
 
-// sendGo writes the iteration-start line; an error means the process is gone (its exit reports through exited).
-func (s *residentSession) sendGo(runID int64) error {
-	_, err := s.stdin.WriteString(residentGoWord + " " + strconv.FormatInt(runID, 10) + "\n")
+// nextTurn advances and returns the session's turn number. Turn numbers are
+// per-session and in-memory: a respawned session starts over, and the terminal
+// echo check is always against the turn just issued.
+func (s *residentSession) nextTurn() int64 {
+	s.turn++
+	return s.turn
+}
+
+// send writes one engine frame line; an error means the process is gone (its
+// exit reports through exited).
+func (s *residentSession) send(line string) error {
+	_, err := s.stdin.WriteString(line + "\n")
 	return err
 }
 
-// drainDone discards a stale done event a prior iteration left behind.
-func (s *residentSession) drainDone() {
-	select {
-	case <-s.scanner.done:
-	default:
+// drainFrames discards stale stdout lines a prior turn left behind, so a new
+// turn's collector never reads a dead turn's frames (stale echoes after a cancel
+// are detected and dropped here).
+func (s *residentSession) drainFrames() {
+	for {
+		select {
+		case <-s.scanner.lines:
+		default:
+			return
+		}
 	}
 }
+
+// markCancelled records an operator cancel, so the turn driver records the
+// process death as the cancel's park rather than minting a failed dead letter.
+func (s *residentSession) markCancelled() { s.cancelled.Store(true) }
+
+// wasCancelled reports whether an operator cancel ended this session.
+func (s *residentSession) wasCancelled() bool { return s.cancelled.Load() }
 
 // dead reports whether the process already exited.
 func (s *residentSession) dead() bool {
@@ -165,14 +223,18 @@ func (s *residentSession) dead() bool {
 	}
 }
 
-// end stops the session: stdin EOF (the polite signal), then a group kill, then the reap.
+// end stops the session: stdin EOF (the polite signal), then a group kill, then
+// the reap.
 func (s *residentSession) end() {
 	_ = s.stdin.Close()
 	_ = s.handle.Kill()
 	<-s.exited
 }
 
-// residentRuns is the per-leadership-term registry of live resident sessions, one per pipeline.
+// residentRuns is the registry of live resident sessions, one per pipeline. It is
+// daemon-scoped so the cancel plane can reach a session the lane loop owns; the
+// sessions themselves die with their leadership term (the runner kills the group
+// on term-context cancellation) and the lane loop replaces dead entries.
 type residentRuns struct {
 	mu sync.Mutex
 	m  map[string]*residentSession
@@ -202,4 +264,17 @@ func (r *residentRuns) drop(pipeline string) {
 	r.mu.Lock()
 	delete(r.m, pipeline)
 	r.mu.Unlock()
+}
+
+// cancel marks and ends the pipeline's live session, reporting whether one was
+// there: the operator-stop path kills the worker after parking the pipeline, and
+// the mark keeps the turn driver from minting a failed dead letter for the kill.
+func (r *residentRuns) cancel(pipeline string) bool {
+	s := r.get(pipeline)
+	if s == nil {
+		return false
+	}
+	s.markCancelled()
+	s.end()
+	return true
 }

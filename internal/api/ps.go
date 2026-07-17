@@ -29,6 +29,23 @@ type PsPayload struct {
 	// Runs are the run rows, newest first. Queued and running only by default;
 	// the whole history under ?all=true. Always present, possibly empty.
 	Runs []PsRun `json:"runs"`
+	// Residents are the leader's live resident workers' turn counters (#206):
+	// quiet-loop visibility held in memory, no rows. Present on the leader only.
+	Residents []PsResident `json:"residents,omitempty"`
+}
+
+// PsResident is one pipeline's turn readout under the turn protocol (#206): how
+// many turns its worker has been given this leadership term, and how many have
+// elapsed since one last recorded a run. A high turns_since_run over a live
+// worker is a quiet loop, not a stuck one -- turns that record nothing write
+// nothing, so the counters are the only trace they leave.
+type PsResident struct {
+	// Pipeline is the resident worker's pipeline.
+	Pipeline string `json:"pipeline"`
+	// Turns is the pipeline's total driven turns this leadership term.
+	Turns uint64 `json:"turns"`
+	// TurnsSinceRun counts turns since the last one that recorded a run row.
+	TurnsSinceRun uint64 `json:"turns_since_run"`
 }
 
 // PsLoad is one sampled host-load reading: CPU percentage and resident memory.

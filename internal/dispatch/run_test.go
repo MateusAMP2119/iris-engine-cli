@@ -207,9 +207,10 @@ func TestStartRunDirectExecNoShell(t *testing.T) {
 }
 
 // TestStartRunCwdEnvInjection proves a run's working directory is its pipeline
-// folder and its environment is inherited + declared + the injected scoped DB
-// connection: the script sees the pipeline folder as cwd, an inherited variable, its
-// declared variable, and the injected IRIS_DB_URL.
+// folder and its environment is inherited + declared, with NO database connection
+// of any kind (#206: the engine mediates every database access): the script sees
+// the pipeline folder as cwd, an inherited variable, its declared variable, and an
+// empty IRIS_DB_URL.
 func TestStartRunCwdEnvInjection(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
@@ -218,13 +219,11 @@ func TestStartRunCwdEnvInjection(t *testing.T) {
 			"printf 'DBURL=%s\\n' \"$IRIS_DB_URL\"\nprintf 'INHERITED=%s\\n' \"$IRIS_TEST_INHERITED\"\n")
 
 	t.Setenv("IRIS_TEST_INHERITED", "inherited-value")
-	const dbURL = "postgres://scoped-conn/for-this-run"
 	rh := h.start(dispatch.RunSpec{
 		RunID: "r-env",
 		Dir:   dir,
 		Argv:  []string{script},
 		Env:   []string{"DECLARED_VAR=declared-value"},
-		DBURL: dbURL,
 	})
 	if _, err := rh.Wait(); err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -242,7 +241,7 @@ func TestStartRunCwdEnvInjection(t *testing.T) {
 	}
 	for _, want := range []string{
 		"DECLARED=declared-value",
-		"DBURL=" + dbURL,
+		"DBURL=\n",
 		"INHERITED=inherited-value",
 	} {
 		if !strings.Contains(got, want) {

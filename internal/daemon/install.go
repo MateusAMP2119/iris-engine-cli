@@ -117,6 +117,10 @@ func InstallEngine(ctx context.Context, s config.Settings, logger *slog.Logger) 
 		return InstallReport{}, fmt.Errorf("daemon: ensure data journal for install: %w", err)
 	}
 	logger.Info("engine install: ensured data journal")
+	if err := pg.EnsureTurnPositions(ctx, data); err != nil {
+		return InstallReport{}, fmt.Errorf("daemon: ensure turn positions for install: %w", err)
+	}
+	logger.Info("engine install: ensured turn positions")
 
 	// Set up the control socket (the engine home, clearing any stale
 	// socket) -- real local filesystem I/O, no database.
@@ -262,6 +266,12 @@ func BootstrapEngine(ctx context.Context, deps InstallDeps) (InstallReport, erro
 		return report, fmt.Errorf("daemon: ensure data journal: %w", err)
 	}
 	log.Info("engine install: ensured data journal")
+
+	// Create the engine-owned turn-protocol feed-position table beside the journal.
+	if err := pg.EnsureTurnPositions(ctx, deps.Data); err != nil {
+		return report, fmt.Errorf("daemon: ensure turn positions: %w", err)
+	}
+	log.Info("engine install: ensured turn positions")
 
 	// Store the engine key on the meta connection: a create-once INSERT into the
 	// single-row engine_key table (ON CONFLICT DO NOTHING). The statement carries the

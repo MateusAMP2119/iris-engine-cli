@@ -123,18 +123,13 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 	defer data.Close()
 
-	// The lane and manual runs' scoped data connection targets the engine-owned data
-	// database (where the declared tables and capture trigger live). Each run
-	// authenticates as its pipeline's own least-privilege login role (credential
-	// read from meta; the admin-derived DSN only donates host/port/database and
-	// stands in as the fallback for a pipeline whose role is not yet provisioned).
-	laneDataDSN, err := pg.DataDSN(adminDSN.Source().ConnString())
-	if err != nil {
-		return fmt.Errorf("daemon: derive lane run data DSN: %w", err)
-	}
-	runConn, err := newRunConnBuilder(laneDataDSN, client.RoleCredentialReader(), logger)
-	if err != nil {
-		return fmt.Errorf("daemon: build run connection builder: %w", err)
+	// Under the turn protocol (#206) a pipeline process receives no database
+	// credentials: the engine's own data client (data, above) feeds declared-read
+	// input and performs declared-write output with each run's exact attribution,
+	// so no per-run scoped connection is derived here anymore. Turn-position
+	// bookkeeping self-heals in case this home predates the table.
+	if err := pg.EnsureTurnPositions(ctx, data); err != nil {
+		return fmt.Errorf("daemon: ensure turn positions: %w", err)
 	}
 
 	// The leader's workspace tree (already verified as a prerequisite above): declarations
@@ -234,14 +229,21 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// running lane run's process group through the shared in-flight registry and
 	// dead-letters it as stopped through the single writer. The pass counter is the
 	// leader-held per-lane loop count, reset each leadership term.
-	lanes := newLanePlane(logger, inflight, client.ManualReader())
+	// The resident-session registry: the lane loop keeps each pipeline's live
+	// worker here, and the pipeline-level stop kills through it (a loop turn in
+	// flight has no run row to cancel by id).
+	residents := newResidentRuns()
+	lanes := newLanePlane(logger, inflight, residents, client.ManualReader())
 	passCounter := dispatch.NewPassCounter()
 
 	// The ps plane serves GET /ps (and `iris ps`) on any node: the run snapshot
 	// over the reader pool composed with the live leadership role and the
 	// host-load probe, so the readout reports what the engine is running and what
 	// it costs the host -- the daemon's own tree plus the managed Postgres's.
-	psp := NewPsPlane(role, client.Reader(), ManagedPostmasterPID(s), logger)
+	// The resident turn counters (#206): quiet turns write no rows, so this
+	// in-memory tally is the ps readout's only trace of a quiet loop.
+	turnTally := newTurnCounters()
+	psp := NewPsPlane(role, client.Reader(), ManagedPostmasterPID(s), turnTally, logger)
 
 	// The dead-letter plane serves GET /dead_letters/{run}/impact (the blast readout
 	// `iris deadletter show` renders) on any node from the reader pool, and POST
@@ -317,16 +319,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// the resolved retain, each pruned run's log dying with its row). The run's data
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
 	laneBuild := func(submit dispatch.Submitter, events *dispatch.Events) *dispatch.Loop {
-		return newLaneLoop(submit, inflight, workspace, client.RegistryReader(), client.ManualReader(),
+		turnTally.reset() // a new leadership term starts a fresh turn account
+		return newLaneLoop(submit, inflight, residents, workspace, client.RegistryReader(), client.ManualReader(),
 			client.QueuedManualReader(), events,
-			exec.NewOSRunner(), data, objects, runConn, passCounter,
+			exec.NewOSRunner(), data, data, objects, turnTally, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
 	}
 
 	cand := NewCandidate(client.Lock(), role, client.WriteConn(), logger,
 		WithReconciliation(client.Reader(), dispatch.RealGroupKiller(), dispatch.SingleHostMatcher()),
 		WithControlPlane(control, workspace, client.RegistryReader(), client.AppliedHeadReader(), data),
-		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, runConn),
+		WithPipelinePlane(pipelines, workspace, client.RegistryReader(), client.ManualReader(), objects, exec.NewOSRunner(), data, data, client.RoleCredentialReader()),
 		WithSealer(s.JournalPartitionRows, data, client.SealReader()),
 		WithBuildPlane(builds, workspace, client.ManualReader(), objects, exec.NewOSRunner()),
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),

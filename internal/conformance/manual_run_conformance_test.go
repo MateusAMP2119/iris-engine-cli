@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,11 +29,13 @@ func writePipelineDecl(t *testing.T, ws, name, decl string) {
 }
 
 // TestManualPipelineRun drives the real iris binary end to end against a live daemon and
-// managed Postgres to prove the two manual-run failure contracts: a manual run whose
-// depends_on gate is not satisfied exits 4 with a reason, and a
-// manual run that dead-letters exits 5 with the dead-lettered run recording cause=manual.
-// One daemon and workspace serve both legs; three pipelines are registered upstream-first
-// (a gated pair and an own-lane failing pipeline).
+// managed Postgres to prove the two manual-run failure contracts under the turn protocol
+// (#206): a manual run whose depends_on gate is not satisfied exits 4 with a reason, and
+// a manual run whose worker DIES -- a bare exit with no terminal frame is a death, not a
+// completed turn -- dead-letters and exits 5 with the run recording cause=manual and the
+// death detail in dead_letters.error. One daemon and workspace serve both legs; three
+// pipelines are registered upstream-first (a gated pair and a loose failing pipeline,
+// whose manual run routes immediate since no lane row places it).
 func TestManualPipelineRun(t *testing.T) {
 	// Shared-cluster isolation: on the CI lane every conformance test shares one external
 	// Postgres with fixed-name meta/data databases. A prior test (or a prior back-to-back
@@ -46,13 +49,15 @@ func TestManualPipelineRun(t *testing.T) {
 	ws := shortWorkspace(t)
 	socket := filepath.Join(ws, ".iris", "iris.sock")
 
-	// gate_up is an upstream that never SUCCEEDS: its script hangs forever, so its
-	// first (and only) loop run stays running -- never terminal, no engine timeout
-	// (clock doctrine) -- and gate_down's depends_on gate stays pending. The old
-	// fixture ran `true` and relied on the manual run racing ahead of the loop's
-	// first pass; the event-driven loop starts the pass the instant the apply
-	// lands, so the premise must hold structurally, not by timing. boom is an
-	// own-lane pipeline whose script fails, so a manual run of it dead-letters.
+	// gate_up is an upstream that never SUCCEEDS: its worker hangs mid-turn forever,
+	// answering no terminal frame, so under the turn protocol its hung loop turn
+	// records NOTHING -- no run row at all, no engine timeout (clock doctrine) -- and
+	// gate_down's depends_on gate stays pending. The premise holds structurally, not
+	// by timing: gate_up can never record a success. The hang holds the shared queue
+	// lane (loose pipelines walk one serial queue lane), which never blocks the
+	// manual path -- loose manual runs execute immediately, out of band. boom is a
+	// loose pipeline whose script exits without ever speaking a frame: a bare exit is
+	// a worker DEATH, so a manual run of it dead-letters.
 	writePipelineDecl(t, ws, "gate_up", "name: gate_up\nrun: [\"sh\", \"-c\", \"sleep 100000\"]\n")
 	writePipelineDecl(t, ws, "gate_down", "name: gate_down\nrun: [\"true\"]\ndepends_on: [gate_up]\n")
 	writePipelineDecl(t, ws, "boom", "name: boom\nrun: [\"sh\", \"-c\", \"exit 7\"]\n")
@@ -83,8 +88,9 @@ func TestManualPipelineRun(t *testing.T) {
 	}
 
 	t.Run("manual-run-ineligible-exit4", func(t *testing.T) {
-		// gate_up has produced no success, so gate_down's depends_on gate is not
-		// satisfied: a manual run of it is ineligible and exits 4 with a reason.
+		// gate_up has recorded no success (its hung turn records nothing at all), so
+		// gate_down's depends_on gate is not satisfied: a manual run of it is
+		// ineligible and exits 4 with a reason.
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "gate_down"}, Dir: ws, Timeout: time.Minute})
 		res.RequireExit(t, 4)
 		if len(res.Stderr) == 0 {
@@ -93,12 +99,16 @@ func TestManualPipelineRun(t *testing.T) {
 	})
 
 	t.Run("manual-run-deadletter-exit5-cause-manual", func(t *testing.T) {
-		// boom's script exits non-zero, so a manual run of it dead-letters and exits 5.
+		// boom's worker exits 7 without a terminal frame -- a death, since a manual
+		// run executes as one turn -- so the manual run dead-letters and exits 5.
 		res := bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "boom"}, Dir: ws, Timeout: time.Minute})
 		res.RequireExit(t, 5)
 
 		// The dead-lettered run records cause=manual and sits in the dead-letter
-		// worklist -- read directly from meta with an independent client.
+		// worklist -- read directly from meta with an independent client. The loop may
+		// have dead-lettered boom once already (cause=loop, before gate_up's hang held
+		// the queue lane), but the manual run is minted later and the outstanding
+		// failure parks loop reruns, so the latest run is the manual one.
 		dsn := metaDSN(t, ws)
 		qCtx, cancelQ := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancelQ()
@@ -130,6 +140,21 @@ func TestManualPipelineRun(t *testing.T) {
 		}
 		if dead != 1 {
 			t.Errorf("dead_letters rows for the manual run = %d, want 1", dead)
+		}
+		// The death detail (#206): reason failed, error carrying the manual prefix and
+		// the worker's exit disposition (there is no exit_code column value to lean on;
+		// failed turns record it NULL).
+		var reason, detail string
+		if err := conn.QueryRow(qCtx,
+			"SELECT reason, coalesce(error,'') FROM dead_letters WHERE run_id = $1", runID,
+		).Scan(&reason, &detail); err != nil {
+			t.Fatalf("read dead_letters detail for run %d: %v", runID, err)
+		}
+		if reason != "failed" {
+			t.Errorf("dead_letters reason = %q, want failed", reason)
+		}
+		if !strings.Contains(detail, "manual run dead-lettered:") || !strings.Contains(detail, "exit code 7") {
+			t.Errorf("dead_letters error = %q; want the manual death detail (manual run dead-lettered: ... exit code 7)", detail)
 		}
 	})
 }

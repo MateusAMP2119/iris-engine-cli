@@ -293,14 +293,19 @@ func (l *Loop) runLanePass(ctx context.Context, lane Lane) (PassReport, error) {
 			// order never gates on a member's disposition.
 			report.Poisoned = append(report.Poisoned, PoisonedMember{Pipeline: pipeline, Decision: d})
 		case d.Run:
-			// Open gate: start a FRESH run on current data (cause=loop), consuming the
-			// resolved upstreams 1:1, and await its terminal state before the next
-			// member (serial within the lane). The outcome is deliberately discarded:
-			// a failed run is isolated and never gates the walk, and it is never
-			// retried -- the next pass starts a fresh run only if the gate re-opens.
-			report.Started = append(report.Started, pipeline)
-			if _, err := l.runner.StartFresh(ctx, freshRunRecord(pipeline, d, nil)); err != nil {
+			// Open gate: run a FRESH turn on current data (cause=loop), consuming the
+			// resolved upstreams 1:1, and await its end before the next member
+			// (serial within the lane). A failed run is isolated and never gates the
+			// walk, and it is never retried -- the next pass runs a fresh turn only
+			// if the gate re-opens. A quiet turn (#206) recorded nothing, so it does
+			// not count as started: the post-pass sees the truth, and a lane of only
+			// quiet turns wrote nothing and parks on the watermark.
+			outcome, err := l.runner.StartFresh(ctx, freshRunRecord(pipeline, d, nil))
+			if err != nil {
 				return report, fmt.Errorf("dispatch: lane %q start %q: %w", lane.Name, pipeline, err)
+			}
+			if outcome != RunQuiet {
+				report.Started = append(report.Started, pipeline)
 			}
 		default:
 			// Closed gate: nothing new to consume, or an unmet dependency. No run row

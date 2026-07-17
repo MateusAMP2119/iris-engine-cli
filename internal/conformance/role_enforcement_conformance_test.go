@@ -4,210 +4,162 @@ package conformance
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
-// insufficientPrivilege is Postgres' SQLSTATE for a privilege violation: the code the
-// database itself raises when a role reads a table or column it was never granted, or
-// connects to a database it may not. Asserting on this code is asserting that Postgres
-// -- not application code -- refused the access.
-const insufficientPrivilege = "42501"
+// This file is the declared-access enforcement leg under the turn protocol
+// (#206). Its predecessor proved a real Postgres bounded each run's own
+// connection to its declared columns; runs no longer have a connection to
+// bound -- pipelines hold no database credentials, and every output row rides
+// a stdout row frame. The successor contract this file proves end to end: the
+// ENGINE checks each row frame against the declared writes, and a frame naming
+// an undeclared table or an undeclared field of a declared table dead-letters
+// the run as a protocol violation -- reason failed, cause loop (the fresh turn
+// mints its run directly dead-lettered, exit code NULL), the offending line
+// quoted verbatim in the dead letter's error -- and commits NOTHING: the
+// turn's data transaction is one atomic commit, so even the in-declaration row
+// framed earlier in the same turn never lands, and the journal stays empty.
 
-// TestPipelineRolePostgresEnforcement stands up a real Postgres cluster the engine has
-// never touched, ensures the meta and data databases, provisions one least-privilege
-// pipeline login role through the live provisioning path (pg.ProvisionPipelineRole
-// with the engine-minted credential and field grants on analytics.orders[id,amount]),
-// and then connects to the cluster AS that role -- the exact credential the engine
-// minted -- to prove two enforcement contracts against the live database:
-//
-//   - The pipeline role cannot connect to the meta control database (Postgres
-//     refuses at CONNECT), while it can reach the data database -- so meta is
-//     hidden, not the role broken.
-//   - Reading a declared column (amount) succeeds, and reading a column the
-//     pipeline did not declare (customer_id) fails at the database with
-//     insufficient_privilege -- Postgres physically bounds the read.
-//
-// It shares one cluster and one provisioned role across both legs (both are properties
-// of the same real role), and drives the pg provisioning code directly against the
-// live cluster (the external_data_db conformance pattern) rather than the CLI, so the
-// legs prove the DDL the engine issues, enforced by a real Postgres.
-func TestPipelineRolePostgresEnforcement(t *testing.T) {
-	const (
-		superuser = "postgres"
-		superpw   = "superpw"
-	)
-	port := freePort(t)
-	dataDir := filepath.Join(t.TempDir(), "data")
-	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+// otherSchemaYAML declares testdata.other: a real, provisioned table the
+// enforcement pipeline never declares, so the refusal to write it is
+// declared-access enforcement, not a missing table.
+const otherSchemaYAML = "schema: testdata\ntable: other\ncolumns:\n  - name: id\n    type: int\n    primary_key: true\n"
 
-	cluster := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
-		Version(embeddedpostgres.V18).
-		Username(superuser).Password(superpw).Database("postgres").
-		Port(port).
-		DataPath(dataDir).RuntimePath(runtimeDir).
-		StartTimeout(90 * time.Second))
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("start bare Postgres cluster: %v", err)
+func TestEngineEnforcesDeclaredWrites(t *testing.T) {
+	cases := []struct {
+		name      string
+		writes    string // the declaration's writes block
+		inside    string // an in-declaration emit issued before the violation
+		offending string // the raw row frame outside the declared writes
+		wantCause string // the violation cause the dead letter must name
+	}{
+		{
+			name:      "undeclared-table-dead-letters-and-commits-nothing",
+			writes:    "writes:\n  - table: testdata.items\n    fields: [id, val]\n",
+			inside:    `emit("testdata.items", {"id": 1, "val": "inside"})`,
+			offending: `{"event":"row","table":"testdata.other","row":{"id":1}}`,
+			wantCause: `table "testdata.other" is not in the declared writes`,
+		},
+		{
+			name:      "undeclared-field-dead-letters-and-commits-nothing",
+			writes:    "writes:\n  - table: testdata.items\n    fields: [id]\n",
+			inside:    `emit("testdata.items", {"id": 1})`,
+			offending: `{"event":"row","table":"testdata.items","row":{"id":1,"val":"sneak"}}`,
+			wantCause: `field "val" of table "testdata.items" is not in the declared writes`,
+		},
 	}
-	t.Cleanup(func() { _ = cluster.Stop() })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ensurePython(t)
+			freshDatabases(t)
+			bin := Build(t)
+			ws := shortWorkspace(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+			// The script violates exactly once (marker file, so the recycled
+			// session stays quiet afterwards): one in-declaration row, then the
+			// offending frame verbatim. The engine ends the turn at the violation;
+			// later turns answer bare done, so the lane parks after the single
+			// dead letter.
+			script := "import os\n" + PyTurnPrelude + `
+def on_turn(turn, rows):
+    if os.path.exists("sent.marker"):
+        done(turn)
+        return
+    open("sent.marker", "w").close()
+    ` + tc.inside + `
+    sys.stdout.write('` + tc.offending + `' + "\n")
+    sys.stdout.flush()
+    done(turn)
 
-	dsnTo := func(db string) string {
-		return fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", superuser, superpw, port, db)
-	}
-
-	// The engine owns two databases in the cluster: the meta control database and the
-	// data database. Ensure meta (the data database is ensured by pg.Connect below).
-	superConn, err := pgx.Connect(ctx, dsnTo("postgres"))
-	if err != nil {
-		t.Fatalf("connect as superuser: %v", err)
-	}
-	if _, err := superConn.Exec(ctx, "CREATE DATABASE "+store.MetaDatabase); err != nil {
-		_ = superConn.Close(ctx)
-		t.Fatalf("create meta database: %v", err)
-	}
-	_ = superConn.Close(ctx)
-
-	// The data-database admin client (as the engine opens it): ensures the data
-	// database and issues every provisioning statement on the data connection.
-	client, err := pg.Connect(ctx, testConnSource{dsn: dsnTo("postgres")})
-	if err != nil {
-		t.Fatalf("pg.Connect (data database): %v", err)
-	}
-	t.Cleanup(client.Close)
-
-	// A declared table for the pipeline to be granted field access on.
-	for _, stmt := range []string{
-		`CREATE SCHEMA IF NOT EXISTS analytics`,
-		`CREATE TABLE IF NOT EXISTS analytics.orders (
-			id uuid PRIMARY KEY,
-			customer_id uuid,
-			amount numeric,
-			created_at timestamptz
-		)`,
-	} {
-		if err := client.Exec(ctx, stmt); err != nil {
-			t.Fatalf("provision declared table: %v", err)
-		}
-	}
-
-	// The engine mints the credential; the author supplies none. The pipeline declares
-	// reads on analytics.orders[id, amount] -- customer_id and created_at are NOT
-	// declared, so the role must never be able to read them.
-	secret, err := store.GenerateSecret()
-	if err != nil {
-		t.Fatalf("GenerateSecret: %v", err)
-	}
-	role := pg.PipelineRoleName("ingest")
-	grants := []declare.FieldGrant{
-		{Schema: "analytics", Table: "orders", Field: "id", Access: declare.AccessRead},
-		{Schema: "analytics", Table: "orders", Field: "amount", Access: declare.AccessRead},
-	}
-
-	// Provision the least-privilege role live: create it, set the engine-minted
-	// credential, deny meta, grant data connect + schema usage, apply the field grants.
-	if err := pg.ProvisionPipelineRole(ctx, client, pg.RoleProvision{
-		Role:          role,
-		CredentialDDL: store.RenderSetRolePassword(role, secret),
-		MetaDatabase:  store.MetaDatabase,
-		DataDatabase:  pg.DataDatabase,
-		Grants:        grants,
-	}); err != nil {
-		t.Fatalf("ProvisionPipelineRole: %v", err)
-	}
-
-	// A second provision is a no-op: provisioning is idempotent.
-	if err := pg.ProvisionPipelineRole(ctx, client, pg.RoleProvision{
-		Role:          role,
-		CredentialDDL: store.RenderSetRolePassword(role, secret),
-		MetaDatabase:  store.MetaDatabase,
-		DataDatabase:  pg.DataDatabase,
-		Grants:        grants,
-	}); err != nil {
-		t.Fatalf("ProvisionPipelineRole is not idempotent: %v", err)
-	}
-
-	scopedData, err := store.BuildScopedConn(store.ScopedConnParams{
-		Host: "localhost", Port: int(port), Database: pg.DataDatabase, Options: "sslmode=disable",
-	}, role, secret)
-	if err != nil {
-		t.Fatalf("BuildScopedConn (data): %v", err)
-	}
-	scopedMeta, err := store.BuildScopedConn(store.ScopedConnParams{
-		Host: "localhost", Port: int(port), Database: store.MetaDatabase, Options: "sslmode=disable",
-	}, role, secret)
-	if err != nil {
-		t.Fatalf("BuildScopedConn (meta): %v", err)
-	}
-
-	t.Run("meta-hidden-from-pipeline", func(t *testing.T) {
-		// The pipeline role connects to the data database it was granted -- proof the
-		// role and its engine-minted credential work.
-		dataConn, err := pgx.Connect(ctx, scopedData.EnvValue())
-		if err != nil {
-			t.Fatalf("pipeline role could not reach the data database it was granted: %v", err)
-		}
-		_ = dataConn.Close(ctx)
-
-		// The same role connecting to the meta control database is refused by Postgres
-		// at CONNECT: meta is hidden from the pipeline.
-		metaConn, err := pgx.Connect(ctx, scopedMeta.EnvValue())
-		if err == nil {
-			_ = metaConn.Close(ctx)
-			t.Fatal("pipeline role connected to the meta database; meta is not hidden from the pipeline")
-		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) {
-			if pgErr.Code != insufficientPrivilege {
-				t.Errorf("meta connect denied with SQLSTATE %s, want %s (insufficient_privilege): %v",
-					pgErr.Code, insufficientPrivilege, err)
+turn_loop(on_turn)
+`
+			decl := "name: wviol\nrun: [python, main.py]\n" + tc.writes
+			writeResidentWorkspace(t, ws, "wviol", decl, script)
+			otherDir := filepath.Join(ws, "schemas", "testdata", "other")
+			if err := os.MkdirAll(otherDir, 0o755); err != nil {
+				t.Fatalf("mkdir other schema: %v", err)
 			}
-		} else {
-			t.Errorf("meta connect failed but not with a Postgres privilege error: %v", err)
-		}
-	})
+			if err := os.WriteFile(filepath.Join(otherDir, "table.yaml"), []byte(otherSchemaYAML), 0o644); err != nil {
+				t.Fatalf("write other table.yaml: %v", err)
+			}
 
-	t.Run("grants-postgres-enforced", func(t *testing.T) {
-		conn, err := pgx.Connect(ctx, scopedData.EnvValue())
-		if err != nil {
-			t.Fatalf("connect as pipeline role: %v", err)
-		}
-		defer func() { _ = conn.Close(ctx) }()
+			stop := startEngine(t, bin, ws)
+			defer stop()
+			bin.Run(t, RunOptions{Args: []string{"declare", "apply", "pipelines/wviol"}, Dir: ws, Timeout: time.Minute}).RequireExit(t, 0)
 
-		// The declared read succeeds: SELECT of a granted column is allowed.
-		var declared int
-		if err := conn.QueryRow(ctx, "SELECT count(amount) FROM analytics.orders").Scan(&declared); err != nil {
-			t.Fatalf("declared read of analytics.orders.amount was refused: %v", err)
-		}
+			ctx := context.Background()
+			meta, err := pgx.Connect(ctx, metaDSN(t, ws))
+			if err != nil {
+				t.Fatalf("connect meta: %v", err)
+			}
+			defer func() { _ = meta.Close(ctx) }()
+			data, err := pgx.Connect(ctx, dataDSN(t, ws))
+			if err != nil {
+				t.Fatalf("connect data: %v", err)
+			}
+			defer func() { _ = data.Close(ctx) }()
 
-		// The undeclared read fails at the database: a column the pipeline never
-		// declared is refused with insufficient_privilege -- Postgres physically bounds
-		// the read, not application code.
-		_, err = conn.Exec(ctx, "SELECT customer_id FROM analytics.orders")
-		if err == nil {
-			t.Fatal("undeclared read of analytics.orders.customer_id succeeded; Postgres did not enforce the grant")
-		}
-		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) {
-			t.Fatalf("undeclared read failed but not with a Postgres error: %v", err)
-		}
-		if pgErr.Code != insufficientPrivilege {
-			t.Errorf("undeclared read denied with SQLSTATE %s, want %s (insufficient_privilege): %v",
-				pgErr.Code, insufficientPrivilege, err)
-		}
-	})
+			// The violating first turn mints its run directly dead-lettered; wait
+			// for that first record and read its whole disposition.
+			var cause, reason, dlErr string
+			var exitNull, found bool
+			dl := time.Now().Add(120 * time.Second)
+			for time.Now().Before(dl) {
+				err := meta.QueryRow(ctx,
+					`SELECT r.cause, r.exit_code IS NULL, coalesce(d.reason,''), coalesce(d.error,'')
+FROM runs r LEFT JOIN dead_letters d ON d.run_id = r.id
+WHERE r.pipeline='wviol' AND r.state='dead_lettered' ORDER BY r.id LIMIT 1`).Scan(&cause, &exitNull, &reason, &dlErr)
+				if err == nil {
+					found = true
+					break
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+			if !found {
+				t.Fatal("the violating turn produced no dead-lettered run within 120s")
+			}
+			if cause != "loop" {
+				t.Errorf("dead-lettered run cause = %q, want loop (a fresh turn mints directly dead-lettered)", cause)
+			}
+			if !exitNull {
+				t.Error("dead-lettered run carries an exit code; a violated turn records none")
+			}
+			if reason != "failed" {
+				t.Errorf("dead letter reason = %q, want failed", reason)
+			}
+			if !strings.Contains(dlErr, "turn protocol violation") {
+				t.Errorf("dead letter error does not name the protocol violation: %s", dlErr)
+			}
+			if !strings.Contains(dlErr, tc.wantCause) {
+				t.Errorf("dead letter error does not name the violation cause %q: %s", tc.wantCause, dlErr)
+			}
+			if !strings.Contains(dlErr, strconv.Quote(tc.offending)) {
+				t.Errorf("dead letter error does not quote the offending line %s: %s", strconv.Quote(tc.offending), dlErr)
+			}
+
+			// Nothing committed: not the offending row, not the in-declaration row
+			// framed before it in the same turn, and no journal entry -- the
+			// violated turn's data transaction never commits anything.
+			for _, probe := range []struct{ what, sql string }{
+				{"testdata.items", "SELECT count(*) FROM testdata.items"},
+				{"testdata.other", "SELECT count(*) FROM testdata.other"},
+				{"public.data_journal", "SELECT count(*) FROM public.data_journal"},
+			} {
+				var n int
+				if err := data.QueryRow(ctx, probe.sql).Scan(&n); err != nil {
+					t.Fatalf("count %s: %v", probe.what, err)
+				}
+				if n != 0 {
+					t.Errorf("%s holds %d rows after the violation, want 0 (the turn commits nothing)", probe.what, n)
+				}
+			}
+		})
+	}
 }

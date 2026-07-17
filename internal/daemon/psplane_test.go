@@ -41,7 +41,7 @@ func intp(c int) *int { return &c }
 // psTestPlane builds a plane over the fakes with a pinned pid and managed
 // postmaster (pid 200) so the load summing is assertable.
 func psTestPlane(runs RunSnapshotReader, probe loadProber, role api.RoleReporter) *psPlane {
-	p := NewPsPlane(role, runs, func() int { return 200 }, nil).(*psPlane)
+	p := NewPsPlane(role, runs, func() int { return 200 }, nil, nil).(*psPlane)
 	p.probe = probe
 	p.pid = 100
 	return p

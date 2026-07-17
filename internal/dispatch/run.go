@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"sync"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
@@ -20,16 +18,6 @@ import (
 // process group, with the composed environment; cancelling one kills that group and
 // dead-letters the run as stopped, touching nothing else. It never imposes a timeout:
 // a run ends only by exiting on its own or by explicit cancellation.
-
-// DBConnEnvVar is the environment variable through which the engine injects a run's
-// scoped database connection URL (env = inherited + declared + injected scoped DB
-// connection). StartRun injects RunSpec.DBURL under this name, with the run's id
-// riding it as the iris.run_id session setting, so a run resolves its connection
-// from a single place. The daemon supplies each run's PIPELINE-SCOPED connection:
-// the pipeline's own least-privilege login role (pg.ProvisionPipelineRole at
-// declare apply, credential persisted in store's roles/grants/credentials
-// ledger), so Postgres enforces the declared access for the run's own writes.
-const DBConnEnvVar = "IRIS_DB_URL"
 
 // ErrRunNotInFlight reports that no in-flight run has the given id: it has already
 // exited, was already cancelled, or was never started through this manager. Cancel
@@ -56,8 +44,9 @@ type RunLog interface {
 }
 
 // RunSpec describes one run to start: the queued run's id, the pipeline folder it
-// executes in, the direct-exec argv, the declared environment entries, and the
-// scoped database connection URL injected into its environment.
+// executes in, the direct-exec argv, and the declared environment entries. The
+// subprocess receives NO database credentials: under the turn protocol (#206) the
+// engine mediates every database access over the stdin/stdout frame protocol.
 type RunSpec struct {
 	// RunID is the queued run's meta id; MarkRunRunning transitions it to running.
 	RunID string
@@ -69,8 +58,6 @@ type RunSpec struct {
 	// Env is the declared environment entries (KEY=VALUE), merged onto the inherited
 	// daemon environment.
 	Env []string
-	// DBURL is the scoped database connection injected as DBConnEnvVar.
-	DBURL string
 }
 
 // RunHandle is a started run: its process-group id (runs.handle), the log reference
@@ -276,32 +263,13 @@ func CheckRunTransition(from, to store.RunState) error {
 }
 
 // composeEnv builds a run's child environment: the inherited daemon environment
-// first, then the declared entries, then the injected scoped DB connection last, so
-// each later group overrides an earlier duplicate key (os/exec keeps the last value
-// for a duplicate key). The injected connection carries the run's id as the per-session
-// iris.run_id setting the capture trigger reads (see injectedDBURL), so every write the
-// run makes is attributed to it.
+// first, then the declared entries, so a declared entry overrides an inherited
+// duplicate key (os/exec keeps the last value for a duplicate key). No database
+// connection is injected: the engine mediates every database access (#206).
 func composeEnv(spec RunSpec) []string {
 	env := os.Environ()
 	env = append(env, spec.Env...)
-	env = append(env, DBConnEnvVar+"="+injectedDBURL(spec))
 	return env
-}
-
-// injectedDBURL is the scoped connection URL the run receives as IRIS_DB_URL,
-// carrying the run's id so the capture trigger attributes every write to it
-// in-transaction (the run id rides the injected connection as a per-session setting
-// at spawn). The id rides the DSN via pg.InjectRunID, the same mechanism the capture
-// path reads back with current_setting('iris.run_id'). A run id that is not a bigint
-// meta identity (only a synthetic non-numeric id, never a real run) leaves the URL
-// unchanged; the capture trigger then fails any such run's write loudly rather than
-// stamping an unattributed row -- fail-closed, never a silent unattributed write.
-func injectedDBURL(spec RunSpec) string {
-	id, err := strconv.ParseInt(spec.RunID, 10, 64)
-	if err != nil {
-		return spec.DBURL
-	}
-	return pg.InjectRunID(spec.DBURL, id)
 }
 
 // ResolveRunArgv selects the direct-exec argv for a run given its declared run

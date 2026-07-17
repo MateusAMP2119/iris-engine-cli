@@ -13,10 +13,17 @@ import (
 )
 
 // starterScriptMarks are the starter-constraint markers every catalog entry's
-// script must carry: a POSIX-sh shebang plus set -eu opening, psql over the
-// engine-injected IRIS_DB_URL with ON_ERROR_STOP, and fixed-pk upserts so a
-// re-run layers a second provenance stamp on the same rows.
-var starterScriptMarks = []string{"set -eu", "IRIS_DB_URL", "ON_ERROR_STOP=1", "ON CONFLICT", "DO UPDATE"}
+// script must carry: a POSIX-sh shebang plus set -eu opening, and the turn
+// protocol spoken whole -- a frame read-loop over the engine's go/run stdin
+// frames, output row frames on stdout, and a done terminal echoing the turn.
+// The engine performs every write, upserting each row frame on its fixed
+// primary key, so a re-run layers a second provenance stamp on the same rows.
+var starterScriptMarks = []string{"set -eu", "while read", `"event":"go"`, `"event":"run"`, `"event":"row"`, `"event":"done","turn"`}
+
+// starterScriptBans are the retired direct-database markers no catalog script
+// may carry: under the turn protocol pipelines hold no database credentials --
+// stdout row frames are the only write path.
+var starterScriptBans = []string{"IRIS_DB_URL", "psql"}
 
 // TestQuickstartCatalogEntriesValid proves the embedded catalog registry: the
 // ordered catalog.yaml index lists exactly the entry folders with unique ids
@@ -193,6 +200,11 @@ func TestQuickstartCatalogEntriesValid(t *testing.T) {
 					for _, want := range starterScriptMarks {
 						if !strings.Contains(script, want) {
 							t.Errorf("script is missing %q", want)
+						}
+					}
+					for _, banned := range starterScriptBans {
+						if strings.Contains(script, banned) {
+							t.Errorf("script carries retired direct-database marker %q", banned)
 						}
 					}
 				})

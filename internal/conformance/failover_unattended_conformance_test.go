@@ -28,6 +28,13 @@ import (
 // do not: reconciliation of the orphaned in-flight run to stopped, lanes resuming on
 // the new leader, and the whole scenario running with zero human intervention.
 //
+// The member pipelines speak the turn protocol (#206): frame-speaking residents
+// whose declared writes the ENGINE performs itself (no IRIS_DB_URL, no pipeline
+// credentials). Producing turns mint their own run rows at commit; a quiet turn
+// (done, no rows) mints nothing at all; a hung LOOP turn holds its lane with no run
+// row, so the orphaned in-flight run the failover leg reconciles is a pre-minted
+// MANUAL run hung mid-turn.
+//
 // All three need two candidates on ONE shared meta, so they run only in external
 // mode (IRIS_PG_DSN set, the conformance/CI configuration); managed Postgres gives
 // each daemon its own cluster, so there is no shared advisory lock to contend for
@@ -52,25 +59,62 @@ func scenarioWriteScript(t *testing.T, ws, pipe, body string) {
 	}
 }
 
-// scenarioHangPy is a pipeline body that never returns, so its run stays in the
-// running state until the daemon terminates it -- a reliable in-flight run for the
-// reconciliation leg of failover.
-const scenarioHangPy = "import time\nwhile True:\n    time.sleep(0.2)\n"
+// scenarioQuietPy is the quiet turn-protocol resident: every turn answers a bare
+// done, produces nothing, and so mints no run rows and writes nothing at all --
+// the good-citizen no-op member under #206 (the lane chains past it on the other
+// members' producing turns).
+const scenarioQuietPy = PyTurnPrelude + `
+def on_turn(turn, rows):
+    done(turn)
 
-// scenarioWriterPy returns a body that writes one attributed row into schema.table
-// via psql on the engine-injected IRIS_DB_URL, so the capture trigger stamps the
-// write to the run (the golden dev/disposable run of acceptance step 3).
+turn_loop(on_turn)
+`
+
+// scenarioHoldPy is the takeover leg's reset_counters body, in two marker-gated
+// phases. Without hold.marker every turn ends in a declared error frame: the fresh
+// loop turn dead-letters (reason failed) and the loop's no-retry brake stops
+// further fresh turns -- deliberate, because a HUNG loop turn would hold the lane
+// with NO run row (#206), leaving reconciliation nothing to see. Once the test
+// writes hold.marker, the next turn -- the enqueued manual run's, picked up at the
+// lane boundary against its pre-minted row -- hangs mid-turn forever, a real
+// running run for the failover reconciliation to dead-letter.
+const scenarioHoldPy = "import os, time\n" + PyTurnPrelude + `
+def on_turn(turn, rows):
+    if os.path.exists("hold.marker"):
+        while True:
+            time.sleep(0.2)
+    error(turn, "hold brake")
+
+turn_loop(on_turn)
+`
+
+// scenarioWriterPy returns a turn-protocol resident that emits one fresh-uuid row
+// into schema.table per turn as a declared-write row frame plus done. The ENGINE
+// performs the insert on its own admin connection with the run's exact attribution
+// (the capture trigger journals under the turn's run id), so every turn is a
+// producing turn and mints its own succeeded run at commit -- the golden
+// dev/disposable run of acceptance step 3. The pipeline holds no credentials.
 func scenarioWriterPy(schema, table string) string {
-	return fmt.Sprintf(`import os, subprocess, sys, uuid
-def main():
-    url = os.environ.get("IRIS_DB_URL", "")
-    if not url:
-        print("missing IRIS_DB_URL", file=sys.stderr); sys.exit(2)
-    rid = str(uuid.uuid4()); cid = str(uuid.uuid4())
-    sql = "INSERT INTO %s.%s (id, customer_id, amount) VALUES ('%%s','%%s', 42);" %% (rid, cid)
-    subprocess.check_call(["psql", url, "-v", "ON_ERROR_STOP=1", "-c", sql])
-if __name__ == "__main__": main()
+	return "import uuid\n" + PyTurnPrelude + fmt.Sprintf(`
+def on_turn(turn, rows):
+    emit("%s.%s", {"id": str(uuid.uuid4()), "customer_id": str(uuid.uuid4()), "amount": 42})
+    done(turn)
+
+turn_loop(on_turn)
 `, schema, table)
+}
+
+// scenarioAdaptGolden overwrites a golden workspace's three member bodies with
+// turn-protocol residents before the graph is applied: producing writers for
+// extract_orders (raw.orders_staging) and load_orders (analytics.orders), and the
+// caller's chosen body for reset_counters (quiet, or the takeover leg's hold
+// script). Both failover workspaces get the same bodies, so whichever daemon leads
+// runs protocol-correct residents from its own folders.
+func scenarioAdaptGolden(t *testing.T, ws, resetBody string) {
+	t.Helper()
+	scenarioWriteScript(t, ws, "extract_orders", scenarioWriterPy("raw", "orders_staging"))
+	scenarioWriteScript(t, ws, "reset_counters", resetBody)
+	scenarioWriteScript(t, ws, "load_orders", scenarioWriterPy("analytics", "orders"))
 }
 
 // scMetaConn opens a pgx connection to the shared meta database of a workspace's
@@ -171,14 +215,16 @@ func scStartStandby(t *testing.T, bin *Binary, ws string) string {
 }
 
 // TestGoldenFailoverStandbyTakeover is the golden-sample failover leg of acceptance
-// step 9. Two candidates share one meta over the golden workspace; a hanging golden
-// pipeline leaves a real in-flight run on the leader. Killing the leader abruptly
-// (host-loss simulation) drops its meta session and releases the advisory lock: the
-// standby acquires it, runs startup reconciliation (the orphaned running run is
-// dead-lettered stopped), reports itself leader, and resumes lanes (a fresh succeeded
-// run lands on the new leader). This is the golden version -- richer than the bare
-// takeover leg in failover_conformance_test.go by proving reconciliation AND lane
-// resumption over the sample graph.
+// step 9. Two candidates share one meta over the golden workspace; a manual run of a
+// golden pipeline hangs mid-turn on the leader, leaving a real in-flight run (a hung
+// LOOP turn would leave no run row under #206, so the orphan is a pre-minted manual
+// run). Killing the leader abruptly (host-loss simulation) drops its meta session
+// and releases the advisory lock: the standby acquires it, runs startup
+// reconciliation (the orphaned running run is dead-lettered stopped), reports itself
+// leader, and resumes lanes (a fresh succeeded producing run lands on the new
+// leader). This is the golden version -- richer than the bare takeover leg in
+// failover_conformance_test.go by proving reconciliation AND lane resumption over
+// the sample graph.
 func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	// Two candidates share one meta: the suite-owned embedded cluster (or an
 	// ambient IRIS_PG_DSN).
@@ -188,14 +234,16 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	bin := Build(t)
 
 	// Two distinct workspaces (distinct sockets, pidfiles, objects roots) share one
-	// external meta -- two hosts, one meta. The leader's reset_counters hangs so a real
-	// run is in flight when it dies; extract_orders and load_orders keep their golden
-	// no-op bodies so the lane's other members succeed each pass.
+	// external meta -- two hosts, one meta. Both get the turn-protocol bodies:
+	// extract_orders and load_orders produce a row every turn (each turn mints its
+	// own succeeded run -- the resume signal), and reset_counters runs the hold
+	// script (brake first, marker-gated hang on the manual turn).
 	wsLeader := shortWorkspace(t)
 	wsStandby := shortWorkspace(t)
 	copyGoldenWorkspace(t, wsLeader)
 	copyGoldenWorkspace(t, wsStandby)
-	scenarioWriteScript(t, wsLeader, "reset_counters", scenarioHangPy)
+	scenarioAdaptGolden(t, wsLeader, scenarioHoldPy)
+	scenarioAdaptGolden(t, wsStandby, scenarioHoldPy)
 
 	scStartLeader(t, bin, wsLeader)
 	leaderPIDPath := filepath.Join(wsLeader, ".iris", "iris.pid")
@@ -206,11 +254,23 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	}
 
 	meta := scMetaConn(t, wsLeader)
-	// extract_orders (composer-first, no-op) succeeds; reset_counters (composer-next)
-	// then starts and hangs: capture its running run id as the orphan-to-be, and the
-	// extract baseline to prove resume after takeover.
-	extractBaseline := scWaitRunState(t, meta, "extract_orders", "succeeded", 90*time.Second)
-	orphanID := scWaitRunState(t, meta, "reset_counters", "running", 60*time.Second)
+	// extract_orders (composer-first, producing) succeeds; reset_counters' first
+	// fresh turn errors by design (dead-lettered failed, and the no-retry brake
+	// stops its fresh loop turns), so the lane keeps chaining past it.
+	scWaitRunState(t, meta, "extract_orders", "succeeded", 90*time.Second)
+	scWaitRunState(t, meta, "reset_counters", "dead_lettered", 60*time.Second)
+
+	// Arm the hang and enqueue the manual run: the lane-member manual is minted
+	// queued (exit 0) and picked up at reset_counters' next lane boundary against
+	// its pre-minted row -- marked running, then hung mid-turn by the marker. That
+	// running row is the orphan-to-be, and the hang holds the lane, so the extract
+	// baseline read after it is the leader's final word.
+	if err := os.WriteFile(filepath.Join(wsLeader, "pipelines", "ingest", "reset_counters", "hold.marker"), nil, 0o644); err != nil {
+		t.Fatalf("arm hold marker: %v", err)
+	}
+	bin.Run(t, RunOptions{Args: []string{"pipeline", "run", "reset_counters"}, Dir: wsLeader, Timeout: time.Minute}).RequireExit(t, 0)
+	orphanID := scWaitRunState(t, meta, "reset_counters", "running", 90*time.Second)
+	extractBaseline := scMaxSucceeded(meta, "extract_orders")
 
 	// Bring up the standby on the shared meta and confirm it blocks as standby.
 	standbySock := scStartStandby(t, bin, wsStandby)
@@ -230,7 +290,7 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 
 	// Reconciliation: the orphaned in-flight run is dead-lettered stopped. The new
 	// leader must not dispatch on an unreconciled meta, so this settles promptly.
-	var state, reason string
+	var state, reason, detail string
 	dl := time.Now().Add(30 * time.Second)
 	for time.Now().Before(dl) {
 		_ = meta.QueryRow(context.Background(), "SELECT state FROM runs WHERE id=$1", orphanID).Scan(&state)
@@ -242,13 +302,18 @@ func TestGoldenFailoverStandbyTakeover(t *testing.T) {
 	if state != "dead_lettered" {
 		t.Fatalf("orphaned in-flight run %d state=%q after takeover, want dead_lettered (startup reconciliation must terminal it)", orphanID, state)
 	}
-	_ = meta.QueryRow(context.Background(), "SELECT reason FROM dead_letters WHERE run_id=$1", orphanID).Scan(&reason)
+	_ = meta.QueryRow(context.Background(), "SELECT reason, coalesce(error,'') FROM dead_letters WHERE run_id=$1", orphanID).Scan(&reason, &detail)
 	if reason != "stopped" {
 		t.Errorf("orphaned run %d dead_letters reason=%q after takeover, want stopped", orphanID, reason)
 	}
+	// A crash-reconciliation stop carries the daemon-terminated detail, never the
+	// operator-cancel detail -- the loop resumes past it rather than parking (#206).
+	if !strings.Contains(detail, "daemon terminated") {
+		t.Errorf("orphaned run %d dead_letters error=%q, want the daemon-terminated crash-stop detail", orphanID, detail)
+	}
 
 	// Lanes resume: the new leader loops the sample graph, so extract_orders gets a
-	// succeeded run strictly newer than the pre-kill baseline.
+	// producing succeeded run strictly newer than the held leader's final baseline.
 	scWaitSucceededAfter(t, meta, "extract_orders", extractBaseline, 90*time.Second)
 }
 
@@ -349,10 +414,12 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	if err := copyTree(filepath.Join(fixtures.WorkspaceGolden(), "endpoints"), filepath.Join(ws, "endpoints")); err != nil {
 		t.Fatalf("copy golden endpoints tree: %v", err)
 	}
-	// The sample's dev run lands rows: extract writes raw.orders_staging, load writes
-	// analytics.orders (the endpoint's source); reset_counters stays the golden no-op.
-	scenarioWriteScript(t, ws, "extract_orders", scenarioWriterPy("raw", "orders_staging"))
-	scenarioWriteScript(t, ws, "load_orders", scenarioWriterPy("analytics", "orders"))
+	// The sample's dev turns land rows over the turn protocol: extract emits into
+	// raw.orders_staging, load into analytics.orders (the endpoint's source) --
+	// engine-performed writes, exact run attribution, one run row per producing
+	// turn. reset_counters is the quiet resident: it answers every turn with a bare
+	// done and therefore mints no run rows at all.
+	scenarioAdaptGolden(t, ws, scenarioQuietPy)
 
 	// Step 1: install + start -- one code path, managed locally / external in CI. The
 	// daemon comes up and elects leader with no prompt.
@@ -381,10 +448,10 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	}
 
 	meta := scMetaConn(t, ws)
-	// Step 3: the perpetual dev lane drives all three members to succeeded, rows land in
-	// the real tables, and the writes are journaled -- all unattended, no manual run.
+	// Step 3: the perpetual dev lane drives the producing members to succeeded, rows
+	// land in the real tables, and the writes are journaled under each run's own id
+	// -- all unattended, no manual run, no pipeline-held credentials.
 	extractRun := scWaitRunState(t, meta, "extract_orders", "succeeded", 90*time.Second)
-	scWaitRunState(t, meta, "reset_counters", "succeeded", 60*time.Second)
 	loadRun := scWaitRunState(t, meta, "load_orders", "succeeded", 60*time.Second)
 
 	data := connectData(t, dataDSN(t, ws))
@@ -405,12 +472,24 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	// unattended -- a later pass gives extract a strictly newer succeeded run.
 	scWaitSucceededAfter(t, meta, "extract_orders", extractRun, 60*time.Second)
 
+	// The quiet member's contract (#206): a second extract pass began, so the first
+	// pass -- reset_counters' quiet turn included -- demonstrably completed, yet its
+	// bare-done turns minted NOTHING: no run rows, no watermark bumps, nothing to
+	// prune. Quiet loop turns leave no record; only producing turns do.
+	var resetRuns int
+	_ = meta.QueryRow(context.Background(), "SELECT count(*) FROM runs WHERE pipeline='reset_counters'").Scan(&resetRuns)
+	if resetRuns != 0 {
+		t.Fatalf("quiet member reset_counters minted %d run rows, want 0 (a quiet turn records nothing)", resetRuns)
+	}
+
 	// Step 4: the operator's wipe mutations run non-interactively and succeed against
 	// the live sample -- scoped wipe of one pipeline, then the bare wipe of the rest.
 	// (The exact revert invariants are proven by their own legs; here they must simply
-	// pass unattended.) The lane loop keeps the sample pipelines perpetually in
-	// flight, so the destructive-op gate soft-blocks a --yes wipe; --force is the
-	// documented override, cancelling the in-flight loop runs and proceeding. The
+	// pass unattended.) The lane loop keeps producing back to back, so a wipe can
+	// race an in-flight producing turn's brief running row; --force is the
+	// documented unattended override, cancelling whatever it finds in flight and
+	// proceeding -- and a --force cancellation never parks the loop (its stop detail
+	// is not the operator cancel's), so the lane resumes landing rows below. The
 	// build+promote half of step 5 and its wipe-immunity invariant are proven over a
 	// compile-in-CI pipeline -- the golden sample's Python pipelines build via
 	// pyinstaller, which the conformance runner does not carry.
@@ -470,9 +549,12 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	// Step 9: HA. A second candidate joins on the same meta as a standby; a mutation
 	// against it is rejected with leader guidance and exit 6. Then the leader is killed
 	// abruptly; the standby acquires the freed lock, takes over, and resumes lanes --
-	// all with no human in the loop.
+	// all with no human in the loop. The standby gets the same turn-protocol bodies:
+	// after takeover it runs its own folders' scripts, and the resume signal is a
+	// producing extract turn minting a fresh succeeded run.
 	wsStandby := shortWorkspace(t)
 	copyGoldenWorkspace(t, wsStandby)
+	scenarioAdaptGolden(t, wsStandby, scenarioQuietPy)
 	standbySock := scStartStandby(t, bin, wsStandby)
 
 	rej := bin.Run(t, RunOptions{
@@ -485,7 +567,6 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 		t.Errorf("standby mutation exit-6 rejection did not name the leader:\nstdout:\n%s\nstderr:\n%s", rej.Stdout, rej.Stderr)
 	}
 
-	leaderBaseline := scMaxSucceeded(meta, "extract_orders")
 	leaderPID := readDaemonPID(t, filepath.Join(ws, ".iris", "iris.pid"))
 	if err := syscall.Kill(leaderPID, syscall.SIGKILL); err != nil {
 		t.Fatalf("SIGKILL scenario leader (pid %d): %v", leaderPID, err)
@@ -493,9 +574,12 @@ func TestGoldenScenarioPassesUnattended(t *testing.T) {
 	if !waitForLeader(t, standbySock) {
 		t.Fatalf("standby did not take over after the leader was killed (role=%q)", healthzRole(t, standbySock))
 	}
-	// Lanes resume on the new leader: extract_orders gets a succeeded run strictly newer
-	// than the last one seen before the kill.
-	scWaitSucceededAfter(t, meta, "extract_orders", leaderBaseline, 90*time.Second)
+	// Lanes resume on the new leader: the baseline is read AFTER takeover (the old
+	// leader produced until the instant it died, so a pre-kill baseline could be
+	// overtaken by its own last runs), and any succeeded extract run strictly newer
+	// than it is necessarily the new leader's.
+	takeoverBaseline := scMaxSucceeded(meta, "extract_orders")
+	scWaitSucceededAfter(t, meta, "extract_orders", takeoverBaseline, 90*time.Second)
 }
 
 // scWaitAnalyticsRows waits until analytics.orders has at least one row, so the

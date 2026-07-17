@@ -17,6 +17,12 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
+// insufficientPrivilege is Postgres' SQLSTATE for a privilege violation: the code the
+// database itself raises when a role reads a table or column it was never granted, or
+// connects to a database it may not. Asserting on this code is asserting that Postgres
+// -- not application code -- refused the access.
+const insufficientPrivilege = "42501"
+
 // TestJournalSelectOnly stands up a real Postgres cluster the engine has never
 // touched, ensures the data database and provisions the partitioned
 // public.data_journal (parent, its initial tail partition, and the select grant)
@@ -26,9 +32,11 @@ import (
 //   - Every engine role may SELECT public.data_journal (the grant is TO PUBLIC,
 //     so present and future roles read it), and no non-owner role may write it --
 //     an INSERT as the non-owner fails at Postgres with insufficient_privilege.
-//     The journal's owner (as its capture triggers do) writes it, proving the
-//     table is functional and the restriction is a privilege boundary, not a
-//     broken table.
+//     The journal's owner writes it -- under the turn protocol (#206) the
+//     owner's capture triggers, firing on the engine's own admin connection, are
+//     the journal's ONLY writer, since pipelines hold no database credentials at
+//     all -- proving the table is functional and the restriction is a privilege
+//     boundary, not a broken table.
 //
 // It drives the pg journal DDL directly against the live cluster (the
 // external_data_db conformance pattern) rather than the CLI, so the leg proves the
@@ -98,11 +106,13 @@ func TestJournalSelectOnly(t *testing.T) {
 		}
 	}
 
-	// The owner writes the journal (as the capture triggers do), proving the table
-	// is functional -- one row lands in the tail partition.
+	// The owner writes the journal (as the capture triggers do on the engine's
+	// admin connection, stamping the writing session's role -- never a pipeline
+	// role, #206), proving the table is functional -- one row lands in the tail
+	// partition.
 	if err := client.Exec(ctx, `INSERT INTO public.data_journal
 		(pg_role, run_id, "schema", "table", row_pk, op, undo, recorded_at)
-		VALUES ('iris_pipeline_load_orders', 42, 'analytics', 'orders', '9f3c', 'insert', 'open', 'log-1')`); err != nil {
+		VALUES ('postgres', 42, 'analytics', 'orders', '9f3c', 'insert', 'open', 'log-1')`); err != nil {
 		t.Fatalf("owner insert into data_journal failed; the table is not writable by its owner: %v", err)
 	}
 

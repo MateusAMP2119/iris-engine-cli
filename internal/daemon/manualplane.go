@@ -13,6 +13,7 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
@@ -30,14 +31,15 @@ import (
 // live orchestrator and satisfies api.PipelineHandler for the whole daemon lifetime, so
 // the mux binds to a stable handler.
 //
-// Scope note: an own-lane manual run executes synchronously here (mint cause=manual, run,
-// record terminal). A lane member is queued as a cause=manual run for the lane runner to
-// start in turn -- the perpetual lane loop (dispatch.Loop, built in laneplane.go) owns
-// starting it -- so the manual path never starts a lane member out of band and same-lane
-// serialization holds. Each run's IRIS_DB_URL is the base data-database connection
-// carrying the run id (the same injection the lane loop applies), so a manual run's
-// captured writes attribute to its own run. Run output streams into the per-run log
-// (RunLogWriter, the same sink the lane loop wires), recorded as runs.log_ref.
+// Scope note: an own-lane manual run executes synchronously here (mint cause=manual
+// directly running, run one protocol turn, record terminal). A lane member is queued as
+// a cause=manual run for the lane runner to start in turn -- the perpetual lane loop
+// (dispatch.Loop, built in laneplane.go) owns starting it -- so the manual path never
+// starts a lane member out of band and same-lane serialization holds. The run's
+// subprocess holds no database credentials (#206): the engine feeds the declared-read
+// delta and commits the declared writes itself with the run's exact attribution. Run
+// stderr streams into the per-run log (RunLogWriter, the same sink the lane loop
+// wires), recorded as runs.log_ref; stdout is protocol-only.
 
 // pipelinePlane is the daemon's api.PipelineHandler: it serves the pipeline listing from
 // the reader pool always, and delegates the manual run to the live orchestrator when the
@@ -134,11 +136,11 @@ type manualOrchestrator struct {
 // workspace. A nil logger discards output. The objects is the candidate's own at
 // construction time, so a promoted leader dispatches using its own objects_path. journal
 // provides the data journal high id for terminal window stamping. inflight (nil in the
-// shape tests) tracks each live run's process group so a self-demotion kills it. dbURL
-// is the base scoped data-database connection each run's IRIS_DB_URL is derived from
-// (the run id rides it), the same DSN the lane loop injects, so a manual run's captured
-// writes attribute to its own run exactly like a lane run's.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, runConn *runConnBuilder, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
+// shape tests) tracks each live run's process group so a self-demotion kills it. data
+// is the turn seam (#206): an immediate manual run executes as one
+// protocol turn -- the engine feeds the declared-read delta and performs the declared
+// writes itself with the run's exact attribution; the subprocess holds no credentials.
+func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, data turnData, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
@@ -149,7 +151,8 @@ func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry
 		objects:   objects,
 		runner:    runner,
 		journal:   journal,
-		runConn:   runConn,
+		data:      data,
+		access:    newAccessCache(),
 		inflight:  inflight,
 		sealer:    sealer,
 		runLogs:   runLogs,
@@ -298,7 +301,8 @@ func (r immediateRunner) RunNow(ctx context.Context, rec store.RunRecord) (dispa
 
 // manualExec is the shared execution machinery the queue and immediate seams drive: it
 // fills a run record's declaration checksum, mints the run through the single writer, and
-// -- for the immediate path -- starts the subprocess and records its terminal state.
+// -- for the immediate path -- runs the subprocess as one protocol turn and records its
+// terminal state.
 type manualExec struct {
 	workspace string
 	submitter dispatch.Submitter
@@ -306,8 +310,9 @@ type manualExec struct {
 	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
 	runner    exec.Runner
 	journal   dispatch.JournalHighWatermark
-	runConn   *runConnBuilder // the run's scoped data connection builder (the pipeline's own login role); nil leaves IRIS_DB_URL empty
-	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
+	data      turnData     // data-database turn seam (#206); nil composes shape tests (no feed, producing turns dead-letter)
+	access    *accessCache // per-pipeline declared-access cache keyed by declaration checksum
+	inflight  *inflightRuns // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
 	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
 	runLogs   *RunLogWriter  // per-run output capture; nil discards (shape tests)
 	logger    *slog.Logger
@@ -315,7 +320,7 @@ type manualExec struct {
 
 // mint fills rec's declaration checksum from the pipeline's declaration and creates the
 // queued run (cause=manual, consumed upstreams) through the single writer, returning the
-// pipeline's run target for a caller that goes on to execute it.
+// pipeline's run target for the lane pickup that goes on to execute it.
 func (m *manualExec) mint(ctx context.Context, rec store.RunRecord) (store.PipelineRunTarget, error) {
 	target, found, err := m.manual.PipelineRunTarget(ctx, rec.Pipeline)
 	if err != nil {
@@ -335,13 +340,50 @@ func (m *manualExec) mint(ctx context.Context, rec store.RunRecord) (store.Pipel
 	return target, nil
 }
 
-// runNow mints the run, starts its subprocess in the pipeline folder, awaits its terminal
-// exit, and records the terminal transition through the single writer: succeeded on exit
-// zero, dead-lettered (cause stays manual, reason failed) otherwise. A start failure
-// deletes the queued run so meta is never left with a phantom; a failure to record
-// running kills the started group before returning, so no untracked process escapes.
+// mintRunning mints an immediate manual run directly in the RUNNING state. A
+// queued mint here would race the lane loop's queued-manual pickup -- the loop
+// walks every pipeline, and a queued row visible between this mint and its
+// running transition would be executed twice, once by each path. Minting
+// running closes that window structurally: the pickup only ever sees queued
+// rows, and this run is never one.
+func (m *manualExec) mintRunning(ctx context.Context, rec store.RunRecord) (store.PipelineRunTarget, error) {
+	target, found, err := m.manual.PipelineRunTarget(ctx, rec.Pipeline)
+	if err != nil {
+		return store.PipelineRunTarget{}, err
+	}
+	if !found {
+		return store.PipelineRunTarget{}, fmt.Errorf("pipeline %q is not registered", rec.Pipeline)
+	}
+	sum, err := m.checksum(target.Folder)
+	if err != nil {
+		return store.PipelineRunTarget{}, err
+	}
+	trec := store.TurnRunRecord{
+		Pipeline:               rec.Pipeline,
+		Cause:                  rec.Cause,
+		DeclarationChecksum:    sum,
+		ArtifactHash:           rec.ArtifactHash,
+		ConsumedUpstreamRunIDs: rec.ConsumedUpstreamRunIDs,
+	}
+	if err := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.CreateTurnRun(ctx, trec) }); err != nil {
+		return store.PipelineRunTarget{}, fmt.Errorf("mint manual run for %q: %w", rec.Pipeline, err)
+	}
+	return target, nil
+}
+
+// runNow mints the run directly RUNNING (a queued mint would race the lane
+// loop's queued-manual pickup into a double execution), runs its subprocess in
+// the pipeline folder as ONE protocol turn (#206), and records the terminal
+// transition through the single writer:
+// succeeded on a done terminal (any produced rows and the consumed feed position
+// committed atomically first), dead-lettered (cause stays manual, reason failed) on
+// a pipeline-declared error, a protocol violation, or a process death. An own-lane
+// manual run never keeps a session: the process is ended once the turn ends. A
+// start failure deletes the queued run so meta is never left with a phantom; a
+// failure to record running kills the started group before returning, so no
+// untracked process escapes.
 func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.RunOutcome, error) {
-	target, err := m.mint(ctx, rec)
+	target, err := m.mintRunning(ctx, rec)
 	if err != nil {
 		return dispatch.RunSucceeded, err
 	}
@@ -355,34 +397,55 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	}
 	runID := strconv.FormatInt(info.ID, 10)
 
-	// Open the per-run output capture: the run's stdout and stderr stream into
-	// the run-id-keyed log under .iris/logs, and its path is recorded as
-	// runs.log_ref. Capture is best-effort -- a failed open runs the pipeline
-	// uncaptured (warned) rather than blocking the run.
+	// The turn's inputs: declared access from the declaration source, and the
+	// declared-read delta past the pipeline's consumed feed position.
+	raw, sum, err := declarationSource(m.workspace, target.Folder)
+	if err != nil {
+		return dispatch.RunSucceeded, err
+	}
+	acc, err := m.access.resolve(rec.Pipeline, sum, raw)
+	if err != nil {
+		return dispatch.RunSucceeded, err
+	}
+	var feed pg.TurnFeed
+	if m.data != nil && len(acc.reads) > 0 {
+		if feed, err = m.data.ReadTurnFeed(ctx, rec.Pipeline, acc.reads); err != nil {
+			return dispatch.RunSucceeded, err
+		}
+	}
+
+	// Open the per-run output capture: the run's stderr streams into the
+	// run-id-keyed log under .iris/logs (stdout is protocol-only), and its path is
+	// recorded as runs.log_ref. Capture is best-effort -- a failed open runs the
+	// pipeline uncaptured (warned) rather than blocking the run.
 	sink, logRef := openRunLog(m.runLogs, runID, m.logger)
 
 	argv := dispatch.ResolveRunArgv(target.Argv, nil, m.objects)
 	// objects is this leader's (wired at candidate construction; a promoted failover
-	// leader therefore resolves built-run binaries from its own objects_path).
-	// The manual path speaks the iteration protocol too, one-shot: a resident answer records the outcome and then ends the process (an own-lane manual run never keeps a session).
-	ses, err := spawnResident(ctx, m.runner, "", filepath.Join(m.workspace, target.Folder), argv, m.childEnv(ctx, rec.Pipeline, info.ID))
+	// leader therefore resolves built-run binaries from its own objects_path). The
+	// child environment carries no database credentials (#206).
+	ses, err := spawnResident(ctx, m.runner, "", filepath.Join(m.workspace, target.Folder), argv, os.Environ())
 	if err != nil {
 		closeRunLog(sink)
-		// Nothing started: remove the queued run so meta carries no phantom.
-		if derr := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.DeleteQueuedRun(ctx, runID) }); derr != nil {
-			m.logger.Warn("manual run: could not delete queued run after start failure", "run", runID, "err", derr)
+		// Nothing started: the run was minted running, so it dead-letters with the
+		// start refusal (a failed run always records; there is no queued phantom).
+		detail := fmt.Sprintf("manual run dead-lettered: start failed: %v", err)
+		if derr := m.submitter.Submit(ctx, func(w *store.Writer) error {
+			return w.DeadLetterRun(ctx, runID, store.ReasonFailed, detail)
+		}); derr != nil {
+			m.logger.Warn("manual run: could not dead-letter after start failure", "run", runID, "err", derr)
 		}
 		return dispatch.RunSucceeded, fmt.Errorf("start manual run for %q: %w", rec.Pipeline, err)
 	}
 	ses.out.Set(sink)
 	defer func() {
+		ses.end() // one-shot: the manual path never keeps a session
 		ses.out.Set(nil)
 		closeRunLog(sink)
 	}()
 
-	if err := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.MarkRunRunning(ctx, runID, ses.handle.PGID(), logRef) }); err != nil {
-		ses.end()
-		return dispatch.RunSucceeded, fmt.Errorf("record manual run %s running: %w", runID, err)
+	if err := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.StampRunStarted(ctx, runID, ses.handle.PGID(), logRef) }); err != nil {
+		return dispatch.RunSucceeded, fmt.Errorf("record manual run %s started: %w", runID, err)
 	}
 
 	// Track the live process group so a self-demotion (lost meta session) kills it at
@@ -393,27 +456,10 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		defer m.inflight.untrack(runID)
 	}
 
-	// Start the iteration; a write error means the process is gone and its exit reports through the select below.
-	_ = ses.sendGo(info.ID)
+	res := driveTurn(ctx, ses, ses.nextTurn(), feed.Rows, acc.writes)
 
-	var status exec.ExitStatus
-	var waitErr error
-	select {
-	case ev := <-ses.scanner.done:
-		ses.end()
-		status = exec.ExitStatus{Code: ev.code}
-	case <-ses.exited:
-		status, waitErr = ses.status, ses.waitErr
-	case <-ctx.Done():
-		ses.end()
-		return dispatch.RunSucceeded, ctx.Err()
-	}
-	if waitErr != nil {
-		m.logger.Warn("manual run: output capture bound reached", "run", runID, "err", waitErr)
-	}
-
-	if status.Signaled || status.Code != 0 {
-		detail := fmt.Sprintf("manual run dead-lettered: %s", exitDetail(status))
+	deadLetter := func(detail string) (dispatch.RunOutcome, error) {
+		// Guarded on the running state, so a cancel's stopped reason stands.
 		if derr := m.submitter.Submit(ctx, func(w *store.Writer) error {
 			return w.DeadLetterRun(ctx, runID, store.ReasonFailed, detail)
 		}); derr != nil {
@@ -424,6 +470,33 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		})
 		m.sealAfterPass(ctx)
 		return dispatch.RunDeadLettered, nil
+	}
+	switch res.kind {
+	case turnShutdown:
+		return dispatch.RunSucceeded, ctx.Err()
+	case turnErrored:
+		return deadLetter("manual run dead-lettered: pipeline error: " + errorTurnDetail(res.end))
+	case turnViolated:
+		return deadLetter("manual run dead-lettered: " + res.violation.Error())
+	case turnDied:
+		return deadLetter("manual run dead-lettered: " + deathTurnDetail(res.status, ses.out.Tail()))
+	}
+
+	// Done: commit any produced rows (and the consumed feed position) atomically,
+	// attributed to this run, before the terminal transition.
+	if len(res.rows) > 0 || feed.Advanced {
+		if m.data == nil {
+			return deadLetter(fmt.Sprintf("manual run dead-lettered: turn produced %d rows with no data seam wired", len(res.rows)))
+		}
+		if _, cerr := m.data.CommitTurn(ctx, pg.TurnCommit{
+			Pipeline:        rec.Pipeline,
+			RunID:           info.ID,
+			Writes:          turnWrites(res.rows),
+			Position:        feed.Position,
+			AdvancePosition: feed.Advanced,
+		}); cerr != nil {
+			return deadLetter(fmt.Sprintf("manual run dead-lettered: turn commit failed: %v", cerr))
+		}
 	}
 
 	if serr := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.MarkRunSucceeded(ctx, runID) }); serr != nil {
@@ -446,16 +519,6 @@ func (m *manualExec) sealAfterPass(ctx context.Context) {
 		return
 	}
 	m.sealer.sealAfterPass(ctx)
-}
-
-// childEnv builds the manual run's environment: the inherited daemon environment
-// plus the run-scoped data connection injected as IRIS_DB_URL, exactly as the
-// lane path injects it -- the pipeline's own least-privilege login role, the run
-// id riding it as the iris.run_id session GUC (pg.InjectRunID), so a manual
-// run's captured writes attribute to its own run just like a lane run's. It wins
-// over any IRIS_DB_URL the pipeline author declared, since it is appended last.
-func (m *manualExec) childEnv(ctx context.Context, pipeline string, runID int64) []string {
-	return append(os.Environ(), dispatch.DBConnEnvVar+"="+m.runConn.dsnFor(ctx, pipeline, runID))
 }
 
 // checksum reads the pipeline's declaration file and returns its SHA-256 hex digest, the

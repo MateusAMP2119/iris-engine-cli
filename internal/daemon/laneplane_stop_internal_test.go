@@ -25,7 +25,7 @@ func TestLanePlaneCancelPipeline(t *testing.T) {
 		build := func(latest gateManualFake) (*lanePlane, *storetest.WriteRecorder, *inflightRuns) {
 			rec := &storetest.WriteRecorder{}
 			inflight := newInflightRuns()
-			p := newLanePlane(nil, inflight, latest)
+			p := newLanePlane(nil, inflight, newResidentRuns(), latest)
 			p.install(gateSubmitter{rec: rec})
 			return p, rec, inflight
 		}
@@ -74,18 +74,36 @@ func TestLanePlaneCancelPipeline(t *testing.T) {
 			}
 		})
 
-		t.Run("terminal latest and unknown pipeline report not in flight", func(t *testing.T) {
-			p, _, _ := build(gateManualFake{"demo": {ID: 3, State: store.RunSucceeded}})
-			if _, err := p.CancelPipeline(context.Background(), "demo"); !errors.Is(err, dispatch.ErrRunNotInFlight) {
-				t.Errorf("succeeded latest: err = %v, want ErrRunNotInFlight", err)
+		t.Run("terminal latest mints the park row (#206: stop always parks)", func(t *testing.T) {
+			p, rec, _ := build(gateManualFake{"demo": {ID: 3, State: store.RunSucceeded}})
+			if _, err := p.CancelPipeline(context.Background(), "demo"); err != nil {
+				t.Fatalf("succeeded latest: err = %v, want the park mint", err)
 			}
-			if _, err := p.CancelPipeline(context.Background(), "ghost"); !errors.Is(err, dispatch.ErrRunNotInFlight) {
-				t.Errorf("unknown pipeline: err = %v, want ErrRunNotInFlight", err)
+			txns := rec.Transactions()
+			if len(txns) != 1 || len(txns[0]) != 1 {
+				t.Fatalf("park mint = %+v, want one atomic transaction", txns)
+			}
+			stmt := txns[0][0]
+			if !strings.Contains(stmt.SQL, "INSERT INTO runs") || !strings.Contains(stmt.SQL, "INSERT INTO dead_letters") {
+				t.Fatalf("park mint is not the dead-run CTE:\n%s", stmt.SQL)
+			}
+			if stmt.Args[7] != string(store.ReasonStopped) || stmt.Args[8] != runCancelDetail {
+				t.Errorf("park mint args = %v, want stopped reason and cancel detail", stmt.Args)
+			}
+		})
+
+		t.Run("unknown pipeline mints the park row too (a quiet loop records nothing)", func(t *testing.T) {
+			p, rec, _ := build(gateManualFake{})
+			if _, err := p.CancelPipeline(context.Background(), "ghost"); err != nil {
+				t.Fatalf("unknown pipeline: err = %v, want the park mint", err)
+			}
+			if txns := rec.Transactions(); len(txns) != 1 {
+				t.Fatalf("park mint = %+v, want one atomic transaction", txns)
 			}
 		})
 
 		t.Run("no leader submitter reports not in flight", func(t *testing.T) {
-			p := newLanePlane(nil, newInflightRuns(), gateManualFake{})
+			p := newLanePlane(nil, newInflightRuns(), newResidentRuns(), gateManualFake{})
 			if _, err := p.CancelPipeline(context.Background(), "demo"); !errors.Is(err, dispatch.ErrRunNotInFlight) {
 				t.Errorf("no submitter: err = %v, want ErrRunNotInFlight", err)
 			}

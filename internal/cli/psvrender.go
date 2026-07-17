@@ -569,6 +569,13 @@ func renderRailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 	borderSGR, titleSGR, title := paneChrome(m.pane == psPaneLanes, colorless, "LANES")
 	b.box(x, y, w, h, borderSGR, titleSGR, title)
 
+	// Resident turn tallies (#206): a quiet loop records no rows, so the rail
+	// badges its idle pipelines with turns since the last recorded run.
+	sinceRun := map[string]uint64{}
+	for _, r := range m.snap.ps.Residents {
+		sinceRun[r.Pipeline] = r.TurnsSinceRun
+	}
+
 	var entries []railEntry
 	cursor := 0
 	for _, l := range deriveLanes(m.snap) {
@@ -627,6 +634,8 @@ func renderRailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 				badge, badgeSGR = "run", ansiCyan
 			case e.pipeline.queued > 0:
 				badge, badgeSGR = fmt.Sprintf("%dq", e.pipeline.queued), ansiYellow
+			case sinceRun[e.pipeline.name] > 0:
+				badge, badgeSGR = fmt.Sprintf("t+%d", sinceRun[e.pipeline.name]), ansiDim
 			}
 			if badge != "" {
 				b.text(x+w-2-len([]rune(badge)), ry, badgeSGR, badge)

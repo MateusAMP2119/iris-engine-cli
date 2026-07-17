@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
 )
 
 // lockedBuffer is a concurrency-safe capture buffer standing in for a per-run log sink.
@@ -31,53 +33,39 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-func TestProtocolScanner(t *testing.T) {
-	t.Run("protocol-scanner", func(t *testing.T) {
-		t.Run("done line consumed, log lines forwarded, chunked writes joined", func(t *testing.T) {
-			sink := &lockedBuffer{}
-			s := newProtocolScanner(sink)
-			for _, chunk := range []string{"hel", "lo\ndo", "ne 0\nrest\n"} {
+func TestFrameScanner(t *testing.T) {
+	t.Run("frame-scanner", func(t *testing.T) {
+		t.Run("chunked writes join to whole lines", func(t *testing.T) {
+			s := newFrameScanner()
+			for _, chunk := range []string{`{"event":"do`, "ne\",\"turn\":1}\n", `{"event":"row"}` + "\n"} {
 				if _, err := s.Write([]byte(chunk)); err != nil {
 					t.Fatalf("scanner write: %v", err)
 				}
 			}
-			select {
-			case ev := <-s.done:
-				if ev.code != 0 {
-					t.Fatalf("done code = %d, want 0", ev.code)
-				}
-			default:
-				t.Fatal("done line was not parsed")
+			var lines []string
+			for len(s.lines) > 0 {
+				lines = append(lines, <-s.lines)
 			}
-			if got := sink.String(); got != "hello\nrest\n" {
-				t.Fatalf("forwarded log = %q, want the non-protocol lines only", got)
+			if len(lines) != 2 || lines[0] != `{"event":"done","turn":1}` || lines[1] != `{"event":"row"}` {
+				t.Fatalf("delivered lines = %q", lines)
 			}
 		})
 
-		t.Run("near-miss lines are log output, not protocol", func(t *testing.T) {
-			sink := &lockedBuffer{}
-			s := newProtocolScanner(sink)
-			_, _ = s.Write([]byte("done\ndone x\ndone 1 2\nwell done 0\n"))
-			select {
-			case ev := <-s.done:
-				t.Fatalf("parsed a done event %v from a near-miss line", ev)
-			default:
-			}
-			if got := sink.String(); !strings.Contains(got, "well done 0") {
-				t.Fatalf("near-miss lines missing from log: %q", got)
+		t.Run("carriage returns are trimmed", func(t *testing.T) {
+			s := newFrameScanner()
+			_, _ = s.Write([]byte("{\"event\":\"run\"}\r\n"))
+			if got := <-s.lines; got != `{"event":"run"}` {
+				t.Fatalf("line = %q, want CR trimmed", got)
 			}
 		})
 
-		t.Run("second done for one iteration is dropped", func(t *testing.T) {
-			s := newProtocolScanner(&lockedBuffer{})
-			_, _ = s.Write([]byte("done 0\ndone 1\n"))
-			if ev := <-s.done; ev.code != 0 {
-				t.Fatalf("first done = %d, want 0", ev.code)
+		t.Run("overflow drops rather than blocking the pipe", func(t *testing.T) {
+			s := newFrameScanner()
+			for i := 0; i < frameLinesCap+10; i++ {
+				_, _ = s.Write([]byte("x\n"))
 			}
-			select {
-			case ev := <-s.done:
-				t.Fatalf("second done %v must be dropped", ev)
-			default:
+			if s.dropped.Load() != 10 {
+				t.Fatalf("dropped = %d, want 10", s.dropped.Load())
 			}
 		})
 	})
@@ -93,11 +81,28 @@ func TestSwitchSink(t *testing.T) {
 		s.Set(buf)
 		_, _ = s.Write([]byte("kept"))
 		s.Set(nil)
-		_, _ = s.Write([]byte("between-iterations"))
+		_, _ = s.Write([]byte("between-turns"))
 		if got := buf.String(); got != "kept" {
-			t.Fatalf("sink captured %q, want only the current iteration's output", got)
+			t.Fatalf("sink captured %q, want only the current turn's output", got)
+		}
+		if got := s.Tail(); !strings.Contains(got, "dropped") || !strings.Contains(got, "between-turns") {
+			t.Fatalf("stderr tail = %q, want every write retained for death detail", got)
 		}
 	})
+}
+
+// awaitOutput polls until the buffer carries want: stderr rides its own pipe
+// pump, so a terminal frame on stdout can outrun the log write it followed.
+func awaitOutput(t *testing.T, buf *lockedBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.String(), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("output never carried %q: %q", want, buf.String())
 }
 
 // writeScript drops an executable shell script into dir and returns its argv.
@@ -110,18 +115,26 @@ func writeScript(t *testing.T, dir, body string) []string {
 	return []string{"/bin/sh", path}
 }
 
-// waitDone receives one done event or fails after a deadline.
-func waitDone(t *testing.T, s *residentSession) doneEvent {
-	t.Helper()
-	select {
-	case ev := <-s.scanner.done:
-		return ev
-	case <-s.exited:
-		t.Fatalf("process exited (status %+v) instead of answering done", s.status)
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for a done answer")
-	}
-	return doneEvent{}
+// turnScript is a protocol-speaking resident: per turn it reads frames until the
+// run frame, answers one declared-write row keyed by the turn, logs to stderr,
+// and echoes done with the turn number it saw in the go frame.
+const turnScript = `while read line; do
+  case "$line" in
+  *'"go"'*)
+    turn=$(printf '%s' "$line" | sed 's/.*"turn"://;s/[^0-9].*//')
+    ;;
+  *'"run"'*)
+    echo "turn $turn ran" >&2
+    printf '{"event":"row","table":"marts.daily","row":{"day":"d-%s","sum":1}}\n' "$turn"
+    printf '{"event":"done","turn":%s}\n' "$turn"
+    ;;
+  esac
+done
+`
+
+// testTurnWrites is the declared-writes surface the real-process turns run against.
+func testTurnWrites() dispatch.WriteSet {
+	return dispatch.WriteSet{"marts.daily": {"day": true, "sum": true}}
 }
 
 func TestResidentSessionRealProcess(t *testing.T) {
@@ -129,14 +142,9 @@ func TestResidentSessionRealProcess(t *testing.T) {
 		ctx := context.Background()
 		runner := exec.NewOSRunner()
 
-		t.Run("one process iterates in place and exits on stdin EOF", func(t *testing.T) {
+		t.Run("one process answers consecutive turns in place", func(t *testing.T) {
 			dir := t.TempDir()
-			argv := writeScript(t, dir, `while read verb rid; do
-  [ "$verb" = "go" ] || continue
-  echo "iter $rid"
-  echo "done 0"
-done
-`)
+			argv := writeScript(t, dir, turnScript)
 			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
 			if err != nil {
 				t.Fatalf("spawnResident: %v", err)
@@ -145,34 +153,32 @@ done
 
 			first := &lockedBuffer{}
 			ses.out.Set(first)
-			if err := ses.sendGo(1); err != nil {
-				t.Fatalf("sendGo(1): %v", err)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnDone || len(res.rows) != 1 || res.rows[0].Table != "marts.daily" {
+				t.Fatalf("turn 1 = %+v, want done with one declared-write row", res)
 			}
-			if ev := waitDone(t, ses); ev.code != 0 {
-				t.Fatalf("iteration 1 status = %d, want 0", ev.code)
-			}
+			awaitOutput(t, first, "turn 1 ran")
 			ses.out.Set(nil)
 
 			second := &lockedBuffer{}
 			ses.out.Set(second)
-			if err := ses.sendGo(2); err != nil {
-				t.Fatalf("sendGo(2): %v", err)
+			res = driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnDone || len(res.rows) != 1 || string(res.rows[0].Row) != `{"day":"d-2","sum":1}` {
+				t.Fatalf("turn 2 = %+v, want done echoing turn 2's row", res)
 			}
-			if ev := waitDone(t, ses); ev.code != 0 {
-				t.Fatalf("iteration 2 status = %d, want 0", ev.code)
-			}
+			awaitOutput(t, second, "turn 2 ran")
 
 			if ses.dead() {
-				t.Fatal("session died between iterations; the process must stay resident")
+				t.Fatal("session died between turns; the process must stay resident")
 			}
 			if got := ses.handle.PGID(); got != pgid {
-				t.Fatalf("pgid changed across iterations: %d -> %d", pgid, got)
+				t.Fatalf("pgid changed across turns: %d -> %d", pgid, got)
 			}
-			if got := first.String(); !strings.Contains(got, "iter 1") || strings.Contains(got, "iter 2") {
-				t.Fatalf("first iteration log = %q, want only its own output", got)
+			if got := first.String(); !strings.Contains(got, "turn 1 ran") || strings.Contains(got, "turn 2 ran") {
+				t.Fatalf("first turn stderr = %q, want only its own output", got)
 			}
-			if got := second.String(); !strings.Contains(got, "iter 2") || strings.Contains(got, "iter 1") {
-				t.Fatalf("second iteration log = %q, want only its own output", got)
+			if got := second.String(); !strings.Contains(got, "turn 2 ran") || strings.Contains(got, "turn 1 ran") {
+				t.Fatalf("second turn stderr = %q, want only its own output", got)
 			}
 
 			ses.end()
@@ -181,10 +187,17 @@ done
 			}
 		})
 
-		t.Run("non-zero done status reports without ending the process", func(t *testing.T) {
+		t.Run("input rows are fed and echoed back through the declared writes", func(t *testing.T) {
 			dir := t.TempDir()
-			argv := writeScript(t, dir, `while read verb rid; do
-  echo "done 7"
+			argv := writeScript(t, dir, `while read line; do
+  case "$line" in
+  *'"go"'*) turn=$(printf '%s' "$line" | sed 's/.*"turn"://;s/[^0-9].*//'); n=0 ;;
+  *'"row"'*) n=$((n+1)) ;;
+  *'"run"'*)
+    printf '{"event":"row","table":"marts.daily","row":{"day":"count","sum":%s}}\n' "$n"
+    printf '{"event":"done","turn":%s}\n' "$turn"
+    ;;
+  esac
 done
 `)
 			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
@@ -192,48 +205,100 @@ done
 				t.Fatalf("spawnResident: %v", err)
 			}
 			defer ses.end()
-			if err := ses.sendGo(1); err != nil {
-				t.Fatalf("sendGo: %v", err)
+			feed := []pg.FeedRow{
+				{Table: "raw.orders", Row: []byte(`{"id":1}`)},
+				{Table: "raw.orders", Row: []byte(`{"id":2}`)},
 			}
-			if ev := waitDone(t, ses); ev.code != 7 {
-				t.Fatalf("status = %d, want 7", ev.code)
-			}
-			if ses.dead() {
-				t.Fatal("a failed iteration must not end the resident process")
+			res := driveTurn(ctx, ses, ses.nextTurn(), feed, testTurnWrites())
+			if res.kind != turnDone || len(res.rows) != 1 || string(res.rows[0].Row) != `{"day":"count","sum":2}` {
+				t.Fatalf("fed turn = %+v, want the pipeline to have seen both input rows", res)
 			}
 		})
 
-		t.Run("legacy script ignores the protocol and reports through exit", func(t *testing.T) {
+		t.Run("pipeline-declared error terminal reports errored", func(t *testing.T) {
 			dir := t.TempDir()
-			// The script gates on a flag file: a switchSink discards output
-			// until a destination is set, so an instantly-echoing legacy
-			// process races the Set below on a fast machine. The gate keeps
-			// the script protocol-ignorant (it never reads stdin) while
-			// guaranteeing its output lands after the sink is attached.
-			argv := writeScript(t, dir, `while [ ! -f sink-ready ]; do sleep 0.02; done
-echo "plain output"
+			argv := writeScript(t, dir, `while read line; do
+  case "$line" in
+  *'"run"'*) printf '{"event":"error","turn":1,"reason":"upstream gone","detail":{"code":3}}\n' ;;
+  esac
+done
+`)
+			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
+			if err != nil {
+				t.Fatalf("spawnResident: %v", err)
+			}
+			defer ses.end()
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnErrored || res.end.Reason != "upstream gone" {
+				t.Fatalf("errored turn = %+v", res)
+			}
+			if ses.dead() {
+				t.Fatal("a declared error must not end the resident process")
+			}
+		})
+
+		t.Run("non-frame stdout is a violation quoting the line", func(t *testing.T) {
+			dir := t.TempDir()
+			argv := writeScript(t, dir, `while read line; do
+  case "$line" in
+  *'"run"'*) echo "done 0" ;;
+  esac
+done
+`)
+			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
+			if err != nil {
+				t.Fatalf("spawnResident: %v", err)
+			}
+			defer ses.end()
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnViolated || !strings.Contains(res.violation.Error(), `"done 0"`) {
+				t.Fatalf("violation = %+v, want the legacy line quoted", res)
+			}
+		})
+
+		t.Run("one-shot answer then exit is a completed turn, not a death", func(t *testing.T) {
+			dir := t.TempDir()
+			argv := writeScript(t, dir, `while read line; do
+  case "$line" in
+  *'"run"'*)
+    printf '{"event":"row","table":"marts.daily","row":{"day":"x","sum":1}}\n'
+    printf '{"event":"done","turn":1}\n'
+    exit 0
+    ;;
+  esac
+done
+`)
+			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
+			if err != nil {
+				t.Fatalf("spawnResident: %v", err)
+			}
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnDone || len(res.rows) != 1 {
+				t.Fatalf("one-shot turn = %+v, want done with its row", res)
+			}
+			select {
+			case <-ses.exited:
+			case <-time.After(10 * time.Second):
+				t.Fatal("one-shot process did not exit")
+			}
+		})
+
+		t.Run("death mid-turn reports died with the exit status", func(t *testing.T) {
+			dir := t.TempDir()
+			argv := writeScript(t, dir, `read line
+echo "boom" >&2
 exit 3
 `)
 			ses, err := spawnResident(ctx, runner, "k", dir, argv, nil)
 			if err != nil {
 				t.Fatalf("spawnResident: %v", err)
 			}
-			sink := &lockedBuffer{}
-			ses.out.Set(sink)
-			if err := os.WriteFile(filepath.Join(dir, "sink-ready"), nil, 0o644); err != nil {
-				t.Fatalf("write flag: %v", err)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites())
+			if res.kind != turnDied || res.status.Code != 3 {
+				t.Fatalf("death = %+v, want died with exit 3", res)
 			}
-			_ = ses.sendGo(1)
-			select {
-			case <-ses.exited:
-			case <-time.After(10 * time.Second):
-				t.Fatal("legacy process did not exit")
-			}
-			if ses.status.Code != 3 {
-				t.Fatalf("exit code = %d, want 3", ses.status.Code)
-			}
-			if got := sink.String(); !strings.Contains(got, "plain output") {
-				t.Fatalf("legacy output not captured: %q", got)
+			if got := ses.out.Tail(); !strings.Contains(got, "boom") {
+				t.Fatalf("stderr tail = %q, want the death chatter retained", got)
 			}
 		})
 	})
