@@ -32,8 +32,8 @@ upgrade-in-place detection, plain next-steps lines.
   is a disposable dev environment.
 - After installing a rebuilt binary, restart any running daemon — a resident
   daemon keeps executing the old binary (`iris engine stop` / `start -d`).
-- Long runs (quickstart tour, pipeline runs): background with nohup + raw log
-  file, never pipe through tail/grep.
+- Long runs (pipeline runs): background with nohup + raw log file, never pipe
+  through tail/grep.
 - Rebuild + reinstall = rerun the script; it regenerates the tar + checksums
   every time so the installer never verifies a stale asset.
 

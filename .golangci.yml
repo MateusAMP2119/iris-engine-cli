@@ -37,7 +37,7 @@ linters:
         - G204
         # File permissions (0o644): the repo's accepted style for the golden-file
         # writer (internal/golden), the archive round-trip temp file
-        # (internal/roundtrip), and the workspace artifacts fixtures/catalog/pg
+        # (internal/roundtrip), and the workspace artifacts fixtures/pg
         # materialise. (Not covered by the legacy preset's EXC0009, which is
         # perms-of-dir only, so this is live.)
         - G306

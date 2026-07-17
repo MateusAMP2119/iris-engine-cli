@@ -166,7 +166,7 @@ func (a *app) probeRemoteEngine(ctx context.Context, s config.Settings) (api.Hea
 
 // connectReadLine asks one line question through the connectInput seam, falling
 // back to a plain read of the process stdin. The prompt is dialogue, so it goes
-// to errOut, like every tour question.
+// to errOut, keeping stdout clean for command output.
 func (a *app) connectReadLine(prompt string) (string, error) {
 	if a.connectInput != nil {
 		return a.connectInput(prompt)
