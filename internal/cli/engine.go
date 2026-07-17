@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/daemon"
 )
@@ -68,41 +65,6 @@ func (a *app) engineInstall() runE {
 		}
 		return a.emitInstallResult(cmd, settings)
 	}
-}
-
-// fetchDaemonRole reads the daemon's liveness-plus-role probe (GET /healthz)
-// best-effort: false when no daemon is reachable or the read fails.
-func (a *app) fetchDaemonRole(ctx context.Context, settings config.Settings) (string, bool) {
-	client, base, overTCP := a.daemonHTTPClient(settings)
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
-	if err != nil {
-		a.logger.Debug("role probe: build daemon request", "err", err)
-		return "", false
-	}
-	if overTCP && settings.Token != "" {
-		hreq.Header.Set("Authorization", "Bearer "+settings.Token)
-	}
-	resp, err := client.Do(hreq)
-	if err != nil {
-		a.logger.Debug("role probe: no iris daemon reachable", "socket", settings.Socket, "host", settings.Host, "err", err)
-		return "", false
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-	}()
-	if resp.StatusCode != http.StatusOK {
-		a.logger.Debug("role probe: daemon /healthz failed", "status", resp.StatusCode)
-		return "", false
-	}
-	var env struct {
-		Data api.Health `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		a.logger.Debug("role probe: decode daemon response", "err", err)
-		return "", false
-	}
-	return env.Data.Role, true
 }
 
 // uninstallResult is the machine-readable payload of `iris engine uninstall`, the

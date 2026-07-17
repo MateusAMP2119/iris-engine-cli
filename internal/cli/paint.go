@@ -2,7 +2,6 @@ package cli
 
 import (
 	"os"
-	"strings"
 )
 
 // The ANSI SGR codes for the lifecycle-command terminal ceremony. They match the
@@ -20,9 +19,6 @@ const (
 	ansiBlue    = "\033[1;34m"
 	ansiMagenta = "\033[1;35m"
 )
-
-// rainbowPalette is the per-letter (and per-banner-row) color cycle, matching uninstall.sh (R, Y, G, C, B, M, wrapping).
-var rainbowPalette = []string{ansiRed, ansiYellow, ansiGreen, ansiCyan, ansiBlue, ansiMagenta}
 
 // painter renders the lifecycle-command terminal ceremony. When enabled its
 // methods wrap text in ANSI SGR codes; when disabled every method returns its
@@ -58,24 +54,7 @@ func (p painter) paint(code, s string) string {
 func (p painter) green(s string) string   { return p.paint(ansiGreen, s) }
 func (p painter) cyan(s string) string    { return p.paint(ansiCyan, s) }
 func (p painter) magenta(s string) string { return p.paint(ansiMagenta, s) }
-func (p painter) yellow(s string) string  { return p.paint(ansiYellow, s) }
 func (p painter) dim(s string) string     { return p.paint(ansiDim, s) }
-
-// rainbow renders s one bright color per rune (cycling R, Y, G, C, B, M); disabled it returns s unchanged so plain lines stay byte-exact.
-func (p painter) rainbow(s string) string {
-	if !p.enabled {
-		return s
-	}
-	var b strings.Builder
-	i := 0
-	for _, r := range s {
-		b.WriteString(rainbowPalette[i%len(rainbowPalette)])
-		b.WriteRune(r)
-		i++
-	}
-	b.WriteString(ansiReset)
-	return b.String()
-}
 
 // newPainter builds the painter for one invocation, resolving the terminal gate
 // through the injected isTTY seam or, in production, the real stdout stat.

@@ -65,30 +65,6 @@ func TestLifecycleCeremonyTTYGating(t *testing.T) {
 	}
 }
 
-// TestLifecycleCeremonyRainbow proves the per-letter rainbow farewell: enabled it
-// wraps every rune in a bright color and resets at the end; disabled it returns
-// the string untouched, so the plain "Goodbye from iris." line stays byte-exact.
-func TestLifecycleCeremonyRainbow(t *testing.T) {
-	off := painter{enabled: false}
-	if got := off.rainbow("Goodbye"); got != "Goodbye" {
-		t.Errorf("disabled rainbow altered text: %q, want %q", got, "Goodbye")
-	}
-	on := painter{enabled: true}
-	got := on.rainbow("Goodbye")
-	if !strings.Contains(got, esc) {
-		t.Errorf("enabled rainbow injected no escape: %q", got)
-	}
-	// Every visible letter must survive (escapes are interleaved between them).
-	for _, r := range "Goodbye" {
-		if !strings.ContainsRune(got, r) {
-			t.Errorf("rainbow dropped letter %q from %q", string(r), got)
-		}
-	}
-	if !strings.HasSuffix(got, ansiReset) {
-		t.Errorf("rainbow did not reset at the end: %q", got)
-	}
-}
-
 // TestLifecycleCeremonyPlainWhenPiped proves no ANSI escape ever reaches a
 // non-terminal consumer: with a buffer stdout (the default, not a char device)
 // and under --json, every update and uninstall output path is byte-identical

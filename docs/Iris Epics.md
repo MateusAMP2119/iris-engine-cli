@@ -183,6 +183,8 @@ Build order is the table order with one exception: E14 builds before E13, the ac
 
 ## E15 Onboarding and Guided Tour
 
+**Retired.** The `iris quickstart` verb, its tour, and the installer handoff were removed in #210: `curl … | bash` is the only install route, ending on plain next-steps lines. This epic stands as the historical record of what shipped and was later cut.
+
 **Goal.** The installer's handoff: `iris quickstart`, a third root verb that tutors the first session — explains, confirms, then really runs `engine install`, `engine start -d`, `engine info`, materializes the embedded `hello_iris` sample (seven rainbow colors into `demo.colors`), applies and runs it, and ends on `iris data provenance demo.colors green` with the engine left running and a printed cheat-sheet. Interactive only on a real terminal (stdin and stdout TTY, `--json` off); otherwise a plain numbered copy-paste guide — or a `--json` step-list envelope — that executes nothing. Every step executes the real command implementation through the tour's own binary, so the tour can never do what the commands cannot; every step is the command's own idempotence, so abort and resume are free. `install.sh` ends by offering the tour over `/dev/tty`.
 
 **Depends on.** E02 (engine lifecycle), E03 (declare), E05 (runs), E07 (provenance) — the surfaces it tours.
@@ -190,6 +192,8 @@ Build order is the table order with one exception: E14 builds before E13, the ac
 **Cutting tasks.** Two seams: first the surface (verb, gates, three renderings, embedded sample, the `startDetached` argv refactor), then the orchestration (sequencer, prompts, adaptive skip, `--yes`, installer handoff, conformance leg).
 
 ## E16 Install Ceremony and Pipeline Catalog
+
+**Retired.** Removed with E15 in #210: the chaptered ceremony, the embedded pipeline catalog, and install.sh's version-gated handoff are gone; install.sh downloads, verifies, installs, and prints the next-steps line.
 
 **Goal.** `curl … | sh` becomes the guide itself: a chaptered ceremony — THE CLI (install.sh: banner, download, checksum, staged in the update grammar), THE ENGINE (workspace question defaulting `~/.iris/workspace`, `engine install`, `engine start -d`, readout), THE PIPELINE (browse the embedded starter catalog, pick one, materialize/apply/run it, close on its provenance showcase). Consent per act, not per step; chapters named, never numbered, marked by the light rule-and-title device riding the rainbow palette. install.sh stays thin and version-gates the handoff by probing the installed binary (`quickstart --from-installer --json`), so an old release binary is never offered a verb it lacks. The catalog is embedded (go:embed, air-gapped), one folder per entry (`entry.yaml` metadata + `workspace/` subtree), ordered by `catalog.yaml`, default `hello_iris`; `--pipeline <id>` picks explicitly everywhere; every entry parses through the real declare loaders by test.
 

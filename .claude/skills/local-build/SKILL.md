@@ -1,6 +1,6 @@
 ---
 name: local-build
-description: Install iris from the working tree exactly like the public installer (curl … | bash) would — one script builds the binary, packages it as a release asset, and runs the repo's own install.sh against it. Use to try the engine from source, smoke-test a branch, or reproduce installer/quickstart behavior locally.
+description: Install iris from the working tree exactly like the public installer (curl … | bash) would — one script builds the binary, packages it as a release asset, and runs the repo's own install.sh against it. Use to try the engine from source, smoke-test a branch, or reproduce installer behavior locally.
 ---
 
 # local-build — the real installer, fed by the working tree
