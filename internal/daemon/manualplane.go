@@ -140,23 +140,24 @@ type manualOrchestrator struct {
 // is the turn seam (#206): an immediate manual run executes as one
 // protocol turn -- the engine feeds the declared-read delta and performs the declared
 // writes itself with the run's exact attribution; the subprocess holds no credentials.
-func newManualOrchestrator(workspace string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, data turnData, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
+func newManualOrchestrator(workspace, pluginsRoot string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, data turnData, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	execer := &manualExec{
-		workspace: workspace,
-		submitter: submit,
-		manual:    manual,
-		objects:   objects,
-		runner:    runner,
-		journal:   journal,
-		data:      data,
-		access:    newAccessCache(),
-		inflight:  inflight,
-		sealer:    sealer,
-		runLogs:   runLogs,
-		logger:    logger,
+		workspace:   workspace,
+		pluginsRoot: pluginsRoot,
+		submitter:   submit,
+		manual:      manual,
+		objects:     objects,
+		runner:      runner,
+		journal:     journal,
+		data:        data,
+		access:      newAccessCache(),
+		inflight:    inflight,
+		sealer:      sealer,
+		runLogs:     runLogs,
+		logger:      logger,
 	}
 	mr := dispatch.NewManualRunner(
 		dispatch.NewGate(consumedReader{manual: manual}),
@@ -304,18 +305,19 @@ func (r immediateRunner) RunNow(ctx context.Context, rec store.RunRecord) (dispa
 // -- for the immediate path -- runs the subprocess as one protocol turn and records its
 // terminal state.
 type manualExec struct {
-	workspace string
-	submitter dispatch.Submitter
-	manual    store.ManualReader
-	objects   *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
-	runner    exec.Runner
-	journal   dispatch.JournalHighWatermark
-	data      turnData       // data-database turn seam (#206); nil composes shape tests (no feed, producing turns dead-letter)
-	access    *accessCache   // per-pipeline declared-access cache keyed by declaration checksum
-	inflight  *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
-	sealer    *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
-	runLogs   *RunLogWriter  // per-run output capture; nil discards (shape tests)
-	logger    *slog.Logger
+	workspace   string
+	pluginsRoot string // installed-plugins root (~/.iris/plugins); "" refuses plugin-declaring runs
+	submitter   dispatch.Submitter
+	manual      store.ManualReader
+	objects     *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
+	runner      exec.Runner
+	journal     dispatch.JournalHighWatermark
+	data        turnData       // data-database turn seam (#206); nil composes shape tests (no feed, producing turns dead-letter)
+	access      *accessCache   // per-pipeline declared-access cache keyed by declaration checksum
+	inflight    *inflightRuns  // tracks this run's live process group so a self-demotion kills it; nil in the shape tests
+	sealer      *journalSealer // the opportunistic post-pass seal step; nil in the shape tests leaves sealing off
+	runLogs     *RunLogWriter  // per-run output capture; nil discards (shape tests)
+	logger      *slog.Logger
 }
 
 // mint fills rec's declaration checksum from the pipeline's declaration and creates the
@@ -457,13 +459,6 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		defer m.inflight.untrack(runID)
 	}
 
-	res := driveTurn(ctx, ses, ses.nextTurn(), feed.Rows, acc.writes, sink)
-
-	// The declared stamp's close line carries the run's ending (the deferred
-	// close writes it); a dead-letter on any later path overwrites it below.
-	if res.kind == turnShutdown {
-		sink.SetOutcome("shutdown")
-	}
 	deadLetter := func(detail string) (dispatch.RunOutcome, error) {
 		sink.SetOutcome("dead_lettered")
 		// Guarded on the running state, so a cancel's stopped reason stands.
@@ -477,6 +472,26 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 		})
 		m.sealAfterPass(ctx)
 		return dispatch.RunDeadLettered, nil
+	}
+
+	// Declared plugins pin at run start; a resolution failure refuses the run (#215).
+	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, sink)
+	if perr != nil {
+		return deadLetter("manual run dead-lettered: plugin resolution failed: " + perr.Error())
+	}
+
+	res := driveTurn(ctx, ses, ses.nextTurn(), feed.Rows, acc.writes, rp, sink)
+	if res.kind != turnShutdown && rp != nil {
+		prec := store.TurnRunRecord{Plugins: rp.pins, Calls: res.calls}
+		if lerr := m.submitter.Submit(ctx, func(w *store.Writer) error { return w.RecordRunPlugins(ctx, runID, prec) }); lerr != nil {
+			m.logger.Warn("manual run: could not record plugin ledger", "run", runID, "err", lerr)
+		}
+	}
+
+	// The declared stamp's close line carries the run's ending (the deferred
+	// close writes it); a dead-letter on any later path overwrites it below.
+	if res.kind == turnShutdown {
+		sink.SetOutcome("shutdown")
 	}
 	switch res.kind {
 	case turnShutdown:

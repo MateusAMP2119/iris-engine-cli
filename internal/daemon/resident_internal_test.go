@@ -153,7 +153,7 @@ func TestResidentSessionRealProcess(t *testing.T) {
 
 			first := &lockedBuffer{}
 			ses.out.Set(first)
-			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnDone || len(res.rows) != 1 || res.rows[0].Table != "marts.daily" {
 				t.Fatalf("turn 1 = %+v, want done with one declared-write row", res)
 			}
@@ -162,7 +162,7 @@ func TestResidentSessionRealProcess(t *testing.T) {
 
 			second := &lockedBuffer{}
 			ses.out.Set(second)
-			res = driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res = driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnDone || len(res.rows) != 1 || string(res.rows[0].Row) != `{"day":"d-2","sum":1}` {
 				t.Fatalf("turn 2 = %+v, want done echoing turn 2's row", res)
 			}
@@ -209,7 +209,7 @@ done
 				{Table: "raw.orders", Row: []byte(`{"id":1}`)},
 				{Table: "raw.orders", Row: []byte(`{"id":2}`)},
 			}
-			res := driveTurn(ctx, ses, ses.nextTurn(), feed, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), feed, testTurnWrites(), nil, nil)
 			if res.kind != turnDone || len(res.rows) != 1 || string(res.rows[0].Row) != `{"day":"count","sum":2}` {
 				t.Fatalf("fed turn = %+v, want the pipeline to have seen both input rows", res)
 			}
@@ -228,7 +228,7 @@ done
 				t.Fatalf("spawnResident: %v", err)
 			}
 			defer ses.end()
-			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnErrored || res.end.Reason != "upstream gone" {
 				t.Fatalf("errored turn = %+v", res)
 			}
@@ -250,7 +250,7 @@ done
 				t.Fatalf("spawnResident: %v", err)
 			}
 			defer ses.end()
-			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnViolated || !strings.Contains(res.violation.Error(), `"done 0"`) {
 				t.Fatalf("violation = %+v, want the legacy line quoted", res)
 			}
@@ -272,7 +272,7 @@ done
 			if err != nil {
 				t.Fatalf("spawnResident: %v", err)
 			}
-			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnDone || len(res.rows) != 1 {
 				t.Fatalf("one-shot turn = %+v, want done with its row", res)
 			}
@@ -293,7 +293,7 @@ exit 3
 			if err != nil {
 				t.Fatalf("spawnResident: %v", err)
 			}
-			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil)
+			res := driveTurn(ctx, ses, ses.nextTurn(), nil, testTurnWrites(), nil, nil)
 			if res.kind != turnDied || res.status.Code != 3 {
 				t.Fatalf("death = %+v, want died with exit 3", res)
 			}

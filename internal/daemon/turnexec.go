@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,8 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/plugin"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
 // This file is the daemon-side turn driver (#206): the one place a resident
@@ -33,10 +36,12 @@ type turnData interface {
 }
 
 // declaredAccess is a pipeline's declared access resolved for the turn protocol:
-// the reads the feed covers and the writes the collector enforces.
+// the reads the feed covers, the writes the collector enforces, and the declared
+// plugin bindings the turn resolves at start (#215).
 type declaredAccess struct {
-	reads  []pg.TurnRead
-	writes dispatch.WriteSet
+	reads   []pg.TurnRead
+	writes  dispatch.WriteSet
+	plugins map[string]declare.PluginUse
 }
 
 // accessFromDeclaration resolves a pipeline's declared access straight from its
@@ -45,7 +50,7 @@ type declaredAccess struct {
 // (never the grants ledger) keeps the resolution free of any apply-ordering
 // race: a registered pipeline always has its declaration on disk.
 func accessFromDeclaration(decl *declare.Pipeline) declaredAccess {
-	acc := declaredAccess{writes: dispatch.WriteSet{}}
+	acc := declaredAccess{writes: dispatch.WriteSet{}, plugins: decl.Plugins}
 	for _, r := range decl.Reads {
 		schema, table, ok := strings.Cut(r.Table, ".")
 		if !ok {
@@ -166,19 +171,26 @@ const (
 type turnResult struct {
 	kind      turnKind
 	rows      []dispatch.TurnRow
+	calls     []store.RunPluginCall // serviced plugin calls, in order (#215)
 	end       dispatch.TurnEnd
 	violation error
 	status    exec.ExitStatus
 }
 
 // driveTurn runs one turn over a live session: it writes the go/row/run frames,
-// feeds every stdout line to the turn collector, and classifies the ending. A
-// send failure is not an ending of its own -- the process is gone, and its exit
-// reports through the session's exited channel. On process exit the scanner's
-// already-delivered lines are drained first, so a one-shot pipeline that answers
-// its frames and exits cleanly still ends in done, not death.
-func driveTurn(ctx context.Context, ses *residentSession, turn int64, feed []pg.FeedRow, writes dispatch.WriteSet, rec frameRecorder) turnResult {
-	col := dispatch.NewTurnCollector(turn, writes)
+// feeds every stdout line to the turn collector, services declared-plugin calls
+// (answering each with a res frame before reading on), and classifies the
+// ending. A send failure is not an ending of its own -- the process is gone, and
+// its exit reports through the session's exited channel. On process exit the
+// scanner's already-delivered lines are drained first, so a one-shot pipeline
+// that answers its frames and exits cleanly still ends in done, not death.
+func driveTurn(ctx context.Context, ses *residentSession, turn int64, feed []pg.FeedRow, writes dispatch.WriteSet, plugins *resolvedPlugins, rec frameRecorder) turnResult {
+	var callSet dispatch.CallSet
+	var caller pluginCaller
+	if plugins != nil {
+		callSet, caller = plugins.calls, plugins.caller
+	}
+	col := dispatch.NewTurnCollector(turn, writes, callSet)
 
 	sendRecorded := func(line string) bool {
 		if rec != nil {
@@ -202,27 +214,67 @@ func driveTurn(ctx context.Context, ses *residentSession, turn int64, feed []pg.
 		_ = sendRecorded(dispatch.EncodeRunFrame())
 	}
 
-	feedLine := func(line string) (turnResult, bool) {
+	var calls []store.RunPluginCall
+	// serviceCall answers one collected call: run the verb, deliver the res
+	// frame, record the call's provenance. A dead process's drained call frame
+	// is recorded refused, never executed: no external effect for a pipeline
+	// that can no longer receive the reply.
+	serviceCall := func(call *dispatch.TurnCall, dead bool) {
+		recCall := store.RunPluginCall{
+			Seq: int64(len(calls) + 1), Alias: call.Alias, Verb: call.Verb,
+			ArgsDigest: plugin.Digest(call.Args),
+		}
+		switch {
+		case dead:
+			recCall.Outcome, recCall.Error = "err", "pipeline exited before the call was serviced"
+		default:
+			var result json.RawMessage
+			err := fmt.Errorf("no plugin caller wired")
+			if caller != nil {
+				result, err = caller.Call(ctx, *call)
+			}
+			var line string
+			var encErr error
+			if err != nil {
+				recCall.Outcome, recCall.Error = "err", err.Error()
+				line, encErr = dispatch.EncodeResErr(call.Call, err.Error())
+			} else {
+				recCall.Outcome, recCall.ResponseDigest = "ok", plugin.Digest(result)
+				line, encErr = dispatch.EncodeResOK(call.Call, result)
+			}
+			if encErr == nil {
+				_ = sendRecorded(line)
+			}
+		}
+		col.ReplyDelivered()
+		calls = append(calls, recCall)
+	}
+
+	feedLine := func(line string, dead bool) (turnResult, bool) {
 		if rec != nil {
 			rec.PipelineFrame(line)
 		}
-		end, terminal, err := col.Feed(line)
+		end, call, terminal, err := col.Feed(line)
 		if err != nil {
-			return turnResult{kind: turnViolated, violation: err, rows: col.Rows()}, true
+			return turnResult{kind: turnViolated, violation: err, rows: col.Rows(), calls: calls}, true
+		}
+		if call != nil {
+			serviceCall(call, dead)
+			return turnResult{}, false
 		}
 		if !terminal {
 			return turnResult{}, false
 		}
 		if end.Errored {
-			return turnResult{kind: turnErrored, end: end, rows: col.Rows()}, true
+			return turnResult{kind: turnErrored, end: end, rows: col.Rows(), calls: calls}, true
 		}
-		return turnResult{kind: turnDone, rows: col.Rows()}, true
+		return turnResult{kind: turnDone, rows: col.Rows(), calls: calls}, true
 	}
 
 	for {
 		select {
 		case line := <-ses.scanner.lines:
-			if res, ended := feedLine(line); ended {
+			if res, ended := feedLine(line, false); ended {
 				return res
 			}
 		case <-ses.exited:
@@ -231,15 +283,15 @@ func driveTurn(ctx context.Context, ses *residentSession, turn int64, feed []pg.
 			for {
 				select {
 				case line := <-ses.scanner.lines:
-					if res, ended := feedLine(line); ended {
+					if res, ended := feedLine(line, true); ended {
 						return res
 					}
 				default:
-					return turnResult{kind: turnDied, rows: col.Rows(), status: ses.status}
+					return turnResult{kind: turnDied, rows: col.Rows(), calls: calls, status: ses.status}
 				}
 			}
 		case <-ctx.Done():
-			return turnResult{kind: turnShutdown}
+			return turnResult{kind: turnShutdown, calls: calls}
 		}
 	}
 }

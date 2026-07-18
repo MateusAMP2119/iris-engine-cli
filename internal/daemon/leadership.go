@@ -94,6 +94,8 @@ type Candidate struct {
 	// roleCreds reads a pipeline role's persisted credential for the control
 	// orchestrator's provisioning path. Nil skips credential-backed provisioning.
 	roleCreds store.RoleCredentialReader
+	// pluginsRoot is the installed-plugins root (#215); empty refuses plugin-declaring runs.
+	pluginsRoot string
 
 	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
 	// and seal decisions after runs reach terminal.
@@ -291,6 +293,12 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 		c.turnDB = turnDB
 		c.roleCreds = roleCreds
 	}
+}
+
+// WithPluginsRoot wires the installed-plugins root (~/.iris/plugins) the leader
+// resolves declared plugin bindings against (#215); empty refuses plugin-declaring runs.
+func WithPluginsRoot(root string) CandidateOption {
+	return func(c *Candidate) { c.pluginsRoot = root }
 }
 
 // WithSealer wires the opportunistic post-terminal seal step: the
@@ -728,7 +736,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// store (the *pg.Client that also serves as the journal high-watermark), the
 		// meta seal read seam, the single dispatcher (checkpoint insert + archive
 		// flip), and the object store. Nil seams (the shape tests) leave sealing off.
-		mo := newManualOrchestrator(c.workspace, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, reg, c.buildSealer(d), c.runLogs, c.logger)
+		mo := newManualOrchestrator(c.workspace, c.pluginsRoot, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, reg, c.buildSealer(d), c.runLogs, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

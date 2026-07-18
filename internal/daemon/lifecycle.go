@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/dispatch"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/exec"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/pg"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/plugin"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
@@ -88,6 +90,14 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	if err := ensureWorkspaceTree(workspace); err != nil {
 		return err
 	}
+
+	// Installed-plugins root under the engine home (#215): declared plugin
+	// bindings resolve against it at run start.
+	home, err := config.Home(os.Getenv)
+	if err != nil {
+		return err
+	}
+	pluginsRoot := filepath.Join(home, plugin.DirName)
 
 	// Bring up Postgres and resolve the admin DSN (managed subprocess or external),
 	// then connect the meta client: ensure the meta database exists and open the
@@ -338,7 +348,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
 	laneBuild := func(submit dispatch.Submitter, events *dispatch.Events) *dispatch.Loop {
 		turnTally.reset() // a new leadership term starts a fresh turn account
-		return newLaneLoop(submit, inflight, residents, workspace, client.RegistryReader(), client.ManualReader(),
+		return newLaneLoop(submit, inflight, residents, workspace, pluginsRoot, client.RegistryReader(), client.ManualReader(),
 			client.QueuedManualReader(), events,
 			exec.NewOSRunner(), data, data, objects, turnTally, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
@@ -353,6 +363,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithPromotePlane(promos, submitShim{}, client.PromoteStateReader(), &liveJournalPromoter{reader: client.Reader(), db: data}),
 		WithWipePlane(wipes, client.Reader(), data),
 		WithLaneLoop(laneBuild),
+		WithPluginsRoot(pluginsRoot),
 		WithLanePlane(lanes),
 		WithTeardownSeams(client.RetentionReader()),
 		WithGrantDrift(client.DataPATGrantsReader()),
