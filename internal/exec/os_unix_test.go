@@ -319,7 +319,7 @@ func TestOSRunnerGrandchildBoundedByWaitDelay(t *testing.T) {
 // same writer are captured through a single pump, with no concurrent Write and no
 // dropped bytes: a script interleaves many lines across both streams into one
 // shared buffer, and every line comes back. Two independent pumps on one writer
-// would race (caught by the race detector) and lose output.
+// would race and lose output.
 func TestOSRunnerSharedWriterCapturesAllBytes(t *testing.T) {
 	dir := t.TempDir()
 	const perStream = 1000

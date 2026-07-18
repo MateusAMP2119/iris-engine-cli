@@ -174,7 +174,7 @@ func (c *coupledRegistry) edgeCount() int {
 // runs on the serialized single-writer path, so whichever apply commits first is
 // observed by the other's acyclicity check, which then rejects. Exactly one apply
 // succeeds; the other fails with a cycle rejection, and the registry keeps a single
-// edge. Run repeatedly under the race detector to exercise the interleaving.
+// edge. Run repeatedly to exercise the interleaving.
 func TestApplyConcurrentCycleRejected(t *testing.T) {
 	t.Run("depends-on-cycle-rejected", func(t *testing.T) {
 		for i := 0; i < 5; i++ {

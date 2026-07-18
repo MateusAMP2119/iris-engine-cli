@@ -22,7 +22,7 @@ import (
 
 // lockedBuffer is a threadsafe io.WriteCloser standing in for a per-run log file:
 // os/exec's copy goroutine writes to it concurrently with the test reading it, so
-// every access is mutex-guarded to stay clean under the race detector.
+// every access is mutex-guarded.
 type lockedBuffer struct {
 	mu     sync.Mutex
 	b      strings.Builder
