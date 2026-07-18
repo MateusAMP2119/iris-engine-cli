@@ -10,7 +10,7 @@ import (
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
 
-// metaRoster is the exact twenty-one-table roster of the meta control-plane database.
+// metaRoster is the exact twenty-four-table roster of the meta control-plane database.
 // The order is the create-if-missing emission order. engine_key follows
 // journal_checkpoints: the engine-owned ed25519 signing key moved from a
 // per-database GUC into this single-row meta table. read_pool_credential follows
@@ -21,10 +21,13 @@ import (
 var metaRoster = []string{
 	"pipelines",
 	"pipeline_logs",
+	"pipeline_plugins",
 	"dependencies",
 	"lanes",
 	"runs",
 	"run_inputs",
+	"run_plugins",
+	"run_plugin_calls",
 	"dead_letters",
 	"artifacts",
 	"run_summaries",
@@ -53,6 +56,9 @@ var specFKEdges = []string{
 	"artifacts.pipeline->pipelines.name",
 	"runs.artifact_hash->artifacts.hash",
 	"run_inputs.run_id->runs.id",
+	"pipeline_plugins.pipeline->pipelines.name",
+	"run_plugins.run_id->runs.id",
+	"run_plugin_calls.run_id->runs.id",
 	"dead_letters.run_id->runs.id",
 	"dead_letters.failed_upstream->pipelines.name",
 	"runs.replayed_from->runs.id",
@@ -77,7 +83,7 @@ func edgeSet(s store.Schema) map[string]bool {
 }
 
 // TestMetaFKGraphMatchesSpec proves the bootstrap DDL's foreign-key edges exactly
-// match the specified graph: the fifteen erDiagram edges and no others (run_inputs.
+// match the specified graph: the nineteen erDiagram edges and no others (run_inputs.
 // upstream_run_id is FK-free, resolving to a run or its archival summary), with
 // pipelines as a zero-out-degree root, runs as the history root, and lanes,
 // migrations, run_summaries, and journal_checkpoints carrying no FKs to the rest.

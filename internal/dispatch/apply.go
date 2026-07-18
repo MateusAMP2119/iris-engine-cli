@@ -12,10 +12,21 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/store"
 )
+
+// sortedKeys returns m's keys sorted, for deterministic row order.
+func sortedKeys(m map[string]declare.PluginUse) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 // Applier persists declared pipelines and lane composers into the registry through
 // the single meta writer. Build it with NewApplier over the registry read seam
@@ -52,6 +63,14 @@ func (a *Applier) ApplyPipeline(ctx context.Context, folder string, decl *declar
 	if decl.Logs != nil {
 		row.LogSplit = decl.Logs.Split
 		row.LogStamp = decl.Logs.Stamp
+	}
+	// The declared plugin bindings ride the registration too (#215), sorted for
+	// a deterministic rewrite; install/digest checks stay the engine's at run start.
+	for _, alias := range sortedKeys(decl.Plugins) {
+		use := decl.Plugins[alias]
+		row.Plugins = append(row.Plugins, store.PipelinePluginRow{
+			Alias: alias, Ref: use.Ref, Lifetime: use.EffectiveLifetime(),
+		})
 	}
 	// Validate and write on the single-writer path: the graph is read, the
 	// depends_on edges validated against it, and the row written inside one

@@ -43,7 +43,7 @@ func TestBootstrapCreatesDedicatedMetaDatabase(t *testing.T) {
 		t.Errorf("bootstrap issued %d CREATE DATABASE %s statements, want exactly 1", n, store.MetaDatabase)
 	}
 	if n := countPrefix(stmts, "CREATE TABLE"); n != len(metaRoster) {
-		t.Errorf("bootstrap created %d tables, want %d (the nineteen control tables)", n, len(metaRoster))
+		t.Errorf("bootstrap created %d tables, want %d (the meta control-table roster)", n, len(metaRoster))
 	}
 	// No warehouse schemas: bootstrap creates nothing in analytics/raw and issues no
 	// CREATE SCHEMA at all (the tables live in the default public schema).

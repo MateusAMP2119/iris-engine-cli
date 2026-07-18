@@ -32,20 +32,68 @@ type TurnRunRecord struct {
 	// ConsumedUpstreamRunIDs are the upstream runs the turn's gate resolved,
 	// one run_inputs row each.
 	ConsumedUpstreamRunIDs []int64
+	// Plugins are the run's digest-pinned plugin resolutions (#215), one run_plugins row each.
+	Plugins []RunPluginPin
+	// Calls are the turn's serviced plugin calls (#215), one run_plugin_calls row each.
+	Calls []RunPluginCall
 }
 
+// RunPluginPin is one run_plugins row: a plugin resolved and digest-verified at run start.
+type RunPluginPin struct {
+	// Alias is the declared binding alias.
+	Alias string
+	// Name is the resolved plugin name.
+	Name string
+	// Version is the resolved plugin version.
+	Version string
+	// Digest is the installed binary's verified sha256.
+	Digest string
+}
+
+// RunPluginCall is one run_plugin_calls row: a serviced call's provenance.
+type RunPluginCall struct {
+	// Seq is the call's 1-based order within the run.
+	Seq int64
+	// Alias is the declared binding alias the verb rode.
+	Alias string
+	// Verb is the manifest verb called.
+	Verb string
+	// ArgsDigest is the sha256 of the call's args bytes.
+	ArgsDigest string
+	// Outcome is "ok" or "err".
+	Outcome string
+	// ResponseDigest is the sha256 of the ok result bytes; empty for err.
+	ResponseDigest string
+	// Error is the failure message; empty for ok.
+	Error string
+}
+
+// pluginLegsSQL are the shared plugin-ledger CTE legs (#215): the run's pins and
+// its serviced calls, empty arrays inserting nothing. They ride both mints so a
+// turn's external effects land atomically with its run row.
+const pluginLegsSQL = `, pins AS (
+    INSERT INTO run_plugins (run_id, alias, name, version, digest)
+    SELECT new_run.id, p.alias, p.name, p.version, p.digest
+    FROM new_run, unnest(%[1]s::text[], %[2]s::text[], %[3]s::text[], %[4]s::text[]) AS p(alias, name, version, digest)
+)
+INSERT INTO run_plugin_calls (run_id, seq, alias, verb, args_digest, outcome, response_digest, error, recorded_at)
+SELECT new_run.id, c.seq, c.alias, c.verb, c.args_digest, c.outcome, NULLIF(c.response_digest, ''), NULLIF(c.err, ''), now()::text
+FROM new_run, unnest(%[5]s::bigint[], %[6]s::text[], %[7]s::text[], %[8]s::text[], %[9]s::text[], %[10]s::text[], %[11]s::text[]) AS c(seq, alias, verb, args_digest, outcome, response_digest, err)`
+
 // createTurnRunSQL mints a producing turn's run directly in the running state,
-// with its handle and log reference, and its consumption ledger, in one atomic
-// CTE (the createRunSQL shape with the state and handle fixed at mint).
-const createTurnRunSQL = `WITH new_run AS (
+// with its handle and log reference, its consumption ledger, and its plugin
+// ledgers, in one atomic CTE (the createRunSQL shape with the state and handle
+// fixed at mint).
+var createTurnRunSQL = `WITH new_run AS (
     INSERT INTO runs
         (pipeline, state, cause, artifact_hash, declaration_checksum, handle, log_ref, recorded_at)
     VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0), NULLIF($7, ''), now()::text)
     RETURNING id
-)
-INSERT INTO run_inputs (run_id, upstream_run_id)
-SELECT new_run.id, upstream
-FROM new_run, unnest($8::bigint[]) AS upstream`
+), inputs AS (
+    INSERT INTO run_inputs (run_id, upstream_run_id)
+    SELECT new_run.id, upstream
+    FROM new_run, unnest($8::bigint[]) AS upstream
+)` + fmt.Sprintf(pluginLegsSQL, "$9", "$10", "$11", "$12", "$13", "$14", "$15", "$16", "$17", "$18", "$19")
 
 // completeTurnRunSQL closes a producing turn's run: the guarded running ->
 // succeeded transition stamping exit code zero, the turn's snapshot pin
@@ -59,9 +107,10 @@ WHERE id = $6 AND state = $7`
 const stampRunLogRefSQL = `UPDATE runs SET log_ref = NULLIF($1, '') WHERE id = $2`
 
 // deadLetterTurnRunSQL mints a failed turn's run directly dead-lettered with its
-// worklist row, one atomic CTE (the DeadLetterPropagated shape with the cause and
-// reason carried by the turn).
-const deadLetterTurnRunSQL = `WITH new_run AS (
+// worklist row, consumption ledger, and plugin ledgers, one atomic CTE (the
+// DeadLetterPropagated shape with the cause and reason carried by the turn). A
+// failed turn's calls still record: the external effects happened.
+var deadLetterTurnRunSQL = `WITH new_run AS (
     INSERT INTO runs
         (pipeline, state, cause, artifact_hash, declaration_checksum, handle, log_ref, recorded_at)
     VALUES ($1, $2, $3, $4, $5, NULLIF($6, 0), NULLIF($7, ''), now()::text)
@@ -69,10 +118,36 @@ const deadLetterTurnRunSQL = `WITH new_run AS (
 ), letter AS (
     INSERT INTO dead_letters (run_id, reason, error)
     SELECT id, $8, $9 FROM new_run
-)
-INSERT INTO run_inputs (run_id, upstream_run_id)
-SELECT new_run.id, upstream
-FROM new_run, unnest($10::bigint[]) AS upstream`
+), inputs AS (
+    INSERT INTO run_inputs (run_id, upstream_run_id)
+    SELECT new_run.id, upstream
+    FROM new_run, unnest($10::bigint[]) AS upstream
+)` + fmt.Sprintf(pluginLegsSQL, "$11", "$12", "$13", "$14", "$15", "$16", "$17", "$18", "$19", "$20", "$21")
+
+// pluginLegArgs renders a record's plugin pins and calls as the eleven
+// positional array args the pluginLegsSQL legs unnest, in leg order.
+func pluginLegArgs(rec TurnRunRecord) []any {
+	pinAlias := make([]string, len(rec.Plugins))
+	pinName := make([]string, len(rec.Plugins))
+	pinVersion := make([]string, len(rec.Plugins))
+	pinDigest := make([]string, len(rec.Plugins))
+	for i, p := range rec.Plugins {
+		pinAlias[i], pinName[i], pinVersion[i], pinDigest[i] = p.Alias, p.Name, p.Version, p.Digest
+	}
+	callSeq := make([]int64, len(rec.Calls))
+	callAlias := make([]string, len(rec.Calls))
+	callVerb := make([]string, len(rec.Calls))
+	callArgs := make([]string, len(rec.Calls))
+	callOutcome := make([]string, len(rec.Calls))
+	callResponse := make([]string, len(rec.Calls))
+	callErr := make([]string, len(rec.Calls))
+	for i, c := range rec.Calls {
+		callSeq[i], callAlias[i], callVerb[i] = c.Seq, c.Alias, c.Verb
+		callArgs[i], callOutcome[i], callResponse[i], callErr[i] = c.ArgsDigest, c.Outcome, c.ResponseDigest, c.Error
+	}
+	return []any{pinAlias, pinName, pinVersion, pinDigest,
+		callSeq, callAlias, callVerb, callArgs, callOutcome, callResponse, callErr}
+}
 
 // CreateTurnRun mints a producing turn's run row directly in the running state
 // with its consumption ledger, one atomic meta transaction. The caller commits
@@ -83,19 +158,17 @@ func (w *Writer) CreateTurnRun(ctx context.Context, rec TurnRunRecord) error {
 	if rec.ArtifactHash != nil {
 		artifactHash = *rec.ArtifactHash
 	}
-	stmts := []Statement{{
-		SQL: createTurnRunSQL,
-		Args: []any{
-			rec.Pipeline,
-			string(RunRunning),
-			string(rec.Cause),
-			artifactHash,
-			rec.DeclarationChecksum,
-			rec.Handle,
-			rec.LogRef,
-			rec.ConsumedUpstreamRunIDs,
-		},
-	}}
+	args := []any{
+		rec.Pipeline,
+		string(RunRunning),
+		string(rec.Cause),
+		artifactHash,
+		rec.DeclarationChecksum,
+		rec.Handle,
+		rec.LogRef,
+		rec.ConsumedUpstreamRunIDs,
+	}
+	stmts := []Statement{{SQL: createTurnRunSQL, Args: append(args, pluginLegArgs(rec)...)}}
 	if err := w.execTx(ctx, stmts); err != nil {
 		return fmt.Errorf("store: writer create turn run for pipeline %q: %w", rec.Pipeline, err)
 	}
@@ -119,6 +192,36 @@ func (w *Writer) CompleteTurnRun(ctx context.Context, id string, snapshotLSN str
 func (w *Writer) StampRunLogRef(ctx context.Context, id string, logRef string) error {
 	if err := w.conn.Exec(ctx, stampRunLogRefSQL, logRef, id); err != nil {
 		return fmt.Errorf("store: writer stamp run log ref %s: %w", id, err)
+	}
+	return nil
+}
+
+// The pre-minted-run plugin ledger inserts: a queued or immediate manual run's
+// row exists before its turn drives, so pins and calls land in this follow-up
+// atomic transaction instead of the mint CTE.
+const (
+	recordRunPluginsSQL = `INSERT INTO run_plugins (run_id, alias, name, version, digest)
+SELECT $1, p.alias, p.name, p.version, p.digest
+FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS p(alias, name, version, digest)`
+
+	recordRunPluginCallsSQL = `INSERT INTO run_plugin_calls (run_id, seq, alias, verb, args_digest, outcome, response_digest, error, recorded_at)
+SELECT $1, c.seq, c.alias, c.verb, c.args_digest, c.outcome, NULLIF(c.response_digest, ''), NULLIF(c.err, ''), now()::text
+FROM unnest($2::bigint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[]) AS c(seq, alias, verb, args_digest, outcome, response_digest, err)`
+)
+
+// RecordRunPlugins writes a pre-minted run's plugin pins and serviced calls in
+// one atomic transaction (#215); empty inputs write nothing.
+func (w *Writer) RecordRunPlugins(ctx context.Context, id string, rec TurnRunRecord) error {
+	if len(rec.Plugins) == 0 && len(rec.Calls) == 0 {
+		return nil
+	}
+	legs := pluginLegArgs(rec)
+	stmts := []Statement{
+		{SQL: recordRunPluginsSQL, Args: append([]any{id}, legs[:4]...)},
+		{SQL: recordRunPluginCallsSQL, Args: append([]any{id}, legs[4:]...)},
+	}
+	if err := w.execTx(ctx, stmts); err != nil {
+		return fmt.Errorf("store: writer record run plugins %s: %w", id, err)
 	}
 	return nil
 }
@@ -151,21 +254,19 @@ func (w *Writer) DeadLetterTurnRun(ctx context.Context, rec TurnRunRecord, reaso
 	if detail != "" {
 		errDetail = detail
 	}
-	stmts := []Statement{{
-		SQL: deadLetterTurnRunSQL,
-		Args: []any{
-			rec.Pipeline,
-			string(RunDeadLettered),
-			string(rec.Cause),
-			artifactHash,
-			rec.DeclarationChecksum,
-			rec.Handle,
-			rec.LogRef,
-			string(reason),
-			errDetail,
-			rec.ConsumedUpstreamRunIDs,
-		},
-	}}
+	args := []any{
+		rec.Pipeline,
+		string(RunDeadLettered),
+		string(rec.Cause),
+		artifactHash,
+		rec.DeclarationChecksum,
+		rec.Handle,
+		rec.LogRef,
+		string(reason),
+		errDetail,
+		rec.ConsumedUpstreamRunIDs,
+	}
+	stmts := []Statement{{SQL: deadLetterTurnRunSQL, Args: append(args, pluginLegArgs(rec)...)}}
 	if err := w.execTx(ctx, stmts); err != nil {
 		return fmt.Errorf("store: writer dead-letter turn run for pipeline %q: %w", rec.Pipeline, err)
 	}
