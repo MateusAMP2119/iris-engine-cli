@@ -333,11 +333,8 @@ func (l *Loop) RunLanePass(ctx context.Context, lane Lane) error {
 			return fmt.Errorf("dispatch: lane %q post-pass: %w", lane.Name, err)
 		}
 	}
-	// The per-pass hook fires only while the pass's term is still live: Run
-	// deliberately never joins in-flight lane goroutines on shutdown, so a pass
-	// completing after its context was cancelled would otherwise increment a
-	// LATER term's counter (the pass counter resets on leader change, and a
-	// deposed term's stragglers must not leak into the new term's counts).
+	// Best-effort straggler guard: check-then-act, not a term fence -- the pass
+	// counter's epoch-bound hook closes that race under its own lock (#173).
 	if l.onPass != nil && ctx.Err() == nil {
 		l.onPass(report)
 	}
