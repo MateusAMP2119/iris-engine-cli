@@ -40,11 +40,11 @@ func TestEncodeFrames(t *testing.T) {
 }
 
 func TestTurnCollectorDone(t *testing.T) {
-	c := NewTurnCollector(841, testWrites())
-	if _, terminal, err := c.Feed(`{"event":"row","table":"marts.daily","row":{"day":"2026-07-17","sum":52}}`); err != nil || terminal {
+	c := NewTurnCollector(841, testWrites(), nil)
+	if _, _, terminal, err := c.Feed(`{"event":"row","table":"marts.daily","row":{"day":"2026-07-17","sum":52}}`); err != nil || terminal {
 		t.Fatalf("row feed: terminal=%v err=%v", terminal, err)
 	}
-	end, terminal, err := c.Feed(`{"event":"done","turn":841}`)
+	end, _, terminal, err := c.Feed(`{"event":"done","turn":841}`)
 	if err != nil || !terminal || end.Errored {
 		t.Fatalf("done feed: end=%+v terminal=%v err=%v", end, terminal, err)
 	}
@@ -55,8 +55,8 @@ func TestTurnCollectorDone(t *testing.T) {
 }
 
 func TestTurnCollectorErrorTerminal(t *testing.T) {
-	c := NewTurnCollector(7, testWrites())
-	end, terminal, err := c.Feed(`{"event":"error","turn":7,"reason":"upstream gone","detail":{"code":3}}`)
+	c := NewTurnCollector(7, testWrites(), nil)
+	end, _, terminal, err := c.Feed(`{"event":"error","turn":7,"reason":"upstream gone","detail":{"code":3}}`)
 	if err != nil || !terminal {
 		t.Fatalf("error feed: terminal=%v err=%v", terminal, err)
 	}
@@ -66,8 +66,8 @@ func TestTurnCollectorErrorTerminal(t *testing.T) {
 }
 
 func TestTurnCollectorErrorReasonDefaults(t *testing.T) {
-	c := NewTurnCollector(7, testWrites())
-	end, terminal, err := c.Feed(`{"event":"error","turn":7}`)
+	c := NewTurnCollector(7, testWrites(), nil)
+	end, _, terminal, err := c.Feed(`{"event":"error","turn":7}`)
 	if err != nil || !terminal || !end.Errored || end.Reason == "" {
 		t.Fatalf("bare error feed: end=%+v terminal=%v err=%v", end, terminal, err)
 	}
@@ -90,8 +90,8 @@ func TestTurnCollectorViolations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewTurnCollector(841, testWrites())
-			_, terminal, err := c.Feed(tc.line)
+			c := NewTurnCollector(841, testWrites(), nil)
+			_, _, terminal, err := c.Feed(tc.line)
 			if terminal {
 				t.Fatalf("violation reported terminal")
 			}
@@ -107,12 +107,12 @@ func TestTurnCollectorViolations(t *testing.T) {
 }
 
 func TestTurnCollectorFrameAfterTerminal(t *testing.T) {
-	c := NewTurnCollector(3, testWrites())
-	if _, terminal, err := c.Feed(`{"event":"done","turn":3}`); err != nil || !terminal {
+	c := NewTurnCollector(3, testWrites(), nil)
+	if _, _, terminal, err := c.Feed(`{"event":"done","turn":3}`); err != nil || !terminal {
 		t.Fatalf("done feed: terminal=%v err=%v", terminal, err)
 	}
 	var fe *FrameError
-	if _, _, err := c.Feed(`{"event":"done","turn":3}`); !errors.As(err, &fe) {
+	if _, _, _, err := c.Feed(`{"event":"done","turn":3}`); !errors.As(err, &fe) {
 		t.Fatalf("frame after terminal: want *FrameError, got %v", err)
 	}
 }
