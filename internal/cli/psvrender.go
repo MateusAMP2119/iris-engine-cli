@@ -552,6 +552,15 @@ func (r *psRing) cpuSamples() []float64 {
 // slot -- the footer is the one row every width tier keeps.
 func renderPsFooter(b *screenBuf, m *psModel) {
 	y := b.h - 1
+	// The open ':' prompt takes the whole footer row (#218): input, cursor, inline error.
+	if m.command != nil {
+		b.text(1, y, ansiCyan, ":")
+		b.text(2, y, "", string(m.command.input)+"▏")
+		if m.command.err != "" {
+			b.text(4+len([]rune(string(m.command.input))), y, ansiYellow, "· "+m.command.err)
+		}
+		return
+	}
 	hints, hintSGR := psFooterHints(m), ansiDim
 	advisory := m.note
 	if advisory == "" {
@@ -587,9 +596,9 @@ func psFooterHints(m *psModel) string {
 	switch m.pane {
 	case psPaneLanes:
 		if m.selPipeline == "" {
-			return "tab panes · ↑↓ move · ⏎ unfold · / search · " + histHint + " · q quit"
+			return "tab panes · ↑↓ move · ⏎ unfold · / search · : cmd · " + histHint + " · q quit"
 		}
-		return "tab panes · ↑↓ move · ⏎ open runs · ← lane · / search · " + histHint + " · q quit"
+		return "tab panes · ↑↓ move · ⏎ open runs · ← lane · / search · : cmd · " + histHint + " · q quit"
 	case psPaneTable:
 		if m.selPipeline == "" {
 			return "tab panes · ↑↓ move · ⏎ open runs · / search · q quit"

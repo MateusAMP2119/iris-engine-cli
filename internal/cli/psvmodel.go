@@ -113,7 +113,8 @@ type psModel struct {
 	note          string // transient action outcome, cleared on the next key
 	warn          string // standing soft-fetch warning, cleared by the next good poll
 
-	search *psSearch // non-nil while the search overlay is open
+	search  *psSearch  // non-nil while the search overlay is open
+	command *psCommand // non-nil while the ':' command prompt is open (#218)
 
 	// rings holds every heat strip's fine history: key "" is the engine,
 	// "l:<name>" a lane, "p:<name>" a pipeline. Seeded from the daemon's
@@ -635,6 +636,12 @@ func (m *psModel) update(k psKey) (cancelRun string) {
 		return ""
 	}
 
+	// The ':' command prompt owns the keyboard while open (#218).
+	if m.command != nil {
+		m.updateCommand(k)
+		return ""
+	}
+
 	// An armed cancel confirm consumes the next key: y confirms, all else disarms.
 	if m.confirmCancel {
 		m.confirmCancel = false
@@ -689,6 +696,8 @@ func (m *psModel) updateRune(r rune) {
 		m.move(-1)
 	case '/':
 		m.openSearch()
+	case ':':
+		m.openCommand()
 	case 'a':
 		if m.pane == psPaneTable && m.selPipeline != "" {
 			m.showAll = !m.showAll
