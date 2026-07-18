@@ -209,6 +209,7 @@ func (a *app) uninstallSelf() runE {
 			}
 		}
 		steps = append(steps, uninstallStep{Step: 3, Name: stepBinary, Status: "removed", Removed: []string{path}})
+		removeInstallerSymlink(path)
 		removeShellPathEntries()
 		if !jsonMode {
 			a.uninstallProgressBar(p, "🧹 Removing binary and traces...")
@@ -383,6 +384,14 @@ func sttyOutput(args ...string) (string, error) {
 	cmd.Stdin = os.Stdin
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
+}
+
+// removeInstallerSymlink drops /usr/local/bin/iris when it links to the removed binary, best-effort.
+func removeInstallerSymlink(target string) {
+	const link = "/usr/local/bin/iris"
+	if dest, err := os.Readlink(link); err == nil && dest == target {
+		_ = os.Remove(link)
+	}
 }
 
 // removeShellPathEntries strips the installer's "# iris" PATH block from shell rc files, best-effort.

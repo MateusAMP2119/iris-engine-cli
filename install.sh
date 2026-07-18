@@ -174,7 +174,21 @@ on_path=""
 case ":${PATH}:" in
   *":${dest}:"*) on_path=1 ;;
 esac
-# Not on PATH: wire it into the shell rc once (marked block, idempotent)
+# Same-shell availability: link from /usr/local/bin (already on PATH) so iris works without a new shell
+if [ -z "$on_path" ] && [ -z "${IRIS_DEST:-}" ] && [ -d /usr/local/bin ]; then
+  case ":${PATH}:" in
+    *:/usr/local/bin:*)
+      if [ -w /usr/local/bin ]; then
+        ln -sf "$bin" /usr/local/bin/iris && on_path=1
+      elif command -v sudo >/dev/null 2>&1 && can_prompt; then
+        say "Linking /usr/local/bin/iris (sudo may ask for your password)"
+        sudo ln -sf "$bin" /usr/local/bin/iris </dev/tty && on_path=1 || true
+      fi
+      [ -n "$on_path" ] && ok "Linked /usr/local/bin/iris → ~/.iris/bin/iris"
+      ;;
+  esac
+fi
+# Still not reachable: wire the rc once (marked block, idempotent)
 if [ -z "$on_path" ]; then
   rc=""
   case "${SHELL:-}" in
