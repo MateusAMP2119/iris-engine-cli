@@ -76,7 +76,8 @@ func (m *psModel) runCommand(line string) {
 		m.pane = psPaneLogs
 		m.command = nil
 	case "catalog":
-		m.commandErr("catalog overlay not built yet") // stage gate: the overlay lands with #219
+		m.command = nil
+		m.openCatalog()
 	default:
 		m.commandErr("unknown command :" + name)
 	}

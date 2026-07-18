@@ -321,6 +321,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		api.WithDeadImpact(deadletters), api.WithReplay(deadletters), api.WithDrain(deadletters),
 		api.WithRuns(runs), api.WithRunTrace(runTrace), api.WithPipelineGate(pipelineGate),
 		api.WithRunLogs(NewRunLogsPlane(runLogs)), api.WithCatalog(catalogCtl),
+		api.WithCatalogList(NewCatalogReadPlane(client.RegistryReader(), logger)),
 	), WithServerLogger(logger), WithVerifier(verifier))
 	if err := srv.Start(ctx); err != nil {
 		return err

@@ -90,3 +90,48 @@ func TestCatalogInstallRoute(t *testing.T) {
 		}
 	})
 }
+
+// fixedCatalogList is a CatalogListHandler answering a canned listing.
+type fixedCatalogList struct {
+	res api.CatalogListResult
+	err error
+}
+
+func (f *fixedCatalogList) ListPacks(context.Context) (api.CatalogListResult, error) {
+	return f.res, f.err
+}
+
+// TestCatalogListRoute proves GET /catalog (#219): the listing envelope on any
+// role, 500 unwired, params refused, POST refused.
+func TestCatalogListRoute(t *testing.T) {
+	t.Run("the listing renders in the data envelope on a standby too", func(t *testing.T) {
+		h := &fixedCatalogList{res: api.CatalogListResult{Packs: []api.CatalogPack{{Name: "quake-monitor", Source: "embedded"}}, Warnings: []string{"w"}}}
+		rec := httptest.NewRecorder()
+		api.NewMux(api.WithCatalogList(h)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/catalog", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+		var env struct {
+			Data api.CatalogListResult `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil || len(env.Data.Packs) != 1 || env.Data.Packs[0].Name != "quake-monitor" {
+			t.Errorf("body = %s, want the listing envelope (err %v)", rec.Body.String(), err)
+		}
+	})
+
+	t.Run("an unwired reader is an internal fault", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		leaderMux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/catalog", nil))
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500", rec.Code)
+		}
+	})
+
+	t.Run("query params are refused", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		leaderMux(api.WithCatalogList(&fixedCatalogList{})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/catalog?x=1", nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+}

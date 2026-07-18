@@ -35,6 +35,7 @@ var engineStateRoutes = []string{
 	"/leader",
 	"/ps",
 	"/healthz",
+	"/catalog",
 	"/provenance/analytics/orders/123",
 }
 

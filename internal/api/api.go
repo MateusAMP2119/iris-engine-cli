@@ -105,6 +105,7 @@ func NewMux(opts ...MuxOption) http.Handler {
 		replay:       noReplay{},
 		drain:        noDrain{},
 		catalog:      noCatalog{},
+		catalogList:  noCatalogList{},
 	}
 	for _, o := range opts {
 		o(m)
@@ -151,8 +152,10 @@ type mux struct {
 	// the real handler on winning leadership.
 	replay ReplayHandler
 	drain  DrainHandler
-	// catalog runs the leader-side POST /catalog/install (catalog.go, #217).
-	catalog CatalogHandler
+	// catalog runs the leader-side POST /catalog/install (catalog.go, #217);
+	// catalogList serves the GET /catalog pack listing on any role (catalogread.go, #219).
+	catalog     CatalogHandler
+	catalogList CatalogListHandler
 	// endpoints and qreader are the /q serving seams (endpoint.go): the live
 	// compiled-shape source and the read executor. Both default nil (unwired):
 	// /q then answers the internal-fault envelope, per the unwired-seam doctrine.
@@ -206,6 +209,8 @@ func (m *mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveEndpointApply(w, r)
 	case "/catalog/install":
 		m.serveCatalogInstall(w, r)
+	case "/catalog":
+		m.serveCatalogList(w, r)
 	case "/pat/create":
 		m.servePATCreate(w, r)
 	case "/pipeline/list":

@@ -92,13 +92,16 @@ func TestPsCommandMode(t *testing.T) {
 			}
 		})
 
-		t.Run(":catalog stage-gates until #219", func(t *testing.T) {
+		t.Run(":catalog opens the overlay loading and parks the list request", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			m.update(key(':'))
 			typeLine(m, "catalog")
 			m.update(psKey{kind: psKeyEnter})
-			if m.command == nil || !strings.Contains(m.command.err, "not built yet") {
-				t.Fatalf("command state = %+v, want the stage-gate message", m.command)
+			if m.command != nil || m.catalog == nil || !m.catalog.loading {
+				t.Fatalf("command %+v catalog %+v, want the overlay open and loading", m.command, m.catalog)
+			}
+			if req := m.takeCatalogReq(); req == nil || req.kind != psCatalogList {
+				t.Fatalf("parked request = %+v, want the list fetch", req)
 			}
 		})
 

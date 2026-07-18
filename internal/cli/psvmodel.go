@@ -116,6 +116,9 @@ type psModel struct {
 	search  *psSearch  // non-nil while the search overlay is open
 	command *psCommand // non-nil while the ':' command prompt is open (#218)
 
+	catalog    *psCatalog    // non-nil while the catalog overlay is open (#219)
+	catalogReq *psCatalogReq // overlay action parked for the loop, consumed via takeCatalogReq
+
 	// rings holds every heat strip's fine history: key "" is the engine,
 	// "l:<name>" a lane, "p:<name>" a pipeline. Seeded from the daemon's
 	// recorded history and grown one slot per collector tick (the payload's
@@ -639,6 +642,12 @@ func (m *psModel) update(k psKey) (cancelRun string) {
 	// The ':' command prompt owns the keyboard while open (#218).
 	if m.command != nil {
 		m.updateCommand(k)
+		return ""
+	}
+
+	// The catalog overlay owns the keyboard while open (#219).
+	if m.catalog != nil {
+		m.updateCatalog(k)
 		return ""
 	}
 

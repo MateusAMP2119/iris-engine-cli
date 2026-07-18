@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -224,6 +225,102 @@ func (c *psDaemonClient) cancelRun(ctx context.Context, id string) string {
 	return "cancel failed: " + msg
 }
 
+// catalogAction services one overlay request against the daemon (#219).
+func (c *psDaemonClient) catalogAction(ctx context.Context, req psCatalogReq) psCatalogMsg {
+	switch req.kind {
+	case psCatalogList:
+		return c.fetchCatalog(ctx)
+	case psCatalogInstall:
+		return c.installPack(ctx, req, false)
+	default:
+		return c.installPack(ctx, req, true)
+	}
+}
+
+// fetchCatalog reads GET /catalog for the overlay's pack list.
+func (c *psDaemonClient) fetchCatalog(ctx context.Context) psCatalogMsg {
+	msg := psCatalogMsg{kind: psCatalogList}
+	resp, err := c.get(ctx, "/catalog")
+	if err != nil {
+		msg.err = "catalog unreachable: " + err.Error()
+		return msg
+	}
+	defer drainClose(resp)
+	if resp.StatusCode != http.StatusOK {
+		var env struct {
+			Error errBody `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&env)
+		msg.err = catalogFailText("catalog list", resp.StatusCode, env.Error.Message, "")
+		return msg
+	}
+	var env struct {
+		Data api.CatalogListResult `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		msg.err = "decode /catalog response: " + err.Error()
+		return msg
+	}
+	msg.packs, msg.warnings = env.Data.Packs, env.Data.Warnings
+	return msg
+}
+
+// installPack POSTs /catalog/install for the overlay ('a' rides apply=true).
+func (c *psDaemonClient) installPack(ctx context.Context, req psCatalogReq, apply bool) psCatalogMsg {
+	kind := psCatalogInstall
+	if apply {
+		kind = psCatalogApply
+	}
+	msg := psCatalogMsg{kind: kind}
+	body, _ := json.Marshal(api.CatalogInstallRequest{Pack: req.pack, Apply: apply, Force: req.force})
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/catalog/install", bytes.NewReader(body))
+	if err != nil {
+		msg.err = "catalog install: " + err.Error()
+		return msg
+	}
+	hreq.Header.Set("Content-Type", "application/json")
+	if c.overTCP && c.token != "" {
+		hreq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.client.Do(hreq)
+	if err != nil {
+		msg.err = "catalog install: engine unreachable: " + err.Error()
+		return msg
+	}
+	defer drainClose(resp)
+	if resp.StatusCode != http.StatusOK {
+		var env struct {
+			Error struct {
+				Message string `json:"message"`
+				Leader  string `json:"leader"`
+			} `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&env)
+		msg.err = catalogFailText("catalog install", resp.StatusCode, env.Error.Message, env.Error.Leader)
+		return msg
+	}
+	var env struct {
+		Data api.CatalogInstallResult `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		msg.err = "decode /catalog/install response: " + err.Error()
+		return msg
+	}
+	msg.res = &env.Data
+	return msg
+}
+
+// catalogFailText renders a daemon refusal for the overlay banner, leader hint included.
+func catalogFailText(op string, status int, message, leader string) string {
+	if message == "" {
+		message = fmt.Sprintf("daemon status %d", status)
+	}
+	if leader != "" {
+		message += " · leader: " + leader
+	}
+	return op + " failed: " + message
+}
+
 // drainClose drains and closes a response body so the connection is reused.
 func drainClose(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -359,6 +456,10 @@ type psView struct {
 	notes    <-chan string
 	focusCh  chan<- string
 	cancelCh chan<- string
+	// catalogMsgs delivers overlay action outcomes; runCatalog services a parked
+	// overlay request off the loop (#219). Nil seams leave the overlay inert.
+	catalogMsgs <-chan psCatalogMsg
+	runCatalog  func(psCatalogReq)
 }
 
 // runPsLoop is the live view's single writer: render the current state, then
@@ -403,6 +504,9 @@ func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 					m.note = "cancel already in flight"
 				}
 			}
+			if req := m.takeCatalogReq(); req != nil && v.runCatalog != nil {
+				v.runCatalog(*req)
+			}
 			syncFocus()
 		case pm := <-v.polls:
 			if pm.err != nil {
@@ -419,6 +523,9 @@ func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 			syncFocus()
 		case note := <-v.notes:
 			m.note = note
+		case cm := <-v.catalogMsgs:
+			m.absorbCatalog(cm)
+			syncFocus()
 		}
 	}
 }
@@ -442,6 +549,7 @@ func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot,
 	notes := make(chan string, 1)
 	focusCh := make(chan string, 4)
 	cancelCh := make(chan string, 4)
+	catalogMsgs := make(chan psCatalogMsg, 4)
 	go readPsKeys(os.Stdin, keys)
 	go pollPs(ctx, c, psPollInterval, focusCh, cancelCh, polls, notes)
 
@@ -449,6 +557,15 @@ func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot,
 	v := &psView{
 		out: a.out, p: a.newPainter(false), size: ts.size,
 		keys: keys, polls: polls, notes: notes, focusCh: focusCh, cancelCh: cancelCh,
+		catalogMsgs: catalogMsgs,
+		runCatalog: func(req psCatalogReq) {
+			go func() {
+				select {
+				case catalogMsgs <- c.catalogAction(ctx, req):
+				case <-ctx.Done():
+				}
+			}()
+		},
 	}
 	err := runPsLoop(ctx, v, m)
 	ts.leave() // explicit: restored before any fault renders on stderr
