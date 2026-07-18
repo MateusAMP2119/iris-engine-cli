@@ -24,6 +24,7 @@ plugins:
   browser:
     ref: lightpanda@0.4
     lifetime: resident
+    fresh: true
 `,
 		},
 		{
@@ -43,8 +44,13 @@ plugins:
 		},
 		{
 			name:    "unknown field",
-			plugins: "  mail:\n    ref: smtp-send@1.0\n    fresh: true\n",
-			wantErr: `unknown field "fresh"`,
+			plugins: "  mail:\n    ref: smtp-send@1.0\n    retries: 3\n",
+			wantErr: `unknown field "retries"`,
+		},
+		{
+			name:    "fresh not a boolean",
+			plugins: "  mail:\n    ref: smtp-send@1.0\n    fresh: always\n",
+			wantErr: "fresh must be a boolean",
 		},
 		{
 			name:    "missing ref",
@@ -81,8 +87,11 @@ plugins:
 			if got := p.Plugins["mail"]; got.Ref != "smtp-send@1.0" || got.EffectiveLifetime() != LifetimeRun {
 				t.Fatalf("mail binding = %+v", got)
 			}
-			if got := p.Plugins["browser"]; got.Ref != "lightpanda@0.4" || got.EffectiveLifetime() != LifetimeResident {
+			if got := p.Plugins["browser"]; got.Ref != "lightpanda@0.4" || got.EffectiveLifetime() != LifetimeResident || !got.Fresh {
 				t.Fatalf("browser binding = %+v", got)
+			}
+			if p.Plugins["mail"].Fresh {
+				t.Fatalf("mail binding fresh = true, want the default false")
 			}
 		})
 	}

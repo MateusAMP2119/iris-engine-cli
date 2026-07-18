@@ -41,6 +41,9 @@ type PipelineRunTarget struct {
 	// LogStamp is the declared metadata stamp (pipeline_logs.stamp); false for a
 	// pipeline registered without a logs block.
 	LogStamp bool
+	// Lane is the pipeline's persisted lane (lanes.lane); empty for an own-lane
+	// pipeline. Lane-lifetime plugin instances key on it (#215).
+	Lane string
 }
 
 // LatestRunInfo is a pipeline's most recent run: its id and lifecycle state, the
@@ -102,8 +105,8 @@ type ManualReader interface {
 // The manual-run read statements. Each is a single plain SELECT: an MVCC snapshot, no
 // locking clause, no advisory-lock interplay.
 const (
-	selectPipelineRunTargetSQL = `SELECT p.folder, p.run, coalesce(l.split, false), coalesce(l.stamp, false)
-    FROM pipelines p LEFT JOIN pipeline_logs l ON l.pipeline = p.name
+	selectPipelineRunTargetSQL = `SELECT p.folder, p.run, coalesce(l.split, false), coalesce(l.stamp, false), coalesce(ln.lane, '')
+    FROM pipelines p LEFT JOIN pipeline_logs l ON l.pipeline = p.name LEFT JOIN lanes ln ON ln.pipeline = p.name
     WHERE p.name = $1`
 	selectLatestRunSQL = `SELECT r.id, r.state, coalesce(d.reason, ''), coalesce(d.error, '')
     FROM runs r LEFT JOIN dead_letters d ON d.run_id = r.id
@@ -146,16 +149,16 @@ func (r *pgxManualReader) PipelineRunTarget(ctx context.Context, name string) (P
 		}
 		return PipelineRunTarget{}, false, nil
 	}
-	var folder, runJSON string
+	var folder, runJSON, lane string
 	var logSplit, logStamp bool
-	if err := rows.Scan(&folder, &runJSON, &logSplit, &logStamp); err != nil {
+	if err := rows.Scan(&folder, &runJSON, &logSplit, &logStamp, &lane); err != nil {
 		return PipelineRunTarget{}, false, fmt.Errorf("store: scan pipeline run target %q: %w", name, err)
 	}
 	var argv []string
 	if err := json.Unmarshal([]byte(runJSON), &argv); err != nil {
 		return PipelineRunTarget{}, false, fmt.Errorf("store: decode run argv for %q: %w", name, err)
 	}
-	return PipelineRunTarget{Folder: folder, Argv: argv, LogSplit: logSplit, LogStamp: logStamp}, true, nil
+	return PipelineRunTarget{Folder: folder, Argv: argv, LogSplit: logSplit, LogStamp: logStamp, Lane: lane}, true, nil
 }
 
 // LatestRun reads a pipeline's most recent run (highest id) in one plain MVCC query.

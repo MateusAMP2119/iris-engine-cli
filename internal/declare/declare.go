@@ -115,6 +115,10 @@ type PluginUse struct {
 	Ref string `yaml:"ref"`
 	// Lifetime is the declared instance lifetime; empty means run.
 	Lifetime string `yaml:"lifetime"`
+	// Fresh demands a cold instance for this pipeline's runs: a shared lane or
+	// resident instance is never attached warm, it is replaced before the run
+	// (state carried across runs stays visible in lineage; fresh opts out).
+	Fresh bool `yaml:"fresh"`
 }
 
 // EffectiveLifetime returns the declared lifetime, defaulting to run.
@@ -275,10 +279,10 @@ func checkLogsShape(raw map[string]any) error {
 }
 
 // pluginsFields is the whitelist for one plugin binding inside the plugins block.
-var pluginsFields = map[string]bool{"ref": true, "lifetime": true}
+var pluginsFields = map[string]bool{"ref": true, "lifetime": true, "fresh": true}
 
 // pluginsFieldList is the human-readable rendering of pluginsFields.
-const pluginsFieldList = "ref, lifetime"
+const pluginsFieldList = "ref, lifetime, fresh"
 
 // pluginAliasRe admits plugin aliases: dot-free slugs (the alias prefixes call verbs as "alias.verb").
 var pluginAliasRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -323,6 +327,11 @@ func checkPluginsShape(raw map[string]any) error {
 			s, ok := lv.(string)
 			if !ok || (s != LifetimeRun && s != LifetimeLane && s != LifetimeResident) {
 				return fmt.Errorf("declare: plugin %q lifetime must be %s, %s, or %s", alias, LifetimeRun, LifetimeLane, LifetimeResident)
+			}
+		}
+		if fv, present := entry["fresh"]; present {
+			if _, ok := fv.(bool); !ok {
+				return fmt.Errorf("declare: plugin %q fresh must be a boolean", alias)
 			}
 		}
 	}

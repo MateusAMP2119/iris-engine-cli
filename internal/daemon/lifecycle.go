@@ -92,12 +92,17 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	}
 
 	// Installed-plugins root under the engine home (#215): declared plugin
-	// bindings resolve against it at run start.
+	// bindings resolve against it at run start. The service supervisor holds
+	// lane and resident service instances between turns (#215 stage 3); its
+	// spawn context is the daemon lifetime, so shutdown kills every instance
+	// group, and endAll reaps them deterministically on the way out.
 	home, err := config.Home(os.Getenv)
 	if err != nil {
 		return err
 	}
 	pluginsRoot := filepath.Join(home, plugin.DirName)
+	pluginServicesReg := newPluginServices(ctx, exec.NewOSRunner(), logger)
+	defer pluginServicesReg.endAll()
 
 	// Bring up Postgres and resolve the admin DSN (managed subprocess or external),
 	// then connect the meta client: ensure the meta database exists and open the
@@ -348,7 +353,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 	// connection targets the engine-owned data database, retargeted from the admin DSN.
 	laneBuild := func(submit dispatch.Submitter, events *dispatch.Events) *dispatch.Loop {
 		turnTally.reset() // a new leadership term starts a fresh turn account
-		return newLaneLoop(submit, inflight, residents, workspace, pluginsRoot, client.RegistryReader(), client.ManualReader(),
+		return newLaneLoop(submit, inflight, residents, workspace, pluginsRoot, pluginServicesReg, client.RegistryReader(), client.ManualReader(),
 			client.QueuedManualReader(), events,
 			exec.NewOSRunner(), data, data, objects, turnTally, passCounter,
 			client.RetentionReader(), s.Retain, runLogs, logger)
@@ -364,6 +369,7 @@ func Run(ctx context.Context, s config.Settings, logger *slog.Logger) error {
 		WithWipePlane(wipes, client.Reader(), data),
 		WithLaneLoop(laneBuild),
 		WithPluginsRoot(pluginsRoot),
+		WithPluginServices(pluginServicesReg),
 		WithLanePlane(lanes),
 		WithTeardownSeams(client.RetentionReader()),
 		WithGrantDrift(client.DataPATGrantsReader()),

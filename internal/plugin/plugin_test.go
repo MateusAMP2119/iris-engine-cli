@@ -188,7 +188,7 @@ func TestInstallRefusals(t *testing.T) {
 		}
 	})
 
-	t.Run("service kind refused", func(t *testing.T) {
+	t.Run("service kind installs", func(t *testing.T) {
 		src := writeInstallSource(t, "browser", "0.4", binary)
 		raw, err := os.ReadFile(src) //nolint:gosec // test-owned temp path
 		if err != nil {
@@ -198,8 +198,12 @@ func TestInstallRefusals(t *testing.T) {
 		if err := os.WriteFile(src, []byte(doc), 0o644); err != nil { //nolint:gosec // test-owned temp path
 			t.Fatal(err)
 		}
-		if _, err := Install(context.Background(), root, src, nil); err == nil || !strings.Contains(err.Error(), "only \"tool\" plugins") {
-			t.Fatalf("err = %v", err)
+		res, err := Install(context.Background(), root, src, nil)
+		if err != nil {
+			t.Fatalf("service install: %v", err)
+		}
+		if res.Manifest.Kind != KindService {
+			t.Fatalf("installed kind = %q, want service", res.Manifest.Kind)
 		}
 	})
 

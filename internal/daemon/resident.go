@@ -99,12 +99,21 @@ type frameScanner struct {
 	mu      sync.Mutex
 	buf     []byte
 	lines   chan string
+	lineCap int
 	dropped atomic.Int64
 }
 
-// newFrameScanner builds the stdout frame scanner.
+// newFrameScanner builds the stdout frame scanner with the resident-pipeline
+// partial-line cap.
 func newFrameScanner() *frameScanner {
-	return &frameScanner{lines: make(chan string, frameLinesCap)}
+	return newFrameScannerCap(scanBufferCap)
+}
+
+// newFrameScannerCap builds a frame scanner with an explicit partial-line cap;
+// service-plugin instances use a larger one so a spillable reply can cross the
+// pipe as one line (#215 stage 3).
+func newFrameScannerCap(lineCap int) *frameScanner {
+	return &frameScanner{lines: make(chan string, frameLinesCap), lineCap: lineCap}
 }
 
 // Write buffers to line boundaries and delivers whole lines; it never errors
@@ -121,7 +130,7 @@ func (p *frameScanner) Write(b []byte) (int, error) {
 		p.deliver(string(bytes.TrimSuffix(p.buf[:i], []byte("\r"))))
 		p.buf = p.buf[i+1:]
 	}
-	if len(p.buf) > scanBufferCap {
+	if len(p.buf) > p.lineCap {
 		p.deliver(string(p.buf))
 		p.buf = nil
 	}

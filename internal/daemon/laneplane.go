@@ -188,6 +188,7 @@ func newLaneLoop(
 	residents *residentRuns,
 	workspace string,
 	pluginsRoot string,
+	services *pluginServices,
 	registry store.RegistryReader,
 	manual store.ManualReader,
 	queued store.QueuedManualReader,
@@ -218,6 +219,7 @@ func newLaneLoop(
 	runnerSeam := &laneExec{
 		workspace:   workspace,
 		pluginsRoot: pluginsRoot,
+		services:    services,
 		submit:      submit,
 		inflight:    inflight,
 		manual:      manual,
@@ -346,7 +348,8 @@ func (g lanePassGate) Eligible(ctx context.Context, pipeline string) (dispatch.D
 // pre-minted row.
 type laneExec struct {
 	workspace   string
-	pluginsRoot string // installed-plugins root (~/.iris/plugins); "" refuses plugin-declaring turns
+	pluginsRoot string          // installed-plugins root (~/.iris/plugins); "" refuses plugin-declaring turns
+	services    *pluginServices // service-instance supervisor (#215 stage 3); nil refuses service bindings
 	submit      dispatch.Submitter
 	inflight    *inflightRuns
 	manual      store.ManualReader
@@ -419,11 +422,14 @@ func (m *laneExec) StartFresh(ctx context.Context, rec store.RunRecord) (dispatc
 	}
 
 	// Declared plugins pin at turn start; a resolution failure refuses the turn
-	// (dead-lettered, always recorded) before any frame is sent (#215).
-	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, buf)
+	// (dead-lettered, always recorded) before any frame is sent (#215). Any
+	// run-lifetime service instance the resolution spawned ends with the turn.
+	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, buf, m.services,
+		serviceScope{Pipeline: rec.Pipeline, Lane: target.Lane, SpillDir: payloadsDir(m.workspace)})
 	if perr != nil {
 		return m.deadLetterFreshTurn(ctx, trec, target, buf, tr, "plugin resolution failed: "+perr.Error())
 	}
+	defer rp.end()
 	if rp != nil {
 		trec.Plugins = rp.pins
 	}
@@ -737,11 +743,13 @@ func (m *laneExec) runToTerminal(ctx context.Context, pipeline string, target st
 	}
 
 	// Declared plugins pin at run start; a resolution failure refuses the run (#215).
-	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, sink)
+	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, sink, m.services,
+		serviceScope{Pipeline: pipeline, Lane: target.Lane, SpillDir: payloadsDir(m.workspace)})
 	if perr != nil {
 		m.counters.bump(pipeline, true)
 		return deadLetter("plugin resolution failed: " + perr.Error())
 	}
+	defer rp.end()
 
 	res := driveTurn(ctx, ses, ses.nextTurn(), feed.Rows, acc.writes, rp, sink)
 	if res.kind != turnShutdown {

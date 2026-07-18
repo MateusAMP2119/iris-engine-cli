@@ -408,7 +408,10 @@ func MetaSchema() Schema {
 					{Name: "run_inputs_upstream_run_id_idx", Columns: []string{"upstream_run_id"}},
 				},
 			},
-			// run_plugins: the run-start plugin pin ledger (#215): alias, identity, digest.
+			// run_plugins: the run-start plugin pin ledger (#215): alias, identity,
+			// digest, and -- for a service plugin -- the attached instance id, so
+			// state shared across runs is visible in lineage (two runs naming one
+			// instance shared it; a fresh binding always names a new one).
 			{
 				Name: "run_plugins",
 				Columns: []Column{
@@ -417,6 +420,7 @@ func MetaSchema() Schema {
 					{Name: "name", Type: "text"},
 					{Name: "version", Type: "text"},
 					{Name: "digest", Type: "text"},
+					{Name: "instance_id", Type: "text", Nullable: true},
 				},
 				PrimaryKey: []string{"run_id", "alias"},
 				ForeignKeys: []ForeignKey{

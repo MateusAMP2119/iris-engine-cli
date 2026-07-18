@@ -140,13 +140,14 @@ type manualOrchestrator struct {
 // is the turn seam (#206): an immediate manual run executes as one
 // protocol turn -- the engine feeds the declared-read delta and performs the declared
 // writes itself with the run's exact attribution; the subprocess holds no credentials.
-func newManualOrchestrator(workspace, pluginsRoot string, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, data turnData, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
+func newManualOrchestrator(workspace, pluginsRoot string, services *pluginServices, submit dispatch.Submitter, registry store.RegistryReader, manual store.ManualReader, objects *store.ObjectStore, runner exec.Runner, journal dispatch.JournalHighWatermark, data turnData, inflight *inflightRuns, sealer *journalSealer, runLogs *RunLogWriter, logger *slog.Logger) *manualOrchestrator {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	execer := &manualExec{
 		workspace:   workspace,
 		pluginsRoot: pluginsRoot,
+		services:    services,
 		submitter:   submit,
 		manual:      manual,
 		objects:     objects,
@@ -306,7 +307,8 @@ func (r immediateRunner) RunNow(ctx context.Context, rec store.RunRecord) (dispa
 // terminal state.
 type manualExec struct {
 	workspace   string
-	pluginsRoot string // installed-plugins root (~/.iris/plugins); "" refuses plugin-declaring runs
+	pluginsRoot string          // installed-plugins root (~/.iris/plugins); "" refuses plugin-declaring runs
+	services    *pluginServices // service-instance supervisor (#215 stage 3); nil refuses service bindings
 	submitter   dispatch.Submitter
 	manual      store.ManualReader
 	objects     *store.ObjectStore // the leader's own objects_path for built run argv resolution via ResolveRunArgv
@@ -475,10 +477,12 @@ func (m *manualExec) runNow(ctx context.Context, rec store.RunRecord) (dispatch.
 	}
 
 	// Declared plugins pin at run start; a resolution failure refuses the run (#215).
-	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, sink)
+	rp, perr := resolveTurnPlugins(m.pluginsRoot, acc.plugins, m.runner, sink, m.services,
+		serviceScope{Pipeline: rec.Pipeline, Lane: target.Lane, SpillDir: payloadsDir(m.workspace)})
 	if perr != nil {
 		return deadLetter("manual run dead-lettered: plugin resolution failed: " + perr.Error())
 	}
+	defer rp.end()
 
 	res := driveTurn(ctx, ses, ses.nextTurn(), feed.Rows, acc.writes, rp, sink)
 	if res.kind != turnShutdown && rp != nil {

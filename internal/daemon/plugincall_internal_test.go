@@ -77,23 +77,23 @@ func TestResolveTurnPluginsRefusals(t *testing.T) {
 	runner := exec.NewOSRunner()
 
 	t.Run("no plugins resolves to nil", func(t *testing.T) {
-		rp, err := resolveTurnPlugins(root, nil, runner, nil)
+		rp, err := resolveTurnPlugins(root, nil, runner, nil, nil, serviceScope{})
 		if rp != nil || err != nil {
 			t.Fatalf("= %+v, %v", rp, err)
 		}
 	})
-	t.Run("unsupported lifetime", func(t *testing.T) {
+	t.Run("tool with a shared lifetime refused", func(t *testing.T) {
 		_, err := resolveTurnPlugins(root, map[string]declare.PluginUse{
 			"mail": {Ref: "mailer@1.0", Lifetime: declare.LifetimeResident},
-		}, runner, nil)
-		if err == nil || !strings.Contains(err.Error(), "not yet supported") {
+		}, runner, nil, nil, serviceScope{})
+		if err == nil || !strings.Contains(err.Error(), "always run-lifetime") {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("not installed", func(t *testing.T) {
 		_, err := resolveTurnPlugins(root, map[string]declare.PluginUse{
 			"mail": {Ref: "ghost@9.9"},
-		}, runner, nil)
+		}, runner, nil, nil, serviceScope{})
 		if err == nil || !strings.Contains(err.Error(), "not installed") {
 			t.Fatalf("err = %v", err)
 		}
@@ -101,12 +101,15 @@ func TestResolveTurnPluginsRefusals(t *testing.T) {
 	t.Run("resolves pins and calls", func(t *testing.T) {
 		rp, err := resolveTurnPlugins(root, map[string]declare.PluginUse{
 			"mail": {Ref: "mailer@1.0"},
-		}, runner, nil)
+		}, runner, nil, nil, serviceScope{})
 		if err != nil {
 			t.Fatalf("resolve: %v", err)
 		}
 		if len(rp.pins) != 1 || rp.pins[0].Alias != "mail" || rp.pins[0].Digest == "" {
 			t.Fatalf("pins = %+v", rp.pins)
+		}
+		if rp.pins[0].InstanceID != "" {
+			t.Fatalf("tool pin carries instance id %q, want none", rp.pins[0].InstanceID)
 		}
 		if !rp.calls["mail"]["send"] || !rp.calls["mail"]["fail"] {
 			t.Fatalf("calls = %+v", rp.calls)
@@ -120,7 +123,7 @@ func TestDriveTurnServicesPluginCalls(t *testing.T) {
 	root := installTestPlugin(t)
 
 	stderr := &lockedBuffer{}
-	rp, err := resolveTurnPlugins(root, map[string]declare.PluginUse{"mail": {Ref: "mailer@1.0"}}, runner, stderr)
+	rp, err := resolveTurnPlugins(root, map[string]declare.PluginUse{"mail": {Ref: "mailer@1.0"}}, runner, stderr, nil, serviceScope{})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

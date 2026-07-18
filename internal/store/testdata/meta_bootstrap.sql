@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS run_plugins (
     name text NOT NULL,
     version text NOT NULL,
     digest text NOT NULL,
+    instance_id text,
     PRIMARY KEY (run_id, alias),
     FOREIGN KEY (run_id) REFERENCES runs (id)
 );

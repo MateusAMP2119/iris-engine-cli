@@ -97,6 +97,10 @@ type Candidate struct {
 	// pluginsRoot is the installed-plugins root (#215); empty refuses plugin-declaring runs.
 	pluginsRoot string
 
+	// services is the service-instance supervisor (#215 stage 3); nil refuses
+	// service bindings (shape-test compositions).
+	services *pluginServices
+
 	// journalHM supplies the data journal high id for pin stamping (floor/ceiling)
 	// and seal decisions after runs reach terminal.
 	journalHM dispatch.JournalHighWatermark
@@ -299,6 +303,13 @@ func WithPipelinePlane(pp *pipelinePlane, workspace string, reg store.RegistryRe
 // resolves declared plugin bindings against (#215); empty refuses plugin-declaring runs.
 func WithPluginsRoot(root string) CandidateOption {
 	return func(c *Candidate) { c.pluginsRoot = root }
+}
+
+// WithPluginServices wires the service-instance supervisor (#215 stage 3): the
+// daemon-scoped registry lane and resident instances live in between turns.
+// Absent, service bindings are refused (shape-test compositions).
+func WithPluginServices(services *pluginServices) CandidateOption {
+	return func(c *Candidate) { c.services = services }
 }
 
 // WithSealer wires the opportunistic post-terminal seal step: the
@@ -736,7 +747,7 @@ func (c *Candidate) lead(ctx context.Context) (demoted bool, err error) {
 		// store (the *pg.Client that also serves as the journal high-watermark), the
 		// meta seal read seam, the single dispatcher (checkpoint insert + archive
 		// flip), and the object store. Nil seams (the shape tests) leave sealing off.
-		mo := newManualOrchestrator(c.workspace, c.pluginsRoot, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, reg, c.buildSealer(d), c.runLogs, c.logger)
+		mo := newManualOrchestrator(c.workspace, c.pluginsRoot, c.services, d, c.registry, c.manualReader, c.objects, c.runner, c.journalHM, c.turnDB, reg, c.buildSealer(d), c.runLogs, c.logger)
 		c.pipelines.install(mo)
 		defer c.pipelines.clear()
 	}

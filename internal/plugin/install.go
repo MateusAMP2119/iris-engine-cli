@@ -86,9 +86,6 @@ func Install(ctx context.Context, root, source string, fetch Fetcher) (*Resolved
 	if err != nil {
 		return nil, err
 	}
-	if m.Kind != KindTool {
-		return nil, fmt.Errorf("plugin: %s@%s is kind %q; only %q plugins are supported today (services arrive with daemon supervision)", m.Name, m.Version, m.Kind, KindTool)
-	}
 	bin, ok := m.Binaries[Platform()]
 	if !ok {
 		return nil, fmt.Errorf("plugin: %s@%s has no binary for platform %s", m.Name, m.Version, Platform())
