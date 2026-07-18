@@ -48,6 +48,10 @@ func TestDaemonlessLifecycleCommands(t *testing.T) {
 			"iris engine service uninstall": true,
 			"iris update":                   true,
 			"iris uninstall":                true,
+			"iris plugin install":           true,
+			"iris plugin list":              true,
+			"iris plugin remove":            true,
+			"iris plugin verify":            true,
 		}
 		gotDaemonless := map[string]bool{}
 

@@ -84,6 +84,7 @@ var wantTree = map[string][]string{
 	"deadletter": {"list", "show", "replay", "drain"},
 	"endpoint":   {"apply", "remove", "list", "show"},
 	"pat":        {"create", "list", "revoke"},
+	"plugin":     {"install", "list", "remove", "verify"},
 }
 
 // TestCommandTree pins the shape of the whole tree.
@@ -91,7 +92,7 @@ func TestCommandTree(t *testing.T) {
 	t.Run("resource-first-command-tree", func(t *testing.T) {
 		root := testRoot()
 
-		// Top-level commands are exactly the nine resource nouns plus the three
+		// Top-level commands are exactly the ten resource nouns plus the three
 		// admitted root verbs: the lifecycle pair `update` (self-replace of the
 		// binary) and `uninstall` (self-removal of the binary), and the
 		// process-status verb `ps` (the docker-ps-shaped engine readout), each
