@@ -36,13 +36,44 @@ func TestPassCounter(t *testing.T) {
 		t.Fatalf("counter state changed through a returned snapshot: ingest = %d, want 2", got)
 	}
 
-	// Reset zeroes every lane: the leader-change (new term) semantics.
+	// Reset zeroes every lane; the new term counts through a fresh hook.
 	pc.Reset()
 	if got := pc.Counts(); len(got) != 0 {
 		t.Fatalf("post-reset counts = %v, want empty", got)
 	}
-	hook(dispatch.PassReport{Lane: "ingest"})
+	hook2 := pc.Hook()
+	hook2(dispatch.PassReport{Lane: "ingest"})
 	if got := pc.Counts()["ingest"]; got != 1 {
 		t.Fatalf("post-reset ingest = %d, want 1 (counting restarts from zero)", got)
+	}
+}
+
+// TestPassCounterStaleHook proves a hook minted before a Reset no-ops after it,
+// so a deposed term's straggler pass never counts into the new term (#173).
+func TestPassCounterStaleHook(t *testing.T) {
+	pc := dispatch.NewPassCounter()
+
+	// Term one mints its hook and counts.
+	oldHook := pc.Hook()
+	oldHook(dispatch.PassReport{Lane: "etl"})
+	if got := pc.Counts()["etl"]; got != 1 {
+		t.Fatalf("term-one etl = %d, want 1", got)
+	}
+
+	// Leader change: reset, then the new term mints its own hook.
+	pc.Reset()
+	newHook := pc.Hook()
+
+	// Deposed term's straggler fires after the reset: discarded, not credited.
+	oldHook(dispatch.PassReport{Lane: "etl"})
+	if got := pc.Counts(); len(got) != 0 {
+		t.Fatalf("counts after a stale straggler = %v, want empty (the counter resets on leader change)", got)
+	}
+
+	// Live term's hook still counts; the stale one stays dead.
+	newHook(dispatch.PassReport{Lane: "etl"})
+	oldHook(dispatch.PassReport{Lane: "etl"})
+	if got := pc.Counts()["etl"]; got != 1 {
+		t.Fatalf("live-term etl = %d, want 1 (only the live term's hook counts)", got)
 	}
 }
