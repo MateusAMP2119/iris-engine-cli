@@ -4,11 +4,20 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 )
+
+// TestMain pins the basic 16-color palette so SGR golden/string assertions stay
+// stable regardless of the developer's COLORTERM. Individual tests may call
+// applyPalette(true) and restore.
+func TestMain(m *testing.M) {
+	applyPalette(false)
+	os.Exit(m.Run())
+}
 
 // psFixture is the canned readout shared by tui tests.
 func psFixture() api.PsPayload {

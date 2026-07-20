@@ -32,11 +32,15 @@ func (a *app) psCmd() *cobra.Command {
 		Short: "Live view of the engine's runs and host load; JSON when piped or under --json",
 		Long: `Show what the engine is doing and what it costs the host.
 
-On an interactive terminal, iris ps opens a live full-screen view, refreshed
-every second: lanes, their pipelines, each pipeline's runs, and each run's
-live log tail. Keys: j/k or arrows move, enter descends, <- ascends, a toggles
-the run history, / searches everything, f toggles the log follow, c cancels a
-running run, q quits.
+On an interactive terminal, iris ps opens a live full-screen view (Bubble Tea),
+refreshed every second: lanes, their pipelines, each pipeline's runs, and each
+run's live log tail.
+
+Keys: j/k or arrows move, enter descends, ← ascends, tab cycles panes,
+/ searches everything, : opens the COMMANDS palette (catalog, logs, search,
+cancel, help, …), ? opens the keyboard reference, a toggles run history,
+f toggles log follow, c cancels a running run, p freezes the display so you
+can select and copy text with the terminal, q quits.
 
 Piped, redirected, or under --json, iris ps prints the exact GET /ps data
 envelope once and exits: the machine surface scripts and agents parse. --all

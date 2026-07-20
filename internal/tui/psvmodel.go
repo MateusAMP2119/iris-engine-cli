@@ -112,6 +112,7 @@ type psModel struct {
 	histView      bool   // strips: 'h' toggled the coarse hours-deep history in
 	note          string // transient action outcome, cleared on the next key
 	warn          string // standing soft-fetch warning, cleared by the next good poll
+	frozen        bool   // live polls paused so terminal select/copy is stable
 
 	search  *psSearch  // non-nil while the search overlay is open
 	command *psCommand // non-nil while the ':' command prompt is open (#218)
@@ -708,6 +709,8 @@ func (m *psModel) updateRune(r rune) {
 		m.openSearch()
 	case ':':
 		m.openCommand()
+	case '?':
+		m.openCommandHelp()
 	case 'a':
 		if m.pane == psPaneTable && m.selPipeline != "" {
 			m.showAll = !m.showAll
@@ -720,7 +723,22 @@ func (m *psModel) updateRune(r rune) {
 		}
 	case 'h':
 		m.histView = !m.histView
+	case 'p', 'P':
+		// Freeze the live display so the terminal can select and copy text
+		// without the next poll wiping the highlight.
+		m.frozen = !m.frozen
+		if m.frozen {
+			m.note = "frozen · select text to copy · p resumes"
+		} else {
+			m.note = "live"
+		}
 	case 'c':
+		// Quiet engine: c is the one-key jump into the catalog (the empty
+		// card's primary action). With work registered it stays cancel-in-logs.
+		if psIsEmptyWorkspace(m) {
+			m.openCatalog()
+			return
+		}
 		if m.pane == psPaneLogs {
 			if run, ok := findRun(m.snap, m.logsTarget()); ok && run.State == "running" {
 				m.confirmCancel = true

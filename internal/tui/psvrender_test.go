@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/golden"
 )
 
@@ -75,6 +76,31 @@ func TestPsFrameGoldens(t *testing.T) {
 			golden.Assert(t, []byte(framePlain(m, 100, 30)), "testdata/psv_search_100x30.txt")
 		})
 
+		t.Run("commands palette 100x30", func(t *testing.T) {
+			m := newPsModel(psvFixture(), target)
+			m.update(key(':'))
+			golden.Assert(t, []byte(framePlain(m, 100, 30)), "testdata/psv_commands_100x30.txt")
+		})
+
+		t.Run("empty workspace 100x30", func(t *testing.T) {
+			// Default-ish geometry: mid-size mark + status + compact actions.
+			m := newPsModel(Snapshot{Ps: api.PsPayload{
+				Engine: api.PsEngine{Version: "dev", Role: "leader", PID: 7, Uptime: "12s"},
+			}}, "unix:///home/tiger/.iris/engine.sock")
+			golden.Assert(t, []byte(framePlain(m, 100, 30)), "testdata/psv_empty_100x30.txt")
+		})
+
+		t.Run("empty workspace tiny terminal falls back", func(t *testing.T) {
+			m := newPsModel(Snapshot{Ps: api.PsPayload{
+				Engine: api.PsEngine{Version: "dev", Role: "leader", PID: 7, Uptime: "12s"},
+			}}, "unix:///home/tiger/.iris/engine.sock")
+			// Too short for the mark; must still render a guided card.
+			got := framePlain(m, 60, 12)
+			if !strings.Contains(got, "No pipelines registered yet") {
+				t.Fatalf("tiny empty frame missing guidance:\n%s", got)
+			}
+		})
+
 		t.Run("too small degrades to one line", func(t *testing.T) {
 			m := newPsModel(psvFixture(), target)
 			got := framePlain(m, 30, 5)
@@ -86,15 +112,16 @@ func TestPsFrameGoldens(t *testing.T) {
 }
 
 // TestPsFrameStyling proves the SGR layer: state colors land on their cells,
-// the focused pane's border is cyan, the selection inverts (or gains the
-// marker when colorless), heat cells quantize into the ramp, and the emission
-// carries zero escape bytes beyond cursor addressing when the painter is off.
+// the focused pane's border is cyan, the selection uses a magenta accent bar
+// (or "> " when colorless), heat cells quantize into the ramp, and the
+// emission carries zero escape bytes beyond cursor addressing when the painter
+// is off.
 func TestPsFrameStyling(t *testing.T) {
 	t.Run("ps-frame-styling", func(t *testing.T) {
 		t.Run("state cells and focus border carry their palette color", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			m.update(key('j')) // off the lane row...
-			m.update(key('j')) // ...and off extract, so inversion hides no state dot
+			m.update(key('j')) // ...and off extract, so selection accent hides no state dot
 			b := renderPsFrame(m, 150, 40, false)
 			out := string(b.render(painter{enabled: true}))
 			for _, want := range []string{ansiCyan + "●", ansiYellow + "●", ansiGreen + "LEADER", ansiCyan + "╭"} {
@@ -102,8 +129,8 @@ func TestPsFrameStyling(t *testing.T) {
 					t.Errorf("frame carries no %q-styled cell", want)
 				}
 			}
-			if !strings.Contains(out, ansiInverse) {
-				t.Error("selected row is not inverted")
+			if !strings.Contains(out, ansiMagenta+"▌") {
+				t.Error("selected row carries no magenta accent bar")
 			}
 		})
 
@@ -157,7 +184,7 @@ func TestPsFrameStyling(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			b := renderPsFrame(m, 150, 40, true)
 			out := string(b.render(painter{}))
-			for _, sgr := range []string{ansiInverse, ansiCyan, ansiGreen, ansiYellow, ansiRed, ansiOrange, ansiDim, ansiReset} {
+			for _, sgr := range []string{ansiInverse, ansiCyan, ansiGreen, ansiYellow, ansiRed, ansiOrange, ansiDim, ansiReset, ansiMagenta} {
 				if strings.Contains(out, sgr) {
 					t.Errorf("colorless frame carries SGR %q", sgr)
 				}
@@ -203,6 +230,21 @@ func TestPsFrameStyling(t *testing.T) {
 			for _, want := range []string{"ENGINE dev", "LEADER", "pid 42", "up 2h13m", "1 running", "1 queued"} {
 				if !strings.Contains(top, want) {
 					t.Errorf("header %q missing %q", top, want)
+				}
+			}
+		})
+
+		t.Run("empty workspace header stays calm without hollow metrics", func(t *testing.T) {
+			m := newPsModel(Snapshot{Ps: api.PsPayload{
+				Engine: api.PsEngine{Version: "dev", Role: "leader", PID: 7, Uptime: "12s"},
+			}}, "")
+			top := renderPsFrame(m, 100, 30, false).plainLines()[0]
+			if !strings.Contains(top, "iris") || !strings.Contains(top, "LEADER") {
+				t.Fatalf("empty header %q missing identity", top)
+			}
+			for _, bad := range []string{"CPU", "MEM", "running", "queued"} {
+				if strings.Contains(top, bad) {
+					t.Errorf("empty header must not show hollow metric %q: %q", bad, top)
 				}
 			}
 		})

@@ -1,10 +1,10 @@
  ENGINE dev · LEADER · pid 42 · up 2h13m   CPU         ░ 3.2% · MEM 126.0MiB · 1 running · 1 queued
 ╭─ LANES ────────────────╮╭─ PIPELINES · ingest ───────────────────────────────────────────────────╮
-│ ▾ ingest         1r·1q ││                                                                        │
-│   51.0% 24.0MiB      ▓ ││ PIPELINE     LATEST   Q  R  CPU    MEM                                 │
-│   ● extract         1q ││ extract      queued   1  0  -      -                                   │
-│   ● hello_iris         ││ hello_iris   -        0  0  -      -                                   │
-│   ● load_orders    run ││ load_orders  running  0  1  51.0%  24.0MiB                             │
+│▌▾ ingest         1r·1q ││                                                                        │
+│   51.0% 24.0MiB      ▓ ││   PIPELINE     LATEST   Q  R  CPU    MEM                               │
+│   ● extract         1q ││ ▌ extract      queued   1  0  -      -                                 │
+│   ● hello_iris         ││   hello_iris   -        0  0  -      -                                 │
+│   ● load_orders    run ││   load_orders  running  0  1  51.0%  24.0MiB                           │
 │                        ││                                                                        │
 │ ▸ reporting      0r·0q │╰────────────────────────────────────────────────────────────────────────╯
 │   - -                  │╭─ LOGS · load_orders/14 · running · following ──────────────────────────╮
@@ -27,4 +27,4 @@
 │                        ││                                                                        │
 │                        ││                                                                        │
 ╰────────────────────────╯╰────────────────────────────────────────────────────────────── 4 lines ─╯
- tab panes · ↑↓ move · ⏎ unfold · / search · : cmd · h history · q quit        remote 10.0.0.5:7433
+ tab panes · ↑↓ move · ⏎ unfold · p freeze · / search · q quit                 remote 10.0.0.5:7433

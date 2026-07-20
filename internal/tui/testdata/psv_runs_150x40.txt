@@ -1,10 +1,10 @@
  ENGINE dev · LEADER · pid 42 · up 2h13m                                CPU                              ░ 3.2% · MEM 126.0MiB · 1 running · 1 queued
 ╭─ LANES ───────────────────────────╮╭─ RUNS · ingest/load_orders ───────────────────────────────────────────────────────────────────────────────────╮
 │ ▾ ingest                    1r·1q ││                                                                                                               │
-│   51.0% 24.0MiB                 ▓ ││ RUN  STATE          EXIT  CPU    MEM                                                                          │
-│   ● extract                    1q ││ 14   running        -     51.0%  24.0MiB                                                                      │
-│   ● hello_iris                    ││ 9    succeeded      0     -      -                                                                            │
-│   ● load_orders               run ││ 6    dead_lettered  3     -      -                                                                            │
+│   51.0% 24.0MiB                 ▓ ││   RUN  STATE          EXIT  CPU    MEM                                                                        │
+│   ● extract                    1q ││ ▌ 14   running        -     51.0%  24.0MiB                                                                    │
+│   ● hello_iris                    ││   9    succeeded      0     -      -                                                                          │
+│▌  ● load_orders               run ││   6    dead_lettered  3     -      -                                                                          │
 │                                   ││                                                                                                               │
 │ ▸ reporting                 0r·0q │╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 │   - -                             │╭─ load_orders ─────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -37,4 +37,4 @@
 │                                   ││                                                                                                               │
 │                                   ││                                                                                                               │
 ╰───────────────────────────────────╯╰───────────────────────────────────────────────────────────────────────────────────────────────────── 4 lines ─╯
- tab panes · ↑↓ move · ⏎ watch logs · a live · ← pipelines · q quit                                                              remote 10.0.0.5:7433
+ tab panes · ↑↓ move · ⏎ logs · a live · p freeze · q quit                                                                       remote 10.0.0.5:7433
