@@ -86,7 +86,7 @@ func (a *app) setupEngine() runE {
 			}
 			host = strings.TrimSpace(host)
 			if host == "" {
-				log.line("  • No endpoint given. Run 'iris engine connect <host>' when ready.")
+				log.line("  • No endpoint given. Remote mode: 'iris engine connect <host>'.")
 				maybeReviewCeremony(a.out, log.content())
 				return nil
 			}
@@ -97,8 +97,8 @@ func (a *app) setupEngine() runE {
 			return a.runSelf(cmd, args...)
 		default:
 			log.line("  • Selected: Skip for now")
-			log.line("  • Engine not configured. Run 'iris engine install && iris engine start -d' (local)")
-			log.line("    or 'iris engine connect <host>' when ready.")
+			log.line("  • No engine configured. Local mode: 'iris engine install && iris engine start -d';")
+			log.line("    remote mode: 'iris engine connect <host>'.")
 			maybeReviewCeremony(a.out, log.content())
 			return nil
 		}

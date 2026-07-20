@@ -110,10 +110,10 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Engine setup").
-				Description("How should Iris reach a data plane?").
+				Description("Local install on this machine, or connect to an existing engine.").
 				Options(
-					huh.NewOption("Local mode — install + start engine on this machine", "local"),
-					huh.NewOption("Remote mode — connect to an existing engine", "remote"),
+					huh.NewOption("Local mode: install + start engine on this machine", "local"),
+					huh.NewOption("Remote mode: connect to an existing engine", "remote"),
 					huh.NewOption("Skip for now", "skip"),
 				).
 				Value(&choice),
