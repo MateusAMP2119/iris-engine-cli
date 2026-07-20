@@ -12,20 +12,25 @@ import (
 )
 
 // confirmWithHuh runs a yes/no confirm via charmbracelet/huh. Used by
-// uninstall (and other destructive flows) when stdin/stdout are real TTYs.
-// Returns errNotATerminal when interactive UI cannot attach so callers map to
-// the standard confirmation_required refusal.
+// uninstall (and other destructive flows) when a keyboard is available
+// (stdin TTY, or /dev/tty under curl|bash). Returns errNotATerminal when
+// interactive UI cannot attach so callers map to confirmation_required.
 //
 // Buttons are right-aligned to the ceremony mark column so No ends under [✓].
 func confirmWithHuh(question string, out io.Writer) (bool, error) {
-	if !stdinLooksLikeTTY() {
+	in, closer := ceremonyReviewInput()
+	if in == nil {
 		return false, errNotATerminal
+	}
+	if closer != nil {
+		defer closer.Close()
 	}
 	var ok bool
 	confirm := newCeremonyConfirm(question, &ok)
 	form := huh.NewForm(huh.NewGroup(confirm)).
 		WithTheme(ceremonyConfirmTheme()).
-		WithWidth(ceremonyConfirmWidth())
+		WithWidth(ceremonyConfirmWidth()).
+		WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -92,7 +97,8 @@ const (
 )
 
 // selectEngineSetup runs the installer's engine-setup menu through huh when a
-// TTY is available. preselect (from IRIS_ENGINE_SETUP) short-circuits the form.
+// keyboard is available. stdin may be a pipe (curl|bash); input falls back to
+// /dev/tty so the menu still works. preselect (IRIS_ENGINE_SETUP) short-circuits.
 func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, error) {
 	switch preselect {
 	case "local":
@@ -102,8 +108,13 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 	case "skip":
 		return setupSkip, nil
 	}
-	if !stdinLooksLikeTTY() {
+	in, closer := ceremonyReviewInput()
+	if in == nil {
+		// Headless: no stdin TTY and no /dev/tty (CI, non-interactive shells).
 		return setupSkip, nil
+	}
+	if closer != nil {
+		defer closer.Close()
 	}
 	var choice string
 	form := huh.NewForm(
@@ -118,7 +129,7 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 				).
 				Value(&choice),
 		),
-	).WithTheme(huh.ThemeCharm())
+	).WithTheme(huh.ThemeCharm()).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -140,6 +151,13 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 
 // promptRemoteEndpoint asks for host and optional PAT via huh.
 func promptRemoteEndpoint(out io.Writer) (host, token string, err error) {
+	in, closer := ceremonyReviewInput()
+	if in == nil {
+		return "", "", errNotATerminal
+	}
+	if closer != nil {
+		defer closer.Close()
+	}
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -150,7 +168,7 @@ func promptRemoteEndpoint(out io.Writer) (host, token string, err error) {
 				EchoMode(huh.EchoModePassword).
 				Value(&token),
 		),
-	).WithTheme(huh.ThemeCharm())
+	).WithTheme(huh.ThemeCharm()).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}

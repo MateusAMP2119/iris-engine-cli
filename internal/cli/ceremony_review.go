@@ -116,7 +116,7 @@ func maxInt(a, b int) int {
 // the primary screen keep that scrollback; the pager is a temporary overlay.
 //
 // Input prefers os.Stdin when it is a TTY; otherwise it falls back to /dev/tty
-// so `curl … | bash` installs can still scroll and quit.
+// so `curl … | bash` installs can still scroll, quit, and answer setup prompts.
 func runCeremonyReview(out io.Writer, content string) {
 	content = strings.TrimRight(content, "\n")
 	if content == "" || !writerIsTTY(out) {
@@ -143,8 +143,10 @@ func runCeremonyReview(out io.Writer, content string) {
 	}
 }
 
-// ceremonyReviewInput returns a keyboard reader for the pager: real stdin when
-// it is a TTY, else /dev/tty. closer is non-nil only when /dev/tty was opened.
+// ceremonyReviewInput returns a keyboard reader for interactive UI: real stdin
+// when it is a TTY, else /dev/tty. Used by the ceremony pager and by setup /
+// confirm forms under `curl … | bash` (stdin is the script pipe). closer is
+// non-nil only when /dev/tty was opened.
 func ceremonyReviewInput() (in io.Reader, closer io.Closer) {
 	if stdinLooksLikeTTY() {
 		return os.Stdin, nil
