@@ -8,14 +8,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/tui"
 )
 
 // This file is the CLI side of `iris ps`: the process-status verb with exactly
 // two output modes, resolved from the terminal by one rule. Stdout an
 // interactive terminal and --json absent: a live full-screen view (top style,
-// re-polled every second; see psview.go). Everything else -- a pipe, a
+// re-polled every second; see internal/tui). Everything else -- a pipe, a
 // redirect, a script, --json: the single data envelope GET /ps serves, printed
 // once, immediate exit. There is no plain-text table: the live view is the
 // human surface, the envelope is the machine surface, and the two stay one
@@ -74,60 +74,61 @@ func (a *app) ps() runE {
 		}
 
 		settings := a.resolveTarget(cmd)
-		client := a.newPsDaemonClient(settings)
+		httpClient, base, overTCP := a.daemonHTTPClient(settings)
+		client := tui.NewClient(httpClient, base, settings.Token, overTCP, engineAddr(settings))
 
 		// One fetch either way: the JSON mode reads the route's default document
 		// (?all=true under --all); the live view starts from the whole run
 		// history plus the daemon's recorded load history (its rings open
 		// pre-seeded, so the graphs never restart with the client) and filters
 		// client-side.
-		payload, err := client.fetchPs(cmd.Context(), all || live, live)
+		payload, err := client.FetchPs(cmd.Context(), all || live, live)
 
 		// An unreachable engine at open revives the target's last known state
 		// (when one is cached) instead of tearing down: the view opens
 		// read-only under the unreachable banner and the poller retries until
 		// the engine returns. A reached daemon REFUSING the read, and the
 		// machine surface (--json, pipes), keep the fault path.
-		var first psSnapshot
+		var first tui.Snapshot
 		stale := false
 		if err != nil {
-			var herr *psHTTPError
+			var herr *tui.HTTPError
 			if !live || errors.As(err, &herr) {
 				return a.psFetchFault(settings, err)
 			}
-			snap, savedAt, ok := client.cache.load()
+			snap, savedAt, ok := client.LoadCache()
 			if !ok {
 				return a.psFetchFault(settings, err)
 			}
 			first, stale = snap, true
-			first.staleAge = time.Since(savedAt)
+			first.StaleAge = time.Since(savedAt)
 		}
 
 		if live {
 			if !stale {
-				first = psSnapshot{ps: payload}
-				if pipes, perr := client.fetchPipelines(cmd.Context()); perr == nil {
-					first.pipelines = pipes
+				first = tui.Snapshot{Ps: payload}
+				if pipes, perr := client.FetchPipelines(cmd.Context()); perr == nil {
+					first.Pipelines = pipes
 				}
-				client.cache.save(first) // the open itself is a fresh last known state
+				client.SaveCache(first) // the open itself is a fresh last known state
 			}
-			entered, lerr := a.livePs(cmd, client, first, psTarget(settings, client.overTCP))
+			entered, lerr := a.livePs(cmd, client, first, tui.TargetLabel(settings, overTCP))
 			if entered {
 				if lerr == nil {
 					return nil
 				}
 				// A reached daemon refusing the poll keeps its own message
 				// (exit 4); anything else is the engine gone mid-view (exit 3).
-				var herr *psHTTPError
+				var herr *tui.HTTPError
 				if errors.As(lerr, &herr) {
-					return &fault{code: exitOpFailed, codeStr: herr.code, message: "ps: " + herr.Error()}
+					return &fault{code: exitOpFailed, codeStr: herr.Code, message: "ps: " + herr.Error()}
 				}
 				return a.noDaemonFaultAt(settings)
 			}
 			// Raw mode refused despite an interactive stdin (rare): fall back
 			// to the JSON emit -- never a hung or key-less view. Refetch the
 			// default document so the envelope matches the route's default.
-			if payload, err = client.fetchPs(cmd.Context(), false, false); err != nil {
+			if payload, err = client.FetchPs(cmd.Context(), false, false); err != nil {
 				return a.psFetchFault(settings, err)
 			}
 		}
@@ -140,9 +141,9 @@ func (a *app) ps() runE {
 // refusal keeps its own message (operation-failed), a transport failure is
 // no-daemon with the docker-ps-shaped connect message naming the exact target.
 func (a *app) psFetchFault(settings config.Settings, err error) error {
-	var herr *psHTTPError
+	var herr *tui.HTTPError
 	if errors.As(err, &herr) {
-		return &fault{code: exitOpFailed, codeStr: herr.code, message: "ps: " + herr.Error()}
+		return &fault{code: exitOpFailed, codeStr: herr.Code, message: "ps: " + herr.Error()}
 	}
 	a.logger.Debug("no iris daemon reachable", "op", "ps", "socket", settings.Socket, "host", settings.Host, "err", err)
 	return a.noDaemonFaultAt(settings)
@@ -173,50 +174,12 @@ func (a *app) noDaemonFaultAt(s config.Settings) error {
 
 // livePs resolves the live-view seam: the injected fake in tests, the real
 // terminal view in production.
-func (a *app) livePs(cmd *cobra.Command, c *psDaemonClient, first psSnapshot, target string) (bool, error) {
+func (a *app) livePs(cmd *cobra.Command, c *tui.Client, first tui.Snapshot, target string) (bool, error) {
 	if a.psLive != nil {
 		return a.psLive(cmd, c, first, target)
 	}
-	return a.runPsLive(cmd, c, first, target)
-}
-
-// cpuText renders a sampled CPU load, or "-" when the host was not probed.
-func cpuText(l *api.PsLoad) string {
-	if l == nil {
-		return "-"
-	}
-	return fmt.Sprintf("%.1f%%", l.CPUPercent)
-}
-
-// memText renders a sampled resident memory load, or "-" when the host was not
-// probed.
-func memText(l *api.PsLoad) string {
-	if l == nil {
-		return "-"
-	}
-	return memBytes(l.RSSBytes)
-}
-
-// memBytes renders a byte count human-readably (KiB/MiB/GiB, one decimal).
-func memBytes(b int64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1fGiB", float64(b)/(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.1fMiB", float64(b)/(1<<20))
-	case b >= 1<<10:
-		return fmt.Sprintf("%.1fKiB", float64(b)/(1<<10))
-	default:
-		return fmt.Sprintf("%dB", b)
-	}
-}
-
-// exitCodeCell renders a run row's exit code, or "-" while the run carries none.
-func exitCodeCell(code *int) string {
-	if code == nil {
-		return "-"
-	}
-	return fmt.Sprintf("%d", *code)
+	color := a.newPainter(false).enabled
+	return tui.RunLive(cmd.Context(), a.out, color, c, first, target)
 }
 
 // exitCodeText renders a last exit code, or "none" while no run has exited.

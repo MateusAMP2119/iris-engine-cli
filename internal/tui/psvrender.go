@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"fmt"
@@ -492,7 +492,7 @@ func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
 
 // renderPsHeader paints row 0: engine identity left, engine load right.
 func renderPsHeader(b *screenBuf, m *psModel) {
-	e := m.snap.ps.Engine
+	e := m.snap.Ps.Engine
 	x := 1
 	put := func(sgr, s string) {
 		b.text(x, 0, sgr, s)
@@ -634,7 +634,7 @@ func renderRailPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 	// Resident turn tallies (#206): a quiet loop records no rows, so the rail
 	// badges its idle pipelines with turns since the last recorded run.
 	sinceRun := map[string]uint64{}
-	for _, r := range m.snap.ps.Residents {
+	for _, r := range m.snap.Ps.Residents {
 		sinceRun[r.Pipeline] = r.TurnsSinceRun
 	}
 
@@ -853,8 +853,8 @@ func renderLogsPane(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 		b.text(x+2, y+1, ansiDim, "no runs under this selection yet")
 		return
 	}
-	logs := m.snap.logs
-	if m.snap.logsRun != target {
+	logs := m.snap.Logs
+	if m.snap.LogsRun != target {
 		logs = nil
 	}
 	end := len(logs) - m.scroll
@@ -940,8 +940,8 @@ func renderSearchPreview(b *screenBuf, m *psModel, h psHit, x, y, w, ph int) {
 	case psHitPipeline:
 		renderTable(sub, 0, ph, runsColumns(deriveRuns(m.snap, h.pipeline, true)), -1, false)
 	case psHitRun:
-		if h.runID == m.snap.logsRun && len(m.snap.logs) > 0 {
-			logs := m.snap.logs
+		if h.runID == m.snap.LogsRun && len(m.snap.Logs) > 0 {
+			logs := m.snap.Logs
 			start := len(logs) - ph
 			if start < 0 {
 				start = 0

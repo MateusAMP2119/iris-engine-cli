@@ -34,7 +34,7 @@ func TestStorePgSoleDBClients(t *testing.T) {
 	})
 
 	t.Run("any other shipped package importing pgx is a third path", func(t *testing.T) {
-		cases := []string{"archive", "dispatch", "daemon", "api", "cli", "cmd/iris"}
+		cases := []string{"archive", "dispatch", "daemon", "api", "cli", "tui", "cmd/iris"}
 		for _, rel := range cases {
 			t.Run(rel, func(t *testing.T) {
 				g := synthGraph(pkg(rel, pgxImport))

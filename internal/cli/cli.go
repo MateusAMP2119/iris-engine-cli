@@ -1,7 +1,8 @@
 // Package cli builds the Iris command-line surface: the cobra noun-verb command
 // tree, the global flags, and the exit-code and --json output contracts. It sits
 // at the top of the product import graph (nothing imports it), and cmd/iris is a
-// thin entrypoint over Execute.
+// thin entrypoint over Execute. Interactive full-screen views live in
+// internal/tui; this package owns command wiring only.
 //
 // Nearly every command handler is real: it resolves its target, dials the daemon
 // over the unix socket or TCP, and maps the reply onto the contract that framed
@@ -28,6 +29,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/declare"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/tui"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/update"
 )
 
@@ -126,9 +128,9 @@ type app struct {
 	// psLive runs the `iris ps` live view over the first fetched snapshot,
 	// reporting whether the view actually entered the terminal (false falls the
 	// command back to the JSON emit -- stdin refused raw mode). It is nil in
-	// production (the handler falls back to runPsLive, the real alternate-screen
+	// production (the handler falls back to tui.RunLive, the real alternate-screen
 	// view); tests inject it to drive the output-mode gate without a terminal.
-	psLive func(cmd *cobra.Command, c *psDaemonClient, first psSnapshot, target string) (bool, error)
+	psLive func(cmd *cobra.Command, c *tui.Client, first tui.Snapshot, target string) (bool, error)
 }
 
 // newApp builds an app whose structured logs go to stderr at info level, keeping

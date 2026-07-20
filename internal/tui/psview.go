@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"bytes"
@@ -15,11 +15,21 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
+
+// errBody is the error object inside a daemon JSON error envelope.
+type errBody struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// runCancelResult is the leader's reply to POST /run/cancel.
+type runCancelResult struct {
+	Run   string `json:"run"`
+	State string `json:"state"`
+}
 
 // This file is the `iris ps` live view's runtime: the daemon client both
 // output modes share, the poller goroutine that refreshes the view every
@@ -45,45 +55,76 @@ const psHistoryRefreshPolls = 60
 // screen; scrollback beyond it is `iris run logs`' job.
 const psMaxLogLines = 2000
 
-// errPsEngineGone signals the poller lost the daemon mid-view: the loop exits,
+// ErrEngineGone signals the poller lost the daemon mid-view: the loop exits,
 // the terminal restores, and ps() maps it to the no-daemon fault.
-var errPsEngineGone = errors.New("engine no longer reachable")
+var ErrEngineGone = errors.New("engine no longer reachable")
 
-// psHTTPError is a /ps read the daemon answered but refused: a non-200 status
+// HTTPError is a /ps read the daemon answered but refused: a non-200 status
 // or an undecodable body. It is a reached-daemon failure, so ps() maps it to
 // operation-failed (exit 4) carrying the daemon's own message -- never the
 // "start the engine" guidance a transport failure earns.
-type psHTTPError struct {
-	status  int
-	code    string
-	message string
+type HTTPError struct {
+	Status  int
+	Code    string
+	Message string
 }
 
-func (e *psHTTPError) Error() string {
-	if e.message != "" {
-		return e.message
+func (e *HTTPError) Error() string {
+	if e.Message != "" {
+		return e.Message
 	}
-	return fmt.Sprintf("daemon returned status %d from /ps", e.status)
+	return fmt.Sprintf("daemon returned status %d from /ps", e.Status)
 }
 
-// psDaemonClient is the resolved daemon target both ps output modes drive: the
+// Client is the resolved daemon target both ps output modes drive: the
 // one-shot JSON emit, the live poller, and the run-detail actions.
-type psDaemonClient struct {
+type Client struct {
 	client  *http.Client
 	base    string
 	token   string
 	overTCP bool
-	cache   *psCache // last-known-state cache for this target; nil drops it
+	cache   *cache // last-known-state cache for this target; nil drops it
 }
 
-// newPsDaemonClient builds the ps client for the resolved target.
-func (a *app) newPsDaemonClient(s config.Settings) *psDaemonClient {
-	client, base, overTCP := a.daemonHTTPClient(s)
-	return &psDaemonClient{client: client, base: base, token: s.Token, overTCP: overTCP, cache: newPsCache(engineAddr(s))}
+// NewClient builds the ps client for a resolved daemon target. cacheTarget is
+// the engine address used as the last-known-state cache key (e.g. unix:///… or
+// host:port); empty disables caching.
+func NewClient(httpClient *http.Client, base, token string, overTCP bool, cacheTarget string) *Client {
+	var c *cache
+	if cacheTarget != "" {
+		c = newCache(cacheTarget)
+	}
+	return &Client{client: httpClient, base: base, token: token, overTCP: overTCP, cache: c}
+}
+
+// FetchPs reads GET /ps for the one-shot JSON path and the live view seed.
+func (c *Client) FetchPs(ctx context.Context, all, history bool) (api.PsPayload, error) {
+	return c.fetchPs(ctx, all, history)
+}
+
+// FetchPipelines reads the full pipeline listing for the live view seed.
+func (c *Client) FetchPipelines(ctx context.Context) ([]api.PipelineListItem, error) {
+	return c.fetchPipelines(ctx)
+}
+
+// LoadCache revives the last-known-state snapshot for this target.
+func (c *Client) LoadCache() (Snapshot, time.Time, bool) {
+	if c == nil || c.cache == nil {
+		return Snapshot{}, time.Time{}, false
+	}
+	return c.cache.load()
+}
+
+// SaveCache persists a snapshot as the target's last known state.
+func (c *Client) SaveCache(snap Snapshot) {
+	if c == nil || c.cache == nil {
+		return
+	}
+	c.cache.save(snap)
 }
 
 // get issues one GET against the daemon, presenting the PAT over TCP.
-func (c *psDaemonClient) get(ctx context.Context, path string) (*http.Response, error) {
+func (c *Client) get(ctx context.Context, path string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
 		return nil, err
@@ -97,9 +138,9 @@ func (c *psDaemonClient) get(ctx context.Context, path string) (*http.Response, 
 // fetchPs reads the /ps readout, with the daemon-held load history attached
 // under history. A transport failure returns the dial error unwrapped (the
 // caller classifies it no-daemon, exit 3); a reached daemon answering non-200,
-// or a body that does not decode, is a *psHTTPError carrying the daemon's
+// or a body that does not decode, is a *HTTPError carrying the daemon's
 // error message (operation-failed, exit 4). Never a retry in either case.
-func (c *psDaemonClient) fetchPs(ctx context.Context, all, history bool) (api.PsPayload, error) {
+func (c *Client) fetchPs(ctx context.Context, all, history bool) (api.PsPayload, error) {
 	q := url.Values{}
 	if all {
 		q.Set("all", "true")
@@ -121,20 +162,20 @@ func (c *psDaemonClient) fetchPs(ctx context.Context, all, history bool) (api.Ps
 			Error errBody `json:"error"`
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&env)
-		return api.PsPayload{}, &psHTTPError{status: resp.StatusCode, code: env.Error.Code, message: env.Error.Message}
+		return api.PsPayload{}, &HTTPError{Status: resp.StatusCode, Code: env.Error.Code, Message: env.Error.Message}
 	}
 	var env struct {
 		Data api.PsPayload `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return api.PsPayload{}, &psHTTPError{status: resp.StatusCode, code: "decode", message: fmt.Sprintf("decode /ps response: %v", err)}
+		return api.PsPayload{}, &HTTPError{Status: resp.StatusCode, Code: "decode", Message: fmt.Sprintf("decode /ps response: %v", err)}
 	}
 	return env.Data, nil
 }
 
 // fetchPipelines reads the full pipeline listing (?all=1, idle pipelines
 // included) for the lane and pipeline screens' composition.
-func (c *psDaemonClient) fetchPipelines(ctx context.Context) ([]api.PipelineListItem, error) {
+func (c *Client) fetchPipelines(ctx context.Context) ([]api.PipelineListItem, error) {
 	resp, err := c.get(ctx, "/pipeline/list?all=1")
 	if err != nil {
 		return nil, err
@@ -155,7 +196,7 @@ func (c *psDaemonClient) fetchPipelines(ctx context.Context) ([]api.PipelineList
 // fetchRunLogs reads a run's captured output and keeps the tail. The route
 // streams the whole current log then EOF (no offset support), so following is
 // this re-read each tick, bounded client-side.
-func (c *psDaemonClient) fetchRunLogs(ctx context.Context, id string) ([]string, error) {
+func (c *Client) fetchRunLogs(ctx context.Context, id string) ([]string, error) {
 	resp, err := c.get(ctx, "/runs/"+id+"/logs")
 	if err != nil {
 		return nil, err
@@ -182,7 +223,7 @@ func (c *psDaemonClient) fetchRunLogs(ctx context.Context, id string) ([]string,
 // line: success, a not_leader rejection, or the daemon's error message. The
 // view keeps running whatever the outcome -- an in-view action never crashes
 // the view.
-func (c *psDaemonClient) cancelRun(ctx context.Context, id string) string {
+func (c *Client) cancelRun(ctx context.Context, id string) string {
 	body := fmt.Sprintf(`{"run":%q}`, id)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/run/cancel", strings.NewReader(body))
 	if err != nil {
@@ -226,7 +267,7 @@ func (c *psDaemonClient) cancelRun(ctx context.Context, id string) string {
 }
 
 // catalogAction services one overlay request against the daemon (#219).
-func (c *psDaemonClient) catalogAction(ctx context.Context, req psCatalogReq) psCatalogMsg {
+func (c *Client) catalogAction(ctx context.Context, req psCatalogReq) psCatalogMsg {
 	switch req.kind {
 	case psCatalogList:
 		return c.fetchCatalog(ctx)
@@ -238,7 +279,7 @@ func (c *psDaemonClient) catalogAction(ctx context.Context, req psCatalogReq) ps
 }
 
 // fetchCatalog reads GET /catalog for the overlay's pack list.
-func (c *psDaemonClient) fetchCatalog(ctx context.Context) psCatalogMsg {
+func (c *Client) fetchCatalog(ctx context.Context) psCatalogMsg {
 	msg := psCatalogMsg{kind: psCatalogList}
 	resp, err := c.get(ctx, "/catalog")
 	if err != nil {
@@ -266,7 +307,7 @@ func (c *psDaemonClient) fetchCatalog(ctx context.Context) psCatalogMsg {
 }
 
 // installPack POSTs /catalog/install for the overlay ('a' rides apply=true).
-func (c *psDaemonClient) installPack(ctx context.Context, req psCatalogReq, apply bool) psCatalogMsg {
+func (c *Client) installPack(ctx context.Context, req psCatalogReq, apply bool) psCatalogMsg {
 	kind := psCatalogInstall
 	if apply {
 		kind = psCatalogApply
@@ -332,7 +373,7 @@ func drainClose(resp *http.Response) {
 // keeps its last state and the poller keeps trying), or the error that ends
 // the view (the daemon answered and refused the read).
 type psPollMsg struct {
-	snap        psSnapshot
+	snap        Snapshot
 	warn        string
 	unreachable bool
 	err         error
@@ -346,7 +387,7 @@ type psPollMsg struct {
 // REFUSING the read ends the poller (and the view). The listing and logs are
 // soft -- their last good value rides along. Cancel requests arrive on
 // cancelCh and their outcomes return as notes.
-func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
+func pollPs(ctx context.Context, c *Client, every time.Duration,
 	focusCh <-chan string, cancelCh <-chan string, polls chan psPollMsg, notes chan<- string) {
 	var (
 		focus     string
@@ -360,7 +401,7 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 			if ctx.Err() != nil {
 				return false // the view is exiting; not an engine-gone verdict
 			}
-			var herr *psHTTPError
+			var herr *HTTPError
 			if errors.As(err, &herr) {
 				sendPoll(polls, psPollMsg{err: err})
 				return false
@@ -384,9 +425,9 @@ func pollPs(ctx context.Context, c *psDaemonClient, every time.Duration,
 				warn = "run logs unavailable"
 			}
 		}
-		snap := psSnapshot{ps: ps, pipelines: lastPipes}
+		snap := Snapshot{Ps: ps, Pipelines: lastPipes}
 		if focus != "" {
-			snap.logs, snap.logsRun = lastLogs, focus
+			snap.Logs, snap.LogsRun = lastLogs, focus
 		}
 		// A history-carrying poll (once a minute) refreshes the last-known-state
 		// cache: the snapshot a later unreachable-at-open view revives.
@@ -465,7 +506,7 @@ type psView struct {
 // runPsLoop is the live view's single writer: render the current state, then
 // absorb exactly one message. It returns nil on a clean exit (q, Ctrl-C,
 // SIGTERM) and the poll error when the poller lost the daemon (a transport
-// failure) or the daemon refused the read (a *psHTTPError).
+// failure) or the daemon refused the read (a *HTTPError).
 func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 	// The poller starts with no log target; the first push below points it at
 	// the initial selection's run, and every later push follows a change from
@@ -530,18 +571,22 @@ func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 	}
 }
 
-// runPsLive is the production live view: raw mode and the alternate screen
+// RunLive is the production live view: raw mode and the alternate screen
 // around the poller and the event loop. The first snapshot was fetched before
 // this ran (a dead engine never enters the alternate screen); a raw-mode
-// refusal reports false so the caller falls back to the JSON emit.
-func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot, target string) (bool, error) {
-	ts, ok := openPsTerm(a.out)
+// refusal reports false so the caller falls back to the JSON emit. color
+// enables SGR styling when stdout is a TTY and NO_COLOR is unset.
+func RunLive(ctx context.Context, out io.Writer, color bool, c *Client, first Snapshot, target string) (bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ts, ok := openPsTerm(out)
 	if !ok {
 		return false, nil
 	}
 	defer ts.leave()
 
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	keys := make(chan psKey, 8)
@@ -555,7 +600,7 @@ func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot,
 
 	m := newPsModel(first, target)
 	v := &psView{
-		out: a.out, p: a.newPainter(false), size: ts.size,
+		out: out, p: makePainter(color), size: ts.size,
 		keys: keys, polls: polls, notes: notes, focusCh: focusCh, cancelCh: cancelCh,
 		catalogMsgs: catalogMsgs,
 		runCatalog: func(req psCatalogReq) {
@@ -585,8 +630,8 @@ func (a *app) runPsLive(cmd *cobra.Command, c *psDaemonClient, first psSnapshot,
 	return true, err
 }
 
-// psTarget names the watched engine for the footer's right slot.
-func psTarget(s config.Settings, overTCP bool) string {
+// TargetLabel names the watched engine for the footer's right slot.
+func TargetLabel(s config.Settings, overTCP bool) string {
 	if overTCP {
 		return "remote " + strings.TrimPrefix(strings.TrimPrefix(s.Host, "https://"), "http://")
 	}
