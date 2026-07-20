@@ -109,3 +109,12 @@ func hostScheme(host string) (scheme, hostport string) {
 		return "http", host
 	}
 }
+
+// drainClose drains and closes a response body so the connection is reused.
+func drainClose(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+}

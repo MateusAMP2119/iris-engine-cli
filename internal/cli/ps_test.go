@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
+	"github.com/MateusAMP2119/iris-lakehouse/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -167,9 +168,9 @@ func TestPsOutputMode(t *testing.T) {
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return true }
 		var called atomic.Int32
-		var gotFirst psSnapshot
+		var gotFirst tui.Snapshot
 		var gotTarget string
-		a.psLive = func(_ *cobra.Command, _ *psDaemonClient, first psSnapshot, target string) (bool, error) {
+		a.psLive = func(_ *cobra.Command, _ *tui.Client, first tui.Snapshot, target string) (bool, error) {
 			called.Add(1)
 			gotFirst, gotTarget = first, target
 			return true, nil
@@ -183,8 +184,8 @@ func TestPsOutputMode(t *testing.T) {
 		if out.Len() != 0 {
 			t.Errorf("the live path wrote to stdout outside the view: %q", out.String())
 		}
-		if gotFirst.ps.Engine.PID != 4242 {
-			t.Errorf("live view first snapshot = %+v, want the fetched readout", gotFirst.ps.Engine)
+		if gotFirst.Ps.Engine.PID != 4242 {
+			t.Errorf("live view first snapshot = %+v, want the fetched readout", gotFirst.Ps.Engine)
 		}
 		if gotTarget != "local "+sock {
 			t.Errorf("live view target = %q, want %q", gotTarget, "local "+sock)
@@ -201,7 +202,7 @@ func TestPsOutputMode(t *testing.T) {
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return true }
-		a.psLive = func(*cobra.Command, *psDaemonClient, psSnapshot, string) (bool, error) {
+		a.psLive = func(*cobra.Command, *tui.Client, tui.Snapshot, string) (bool, error) {
 			t.Error("--json must never enter the live view")
 			return true, nil
 		}
@@ -223,7 +224,7 @@ func TestPsOutputMode(t *testing.T) {
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return true }
-		a.psLive = func(*cobra.Command, *psDaemonClient, psSnapshot, string) (bool, error) {
+		a.psLive = func(*cobra.Command, *tui.Client, tui.Snapshot, string) (bool, error) {
 			return false, nil // stdin refused raw mode
 		}
 		if code := a.run([]string{"--socket", sock, "ps"}); code != exitOK {
@@ -272,7 +273,7 @@ func TestPsOutputMode(t *testing.T) {
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return true }
-		a.psLive = func(*cobra.Command, *psDaemonClient, psSnapshot, string) (bool, error) { return true, nil }
+		a.psLive = func(*cobra.Command, *tui.Client, tui.Snapshot, string) (bool, error) { return true, nil }
 		if code := a.run([]string{"--socket", sock, "ps"}); code != exitOK {
 			t.Fatalf("live ps exit = %d, want %d\nstderr: %s", code, exitOK, errb.String())
 		}
@@ -314,8 +315,8 @@ func TestPsOutputMode(t *testing.T) {
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return true }
-		a.psLive = func(*cobra.Command, *psDaemonClient, psSnapshot, string) (bool, error) {
-			return true, errPsEngineGone // the poller lost the daemon mid-view
+		a.psLive = func(*cobra.Command, *tui.Client, tui.Snapshot, string) (bool, error) {
+			return true, tui.ErrEngineGone // the poller lost the daemon mid-view
 		}
 		code := a.run([]string{"--socket", sock, "ps"})
 		if code != exitNoDaemon {
@@ -370,7 +371,7 @@ func TestPsOutputMode(t *testing.T) {
 		a := newApp(&out, &errb)
 		a.isTTY = func() bool { return true }
 		a.stdinIsTTY = func() bool { return false }
-		a.psLive = func(*cobra.Command, *psDaemonClient, psSnapshot, string) (bool, error) {
+		a.psLive = func(*cobra.Command, *tui.Client, tui.Snapshot, string) (bool, error) {
 			t.Error("a key-less stdin must never enter the live view")
 			return true, nil
 		}

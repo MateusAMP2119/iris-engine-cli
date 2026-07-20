@@ -61,3 +61,15 @@ func TestPipelineListLanePassthrough(t *testing.T) {
 		}
 	})
 }
+
+
+// pipelinesListFunc serves a canned pipeline listing for CLI tests.
+type pipelinesListFunc struct{ items []api.PipelineListItem }
+
+func (p *pipelinesListFunc) RunPipeline(context.Context, api.PipelineRunRequest) (api.PipelineRunResult, error) {
+	return api.PipelineRunResult{}, nil
+}
+
+func (p *pipelinesListFunc) ListPipelines(context.Context, bool) (api.PipelineListResult, error) {
+	return api.PipelineListResult{Pipelines: p.items}, nil
+}

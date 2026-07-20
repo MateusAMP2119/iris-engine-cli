@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"sort"
@@ -66,20 +66,20 @@ func (r *psRing) memPeak() int64 {
 	return peak
 }
 
-// psSnapshot is one poll's worth of view data: the /ps payload (always the
+// Snapshot is one poll's worth of view data: the /ps payload (always the
 // ?all=true history), the pipeline listing (?all=1, idle pipelines included,
 // each row carrying its lane), and the tailed run's log lines. logsRun names
 // the run the tail belongs to, so a snapshot buffered before a retarget never
 // paints the previous run's lines under the new run's title.
-type psSnapshot struct {
-	ps        api.PsPayload
-	pipelines []api.PipelineListItem
-	logs      []string
-	logsRun   string
+type Snapshot struct {
+	Ps        api.PsPayload
+	Pipelines []api.PipelineListItem
+	Logs      []string
+	LogsRun   string
 	// staleAge marks a snapshot revived from the last-known-state cache (the
 	// engine was unreachable at open): how old the cached state is. Zero on a
 	// live snapshot. The view opens it under the unreachable banner.
-	staleAge time.Duration
+	StaleAge time.Duration
 }
 
 // psModel is the dashboard's whole state. update() is the only mutator the
@@ -131,14 +131,14 @@ type psModel struct {
 	coarse   map[string]*psRing
 	lastTick uint64
 
-	snap   psSnapshot
+	snap   Snapshot
 	target string // footer right slot: "remote <host>" or "local <socket>"
 	quit   bool
 }
 
 // newPsModel builds the dashboard model over the first snapshot: lanes pane
 // focused, the first lane selected and unfolded.
-func newPsModel(first psSnapshot, target string) *psModel {
+func newPsModel(first Snapshot, target string) *psModel {
 	m := &psModel{
 		pane:     psPaneLanes,
 		expanded: map[string]bool{},
@@ -154,8 +154,8 @@ func newPsModel(first psSnapshot, target string) *psModel {
 		m.expanded[m.selLane] = true
 	}
 	m.clampTable()
-	if first.staleAge > 0 {
-		m.warn = psUnreachableWarn + " · cached " + first.staleAge.Truncate(time.Second).String() + " ago"
+	if first.StaleAge > 0 {
+		m.warn = psUnreachableWarn + " · cached " + first.StaleAge.Truncate(time.Second).String() + " ago"
 	}
 	return m
 }
@@ -180,7 +180,7 @@ func (m *psModel) logsTarget() string {
 		return runLaneOf(r) == m.selLane
 	}
 	first := ""
-	for _, r := range m.snap.ps.Runs { // newest first as the wire orders them
+	for _, r := range m.snap.Ps.Runs { // newest first as the wire orders them
 		if !inScope(r) {
 			continue
 		}
@@ -262,7 +262,7 @@ func sumLoad(total *api.PsLoad, l *api.PsLoad) *api.PsLoad {
 // deriveLanes composes the rail's lane rows: one per lane, the union of the
 // listing's lanes and the run rows' lanes (a run whose pipeline was since
 // unregistered still shows), sorted by name.
-func deriveLanes(s psSnapshot) []psLaneRow {
+func deriveLanes(s Snapshot) []psLaneRow {
 	byName := map[string]*psLaneRow{}
 	row := func(name string) *psLaneRow {
 		r := byName[name]
@@ -272,10 +272,10 @@ func deriveLanes(s psSnapshot) []psLaneRow {
 		}
 		return r
 	}
-	for _, p := range s.pipelines {
+	for _, p := range s.Pipelines {
 		row(laneOf(p)).pipelines++
 	}
-	for _, run := range s.ps.Runs {
+	for _, run := range s.Ps.Runs {
 		r := row(runLaneOf(run))
 		switch run.State {
 		case "queued":
@@ -297,7 +297,7 @@ func deriveLanes(s psSnapshot) []psLaneRow {
 // idle members included, each with its newest run's state and its running
 // load. Runs of pipelines missing from the listing (unregistered since) still
 // contribute rows so the counts add up.
-func derivePipelines(s psSnapshot, lane string) []psPipelineRow {
+func derivePipelines(s Snapshot, lane string) []psPipelineRow {
 	byName := map[string]*psPipelineRow{}
 	order := []string{}
 	row := func(name string) *psPipelineRow {
@@ -309,13 +309,13 @@ func derivePipelines(s psSnapshot, lane string) []psPipelineRow {
 		}
 		return r
 	}
-	for _, p := range s.pipelines {
+	for _, p := range s.Pipelines {
 		if laneOf(p) == lane {
 			row(p.Name)
 		}
 	}
 	// Runs are newest first: the first run seen per pipeline is its latest.
-	for _, run := range s.ps.Runs {
+	for _, run := range s.Ps.Runs {
 		if runLaneOf(run) != lane {
 			continue
 		}
@@ -342,9 +342,9 @@ func derivePipelines(s psSnapshot, lane string) []psPipelineRow {
 // deriveRuns filters one pipeline's runs from the history snapshot: newest
 // first as the wire orders them, queued and running only until the 'a' toggle
 // widens to the whole history.
-func deriveRuns(s psSnapshot, pipeline string, all bool) []api.PsRun {
+func deriveRuns(s Snapshot, pipeline string, all bool) []api.PsRun {
 	var out []api.PsRun
-	for _, run := range s.ps.Runs {
+	for _, run := range s.Ps.Runs {
 		if run.Pipeline != pipeline {
 			continue
 		}
@@ -357,8 +357,8 @@ func deriveRuns(s psSnapshot, pipeline string, all bool) []api.PsRun {
 }
 
 // findRun resolves a run id in the snapshot, for the logs title and cancel.
-func findRun(s psSnapshot, id string) (api.PsRun, bool) {
-	for _, run := range s.ps.Runs {
+func findRun(s Snapshot, id string) (api.PsRun, bool) {
+	for _, run := range s.Ps.Runs {
 		if run.ID == id {
 			return run, true
 		}
@@ -384,9 +384,9 @@ func (m *psModel) treeRows() []psTreeRow {
 // absorb replaces the snapshot after a poll: grows the load rings, drops a
 // log tail that belongs to a run other than the current target, and re-clamps
 // the cursors so vanished rows never leave them dangling.
-func (m *psModel) absorb(s psSnapshot) {
-	if s.logsRun != "" && s.logsRun != m.logsTargetIn(s) {
-		s.logs, s.logsRun = nil, ""
+func (m *psModel) absorb(s Snapshot) {
+	if s.LogsRun != "" && s.LogsRun != m.logsTargetIn(s) {
+		s.Logs, s.LogsRun = nil, ""
 	}
 	m.snap = s
 	m.absorbRings()
@@ -399,7 +399,7 @@ func (m *psModel) absorb(s psSnapshot) {
 
 // logsTargetIn resolves the logs target against a candidate snapshot, so
 // absorb can judge an arriving tail before committing the snapshot.
-func (m *psModel) logsTargetIn(s psSnapshot) string {
+func (m *psModel) logsTargetIn(s Snapshot) string {
 	held := m.snap
 	m.snap = s
 	defer func() { m.snap = held }()
@@ -416,12 +416,12 @@ func (m *psModel) logsTargetIn(s psSnapshot) string {
 // honest. A tick-less payload (a daemon without a collector) falls back to one
 // push per absorb, the pre-history behavior.
 func (m *psModel) absorbRings() {
-	if h := m.snap.ps.History; h != nil {
+	if h := m.snap.Ps.History; h != nil {
 		m.reseedRings(h)
-		m.lastTick = m.snap.ps.SampleTick
+		m.lastTick = m.snap.Ps.SampleTick
 		return
 	}
-	if tick := m.snap.ps.SampleTick; tick != 0 {
+	if tick := m.snap.Ps.SampleTick; tick != 0 {
 		if tick < m.lastTick {
 			// The collector's counter went backwards: a restarted (or different)
 			// daemon answers now -- the reconnect case. Reset the gate so its
@@ -500,7 +500,7 @@ func (m *psModel) pushRings() {
 		}
 		return r
 	}
-	if l := m.snap.ps.Engine.Load; l != nil {
+	if l := m.snap.Ps.Engine.Load; l != nil {
 		ring("").push(l.CPUPercent, l.RSSBytes)
 	} else {
 		ring("").push(psNoSample, 0)
@@ -515,13 +515,13 @@ func (m *psModel) pushRings() {
 	}
 	perPipe := map[string]*api.PsLoad{}
 	seen := map[string]bool{}
-	for _, run := range m.snap.ps.Runs {
+	for _, run := range m.snap.Ps.Runs {
 		seen[run.Pipeline] = true
 		if run.State == "running" {
 			perPipe[run.Pipeline] = sumLoad(perPipe[run.Pipeline], run.Load)
 		}
 	}
-	for _, p := range m.snap.pipelines {
+	for _, p := range m.snap.Pipelines {
 		seen[p.Name] = true
 	}
 	for name := range seen {
@@ -744,7 +744,7 @@ func (m *psModel) move(delta int) {
 	case psPaneLogs:
 		if !m.follow {
 			m.scroll -= delta // up (-1) scrolls further back from the tail
-			m.clampScroll(len(m.snap.logs))
+			m.clampScroll(len(m.snap.Logs))
 		}
 	}
 }

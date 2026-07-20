@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"strings"
@@ -18,7 +18,7 @@ func framePlain(m *psModel, w, h int) string {
 // withLogs attaches a log tail for the model's current target, as a poll
 // carrying the tail would.
 func withLogs(m *psModel, lines ...string) {
-	m.snap.logs, m.snap.logsRun = lines, m.logsTarget()
+	m.snap.Logs, m.snap.LogsRun = lines, m.logsTarget()
 }
 
 // TestPsFrameGoldens pins the dashboard byte-for-byte at each width tier:
@@ -169,7 +169,7 @@ func TestPsFrameStyling(t *testing.T) {
 
 		t.Run("no line exceeds the frame width", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "remote very-long-hostname.example.internal:7433")
-			m.snap.pipelines[0].Name = strings.Repeat("very_long_pipeline_name_", 5)
+			m.snap.Pipelines[0].Name = strings.Repeat("very_long_pipeline_name_", 5)
 			m.absorb(m.snap)
 			for _, geo := range []struct{ w, h int }{{150, 40}, {100, 30}, {80, 24}, {60, 20}, {45, 10}} {
 				b := renderPsFrame(m, geo.w, geo.h, false)

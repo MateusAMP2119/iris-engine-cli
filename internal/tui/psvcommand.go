@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import "strings"
 
@@ -106,14 +106,14 @@ func (m *psModel) completeCommand() {
 }
 
 // commandCompletions lists the completions for a prompt prefix, in stable order.
-func commandCompletions(base string, snap psSnapshot) []string {
+func commandCompletions(base string, snap Snapshot) []string {
 	if name, arg, hasArg := strings.Cut(base, " "); hasArg {
 		if name != "logs" {
 			return nil
 		}
 		arg = strings.TrimSpace(arg)
 		var out []string
-		for _, r := range snap.ps.Runs {
+		for _, r := range snap.Ps.Runs {
 			if strings.HasPrefix(r.ID, arg) {
 				out = append(out, "logs "+r.ID)
 			}

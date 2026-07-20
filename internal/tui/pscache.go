@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"crypto/sha256"
@@ -21,37 +21,37 @@ import (
 // state, not truth: the machine surface (--json) never touches it, and a
 // reconnect replaces it wholesale. Log tails are deliberately not cached.
 
-// psCacheDir is the cache directory name under the engine home.
-const psCacheDir = "ps-cache"
+// cacheDir is the cache directory name under the engine home.
+const cacheDir = "ps-cache"
 
-// psCacheDoc is the cached document: the target it belongs to (a hash
+// cacheDoc is the cached document: the target it belongs to (a hash
 // collision guard), the save moment (client-local, display-only: it sizes the
 // "cached Xm ago" banner), and the last good payload and listing.
-type psCacheDoc struct {
+type cacheDoc struct {
 	Target      string                 `json:"target"`
 	SavedAtUnix int64                  `json:"saved_at_unix"`
 	Ps          api.PsPayload          `json:"ps"`
 	Pipelines   []api.PipelineListItem `json:"pipelines"`
 }
 
-// psCache is the cache handle for one resolved target. A nil handle (the
+// cache is the cache handle for one resolved target. A nil handle (the
 // engine home could not resolve) drops every save and misses every load --
 // the cache is best-effort by contract, never a fault source.
-type psCache struct {
+type cache struct {
 	target string
 	path   string
 }
 
-// newPsCache resolves the cache handle for a target (engineAddr's rendering).
-func newPsCache(target string) *psCache {
+// newCache resolves the cache handle for a target (engineAddr's rendering).
+func newCache(target string) *cache {
 	home, err := config.Home(os.Getenv)
 	if err != nil {
 		return nil
 	}
 	sum := sha256.Sum256([]byte(target))
-	return &psCache{
+	return &cache{
 		target: target,
-		path:   filepath.Join(home, psCacheDir, hex.EncodeToString(sum[:8])+".json"),
+		path:   filepath.Join(home, cacheDir, hex.EncodeToString(sum[:8])+".json"),
 	}
 }
 
@@ -59,15 +59,15 @@ func newPsCache(target string) *psCache {
 // atomic (temp file + rename), owner-only permissions, log tail dropped. A
 // failed save is silently skipped -- the cache must never make a healthy view
 // noisy.
-func (c *psCache) save(snap psSnapshot) {
+func (c *cache) save(snap Snapshot) {
 	if c == nil {
 		return
 	}
-	doc := psCacheDoc{
+	doc := cacheDoc{
 		Target:      c.target,
 		SavedAtUnix: time.Now().Unix(),
-		Ps:          snap.ps,
-		Pipelines:   snap.pipelines,
+		Ps:          snap.Ps,
+		Pipelines:   snap.Pipelines,
 	}
 	raw, err := json.Marshal(doc)
 	if err != nil {
@@ -86,17 +86,17 @@ func (c *psCache) save(snap psSnapshot) {
 // load reads the target's last known state back: the snapshot, its save
 // moment, and whether a usable document existed. A missing, unreadable, or
 // wrong-target document is a miss, never an error.
-func (c *psCache) load() (psSnapshot, time.Time, bool) {
+func (c *cache) load() (Snapshot, time.Time, bool) {
 	if c == nil {
-		return psSnapshot{}, time.Time{}, false
+		return Snapshot{}, time.Time{}, false
 	}
 	raw, err := os.ReadFile(c.path)
 	if err != nil {
-		return psSnapshot{}, time.Time{}, false
+		return Snapshot{}, time.Time{}, false
 	}
-	var doc psCacheDoc
+	var doc cacheDoc
 	if err := json.Unmarshal(raw, &doc); err != nil || doc.Target != c.target {
-		return psSnapshot{}, time.Time{}, false
+		return Snapshot{}, time.Time{}, false
 	}
-	return psSnapshot{ps: doc.Ps, pipelines: doc.Pipelines}, time.Unix(doc.SavedAtUnix, 0), true
+	return Snapshot{Ps: doc.Ps, Pipelines: doc.Pipelines}, time.Unix(doc.SavedAtUnix, 0), true
 }

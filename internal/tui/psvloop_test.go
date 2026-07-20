@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
-	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
 
 // scriptedView wires a psView over scripted channels, a buffer, and a fixed
@@ -46,7 +45,7 @@ func newScriptedView() *scriptedView {
 }
 
 // TestRunPsLoop proves the event loop's exits and message plumbing: q and a
-// closed key stream exit clean, a failed poll exits errPsEngineGone, ctx
+// closed key stream exit clean, a failed poll exits ErrEngineGone, ctx
 // cancellation exits clean, a confirmed cancel reaches the poller channel,
 // and a fresh poll re-renders with the new snapshot.
 func TestRunPsLoop(t *testing.T) {
@@ -64,17 +63,17 @@ func TestRunPsLoop(t *testing.T) {
 
 		t.Run("a failed poll exits with the poll error", func(t *testing.T) {
 			s := newScriptedView()
-			s.polls <- psPollMsg{err: errPsEngineGone}
-			if err := runPsLoop(context.Background(), s.v, newPsModel(psvFixture(), "")); err != errPsEngineGone {
+			s.polls <- psPollMsg{err: ErrEngineGone}
+			if err := runPsLoop(context.Background(), s.v, newPsModel(psvFixture(), "")); err != ErrEngineGone {
 				t.Fatalf("poll-failure exit = %v, want the poll error back", err)
 			}
 			// A reached daemon's refusal surfaces as the typed error, so ps()
 			// can keep its exit-4 classification.
 			s = newScriptedView()
-			s.polls <- psPollMsg{err: &psHTTPError{status: 500, code: "internal", message: "meta down"}}
-			var herr *psHTTPError
+			s.polls <- psPollMsg{err: &HTTPError{Status: 500, Code: "internal", Message: "meta down"}}
+			var herr *HTTPError
 			if err := runPsLoop(context.Background(), s.v, newPsModel(psvFixture(), "")); !errors.As(err, &herr) {
-				t.Fatalf("http poll-failure exit = %v, want the *psHTTPError back", err)
+				t.Fatalf("http poll-failure exit = %v, want the *HTTPError back", err)
 			}
 		})
 
@@ -151,7 +150,7 @@ func TestRunPsLoop(t *testing.T) {
 			s.v.out = sb
 			m := newPsModel(psvFixture(), "")
 			next := psvFixture()
-			next.ps.Engine.Uptime = "9h9m"
+			next.Ps.Engine.Uptime = "9h9m"
 
 			done := make(chan error, 1)
 			go func() { done <- runPsLoop(context.Background(), s.v, m) }()
@@ -248,9 +247,7 @@ func TestPollPs(t *testing.T) {
 		shutdown := func() { _ = srv.Shutdown(context.Background()) }
 		t.Cleanup(shutdown)
 
-		var out, errb bytes.Buffer
-		a := newApp(&out, &errb)
-		c := a.newPsDaemonClient(config.Settings{Socket: sock})
+		c := unixClient(sock)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -282,8 +279,8 @@ func TestPollPs(t *testing.T) {
 		if !sawAll.Load() {
 			t.Error("the poller must read the whole history (?all=true)")
 		}
-		if len(pm.snap.pipelines) != 1 || pm.snap.pipelines[0].Lane != "ingest" {
-			t.Errorf("snapshot listing = %+v, want the lane-carrying row", pm.snap.pipelines)
+		if len(pm.snap.Pipelines) != 1 || pm.snap.Pipelines[0].Lane != "ingest" {
+			t.Errorf("snapshot listing = %+v, want the lane-carrying row", pm.snap.Pipelines)
 		}
 
 		focusCh <- "7"
@@ -293,12 +290,12 @@ func TestPollPs(t *testing.T) {
 			if pm.err != nil {
 				t.Fatalf("focused poll failed: %v", pm.err)
 			}
-			if len(pm.snap.logs) == 2 && pm.snap.logs[0] == "line one" {
+			if len(pm.snap.Logs) == 2 && pm.snap.Logs[0] == "line one" {
 				break
 			}
 			select {
 			case <-deadline:
-				t.Fatalf("focused snapshot never carried the log tail: %+v", pm.snap.logs)
+				t.Fatalf("focused snapshot never carried the log tail: %+v", pm.snap.Logs)
 			default:
 			}
 		}
