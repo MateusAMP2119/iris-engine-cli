@@ -15,20 +15,17 @@ import (
 // uninstall (and other destructive flows) when stdin/stdout are real TTYs.
 // Returns errNotATerminal when interactive UI cannot attach so callers map to
 // the standard confirmation_required refusal.
+//
+// Buttons are right-aligned to the ceremony mark column so No ends under [✓].
 func confirmWithHuh(question string, out io.Writer) (bool, error) {
 	if !stdinLooksLikeTTY() {
 		return false, errNotATerminal
 	}
 	var ok bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(question).
-				Affirmative("Yes").
-				Negative("No").
-				Value(&ok),
-		),
-	).WithTheme(huh.ThemeCharm())
+	confirm := newCeremonyConfirm(question, &ok)
+	form := huh.NewForm(huh.NewGroup(confirm)).
+		WithTheme(ceremonyConfirmTheme()).
+		WithWidth(ceremonyConfirmWidth())
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -39,6 +36,42 @@ func confirmWithHuh(question string, out io.Writer) (bool, error) {
 		return false, err
 	}
 	return ok, nil
+}
+
+// ceremonyConfirmTheme is ThemeCharm with title width and button margins tuned
+// so right-aligned Yes/No land on the ceremony [✓] column (see progress.go).
+func ceremonyConfirmTheme() *huh.Theme {
+	theme := huh.ThemeCharm()
+	width := ceremonyConfirmWidth()
+	frame := theme.Focused.Base.GetHorizontalFrameSize()
+	titleCols := width - frame
+	if titleCols < 1 {
+		titleCols = width
+	}
+	// Stretch the title so Confirm.View's button row uses the full content
+	// width (otherwise right-align only spans the title text).
+	theme.Focused.Title = theme.Focused.Title.Width(titleCols)
+	theme.Blurred.Title = theme.Blurred.Title.Width(titleCols)
+	// Drop trailing button margin so the No box is flush with the form edge
+	// (default MarginRight(1) leaves a gap after No past the mark).
+	focusBtn := theme.Focused.FocusedButton.MarginRight(0)
+	blurBtn := theme.Focused.BlurredButton.MarginRight(0)
+	theme.Focused.FocusedButton = focusBtn
+	theme.Focused.BlurredButton = blurBtn
+	theme.Blurred.FocusedButton = focusBtn
+	theme.Blurred.BlurredButton = blurBtn
+	return theme
+}
+
+// newCeremonyConfirm builds the yes/no field used by confirmWithHuh. Theme and
+// width are applied by the form (or by tests that call View directly).
+func newCeremonyConfirm(question string, value *bool) *huh.Confirm {
+	return huh.NewConfirm().
+		Title(question).
+		Affirmative("Yes").
+		Negative("No").
+		WithButtonAlignment(lipgloss.Right).
+		Value(value)
 }
 
 func stdinLooksLikeTTY() bool {

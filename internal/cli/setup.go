@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -40,28 +42,52 @@ func (a *app) setupEngine() runE {
 			return &fault{code: exitOpFailed, codeStr: "setup_failed", message: fmt.Sprintf("iris setup: %v", err)}
 		}
 
+		p := a.newPainter(false)
+		log := newCeremonyLog(a.out)
+		done := func(label string) {
+			mark := ceremonyCheckMark(p.green("✓"))
+			log.line(formatCeremonyLine(label, mark))
+		}
+
 		switch choice {
 		case setupLocal:
-			fmt.Fprintln(a.out, "  • Selected: Local mode")
-			fmt.Fprintln(a.out, "  🚀 Starting Iris Engine...")
-			runProgressBar(a.out, "• Setting up engine")
-			if err := a.runSelf(cmd, "engine", "install"); err != nil {
+			log.line("  • Selected: Local mode")
+			// Real work under live bars: install can take a while (Postgres
+			// materialize / adopt). A cosmetic fill-to-100% before the work
+			// made the terminal look frozen; these bars track the jobs.
+			if err := runProgressWhile(a.out, "• Installing engine", func() error {
+				return a.runSelfQuiet(cmd, "engine", "install")
+			}); err != nil {
 				return err
 			}
-			if err := a.runSelf(cmd, "engine", "start", "-d"); err != nil {
-				return err
+			// Reinstall / repeated setup: a reachable daemon already owns the
+			// engine — skip start -d so we do not spawn a second candidate.
+			settings := a.resolveTarget(cmd)
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
 			}
-			fmt.Fprintln(a.out, "  ✓ Engine started")
+			if a.probeDaemon(ctx, settings) == nil {
+				done("Engine already running")
+			} else if err := runProgressWhile(a.out, "• Starting engine", func() error {
+				return a.runSelfQuiet(cmd, "engine", "start", "-d")
+			}); err != nil {
+				return err
+			} else {
+				done("Engine started")
+			}
+			maybeReviewCeremony(a.out, log.content())
 			return nil
 		case setupRemote:
-			fmt.Fprintln(a.out, "  • Selected: Remote mode")
+			log.line("  • Selected: Remote mode")
 			host, token, perr := promptRemoteEndpoint(a.out)
 			if perr != nil {
 				return &fault{code: exitOpFailed, codeStr: "setup_failed", message: fmt.Sprintf("iris setup: %v", perr)}
 			}
 			host = strings.TrimSpace(host)
 			if host == "" {
-				fmt.Fprintln(a.out, "  • No endpoint given. Run 'iris engine connect <host>' when ready.")
+				log.line("  • No endpoint given. Run 'iris engine connect <host>' when ready.")
+				maybeReviewCeremony(a.out, log.content())
 				return nil
 			}
 			args := []string{"engine", "connect", host}
@@ -70,9 +96,10 @@ func (a *app) setupEngine() runE {
 			}
 			return a.runSelf(cmd, args...)
 		default:
-			fmt.Fprintln(a.out, "  • Selected: Skip for now")
-			fmt.Fprintln(a.out, "  • Engine not configured. Run 'iris engine install && iris engine start -d' (local)")
-			fmt.Fprintln(a.out, "    or 'iris engine connect <host>' (remote) when ready.")
+			log.line("  • Selected: Skip for now")
+			log.line("  • Engine not configured. Run 'iris engine install && iris engine start -d' (local)")
+			log.line("    or 'iris engine connect <host>' when ready.")
+			maybeReviewCeremony(a.out, log.content())
 			return nil
 		}
 	}
@@ -90,6 +117,31 @@ func (a *app) runSelf(_ *cobra.Command, args ...string) error {
 	c.Stderr = a.errOut
 	c.Stdin = os.Stdin
 	if err := c.Run(); err != nil {
+		return &fault{code: exitOpFailed, codeStr: "setup_failed", message: fmt.Sprintf("iris %s: %v", strings.Join(args, " "), err)}
+	}
+	return nil
+}
+
+// runSelfQuiet is runSelf with stdout/stderr captured so nested lifecycle
+// commands don't break the install ceremony grid. On failure the captured
+// streams are replayed, then the error is returned.
+func (a *app) runSelfQuiet(_ *cobra.Command, args ...string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return &fault{code: exitOpFailed, codeStr: "setup_failed", message: fmt.Sprintf("iris setup: resolve self: %v", err)}
+	}
+	var out, errb bytes.Buffer
+	c := exec.Command(exe, args...)
+	c.Stdout = &out
+	c.Stderr = &errb
+	c.Stdin = os.Stdin
+	if err := c.Run(); err != nil {
+		if a.out != nil {
+			fmt.Fprint(a.out, out.String())
+		}
+		if a.errOut != nil {
+			fmt.Fprint(a.errOut, errb.String())
+		}
 		return &fault{code: exitOpFailed, codeStr: "setup_failed", message: fmt.Sprintf("iris %s: %v", strings.Join(args, " "), err)}
 	}
 	return nil

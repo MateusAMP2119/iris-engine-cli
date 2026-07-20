@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/config"
 )
@@ -258,11 +260,26 @@ func (m *Manager) Install(ctx context.Context) error {
 // failing its health check against a password the data directory never saw. Both
 // `iris engine install` (install.go) and the daemon lifecycle (lifecycle.go) come
 // through here; the integration tier exercises it through the fake supervisor.
+//
+// When a postmaster is already alive for this engine home's data directory
+// (reinstall / setup while a previous daemon left Postgres up), Startup adopts it
+// instead of calling pg_ctl start — which would fail on postmaster.pid. If a live
+// iris daemon owns the home, adopt is stop-ownership-free so install's deferred
+// Shutdown cannot kill the daemon's database; an orphan postmaster is taken under
+// Stop ownership so a later Shutdown can clean it up.
 func (m *Manager) Startup(ctx context.Context) (AdminDSN, error) {
 	if !m.settings.Managed() {
 		// External mode: no local instance; the admin DSN is the user's, resolved by
 		// the same chain a daemonless lifecycle command uses.
 		return Resolve(m.settings)
+	}
+
+	// Prefer an already-running instance for this data directory over a cold start
+	// that would contend on postmaster.pid.
+	if dsn, ok, err := m.tryAdoptManaged(ctx); err != nil {
+		return AdminDSN{}, err
+	} else if ok {
+		return dsn, nil
 	}
 
 	cfg, err := m.managedConfig()
@@ -285,6 +302,149 @@ func (m *Manager) Startup(ctx context.Context) (AdminDSN, error) {
 	}
 	m.sup = sup
 	return AdminDSN{conn: managedDSN(cfg)}, nil
+}
+
+// tryAdoptManaged returns the admin DSN for a live managed postmaster on this
+// engine home's data directory. ok is false when nothing is running (or the pid
+// file is stale and was cleared); callers then cold-start. err is reserved for
+// unexpected I/O on engine-owned credential files.
+func (m *Manager) tryAdoptManaged(ctx context.Context) (AdminDSN, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return AdminDSN{}, false, err
+	}
+	dir := ManagedPGDir(m.settings)
+	dataDir := managedDataDir(dir)
+	if err := CheckDataDirVersion(dataDir, PinnedMajorVersion); err != nil {
+		// Version mismatch must still fail fast even when a postmaster is up.
+		if errors.Is(err, ErrPGVersionMismatch) {
+			return AdminDSN{}, false, err
+		}
+		// Absent / unreadable data dir: not adoptable.
+		return AdminDSN{}, false, nil
+	}
+	if !postmasterProcessAlive(dataDir) {
+		removeStalePostmasterPid(dataDir)
+		return AdminDSN{}, false, nil
+	}
+	pw, ok, err := readManagedPassword(filepath.Join(dir, superuserPasswordFile))
+	if err != nil {
+		return AdminDSN{}, false, err
+	}
+	if !ok {
+		return AdminDSN{}, false, nil
+	}
+	portStr, err := readPostmasterPort(dataDir)
+	if err != nil {
+		return AdminDSN{}, false, nil
+	}
+	port, err := strconv.ParseUint(portStr, 10, 32)
+	if err != nil || port == 0 {
+		return AdminDSN{}, false, nil
+	}
+	if !localhostPortOpen(portStr) {
+		// Pid file claims a live process but nothing listens — do not adopt.
+		return AdminDSN{}, false, nil
+	}
+	cfg := SupervisorConfig{
+		Dir:       dir,
+		DataDir:   dataDir,
+		Superuser: ManagedSuperuser,
+		Password:  pw,
+		Port:      uint32(port),
+		TCP:       m.settings.TCP != "",
+	}
+	// Live iris daemon → install must not Stop this postmaster on the way out.
+	// Orphan postmaster → take Stop ownership so Shutdown can reap it.
+	if !engineDaemonAlive(m.settings) {
+		m.sup = &adoptedSupervisor{dir: dir, dataDir: dataDir}
+	}
+	return AdminDSN{conn: managedDSN(cfg)}, true, nil
+}
+
+// postmasterProcessAlive reports whether postmaster.pid names a still-running process.
+func postmasterProcessAlive(dataDir string) bool {
+	pid, err := readPostmasterPID(dataDir)
+	if err != nil {
+		return false
+	}
+	return processAlive(pid)
+}
+
+// readPostmasterPID returns the pid on line 1 of postmaster.pid.
+func readPostmasterPID(dataDir string) (int, error) {
+	//nolint:gosec // G304: dataDir is the engine-owned managed-Postgres data dir.
+	raw, err := os.ReadFile(filepath.Join(dataDir, "postmaster.pid"))
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) < 1 {
+		return 0, errors.New("daemon: empty postmaster.pid")
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(lines[0]))
+	if err != nil || pid <= 0 {
+		return 0, fmt.Errorf("daemon: postmaster.pid pid: %w", err)
+	}
+	return pid, nil
+}
+
+// removeStalePostmasterPid deletes postmaster.pid when it does not name a live
+// process, so a subsequent pg_ctl start is not blocked by a leftover lock file.
+func removeStalePostmasterPid(dataDir string) {
+	if postmasterProcessAlive(dataDir) {
+		return
+	}
+	pidPath := filepath.Join(dataDir, "postmaster.pid")
+	if _, err := os.Stat(pidPath); err != nil {
+		return
+	}
+	_ = os.Remove(pidPath)
+}
+
+// engineDaemonAlive reports whether iris.pid names a still-running engine process.
+func engineDaemonAlive(s config.Settings) bool {
+	pid, err := ReadPIDFile(s)
+	if err != nil {
+		return false
+	}
+	return processAlive(pid)
+}
+
+// localhostPortOpen reports whether something accepts TCP on 127.0.0.1:port.
+func localhostPortOpen(port string) bool {
+	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), time.Second)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
+// adoptedSupervisor is a Supervisor for a postmaster that was already running
+// when Startup adopted it. EnsureInstalled/Start are no-ops; Stop runs pg_ctl
+// stop so an orphan cluster can be reaped on Shutdown.
+type adoptedSupervisor struct {
+	dir     string
+	dataDir string
+}
+
+func (a *adoptedSupervisor) EnsureInstalled(context.Context) error { return nil }
+
+func (a *adoptedSupervisor) Start(context.Context) error { return nil }
+
+func (a *adoptedSupervisor) Stop() error {
+	if !postmasterProcessAlive(a.dataDir) {
+		return nil
+	}
+	pgCtl := filepath.Join(a.dir, "bin", "pg_ctl")
+	cmd := osexec.Command(pgCtl, "stop", "-D", a.dataDir, "-m", "fast", "-w") //nolint:gosec // G204: paths are engine-owned under ManagedPGDir.
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if !postmasterProcessAlive(a.dataDir) {
+			return nil
+		}
+		return fmt.Errorf("daemon: stop adopted managed Postgres under %s: %w: %s", a.dataDir, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Shutdown stops a managed-Postgres subprocess started by Startup. In external mode,

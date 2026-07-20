@@ -13,20 +13,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Ceremony layout — one grid for step checks and progress bars so the trailing
-// mark column lines up everywhere:
+// Ceremony layout — one grid for step checks, progress bars, and yes/no
+// confirms so the trailing mark column lines up everywhere:
 //
-//	  • {body padded to ceremonyBodyCols}{mark}
+//   - {body padded to ceremonyBodyCols}{mark right-aligned in ceremonyMarkCols}
 //
-// mark is either "[✓]" or "{bar} {pct}". Body width matches the historical
-// uninstallStepColumn (52).
+// mark is either "[✓]" or "{bar} {pct}". Short marks (checks) are right-aligned
+// inside the mark column so their right edge matches the progress bar's "100%".
+// Body fits the longest progress labels (~26) with a little slack; longer status
+// lines overflow and keep a one-space gap before the mark. The confirm form
+// width is ceremonyConfirmWidth so a right-aligned No button ends on that edge.
 const (
 	ceremonyIndent   = "  "
 	ceremonyBullet   = "• "
-	ceremonyBodyCols = 52
-	progressBarCols  = 24
+	ceremonyBodyCols = 32
+	progressBarCols  = 16
 	progressPctCols  = 4 // "  0%" .. "100%"
+	// ceremonyMarkCols is bar + space + pct — the full progress trailing mark.
+	ceremonyMarkCols = progressBarCols + 1 + progressPctCols
 )
+
+// ceremonyConfirmWidth is the huh form width that places a right-aligned No
+// button on the same column as the ceremony mark column's right edge (see
+// confirmWithHuh). Use lipgloss.Width for multi-byte indent/bullet cells.
+// huh's focused Base draws a left border outside Style.Width; stretching the
+// title to width−frame and right-aligning the buttons makes the No box end on
+// the mark.
+func ceremonyConfirmWidth() int {
+	return lipgloss.Width(ceremonyIndent) + lipgloss.Width(ceremonyBullet) + ceremonyBodyCols + ceremonyMarkCols
+}
 
 // progressTick advances the bar on a fixed cadence (platform-independent).
 type progressTick time.Time
@@ -81,6 +96,12 @@ func (m progressModel) mark(pct int) string {
 	return barView + " " + formatProgressPct(pct)
 }
 
+// ceremonyLineWidth is the display width of a full ceremony line
+// (indent + bullet + body + mark column).
+func ceremonyLineWidth() int {
+	return lipgloss.Width(ceremonyIndent) + lipgloss.Width(ceremonyBullet) + ceremonyBodyCols + ceremonyMarkCols
+}
+
 // padCeremonyBody pads left text so left+pad fills ceremonyBodyCols display cells.
 func padCeremonyBody(left string) string {
 	w := lipgloss.Width(left)
@@ -90,10 +111,36 @@ func padCeremonyBody(left string) string {
 	return left + strings.Repeat(" ", ceremonyBodyCols-w)
 }
 
-// formatCeremonyLine builds "  • {body}{mark}" with body width ceremonyBodyCols.
-// When mark is wider than a simple [✓], it still starts at the same column as checks.
+// padCeremonyMark right-aligns mark inside ceremonyMarkCols so [✓] and
+// "{bar} 100%" share one right edge. Wider marks are returned unchanged.
+func padCeremonyMark(mark string) string {
+	if mark == "" {
+		return ""
+	}
+	w := lipgloss.Width(mark)
+	if w >= ceremonyMarkCols {
+		return mark
+	}
+	return strings.Repeat(" ", ceremonyMarkCols-w) + mark
+}
+
+// formatCeremonyLine builds "  • {body}{mark}" with body width ceremonyBodyCols
+// and mark right-aligned in ceremonyMarkCols. When body text is wider than
+// ceremonyBodyCols, a single space separates body and mark (right edge may
+// extend past the usual column for that rare long status line).
 func formatCeremonyLine(bodyLeft, mark string) string {
-	return ceremonyIndent + ceremonyBullet + padCeremonyBody(bodyLeft) + mark
+	prefix := ceremonyIndent + ceremonyBullet
+	if mark == "" {
+		return prefix + bodyLeft
+	}
+	bodyW := lipgloss.Width(bodyLeft)
+	markW := lipgloss.Width(mark)
+	// Prefer the fixed grid; fall back to a one-space gap when body overflows.
+	gap := ceremonyBodyCols + ceremonyMarkCols - bodyW - markW
+	if gap < 1 {
+		gap = 1
+	}
+	return prefix + bodyLeft + strings.Repeat(" ", gap) + mark
 }
 
 func (m progressModel) Init() tea.Cmd {
@@ -146,17 +193,167 @@ func (m progressModel) View() string {
 	return line
 }
 
+// progressFinalLine is the settled 100% ceremony line for prefix (no reprint).
+func progressFinalLine(prefix string) string {
+	m := newProgressModel(prefix)
+	m.percent = 1
+	return formatCeremonyLine(m.label, m.mark(100))
+}
+
 // runProgressBar runs a Bubble Tea progress bar to completion on out.
-// No-ops when out is not a terminal (json/piped runs stay quiet).
+// No-ops when out is not a terminal (json/piped runs stay quiet). On success
+// the final line is mirrored to $IRIS_CEREMONY_LOG when set (animation frames
+// are not logged).
 func runProgressBar(out io.Writer, prefix string) {
 	if !writerIsTTY(out) {
+		// Still record a plain done line for shared install transcripts.
+		appendCeremonyLogFile(progressFinalLine(prefix))
 		return
 	}
 	m := newProgressModel(prefix)
 	p := tea.NewProgram(m, tea.WithOutput(out), tea.WithInput(nil))
 	if _, err := p.Run(); err != nil {
-		fmt.Fprint(out, formatCeremonyLine(m.label, "done")+"\n")
+		line := formatCeremonyLine(m.label, "done")
+		fmt.Fprintln(out, line)
+		appendCeremonyLogFile(line)
+		return
 	}
+	appendCeremonyLogFile(progressFinalLine(prefix))
+}
+
+// workResultMsg is delivered when a runProgressWhile job finishes.
+type workResultMsg struct{ err error }
+
+// workPollMsg re-arms the wait/poll loop while the job is still running.
+type workPollMsg struct{}
+
+// workProgressModel is a ceremony bar that creeps while real work runs, then
+// snaps to 100% when the job returns. Avoids the "bar done, then long silence"
+// feel of a cosmetic fill that finishes before install/start begin.
+type workProgressModel struct {
+	label    string
+	bar      progress.Model
+	percent  float64
+	quitting bool
+	err      error
+	done     <-chan error
+}
+
+func newWorkProgressModel(label string, done <-chan error) workProgressModel {
+	bar := progress.New(
+		progress.WithDefaultGradient(),
+		progress.WithWidth(progressBarCols),
+		progress.WithoutPercentage(),
+	)
+	return workProgressModel{
+		label: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(label), "•")),
+		bar:   bar,
+		done:  done,
+	}
+}
+
+func (m workProgressModel) Init() tea.Cmd {
+	return tea.Batch(m.bar.Init(), waitWork(m.done))
+}
+
+// waitWork returns as soon as the job finishes, or after a short tick so the
+// bar can keep creeping while work is still in flight.
+func waitWork(done <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case err := <-done:
+			return workResultMsg{err: err}
+		case <-time.After(80 * time.Millisecond):
+			return workPollMsg{}
+		}
+	}
+}
+
+func (m workProgressModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		return m, nil
+	case workPollMsg:
+		// Asymptotic crawl toward ~92% so long jobs never look frozen at 100% early.
+		if m.percent < 0.92 {
+			// Larger steps early, smaller later: remaining * 0.06 per poll.
+			m.percent += (0.92 - m.percent) * 0.06
+			if m.percent > 0.92 {
+				m.percent = 0.92
+			}
+		}
+		cmd := m.bar.SetPercent(m.percent)
+		return m, tea.Batch(cmd, waitWork(m.done))
+	case workResultMsg:
+		m.err = msg.err
+		m.percent = 1
+		m.quitting = true
+		cmd := m.bar.SetPercent(1)
+		return m, tea.Batch(cmd, func() tea.Msg { return progressDone{} })
+	case progress.FrameMsg:
+		var cmd tea.Cmd
+		var prog tea.Model
+		prog, cmd = m.bar.Update(msg)
+		m.bar = prog.(progress.Model)
+		return m, cmd
+	case progressDone:
+		return m, tea.Quit
+	case tea.KeyMsg:
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m workProgressModel) View() string {
+	pct := int(m.percent * 100)
+	if pct > 100 {
+		pct = 100
+	}
+	// Reuse progressModel.mark math via a throwaway model with the same bar state.
+	pm := progressModel{label: m.label, bar: m.bar, percent: m.percent}
+	line := formatCeremonyLine(m.label, pm.mark(pct))
+	if m.quitting && m.percent >= 1 {
+		return line + "\n"
+	}
+	return line
+}
+
+// runProgressWhile shows a ceremony progress bar while work runs. The bar creeps
+// until work returns, then settles at 100%. Non-TTY: runs work with no animation.
+// The final settled line is appended to $IRIS_CEREMONY_LOG when set.
+func runProgressWhile(out io.Writer, prefix string, work func() error) error {
+	if work == nil {
+		work = func() error { return nil }
+	}
+	if !writerIsTTY(out) {
+		err := work()
+		if err == nil {
+			appendCeremonyLogFile(progressFinalLine(prefix))
+		}
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- work() }()
+
+	m := newWorkProgressModel(prefix, done)
+	p := tea.NewProgram(m, tea.WithOutput(out), tea.WithInput(nil))
+	final, err := p.Run()
+	wm, _ := final.(workProgressModel)
+	if err != nil {
+		// Program failed to render. Prefer the job error already captured by the
+		// model; otherwise wait for the worker (channel still full only if the
+		// model never observed the result).
+		workErr := wm.err
+		if !wm.quitting {
+			workErr = <-done
+		}
+		line := formatCeremonyLine(m.label, "done")
+		fmt.Fprintln(out, line)
+		appendCeremonyLogFile(line)
+		return workErr
+	}
+	appendCeremonyLogFile(progressFinalLine(prefix))
+	return wm.err
 }
 
 func writerIsTTY(out io.Writer) bool {
