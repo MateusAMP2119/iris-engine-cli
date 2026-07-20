@@ -169,6 +169,10 @@ else
   exit 1
 fi
 bin="${dest}/iris"
+# Bubble Tea progress (aligned with uninstall checks) — binary is on disk now.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  "$bin" ceremony progress "• Placing binary" || true
+fi
 ok "Installed $("$bin" --version 2>/dev/null || echo iris) → ${bin}"
 on_path=""
 case ":${PATH}:" in
@@ -222,112 +226,13 @@ case "$requested" in
     ;;
 esac
 
-# Menu reads /dev/tty; IRIS_ENGINE_SETUP answers headless; no tty = skip
-choice=""
-case "${IRIS_ENGINE_SETUP:-}" in
-  local) choice=1 ;;
-  remote) choice=2 ;;
-  skip) choice=3 ;;
-esac
-if [ -z "$choice" ]; then
-  if can_prompt; then
-    say "How would you like to run the Iris Engine?"
-    printf '\n'
-    printf "  ${CYN}1)${RST} Local mode     (starts embedded engine in background)\n"
-    printf "  ${CYN}2)${RST} Remote mode    (connect to an existing remote Iris instance)\n"
-    printf "  ${CYN}3)${RST} Skip for now   (configure later with 'iris engine install' or 'iris engine connect')\n"
-    printf '\n'
-    # One keypress, no Enter: raw-ish tty read via dd; Enter alone = default 1
-    while [ -z "$choice" ]; do
-      printf "  Enter choice [1]: " >/dev/tty
-      old=$(stty -g </dev/tty 2>/dev/null || true)
-      if [ -n "$old" ]; then
-        stty -icanon -echo min 1 time 0 </dev/tty 2>/dev/null || true
-        ans=$(dd if=/dev/tty bs=1 count=1 2>/dev/null || true)
-        stty "$old" </dev/tty 2>/dev/null || true
-      else
-        IFS= read -r ans </dev/tty || ans=""
-      fi
-      case "$ans" in
-        '') choice=1 ;;
-        1 | 2 | 3) choice="$ans" ;;
-        *)
-          printf '\n' >/dev/tty
-          printf "  %s\n" "Press 1, 2, or 3." >/dev/tty
-          continue
-          ;;
-      esac
-      printf '%s\n' "$choice" >/dev/tty
-    done
-    printf '\n'
-  else
-    choice=3
-    say "No terminal to ask on; skipping engine setup."
-  fi
+# Engine setup menu lives in the binary (huh + viper-backed config + BT bars).
+# IRIS_ENGINE_SETUP=local|remote|skip still works headless.
+# Force a wide enough geometry for the oh-my-logo banner in nested recorders.
+if ! "$bin" setup; then
+  echo "iris: engine setup failed" >&2
+  exit 1
 fi
-
-case "$choice" in
-  1)
-    say "• Selected: Local mode"
-    say "🚀 Starting Iris Engine..."
-    # Logs go to a file; a marching bar covers the wait (tty only)
-    elog="${HOME}/.iris/setup.log"
-    mkdir -p "${HOME}/.iris"
-    ("$bin" engine install && "$bin" engine start -d) >"$elog" 2>&1 &
-    epid=$!
-    # Single climb 0→90%, hold until done, close at 100% once
-    if [ -t 1 ]; then
-      pct=0
-      while kill -0 "$epid" 2>/dev/null; do
-        [ "$pct" -lt 90 ] && pct=$((pct + 3))
-        cells=$((pct / 10))
-        bar="$(printf '%*s' "$cells" '' | tr ' ' '█')$(printf '%*s' $((10 - cells)) '' | tr ' ' '░')"
-        printf '\r\033[2K  Setting up engine... [%s] %d%%' "$bar" "$pct"
-        sleep 0.2
-      done
-      printf '\r\033[2K  Setting up engine... [██████████] 100%%\n'
-    fi
-    if wait "$epid"; then
-      pid=$(cat "${HOME}/.iris/iris.pid" 2>/dev/null || true)
-      if [ -n "$pid" ]; then
-        ok "Engine started successfully (PID ${pid})"
-      else
-        ok "Engine started successfully"
-      fi
-    else
-      echo "iris: engine setup failed; full log: ${elog}" >&2
-      tail -20 "$elog" >&2
-      exit 1
-    fi
-    ;;
-  2)
-    say "• Selected: Remote mode"
-    printf "  Enter remote Iris endpoint (host:port): " >/dev/tty
-    IFS= read -r endpoint </dev/tty || endpoint=""
-    if [ -z "$endpoint" ]; then
-      say "• No endpoint given. Run 'iris engine connect <host>' when ready."
-    else
-      printf "  Enter PAT token (optional, hidden): " >/dev/tty
-      stty -echo </dev/tty 2>/dev/null || true
-      IFS= read -r token </dev/tty || token=""
-      stty echo </dev/tty 2>/dev/null || true
-      printf '\n' >/dev/tty
-      say "🔌 Testing connection..."
-      if [ -n "$token" ]; then
-        "$bin" engine connect "$endpoint" --token "$token"
-      else
-        "$bin" engine connect "$endpoint"
-      fi
-      ok "Connected to remote engine"
-      say "• Endpoint saved to ~/.iris/iris.toml"
-    fi
-    ;;
-  3)
-    say "• Selected: Skip for now"
-    say "• Engine not configured. Run 'iris engine install && iris engine start -d' (local)"
-    say "  or 'iris engine connect <host>' (remote) when ready."
-    ;;
-esac
 
 # Fresh PATH append can't reach this shell; ready line must work as pasted
 if [ -n "${appended:-}" ]; then

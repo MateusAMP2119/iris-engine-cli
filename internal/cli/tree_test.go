@@ -27,6 +27,9 @@ func walk(cmd *cobra.Command, fn func(*cobra.Command)) {
 func childNames(c *cobra.Command) []string {
 	var out []string
 	for _, ch := range c.Commands() {
+		if ch.Hidden {
+			continue
+		}
 		out = append(out, ch.Name())
 	}
 	return out
@@ -98,7 +101,7 @@ func TestCommandTree(t *testing.T) {
 		// binary) and `uninstall` (self-removal of the binary), and the
 		// process-status verb `ps` (the docker-ps-shaped engine readout), each
 		// belonging to no resource noun: no other flat verbs, no extras.
-		wantTop := append(mapKeys(wantTree), "update", "uninstall", "ps")
+		wantTop := append(mapKeys(wantTree), "update", "setup", "uninstall", "ps")
 		assertSetEqual(t, "top-level nouns", childNames(root), wantTop)
 
 		// Each noun exposes exactly its documented verbs.

@@ -1,8 +1,10 @@
 // Package config resolves the Iris engine/connection configuration under strict
 // precedence: command flags override IRIS_* environment variables, which
-// override an optional thin iris.toml, which override built-in defaults. It is
-// pure resolution logic layered over the flag surface of the cobra tree: a
-// caller assembles one Layer per source and folds them with Resolve.
+// override an optional thin iris.toml, which override built-in defaults. Env
+// resolution is implemented with spf13/viper (see viper.go); iris.toml stays a
+// deliberately strict flat parser (toml.go). It is pure resolution logic layered
+// over the flag surface of the cobra tree: a caller assembles one Layer per
+// source and folds them with Resolve.
 //
 // The scope is deliberately narrow. iris.toml carries engine/connection settings
 // only and is never a project manifest (the workload graph lives in
@@ -220,55 +222,6 @@ func Defaults(home string) Layer {
 		TLSKey:               &empty,
 		Workspace:            &workspace,
 	}
-}
-
-// FromEnv reads the documented IRIS_* environment variables through getenv and
-// returns a layer that sets exactly the variables that are present. An unset or
-// empty variable contributes nothing (a nil field), so it defers to the layers
-// below rather than overriding them with an empty value. The two integer
-// variables (IRIS_RETAIN, IRIS_JOURNAL_PARTITION_ROWS) are parsed; a non-numeric
-// value is a configuration error. IRIS_CATALOGS is split on commas with spaces
-// trimmed and empty entries dropped. getenv is injected (os.Getenv in
-// production) so resolution stays pure and testable.
-func FromEnv(getenv func(string) string) (Layer, error) {
-	var l Layer
-	if v := getenv(EnvSocket); v != "" {
-		l.Socket = &v
-	}
-	if v := getenv(EnvHost); v != "" {
-		l.Host = &v
-	}
-	if v := getenv(EnvToken); v != "" {
-		l.Token = &v
-	}
-	if v := getenv(EnvPgDSN); v != "" {
-		l.PgDSN = &v
-	}
-	if v := getenv(EnvObjectsPath); v != "" {
-		l.ObjectsPath = &v
-	}
-	if v := getenv(EnvWorkspace); v != "" {
-		l.Workspace = &v
-	}
-	if v := getenv(EnvCatalogs); v != "" {
-		list := splitList(v)
-		l.Catalogs = &list
-	}
-	if v := getenv(EnvRetain); v != "" {
-		n, err := parseInt(v)
-		if err != nil {
-			return Layer{}, fmt.Errorf("config: %s: %w", EnvRetain, err)
-		}
-		l.Retain = &n
-	}
-	if v := getenv(EnvJournalPartitionRows); v != "" {
-		n, err := parseInt(v)
-		if err != nil {
-			return Layer{}, fmt.Errorf("config: %s: %w", EnvJournalPartitionRows, err)
-		}
-		l.JournalPartitionRows = &n
-	}
-	return l, nil
 }
 
 // splitList parses a comma-separated value (IRIS_CATALOGS), trimming spaces and dropping empties.

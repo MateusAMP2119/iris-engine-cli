@@ -9,10 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
@@ -569,65 +566,6 @@ func runPsLoop(ctx context.Context, v *psView, m *psModel) error {
 			syncFocus()
 		}
 	}
-}
-
-// RunLive is the production live view: raw mode and the alternate screen
-// around the poller and the event loop. The first snapshot was fetched before
-// this ran (a dead engine never enters the alternate screen); a raw-mode
-// refusal reports false so the caller falls back to the JSON emit. color
-// enables SGR styling when stdout is a TTY and NO_COLOR is unset.
-func RunLive(ctx context.Context, out io.Writer, color bool, c *Client, first Snapshot, target string) (bool, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ts, ok := openPsTerm(out)
-	if !ok {
-		return false, nil
-	}
-	defer ts.leave()
-
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	keys := make(chan psKey, 8)
-	polls := make(chan psPollMsg, 1)
-	notes := make(chan string, 1)
-	focusCh := make(chan string, 4)
-	cancelCh := make(chan string, 4)
-	catalogMsgs := make(chan psCatalogMsg, 4)
-	go readPsKeys(os.Stdin, keys)
-	go pollPs(ctx, c, psPollInterval, focusCh, cancelCh, polls, notes)
-
-	m := newPsModel(first, target)
-	v := &psView{
-		out: out, p: makePainter(color), size: ts.size,
-		keys: keys, polls: polls, notes: notes, focusCh: focusCh, cancelCh: cancelCh,
-		catalogMsgs: catalogMsgs,
-		runCatalog: func(req psCatalogReq) {
-			go func() {
-				msg := c.catalogAction(ctx, req)
-				msg.seq = req.seq
-				select {
-				case catalogMsgs <- msg:
-				case <-ctx.Done():
-				}
-			}()
-		},
-	}
-	err := runPsLoop(ctx, v, m)
-	ts.leave() // explicit: restored before any fault renders on stderr
-
-	// Unblock the stdin reader so it never outlives the view: an in-process
-	// caller reading the same stdin next would have its keystrokes stolen by
-	// an orphaned Read. Best-effort -- a stdin that supports no deadline keeps
-	// the old dies-with-the-process behavior.
-	if derr := os.Stdin.SetReadDeadline(time.Now()); derr == nil {
-		// Drain until the decoder closes behind the unblocked reader.
-		for range keys { //nolint:revive // the draining itself is the work
-		}
-		_ = os.Stdin.SetReadDeadline(time.Time{})
-	}
-	return true, err
 }
 
 // TargetLabel names the watched engine for the footer's right slot.

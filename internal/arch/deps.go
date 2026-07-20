@@ -54,21 +54,28 @@ func LoadGoSum(path string) ([]string, error) {
 // the allowlist: the pgx driver, cobra plus its own flag-set library spf13/pflag
 // (admitted for flag-set introspection, never as an independent CLI framework),
 // goccy/go-yaml, an argon2id provider (github.com/alexedwards/argon2id or
-// golang.org/x/crypto), and the embedded-postgres supervisor. Everything else is
-// off the allowlist; digests and signatures use only stdlib hashing and
-// crypto/ed25519, which are never go.mod requires.
+// golang.org/x/crypto), the embedded-postgres supervisor, spf13/viper for
+// engine config resolution, and the Charm stack for interactive surfaces
+// (bubbletea, lipgloss, bubbles, huh). Everything else is off the allowlist;
+// digests and signatures use only stdlib hashing and crypto/ed25519, which are
+// never go.mod requires.
 func AllowedDirectDependency(path string) bool {
 	switch path {
 	case "github.com/jackc/pgx",
 		"github.com/spf13/cobra",
 		"github.com/spf13/pflag",
+		"github.com/spf13/viper",
 		"github.com/goccy/go-yaml",
 		"github.com/alexedwards/argon2id",
 		"golang.org/x/crypto",
 		"github.com/fergusstrange/embedded-postgres",
-		// Raw terminal mode for the `iris ps` live view (raw keys, terminal
-		// size) -- a permanent dependency of the CLI's interactive surfaces.
-		"golang.org/x/term":
+		// Raw terminal mode (still used by legacy paths and tests).
+		"golang.org/x/term",
+		// Charm interactive stack: live view + install/uninstall prompts.
+		"github.com/charmbracelet/bubbletea",
+		"github.com/charmbracelet/lipgloss",
+		"github.com/charmbracelet/bubbles",
+		"github.com/charmbracelet/huh":
 		return true
 	}
 	// pgx is versioned as a subpath module (github.com/jackc/pgx/v5, .../v5/pgxpool).

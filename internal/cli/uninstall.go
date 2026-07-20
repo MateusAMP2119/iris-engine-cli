@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -32,8 +30,9 @@ const (
 	uninstallSteps  = 3
 )
 
-// uninstallStepColumn is the column the step lines' [✓] marks align at.
-const uninstallStepColumn = 52
+// uninstallStepColumn is kept as an alias of ceremonyBodyCols so step [✓]
+// marks share the progress-bar mark column (see progress.go).
+const uninstallStepColumn = ceremonyBodyCols
 
 // uninstallStep is one step's outcome in the --json envelope.
 type uninstallStep struct {
@@ -177,7 +176,7 @@ func (a *app) uninstallSelf() runE {
 				}
 			}
 			if !jsonMode {
-				a.uninstallProgressBar(p, "• Removing engine state...")
+				a.uninstallProgressBar(p, "• Removing engine state")
 			}
 			steps = append(steps, uninstallStep{Step: 2, Name: stepEngineState, Status: "removed", Removed: removed})
 			done("Engine state removed.")
@@ -212,7 +211,7 @@ func (a *app) uninstallSelf() runE {
 		removeInstallerSymlink(path)
 		removeShellPathEntries()
 		if !jsonMode {
-			a.uninstallProgressBar(p, "🧹 Removing binary and traces...")
+			a.uninstallProgressBar(p, "• Removing binary and traces")
 		}
 		done("Binary removed")
 		done("Traces erased")
@@ -248,13 +247,12 @@ func (a *app) uninstallConsent(question string, yes, force bool) (bool, error) {
 	return ok, nil
 }
 
-// uninstallStepDone prints one completed-step line, the [✓] mark aligned at a fixed column (green on a terminal).
+// uninstallStepDone prints one completed-step line with the [✓] mark in the
+// shared ceremony mark column (same column progress bars use).
 func (a *app) uninstallStepDone(p painter, text string) {
-	pad := uninstallStepColumn - utf8.RuneCountInString(text)
-	if pad < 1 {
-		pad = 1
-	}
-	fmt.Fprintf(a.out, "  • %s%s[%s]\n", text, strings.Repeat(" ", pad), p.green("✓"))
+	mark := ceremonyCheckMark(p.green("✓"))
+	// Plain width for padding must ignore ANSI in the mark; pad the text only.
+	fmt.Fprint(a.out, formatCeremonyLine(text, mark)+"\n")
 }
 
 // uninstallAborted reports a declined step: remaining steps skipped, exit clean (0), the outcome says what was and was not removed.
@@ -279,18 +277,14 @@ func (a *app) uninstallAborted(p painter, jsonMode bool, path string, steps []un
 	return nil
 }
 
-// uninstallProgressBar animates a removal step's bar in place on a terminal, prefix leading the bar; plain glyphs match the installer's engine bar exactly. Piped runs draw nothing.
+// uninstallProgressBar animates a removal step via Bubble Tea + bubbles/progress
+// so the bar looks the same on every platform (no raw ANSI \r loops). Piped and
+// --json runs draw nothing.
 func (a *app) uninstallProgressBar(p painter, prefix string) {
 	if !p.enabled {
 		return
 	}
-	const cells = 10
-	for i := 0; i <= cells; i++ {
-		bar := strings.Repeat("█", i) + strings.Repeat("░", cells-i)
-		fmt.Fprintf(a.out, "\r\033[2K  %s [%s] %d%%", prefix, bar, i*100/cells)
-		time.Sleep(25 * time.Millisecond)
-	}
-	fmt.Fprintln(a.out)
+	runProgressBar(a.out, prefix)
 }
 
 // uninstallHeaderBox draws the cyan header box on a terminal, version in magenta; borders sized on the unstyled interior so escapes never skew alignment.
@@ -336,29 +330,15 @@ func (a *app) farewellQuote(p painter) {
 	fmt.Fprintf(a.out, "%s%s\n", strings.Repeat(" ", pad), p.dim(attr))
 }
 
-// terminalConfirm prompts the step's question on stderr and reads one y/N keypress from stdin (no Enter); no terminal returns errNotATerminal so the caller refuses instead of blocking.
+// terminalConfirm prompts via huh when a TTY is available; no terminal returns
+// errNotATerminal so the caller refuses instead of blocking. Tests inject
+// a.confirm to script answers without a real terminal.
 func (a *app) terminalConfirm(question string, _ bool) (bool, error) {
-	stat, err := os.Stdin.Stat()
-	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
-		return false, errNotATerminal
+	out := a.errOut
+	if out == nil {
+		out = os.Stderr
 	}
-	fmt.Fprintf(a.errOut, "  %s (y/N): ", question)
-	if ans, ok := readSingleKey(); ok {
-		yes := ans == 'y' || ans == 'Y'
-		shown := "n"
-		if yes {
-			shown = "y"
-		}
-		fmt.Fprintf(a.errOut, "%s\n", shown)
-		return yes, nil
-	}
-	// stty unavailable: fall back to a line read
-	line, rerr := bufio.NewReader(os.Stdin).ReadString('\n')
-	if rerr != nil && line == "" {
-		return false, nil // EOF with no answer is a decline, not an error.
-	}
-	ans := strings.ToLower(strings.TrimSpace(line))
-	return ans == "y" || ans == "yes", nil
+	return confirmWithHuh(question, out)
 }
 
 // readSingleKey reads one raw keypress from stdin via stty; ok=false means raw mode could not be entered.

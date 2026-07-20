@@ -22,10 +22,16 @@ func TestDependencyAllowlist(t *testing.T) {
 			"github.com/jackc/pgx/v5/pgxpool",
 			"github.com/spf13/cobra",
 			"github.com/spf13/pflag",
+			"github.com/spf13/viper",
 			"github.com/goccy/go-yaml",
 			"github.com/alexedwards/argon2id",
 			"golang.org/x/crypto",
 			"github.com/fergusstrange/embedded-postgres",
+			"golang.org/x/term",
+			"github.com/charmbracelet/bubbletea",
+			"github.com/charmbracelet/lipgloss",
+			"github.com/charmbracelet/bubbles",
+			"github.com/charmbracelet/huh",
 		}
 		for _, p := range allowed {
 			if !arch.AllowedDirectDependency(p) {
