@@ -6,21 +6,26 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Shared geometry so every install/uninstall progress line lines up:
+// Ceremony layout — one grid for step checks and progress bars so the trailing
+// mark column lines up everywhere:
 //
-//	  {label padded to labelCols} {bar width barCols} {pct right-aligned 4}
+//	  • {body padded to ceremonyBodyCols}{mark}
 //
-// Labels are measured with lipgloss.Width so emoji (🧹) still pad correctly.
+// mark is either "[✓]" or "{bar} {pct}". Body width matches the historical
+// uninstallStepColumn (52).
 const (
-	progressLabelCols = 34
-	progressBarCols   = 24
-	progressPctCols   = 4 // "  0%" .. "100%"
+	ceremonyIndent   = "  "
+	ceremonyBullet   = "• "
+	ceremonyBodyCols = 52
+	progressBarCols  = 24
+	progressPctCols  = 4 // "  0%" .. "100%"
 )
 
 // progressTick advances the bar on a fixed cadence (platform-independent).
@@ -30,7 +35,7 @@ type progressTick time.Time
 // fills 0→100% then quits. Used by uninstall and setup so ceremony looks the
 // same on every platform — no raw ANSI \r loops.
 type progressModel struct {
-	prefix   string
+	label    string // without bullet; padded into the body column with the bar
 	bar      progress.Model
 	percent  float64
 	quitting bool
@@ -39,29 +44,17 @@ type progressModel struct {
 
 type progressDone struct{}
 
-func newProgressModel(prefix string) progressModel {
+func newProgressModel(label string) progressModel {
 	bar := progress.New(
 		progress.WithDefaultGradient(),
 		progress.WithWidth(progressBarCols),
 		progress.WithoutPercentage(),
 	)
 	return progressModel{
-		prefix: padProgressLabel(prefix),
-		bar:    bar,
-		step:   0.08, // ~12 frames to full
+		label: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(label), "•")),
+		bar:   bar,
+		step:  0.08,
 	}
-}
-
-// padProgressLabel left-aligns label into a fixed display-width column so the
-// bar always starts on the same horizontal cell across all call sites.
-func padProgressLabel(label string) string {
-	label = strings.TrimSpace(label)
-	w := lipgloss.Width(label)
-	if w >= progressLabelCols {
-		// Truncate by runes roughly; keep simple — callers use short labels.
-		return label
-	}
-	return label + strings.Repeat(" ", progressLabelCols-w)
 }
 
 func formatProgressPct(pct int) string {
@@ -71,7 +64,36 @@ func formatProgressPct(pct int) string {
 	if pct > 100 {
 		pct = 100
 	}
+	// width progressPctCols including '%'
 	return fmt.Sprintf("%*d%%", progressPctCols-1, pct)
+}
+
+// ceremonyMark is the trailing status after the shared body column: a check or a bar+pct.
+func ceremonyCheckMark(check string) string {
+	return "[" + check + "]"
+}
+
+func (m progressModel) mark(pct int) string {
+	barView := m.bar.View()
+	if pct >= 100 {
+		barView = m.bar.ViewAs(1)
+	}
+	return barView + " " + formatProgressPct(pct)
+}
+
+// padCeremonyBody pads left text so left+pad fills ceremonyBodyCols display cells.
+func padCeremonyBody(left string) string {
+	w := lipgloss.Width(left)
+	if w >= ceremonyBodyCols {
+		return left
+	}
+	return left + strings.Repeat(" ", ceremonyBodyCols-w)
+}
+
+// formatCeremonyLine builds "  • {body}{mark}" with body width ceremonyBodyCols.
+// When mark is wider than a simple [✓], it still starts at the same column as checks.
+func formatCeremonyLine(bodyLeft, mark string) string {
+	return ceremonyIndent + ceremonyBullet + padCeremonyBody(bodyLeft) + mark
 }
 
 func (m progressModel) Init() tea.Cmd {
@@ -117,12 +139,11 @@ func (m progressModel) View() string {
 	if pct > 100 {
 		pct = 100
 	}
-	barView := m.bar.View()
+	line := formatCeremonyLine(m.label, m.mark(pct))
 	if m.quitting && m.percent >= 1 {
-		barView = m.bar.ViewAs(1)
-		return fmt.Sprintf("  %s %s %s\n", m.prefix, barView, formatProgressPct(100))
+		return line + "\n"
 	}
-	return fmt.Sprintf("  %s %s %s", m.prefix, barView, formatProgressPct(pct))
+	return line
 }
 
 // runProgressBar runs a Bubble Tea progress bar to completion on out.
@@ -134,7 +155,7 @@ func runProgressBar(out io.Writer, prefix string) {
 	m := newProgressModel(prefix)
 	p := tea.NewProgram(m, tea.WithOutput(out), tea.WithInput(nil))
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(out, "  %s %s\n", padProgressLabel(prefix), "done")
+		fmt.Fprint(out, formatCeremonyLine(m.label, "done")+"\n")
 	}
 }
 
@@ -149,3 +170,6 @@ func writerIsTTY(out io.Writer) bool {
 	}
 	return stat.Mode()&os.ModeCharDevice != 0
 }
+
+// keep utf8 available for callers that share this file's layout helpers
+var _ = utf8.RuneCountInString

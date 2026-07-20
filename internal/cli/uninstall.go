@@ -30,8 +30,9 @@ const (
 	uninstallSteps  = 3
 )
 
-// uninstallStepColumn is the column the step lines' [✓] marks align at.
-const uninstallStepColumn = 52
+// uninstallStepColumn is kept as an alias of ceremonyBodyCols so step [✓]
+// marks share the progress-bar mark column (see progress.go).
+const uninstallStepColumn = ceremonyBodyCols
 
 // uninstallStep is one step's outcome in the --json envelope.
 type uninstallStep struct {
@@ -246,13 +247,12 @@ func (a *app) uninstallConsent(question string, yes, force bool) (bool, error) {
 	return ok, nil
 }
 
-// uninstallStepDone prints one completed-step line, the [✓] mark aligned at a fixed column (green on a terminal).
+// uninstallStepDone prints one completed-step line with the [✓] mark in the
+// shared ceremony mark column (same column progress bars use).
 func (a *app) uninstallStepDone(p painter, text string) {
-	pad := uninstallStepColumn - utf8.RuneCountInString(text)
-	if pad < 1 {
-		pad = 1
-	}
-	fmt.Fprintf(a.out, "  • %s%s[%s]\n", text, strings.Repeat(" ", pad), p.green("✓"))
+	mark := ceremonyCheckMark(p.green("✓"))
+	// Plain width for padding must ignore ANSI in the mark; pad the text only.
+	fmt.Fprint(a.out, formatCeremonyLine(text, mark)+"\n")
 }
 
 // uninstallAborted reports a declined step: remaining steps skipped, exit clean (0), the outcome says what was and was not removed.

@@ -7,27 +7,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func TestPadProgressLabelAligns(t *testing.T) {
-	labels := []string{
-		"• Setting up engine",
-		"• Removing engine state",
-		"• Removing binary and traces",
+func TestCeremonyMarkColumnAlignsChecksAndBars(t *testing.T) {
+	checkLine := formatCeremonyLine("Engine state removed.", ceremonyCheckMark("✓"))
+	// Body-only line ends where the mark column begins.
+	bodyEnd := formatCeremonyLine("Removing engine state", "")
+
+	prefix := ceremonyIndent + ceremonyBullet
+	wantMarkAt := lipgloss.Width(prefix) + ceremonyBodyCols
+
+	checkMarkStart := strings.Index(checkLine, "[")
+	if checkMarkStart < 0 {
+		t.Fatal("check line missing [")
 	}
-	widths := map[int]bool{}
-	for _, l := range labels {
-		p := padProgressLabel(l)
-		w := lipgloss.Width(p)
-		if w != progressLabelCols {
-			t.Errorf("padProgressLabel(%q) width = %d, want %d (%q)", l, w, progressLabelCols, p)
-		}
-		widths[w] = true
-		// bar should start at the same column: prefix has no trailing junk
-		if strings.TrimRight(p, " ") != l && !strings.HasPrefix(p, l) {
-			t.Errorf("padding lost label content: got %q", p)
-		}
+	if got := lipgloss.Width(checkLine[:checkMarkStart]); got != wantMarkAt {
+		t.Errorf("check mark column = %d, want %d\nline=%q", got, wantMarkAt, checkLine)
 	}
-	if len(widths) != 1 {
-		t.Errorf("labels produced multiple widths %v; bars will not align", widths)
+	if got := lipgloss.Width(bodyEnd); got != wantMarkAt {
+		t.Errorf("progress body column = %d, want %d\nline=%q", got, wantMarkAt, bodyEnd)
 	}
 }
 
@@ -37,5 +33,12 @@ func TestFormatProgressPctWidth(t *testing.T) {
 		if lipgloss.Width(s) != progressPctCols {
 			t.Errorf("formatProgressPct(%d) = %q width %d, want %d", pct, s, lipgloss.Width(s), progressPctCols)
 		}
+	}
+}
+
+func TestPadCeremonyBody(t *testing.T) {
+	p := padCeremonyBody("hi")
+	if lipgloss.Width(p) != ceremonyBodyCols {
+		t.Fatalf("width %d want %d", lipgloss.Width(p), ceremonyBodyCols)
 	}
 }

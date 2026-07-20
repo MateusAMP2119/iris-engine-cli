@@ -49,6 +49,7 @@ func TestDaemonlessLifecycleCommands(t *testing.T) {
 			"iris update":                   true,
 			"iris uninstall":                true,
 			"iris setup":                    true,
+			"iris ceremony progress":        true,
 			"iris plugin install":           true,
 			"iris plugin list":              true,
 			"iris plugin remove":            true,

@@ -103,6 +103,7 @@ func (a *app) newRootCommand() *cobra.Command {
 		a.catalogCmd(),
 		a.updateCmd(),
 		a.setupCmd(),
+		a.ceremonyCmd(),
 		a.uninstallCmd(),
 	)
 	return root

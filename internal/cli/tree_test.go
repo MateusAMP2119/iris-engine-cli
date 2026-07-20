@@ -27,6 +27,9 @@ func walk(cmd *cobra.Command, fn func(*cobra.Command)) {
 func childNames(c *cobra.Command) []string {
 	var out []string
 	for _, ch := range c.Commands() {
+		if ch.Hidden {
+			continue
+		}
 		out = append(out, ch.Name())
 	}
 	return out

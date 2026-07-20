@@ -169,6 +169,10 @@ else
   exit 1
 fi
 bin="${dest}/iris"
+# Bubble Tea progress (aligned with uninstall checks) — binary is on disk now.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  "$bin" ceremony progress "• Placing binary" || true
+fi
 ok "Installed $("$bin" --version 2>/dev/null || echo iris) → ${bin}"
 on_path=""
 case ":${PATH}:" in
@@ -222,8 +226,9 @@ case "$requested" in
     ;;
 esac
 
-# Engine setup menu lives in the binary (huh + viper-backed config).
+# Engine setup menu lives in the binary (huh + viper-backed config + BT bars).
 # IRIS_ENGINE_SETUP=local|remote|skip still works headless.
+# Force a wide enough geometry for the oh-my-logo banner in nested recorders.
 if ! "$bin" setup; then
   echo "iris: engine setup failed" >&2
   exit 1
