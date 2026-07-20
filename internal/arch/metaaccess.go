@@ -43,10 +43,11 @@ func (g *Graph) CheckCLINoMetaAccess() []Violation {
 	return vs
 }
 
-// isCLIPackage reports whether a repo-relative package key is the cli package or a
-// package nested under it.
+// isCLIPackage reports whether a repo-relative package key is a front-end package
+// that must never open a database client (cli, tui, or a nested package under either).
 func isCLIPackage(rel string) bool {
-	return rel == "cli" || strings.HasPrefix(rel, "cli/")
+	return rel == "cli" || strings.HasPrefix(rel, "cli/") ||
+		rel == "tui" || strings.HasPrefix(rel, "tui/")
 }
 
 // dbClientRoot reports whether a repo-relative import key resolves to a database

@@ -41,19 +41,21 @@ const rankMain = 100
 // productRanks assigns each product package its layer rank. The one-direction
 // rule is: a shipped package may import another shipped package only when the
 // target's rank is strictly lower. That single rule captures the whole layering
-// at once -- cli -> daemon -> api -> dispatch -> store/pg/exec, archive beside
-// dispatch, config/declare/build/pat/plugin/buildinfo as leaves -- and, because a
-// strictly-lower target is required, it also forbids the banned same-rank
-// crossings: store<->pg ("two clients, two databases, never crossed") and
-// archive<->dispatch (siblings coordinated from above).
+// at once -- cli -> tui -> daemon -> api -> dispatch -> store/pg/exec, archive
+// beside dispatch, config/declare/build/pat/plugin/buildinfo as leaves -- and,
+// because a strictly-lower target is required, it also forbids the banned
+// same-rank crossings: store<->pg ("two clients, two databases, never crossed")
+// and archive<->dispatch (siblings coordinated from above).
 // daemon outranks api because listener wiring (which mounts the api mux) lives in
 // the daemon; api renders read views and never reaches back up. config is a leaf
 // carrying no dependencies of its own -- pure configuration resolution the CLI
 // (and later the daemon) reads. buildinfo is a leaf carrying only the linker-
 // stamped build version any layer may read. update is a stdlib-only leaf (the
 // self-update fetch/verify/atomic-replace helper the CLI drives; it takes the
-// running version as a parameter rather than importing buildinfo). Later epics add
-// a package by giving it a rank here; the checks do not change.
+// running version as a parameter rather than importing buildinfo). tui is the
+// interactive live-view surface (rank below cli, above api); it must not import
+// daemon or cli. Later epics add a package by giving it a rank here; the checks
+// do not change.
 var productRanks = map[string]int{
 	"buildinfo": 1,
 	"config":    1,
@@ -67,11 +69,12 @@ var productRanks = map[string]int{
 	"exec":      2,
 	"catalog":   2, // pack resolution over declare (#217); daemon and cli consume it
 
-	"dispatch":  3,
-	"archive":   3,
-	"api":       4,
-	"daemon":    5,
-	"cli":       6,
+	"dispatch": 3,
+	"archive":  3,
+	"api":      4,
+	"daemon": 5,
+	"tui":    5, // live view; same rank as daemon — neither may import the other
+	"cli":    6,
 }
 
 // Package is one node in the module import graph: its repo-relative key (the

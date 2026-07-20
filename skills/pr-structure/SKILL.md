@@ -51,16 +51,19 @@ Bad:
 
 ### 3. Evidence (required)
 
-**CI checks are non-conclusive.** Green unit/integration/lint does not replace Evidence.
+**CI checks are non-conclusive.** Green unit/integration/lint does not replace Evidence. Never use `go test` / `go build` / CI status as the Evidence section.
 
-Show how it behaves at runtime, using at least one of:
+Pick evidence that proves **this PR’s claim**:
 
-- **TUI / CLI copy-paste** in a fenced `text` block (prompt + command + relevant output)
-- **Screenshot / print** attached to the PR (UI, overlay, layout, error banner, etc.)
+| PR kind | Valid evidence |
+|---------|----------------|
+| Behavior / CLI / engine | TUI or CLI copy-paste (prompt + command + relevant output) |
+| UI | Screenshot / print attached to the PR |
+| **Layout / package move / folder structure** | **Directory tree** of the new shape (and a one-line note of what left the old place) |
 
-Prefer both when the change is visible in the TUI **and** has a headless command path.
+Prefer TUI + CLI paste together when the change is visible in the TUI **and** has a headless command path.
 
-Evidence must match **this PR's** behavior (not an old run from another branch). Redact secrets. Trim noise; keep enough lines that a reviewer can trust the outcome.
+Evidence must match **this PR's** result (not an old run or another branch). Redact secrets. Trim noise; keep enough that a reviewer can trust the outcome.
 
 Not sufficient alone:
 
@@ -68,6 +71,7 @@ Not sufficient alone:
 - “CI green”
 - “LGTM locally” with no output
 - Logs with no command or context
+- Test output offered as proof of a layout change
 
 ### 4. Notes (optional)
 
@@ -80,9 +84,9 @@ Keep the title specific and compact (issue id when applicable). Body carries det
 ## Workflow
 
 1. Draft Summary + Changes from the actual diff (not from memory of the plan).
-2. Capture Evidence: run the relevant CLI/TUI path; paste output and/or attach a screenshot.
+2. Capture Evidence that matches the PR kind (tree for layout; TUI/CLI/screenshot for behavior).
 3. Fill `.github/PULL_REQUEST_TEMPLATE.md` sections; remove unused Notes.
-4. Open or edit the PR. Completion criterion: body has non-empty Summary, Changes with real bullets, and Evidence that shows runtime behavior.
+4. Open or edit the PR. Completion criterion: body has non-empty Summary, Changes with real bullets, and Evidence that proves the claim (not CI).
 
 ```bash
 # Example: open PR with body file
@@ -92,16 +96,17 @@ gh pr create --base development --title "<compact title>" --body-file /tmp/pr-bo
 ## Common Pitfalls
 
 1. **CI as Evidence** — tests/lint belong in your private checklist; they do not fill the Evidence section.
-2. **File laundry lists** — path lists are not Changes; describe user/engine-visible behavior.
-3. **Empty template leftovers** — don't leave placeholder bullets or an empty Notes stub.
-4. **Stale paste** — evidence from another branch or pre-fix run misleads reviewers.
-5. **Wall of text** — if Summary exceeds ~4 sentences, move detail into Changes bullets or cut it.
+2. **Wrong evidence kind** — layout PRs need a folder tree, not test output; behavior PRs need runtime paste/screenshot, not only a path list.
+3. **File laundry lists** — path lists are not Changes; describe user/engine-visible behavior (except tree evidence, which is intentionally structural).
+4. **Empty template leftovers** — don't leave placeholder bullets or an empty Notes stub.
+5. **Stale paste** — evidence from another branch or pre-fix run misleads reviewers.
+6. **Wall of text** — if Summary exceeds ~4 sentences, move detail into Changes bullets or cut it.
 
 ## Verification Checklist
 
 - [ ] Summary is 2–4 sentences (what + why)
 - [ ] Changes lists every meaningful add/behavior change as bullets
-- [ ] Evidence has TUI/CLI paste and/or screenshot — not CI-only
+- [ ] Evidence matches PR kind (tree for layout; TUI/CLI/screenshot for behavior) — not CI/test-only
 - [ ] Evidence corresponds to this PR's commits
 - [ ] Notes omitted or useful; issue links present when relevant
 - [ ] No “Done when” / acceptance-checklist section (not used in this repo’s PR body)

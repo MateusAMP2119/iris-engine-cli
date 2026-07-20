@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"sort"
@@ -119,7 +119,7 @@ func (m *psModel) jumpTo(h psHit) {
 // searchCandidates enumerates every navigable entity in the snapshot: one
 // pass over the listing and one over the run rows (never a per-lane re-scan
 // of the history -- rematch runs on every keystroke and every poll).
-func searchCandidates(s psSnapshot) []psHit {
+func searchCandidates(s Snapshot) []psHit {
 	var out []psHit
 	lanes := map[string]bool{}
 	pipelines := map[string]bool{}
@@ -135,11 +135,11 @@ func searchCandidates(s psSnapshot) []psHit {
 			out = append(out, psHit{kind: psHitPipeline, lane: lane, pipeline: name, label: name})
 		}
 	}
-	for _, p := range s.pipelines {
+	for _, p := range s.Pipelines {
 		addLane(laneOf(p))
 		addPipeline(laneOf(p), p.Name)
 	}
-	for _, run := range s.ps.Runs {
+	for _, run := range s.Ps.Runs {
 		addLane(runLaneOf(run))
 		addPipeline(runLaneOf(run), run.Pipeline)
 		out = append(out, psHit{
@@ -156,7 +156,7 @@ func searchCandidates(s psSnapshot) []psHit {
 // rematch rescores every candidate against the current query, keeping matches
 // best first (score, then shorter label, then lexical) and snapping the
 // selection back to the best hit.
-func (s *psSearch) rematch(snap psSnapshot) {
+func (s *psSearch) rematch(snap Snapshot) {
 	q := string(s.query)
 	var hits []psHit
 	for _, c := range searchCandidates(snap) {

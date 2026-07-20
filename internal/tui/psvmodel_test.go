@@ -1,4 +1,4 @@
-package cli
+package tui
 
 import (
 	"reflect"
@@ -11,10 +11,9 @@ import (
 // run plus an idle member, reporting is fully idle, and one laneless pipeline
 // (solo) stands as its own anonymous lane. Runs are newest first, as the wire
 // orders them.
-func psvFixture() psSnapshot {
+func psvFixture() Snapshot {
 	exit0, exit3 := 0, 3
-	return psSnapshot{
-		ps: api.PsPayload{
+	return Snapshot{Ps: api.PsPayload{
 			Engine: api.PsEngine{Version: "dev", Role: "leader", PID: 42, Uptime: "2h13m",
 				QueuedRuns: 1, RunningRuns: 1, Load: &api.PsLoad{CPUPercent: 3.2, RSSBytes: 126 << 20}},
 			Runs: []api.PsRun{
@@ -26,7 +25,7 @@ func psvFixture() psSnapshot {
 				{ID: "2", Pipeline: "solo", State: "succeeded", ExitCode: &exit0},
 			},
 		},
-		pipelines: []api.PipelineListItem{
+		Pipelines: []api.PipelineListItem{
 			{Name: "extract", Active: true, Lane: "ingest"},
 			{Name: "hello_iris", Active: false, Lane: "ingest"},
 			{Name: "load_orders", Active: true, Lane: "ingest"},
@@ -214,7 +213,7 @@ func TestPsModelUpdate(t *testing.T) {
 				t.Fatalf("pinned target = %q, want 9", m.focus())
 			}
 			s := psvFixture() // run 9 pruned from the history
-			s.ps.Runs = append(s.ps.Runs[:2:2], s.ps.Runs[3:]...)
+			s.Ps.Runs = append(s.Ps.Runs[:2:2], s.Ps.Runs[3:]...)
 			m.absorb(s)
 			if m.focus() != "12" {
 				t.Fatalf("target after pin loss = %q, want the selection's 12", m.focus())
@@ -233,7 +232,7 @@ func TestPsModelUpdate(t *testing.T) {
 				t.Errorf("selection lost across re-poll: %q", m.selLane)
 			}
 			s2 := psvFixture() // reporting vanishes: clamp to first
-			s2.pipelines = s2.pipelines[:3]
+			s2.Pipelines = s2.Pipelines[:3]
 			m.absorb(s2)
 			if m.selLane != "ingest" {
 				t.Errorf("vanished selection clamps to first lane, got %q", m.selLane)
@@ -264,7 +263,7 @@ func TestPsModelUpdate(t *testing.T) {
 		t.Run("follow toggles and scroll clamps in the logs pane", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			m.pane = psPaneLogs
-			m.snap.logs, m.snap.logsRun = []string{"a", "b", "c", "d"}, "14"
+			m.snap.Logs, m.snap.LogsRun = []string{"a", "b", "c", "d"}, "14"
 			m.update(key('f'))
 			if m.follow {
 				t.Fatal("f did not stop following")
@@ -305,19 +304,19 @@ func TestPsModelUpdate(t *testing.T) {
 
 		t.Run("a sample tick gates the ring push", func(t *testing.T) {
 			first := psvFixture()
-			first.ps.SampleTick = 3
+			first.Ps.SampleTick = 3
 			m := newPsModel(first, "")
 			if eng := m.rings[""]; len(eng.cpu) != 1 {
 				t.Fatalf("engine ring after open = %+v, want one sample", eng.cpu)
 			}
 			same := psvFixture() // the collector has not ticked: no push
-			same.ps.SampleTick = 3
+			same.Ps.SampleTick = 3
 			m.absorb(same)
 			if eng := m.rings[""]; len(eng.cpu) != 1 {
 				t.Fatalf("engine ring after a same-tick poll = %+v, want still one sample", eng.cpu)
 			}
 			next := psvFixture() // tick 5: the missed tick 4 fills absent
-			next.ps.SampleTick = 5
+			next.Ps.SampleTick = 5
 			m.absorb(next)
 			eng := m.rings[""]
 			if len(eng.cpu) != 3 || eng.cpu[1] != psNoSample || eng.cpu[2] != 3.2 {
@@ -327,10 +326,10 @@ func TestPsModelUpdate(t *testing.T) {
 
 		t.Run("a collector restart resets the tick gate", func(t *testing.T) {
 			first := psvFixture()
-			first.ps.SampleTick = 40
+			first.Ps.SampleTick = 40
 			m := newPsModel(first, "")
 			back := psvFixture() // a restarted daemon answers with a small tick
-			back.ps.SampleTick = 2
+			back.Ps.SampleTick = 2
 			m.absorb(back)
 			eng := m.rings[""]
 			if len(eng.cpu) != 2 || eng.cpu[1] != 3.2 {
@@ -343,8 +342,8 @@ func TestPsModelUpdate(t *testing.T) {
 
 		t.Run("a history payload re-seeds the rings", func(t *testing.T) {
 			s := psvFixture()
-			s.ps.SampleTick = 40
-			s.ps.History = &api.PsHistory{
+			s.Ps.SampleTick = 40
+			s.Ps.History = &api.PsHistory{
 				FineIntervalSeconds: 2, CoarseIntervalSeconds: 60,
 				Series: []api.PsSeries{
 					{Key: "engine", CPU: []float64{1, 2, 3}, RSS: []int64{10, 20, 30},
@@ -375,7 +374,7 @@ func TestPsModelUpdate(t *testing.T) {
 			}
 			// The next tick appends to the re-seeded ring, no re-seed needed.
 			live := psvFixture()
-			live.ps.SampleTick = 41
+			live.Ps.SampleTick = 41
 			m.absorb(live)
 			if eng := m.rings[""]; len(eng.cpu) != 4 || eng.cpu[3] != 3.2 {
 				t.Fatalf("engine ring after the next tick = %+v, want the live sample appended", eng.cpu)

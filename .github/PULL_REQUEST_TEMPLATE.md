@@ -12,9 +12,10 @@
 
 ## Evidence
 
-<!-- Required. CI green is not enough — show runtime behavior. -->
-<!-- Prefer: TUI/CLI copy-paste, screenshot, or both. -->
-<!-- Paste output in a fenced block; attach screenshots in the PR. -->
+<!-- Required. CI / go test / go build are NOT evidence. -->
+<!-- Behavior: TUI/CLI copy-paste and/or screenshot. -->
+<!-- Layout/package moves: directory tree of the new shape. -->
+<!-- Paste in a fenced block; attach screenshots when relevant. -->
 
 ```text
 $ 
