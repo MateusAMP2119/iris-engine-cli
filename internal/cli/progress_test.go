@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -92,6 +93,18 @@ func TestPadCeremonyMarkRightAligns(t *testing.T) {
 	if !strings.HasSuffix(padded, mark) {
 		t.Fatalf("padded %q should end with %q", padded, mark)
 	}
+}
+
+// TestCeremonySetupFormWidthMatchesGrid proves install setup menus use the same
+// frame width as ceremony check lines (indent + bullet + body + mark).
+func TestCeremonySetupFormWidthMatchesGrid(t *testing.T) {
+	checkLine := formatCeremonyLine("Catalog configured", ceremonyCheckMark("✓"))
+	want := lipgloss.Width(checkLine)
+	if got := ceremonyConfirmWidth(); got != want {
+		t.Fatalf("ceremonyConfirmWidth() = %d, check line width = %d", got, want)
+	}
+	// Form is built with that width; ThemeCharm content is frame-inset.
+	_ = newCeremonySetupForm(huh.NewGroup(huh.NewSelect[string]().Options(huh.NewOption("a", "a"))))
 	// Full-width mark is unchanged.
 	full := strings.Repeat("x", ceremonyMarkCols)
 	if got := padCeremonyMark(full); got != full {

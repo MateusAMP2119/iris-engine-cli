@@ -70,6 +70,37 @@ func ceremonyConfirmTheme() *huh.Theme {
 	return theme
 }
 
+// ceremonySetupTheme pins title and description wrap to the install ceremony
+// frame so setup selects/inputs share the same right edge as progress [✓].
+func ceremonySetupTheme() *huh.Theme {
+	theme := huh.ThemeCharm()
+	width := ceremonyConfirmWidth()
+	frame := theme.Focused.Base.GetHorizontalFrameSize()
+	contentCols := width - frame
+	if contentCols < 1 {
+		contentCols = width
+	}
+	theme.Focused.Title = theme.Focused.Title.Width(contentCols)
+	theme.Blurred.Title = theme.Blurred.Title.Width(contentCols)
+	theme.Focused.Description = theme.Focused.Description.Width(contentCols)
+	theme.Blurred.Description = theme.Blurred.Description.Width(contentCols)
+	theme.Focused.SelectSelector = theme.Focused.SelectSelector.Width(contentCols)
+	theme.Blurred.SelectSelector = theme.Blurred.SelectSelector.Width(contentCols)
+	theme.Focused.Option = theme.Focused.Option.Width(contentCols)
+	theme.Blurred.Option = theme.Blurred.Option.Width(contentCols)
+	theme.Focused.TextInput.Placeholder = theme.Focused.TextInput.Placeholder.Width(contentCols)
+	theme.Blurred.TextInput.Placeholder = theme.Blurred.TextInput.Placeholder.Width(contentCols)
+	return theme
+}
+
+// newCeremonySetupForm builds a huh form sized to the install ceremony grid
+// (indent + bullet + body + mark), matching progress/check lines.
+func newCeremonySetupForm(groups ...*huh.Group) *huh.Form {
+	return huh.NewForm(groups...).
+		WithTheme(ceremonySetupTheme()).
+		WithWidth(ceremonyConfirmWidth())
+}
+
 // newCeremonyConfirm builds the yes/no field used by confirmWithHuh. Theme and
 // width are applied by the form (or by tests that call View directly).
 func newCeremonyConfirm(question string, value *bool) *huh.Confirm {
@@ -119,7 +150,7 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 		defer closer.Close()
 	}
 	var choice string
-	form := huh.NewForm(
+	form := newCeremonySetupForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Engine setup").
@@ -131,7 +162,7 @@ func selectEngineSetup(preselect string, out io.Writer) (engineSetupChoice, erro
 				).
 				Value(&choice),
 		),
-	).WithTheme(huh.ThemeCharm()).WithInput(in)
+	).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -160,7 +191,7 @@ func promptRemoteEndpoint(out io.Writer) (host, token string, err error) {
 	if closer != nil {
 		defer closer.Close()
 	}
-	form := huh.NewForm(
+	form := newCeremonySetupForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Remote Iris endpoint (host:port)").
@@ -170,7 +201,7 @@ func promptRemoteEndpoint(out io.Writer) (host, token string, err error) {
 				EchoMode(huh.EchoModePassword).
 				Value(&token),
 		),
-	).WithTheme(huh.ThemeCharm()).WithInput(in)
+	).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -216,7 +247,7 @@ func selectCatalogSetup(preselect string, out io.Writer) (catalogSetupChoice, []
 		defer closer.Close()
 	}
 	var choice string
-	form := huh.NewForm(
+	form := newCeremonySetupForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Pipeline catalog").
@@ -228,7 +259,7 @@ func selectCatalogSetup(preselect string, out io.Writer) (catalogSetupChoice, []
 				).
 				Value(&choice),
 		),
-	).WithTheme(huh.ThemeCharm()).WithInput(in)
+	).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
@@ -266,15 +297,15 @@ func promptCatalogURL(out io.Writer) (string, error) {
 		defer closer.Close()
 	}
 	var raw string
-	form := huh.NewForm(
+	form := newCeremonySetupForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Pack catalog URL").
-				Description("HTTPS URL of a catalog.json that lists installable packs.").
+				Title("Catalog URL").
+				Description("HTTPS URL of a catalog.json listing installable pipelines.").
 				Placeholder("https://example.com/catalog.json").
 				Value(&raw),
 		),
-	).WithTheme(huh.ThemeCharm()).WithInput(in)
+	).WithInput(in)
 	if out != nil {
 		form = form.WithOutput(out)
 	}
