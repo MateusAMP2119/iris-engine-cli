@@ -13,6 +13,12 @@ release. One command, from the repo root (script lives next to install.sh):
 sh install-local.sh
 ```
 
+On Windows (PowerShell), the sibling script drives `install.ps1` the same way:
+
+```powershell
+.\install-local.ps1
+```
+
 The script builds with the release workflow's exact flags (CGO_ENABLED=0,
 -trimpath, buildinfo.Version stamped `local.<date>.<sha>[-dirty]`), packages
 `iris_<os>_<arch>.tar.gz` + `checksums.txt` into `.local/`, then execs the
