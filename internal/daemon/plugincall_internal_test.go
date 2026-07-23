@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +18,9 @@ import (
 // temp root and returns the root.
 func installTestPlugin(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
 	root := t.TempDir()
 	src := t.TempDir()
 	body := `#!/bin/sh

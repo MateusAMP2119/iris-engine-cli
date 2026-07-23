@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -108,6 +109,9 @@ func awaitOutput(t *testing.T, buf *lockedBuffer, want string) {
 // writeScript drops an executable shell script into dir and returns its argv.
 func writeScript(t *testing.T, dir, body string) []string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
 	path := filepath.Join(dir, "main.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o700); err != nil { //nolint:gosec // test script must be executable
 		t.Fatalf("write script: %v", err)

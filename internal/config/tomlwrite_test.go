@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -19,7 +20,8 @@ func TestUpsertTOMLFileCreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat written file: %v", err)
 	}
-	if got := st.Mode().Perm(); got != 0o600 {
+	// Windows has no POSIX file modes; the owner-only contract is unix-only.
+	if got := st.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Errorf("file mode = %o, want 600", got)
 	}
 
@@ -95,7 +97,8 @@ func TestUpsertTOMLFilePreserves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if got := st.Mode().Perm(); got != 0o600 {
+	// Windows has no POSIX file modes; the owner-only contract is unix-only.
+	if got := st.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Errorf("file mode after upsert = %o, want 600 (tightened from 644)", got)
 	}
 }

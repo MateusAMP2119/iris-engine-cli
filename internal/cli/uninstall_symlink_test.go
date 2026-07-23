@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -52,6 +53,9 @@ func TestRemoveInstallerSymlinkUserLocal(t *testing.T) {
 	}
 	link := filepath.Join(localBin, "iris")
 	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink creation needs privilege on Windows: %v", err)
+		}
 		t.Fatal(err)
 	}
 	if err := removeInstallerSymlink(target); err != nil {

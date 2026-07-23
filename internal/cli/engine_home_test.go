@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -107,6 +108,9 @@ func TestEngineStartRefusesLegacyWorkspaceState(t *testing.T) {
 		}
 		link := filepath.Join(base, "link")
 		if err := os.Symlink(realDir, link); err != nil {
+			if runtime.GOOS == "windows" {
+				t.Skipf("symlink creation needs privilege on Windows: %v", err)
+			}
 			t.Fatalf("symlink cwd: %v", err)
 		}
 		// IRIS_HOME spelled THROUGH the symlink, cwd entered at the RESOLVED

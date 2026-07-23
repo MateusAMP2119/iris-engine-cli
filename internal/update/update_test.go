@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 )
@@ -136,8 +137,9 @@ func TestUpdateVerifiedAtomicReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat replaced exe: %v", err)
 	}
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("replaced exe mode = %v, want 0755", info.Mode().Perm())
+	// Windows has no POSIX file modes; the executable-bit contract is unix-only.
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o755 {
+		t.Errorf("replaced exe mode = %v, want 0755", perm)
 	}
 }
 

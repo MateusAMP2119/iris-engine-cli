@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -132,7 +133,9 @@ func TestUnixSocketDefault(t *testing.T) {
 		if err != nil {
 			t.Fatalf("socket file not created at %s: %v", sock, err)
 		}
-		if perm := info.Mode().Perm(); perm != 0o600 {
+		// Windows has no POSIX file modes; AF_UNIX works there but the
+		// owner-only permission contract is unix-only.
+		if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 			t.Errorf("socket permissions = %v, want 0600 (owner-only)", perm)
 		}
 

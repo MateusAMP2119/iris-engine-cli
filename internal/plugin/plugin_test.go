@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -119,8 +120,9 @@ func TestInstallResolveListRemove(t *testing.T) {
 	if res.Binary != BinaryPath(root, "mailer", "1.0") {
 		t.Fatalf("install binary path = %s", res.Binary)
 	}
+	// Windows has no executable bit; presence is the whole contract there.
 	info, err := os.Stat(res.Binary)
-	if err != nil || info.Mode().Perm()&0o100 == 0 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0) {
 		t.Fatalf("installed binary not executable: %v %v", info, err)
 	}
 

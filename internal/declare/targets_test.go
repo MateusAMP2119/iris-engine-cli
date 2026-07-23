@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -95,6 +96,9 @@ func TestResolveDeclarationFile(t *testing.T) {
 		})
 
 		t.Run("a non-NotExist stat error is surfaced, not reported as absence", func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("chmod cannot revoke directory search permission on Windows")
+			}
 			if os.Geteuid() == 0 {
 				t.Skip("root bypasses directory search-permission checks")
 			}

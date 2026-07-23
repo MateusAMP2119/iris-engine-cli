@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -99,6 +100,9 @@ func TestServiceInstallOnDemand(t *testing.T) {
 		})
 
 		t.Run("install writes the unit; uninstall removes exactly it", func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("service units are systemd/launchd only")
+			}
 			tmp := t.TempDir()
 			realWS := t.TempDir()
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
@@ -145,6 +149,9 @@ func TestServiceInstallOnDemand(t *testing.T) {
 		})
 
 		t.Run("install creates traversable parent dirs for an out-of-workspace --path", func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("service units are systemd/launchd only")
+			}
 			base := t.TempDir()
 			realWS := t.TempDir()
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
@@ -178,6 +185,9 @@ func TestServiceInstallOnDemand(t *testing.T) {
 		})
 
 		t.Run("install defaults to the ServiceUnitPath seam", func(t *testing.T) {
+			if runtime.GOOS == "windows" {
+				t.Skip("service units are systemd/launchd only")
+			}
 			realWS := t.TempDir()
 			s := config.Resolve(config.Defaults(realWS), config.Layer{}, config.Layer{}, config.Layer{})
 

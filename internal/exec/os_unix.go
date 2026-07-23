@@ -16,8 +16,8 @@ import (
 // process group, captures its output through the standard library, and kills the
 // whole group on Kill or context cancellation. It is the production
 // implementation of the Runner seam, the one the daemon wires into its lane loop
-// and into its pipeline and build planes. Unix only (darwin + linux); Windows is
-// deferred from v1.
+// and into its pipeline and build planes. This is the unix implementation
+// (darwin + linux); os_windows.go is the Job Object-backed Windows sibling.
 type OSRunner struct{}
 
 // NewOSRunner returns the real subprocess runner.

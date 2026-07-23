@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -69,7 +70,8 @@ func TestEngineConnectRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat iris.toml: %v", err)
 	}
-	if got := st.Mode().Perm(); got != 0o600 {
+	// Windows has no POSIX file modes; the owner-only contract is unix-only.
+	if got := st.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Errorf("iris.toml mode = %o, want 600", got)
 	}
 }

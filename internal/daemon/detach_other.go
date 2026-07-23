@@ -1,10 +1,10 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package daemon
 
 import "syscall"
 
-// detachedSysProcAttr has no session-leader detachment on non-unix platforms. The
-// daemon lifecycle targets unix (darwin + linux); Windows is deferred from v1. This
-// stub keeps the package building elsewhere.
+// detachedSysProcAttr has no session-leader detachment on platforms without one
+// (unix and windows have real implementations). This stub keeps the package
+// building elsewhere.
 func detachedSysProcAttr() *syscall.SysProcAttr { return nil }

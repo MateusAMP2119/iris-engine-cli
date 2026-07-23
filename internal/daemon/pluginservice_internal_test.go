@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,9 @@ done
 // installServicePlugin lays the line-protocol service plugin into a temp root.
 func installServicePlugin(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture is a POSIX shell script")
+	}
 	root := t.TempDir()
 	src := t.TempDir()
 	if err := os.WriteFile(filepath.Join(src, "bin"), []byte(serviceScriptBody), 0o755); err != nil { //nolint:gosec // test plugin must be executable

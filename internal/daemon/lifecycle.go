@@ -10,7 +10,6 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/MateusAMP2119/iris-lakehouse/internal/api"
@@ -471,15 +470,16 @@ func Detach(ctx context.Context, s config.Settings, exePath string, childArgs []
 }
 
 // StopDaemon signals the daemon with the given pid to shut down gracefully
-// (SIGTERM), waits until the process is gone, and escalates to SIGKILL if the grace
-// deadline (ctx) passes. It removes the pidfile once the daemon is gone (engine
-// stop stops a detached daemon).
+// (SIGTERM on unix; a hard kill on Windows, which has no cross-console
+// equivalent), waits until the process is gone, and escalates to SIGKILL if the
+// grace deadline (ctx) passes. It removes the pidfile once the daemon is gone
+// (engine stop stops a detached daemon).
 func StopDaemon(ctx context.Context, s config.Settings, pid int) error {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("daemon: find process %d: %w", pid, err)
 	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
+	if err := signalStop(proc); err != nil {
 		if errors.Is(err, os.ErrProcessDone) {
 			return RemovePIDFile(s)
 		}
@@ -531,8 +531,9 @@ func waitProcessGone(ctx context.Context, pid int) {
 	}
 }
 
-// processAlive reports whether a process with pid is still running, probed with
-// the null signal (signal 0 delivers nothing but validates the target exists).
+// processAlive reports whether a process with pid is still running. The probe
+// is platform-specific (processalive_unix.go / processalive_windows.go): the
+// null signal on unix, an OpenProcess exit-code query on Windows.
 //
 // Limitation: this cannot distinguish the original daemon from an unrelated
 // process that has since been assigned the same pid (PID reuse), so a SIGKILL
@@ -542,13 +543,6 @@ func waitProcessGone(ctx context.Context, pid int) {
 // kernel process handle, which the standard library does not expose portably.
 // Accepted for the minimal stop; a pidfd-based handle can close it when the
 // platform surface allows.
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
-}
 
 // waitSocketReachable polls until the unix socket at path accepts a connection or
 // ctx is done. Readiness is decided by a successful dial, never elapsed time; the
