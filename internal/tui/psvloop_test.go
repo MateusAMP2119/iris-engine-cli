@@ -56,7 +56,7 @@ func TestRunPsLoop(t *testing.T) {
 			if err := runPsLoop(context.Background(), s.v, newPsModel(psvFixture(), "")); err != nil {
 				t.Fatalf("q exit = %v, want nil", err)
 			}
-			if !strings.Contains(s.out.String(), "ENGINE") {
+			if !strings.Contains(s.out.String(), "IRIS") {
 				t.Error("the loop never rendered a frame")
 			}
 		})

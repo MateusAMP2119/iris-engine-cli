@@ -1,19 +1,19 @@
- ENGINE dev · LEADER · pid 42 · up 2h13m   CPU         ░ 3.2% · MEM 126.0MiB · 1 running · 1 queued
-╭─ LANES ────────────────╮╭─ PIPELINES · ingest ───────────────────────────────────────────────────╮
-│▌▾ ingest         1r·1q ││                                                                        │
-│   5╭─ COMMANDS ───────────────────────╮ ╭─ ABOUT · catalog ─────────────────────────────────╮    │
-│   ●│▌▸ catalog · Browse and install … │ │ Browse and install pipeline packs                 │    │
-│   ●│   logs · Pin the logs pane on a… │ │                                                   │    │
-│   ●│   search · Fuzzy-find lanes, pi… │ │ Opens the catalog overlay over the dashboard:     │    │
-│    │   all · Toggle full run history… │ │ pack list on the left, README and tree on the     │    │
-│ ▸ r│   follow · Toggle log-tail foll… │─│ right. Install and apply without leaving iris ps. │────╯
-│   -│   history · Toggle hours-deep l… │o│                                                   │────╮
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ⠠⢀⣀⣸⣧⣀⡀   IRIS  dev  ·  LEADER  ·  up 2h13m   CPU                         ░ 3.2% · MEM 126.0MiB  │
+│ ⠐⠊⠉⢻⡟⠉⠑⠂  pid 42  ·  1 running  ·  1 queued                                                      │
+╰────╭─ COMMANDS ───────────────────────╮─╭─ ABOUT · catalog ─────────────────────────────────╮────╯
+╭─ LA│▌▸ catalog · Browse and install … │i│ Browse and install pipeline packs                 │────╮
+│▌▾ i│   logs · Pin the logs pane on a… │ │                                                   │    │
+│   5│   search · Fuzzy-find lanes, pi… │ │ Opens the catalog overlay over the dashboard:     │    │
+│   ●│   all · Toggle full run history… │ │ pack list on the left, README and tree on the     │    │
+│   ●│   follow · Toggle log-tail foll… │ │ right. Install and apply without leaving iris ps. │    │
+│   ●│   history · Toggle hours-deep l… │ │                                                   │    │
 │    │   cancel · Cancel the watched r… │ │ Usage  :catalog                                   │    │
-│ ▸ s│   help · Keyboard reference      │ │ Keys   :catalog                                   │    │
-│   -│   q · Quit iris ps               │ │ Group  navigate                                   │    │
+│ ▸ r│   help · Keyboard reference      │─│ Keys   :catalog                                   │────╯
+│   -│   q · Quit iris ps               │o│ Group  navigate                                   │────╮
 │    │                                  │ │                                                   │    │
-│    │                                  │ │                                                   │    │
-│    │                                  │ │                                                   │    │
+│ ▸ s│                                  │ │                                                   │    │
+│   -│                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │

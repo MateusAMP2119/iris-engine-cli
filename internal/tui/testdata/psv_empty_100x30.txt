@@ -1,10 +1,14 @@
- iris  dev  ·  LEADER  ·  up 12s                       CPU                                - · MEM -
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ⠠⢀⣀⣸⣧⣀⡀   IRIS  dev  ·  LEADER  ·  up 12s          CPU                                - · MEM -  │
+│ ⠐⠊⠉⢻⡟⠉⠑⠂  pid 7                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
-
-
-
-
+                                                 ⣿
+                                              ⢤⣀⡀⣿⣄⣀⡤
+                                               ⣹⣿⣿⣿⣏
+                                              ⠚⠉⠙⣿⠋⠉⠓
+                                                 ⣿
 
                           engine is quiet · dev · LEADER · pid 7 · up 12s
 
@@ -23,8 +27,4 @@
 
 
 
-
-
-
-
- c catalog · : cmds · p freeze · ? help · q quit               unix:///home/tiger/.iris/engine.sock
+ c catalog · : cmds · p freeze · ? help · q quit      unix:///home/tiger/.iris/engine.sock [leader]

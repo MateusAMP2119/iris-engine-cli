@@ -101,6 +101,11 @@ func TestPsFrameGoldens(t *testing.T) {
 			}
 		})
 
+		t.Run("short terminal one-line header 100x14", func(t *testing.T) {
+			m := newPsModel(psvFixture(), target)
+			golden.Assert(t, []byte(framePlain(m, 100, 14)), "testdata/psv_short_100x14.txt")
+		})
+
 		t.Run("too small degrades to one line", func(t *testing.T) {
 			m := newPsModel(psvFixture(), target)
 			got := framePlain(m, 30, 5)
@@ -124,7 +129,7 @@ func TestPsFrameStyling(t *testing.T) {
 			m.update(key('j')) // ...and off extract, so selection accent hides no state dot
 			b := renderPsFrame(m, 150, 40, false)
 			out := string(b.render(painter{enabled: true}))
-			for _, want := range []string{ansiCyan + "●", ansiYellow + "●", ansiGreen + "LEADER", ansiCyan + "╭"} {
+			for _, want := range []string{ansiCyan + "●", ansiYellow + "●", ansiGreen + "LEADER", ansiAccent + "╭"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("frame carries no %q-styled cell", want)
 				}
@@ -184,7 +189,7 @@ func TestPsFrameStyling(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
 			b := renderPsFrame(m, 150, 40, true)
 			out := string(b.render(painter{}))
-			for _, sgr := range []string{ansiInverse, ansiCyan, ansiGreen, ansiYellow, ansiRed, ansiOrange, ansiDim, ansiReset, ansiMagenta} {
+			for _, sgr := range []string{ansiInverse, ansiCyan, ansiGreen, ansiYellow, ansiRed, ansiOrange, ansiDim, ansiReset, ansiMagenta, ansiBorder, ansiAccent} {
 				if strings.Contains(out, sgr) {
 					t.Errorf("colorless frame carries SGR %q", sgr)
 				}
@@ -224,12 +229,22 @@ func TestPsFrameStyling(t *testing.T) {
 			}
 		})
 
-		t.Run("header names the engine and its role", func(t *testing.T) {
+		t.Run("header card names the engine and its role", func(t *testing.T) {
 			m := newPsModel(psvFixture(), "")
-			top := renderPsFrame(m, 150, 40, false).plainLines()[0]
-			for _, want := range []string{"ENGINE dev", "LEADER", "pid 42", "up 2h13m", "1 running", "1 queued"} {
+			top := strings.Join(renderPsFrame(m, 150, 40, false).plainLines()[:psHeaderCardH], "\n")
+			for _, want := range []string{"IRIS", "dev", "LEADER", "pid 42", "up 2h13m", "1 running", "1 queued"} {
 				if !strings.Contains(top, want) {
-					t.Errorf("header %q missing %q", top, want)
+					t.Errorf("header card %q missing %q", top, want)
+				}
+			}
+		})
+
+		t.Run("short terminal keeps the one-line header", func(t *testing.T) {
+			m := newPsModel(psvFixture(), "")
+			top := renderPsFrame(m, 100, 14, false).plainLines()[0]
+			for _, want := range []string{"ENGINE dev", "LEADER", "pid 42"} {
+				if !strings.Contains(top, want) {
+					t.Errorf("short header %q missing %q", top, want)
 				}
 			}
 		})
@@ -238,8 +253,8 @@ func TestPsFrameStyling(t *testing.T) {
 			m := newPsModel(Snapshot{Ps: api.PsPayload{
 				Engine: api.PsEngine{Version: "dev", Role: "leader", PID: 7, Uptime: "12s"},
 			}}, "")
-			top := renderPsFrame(m, 100, 30, false).plainLines()[0]
-			if !strings.Contains(top, "iris") || !strings.Contains(top, "LEADER") {
+			top := strings.Join(renderPsFrame(m, 100, 30, false).plainLines()[:psHeaderCardH], "\n")
+			if !strings.Contains(top, "IRIS") || !strings.Contains(top, "LEADER") {
 				t.Fatalf("empty header %q missing identity", top)
 			}
 			for _, want := range []string{"CPU", "MEM"} {

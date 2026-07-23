@@ -29,7 +29,19 @@ const (
 	psLogsMinWidth   = 90
 	psDetailMinWidth = 110
 	psDetailMinRows  = 24
+	// The bordered header card needs vertical room; short terminals keep the
+	// one-line header.
+	psHeaderCardMinH = 16
+	psHeaderCardH    = 4
 )
+
+// psHeaderRows is the header's row budget at the given frame height.
+func psHeaderRows(h int) int {
+	if h >= psHeaderCardMinH {
+		return psHeaderCardH
+	}
+	return 1
+}
 
 // psCell is one screen cell: its rune and the SGR code painting it ("" plain).
 type psCell struct {
@@ -404,16 +416,17 @@ func selIndex(sel string, keys []string) int {
 	return 0
 }
 
-// paneChrome picks a pane's border and title paint: cyan border when the pane
-// holds the focus, dim otherwise; a colorless focused pane marks its title.
+// paneChrome picks a pane's border and title paint: warm accent when the pane
+// holds the focus, receding border chrome otherwise; a colorless focused pane
+// marks its title.
 func paneChrome(focused, colorless bool, title string) (borderSGR, titleSGR, t string) {
 	if focused {
 		if colorless {
-			return ansiDim, "", title + " *"
+			return ansiBorder, "", title + " *"
 		}
-		return ansiCyan, ansiCyan, title
+		return ansiAccent, ansiAccent, title
 	}
-	return ansiDim, ansiDim, title
+	return ansiBorder, ansiDim, title
 }
 
 // psIsEmptyWorkspace reports the quiet-engine zero state: nothing registered,
@@ -441,8 +454,8 @@ func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
 	renderPsHeader(b, m)
 	renderPsFooter(b, m)
 
-	top := 1
-	paneH := h - 2 // rows between header and footer
+	top := psHeaderRows(h)
+	paneH := h - top - 1 // rows between header and footer
 
 	// Quiet engine: skip the hollow multi-pane grid for a guided empty card.
 	// Overlays (commands, search, catalog) still compose on top.
@@ -493,11 +506,12 @@ func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
 		}
 	}
 
-	if m.search != nil {
+	switch {
+	case m.search != nil:
 		renderSearchOverlay(b, m)
-	} else if m.catalog != nil {
+	case m.catalog != nil:
 		renderCatalogOverlay(b, m)
-	} else if m.command != nil {
+	case m.command != nil:
 		renderCommandOverlay(b, m)
 	}
 	return b
@@ -552,7 +566,13 @@ func renderEmptyWorkspace(b *screenBuf, m *psModel, x, y, w, h int, colorless bo
 		cardH = 4 + 2*len(emptyActions) - 1
 	}
 
-	contentH := 2 + cardH // status + gap + card
+	// The star mark leads the card in the roomy tier — the Grok welcome shape.
+	markH := 0
+	if spacious {
+		markH = len(logoStar) + 1
+	}
+
+	contentH := markH + 2 + cardH // mark + status + gap + card
 	if spacious {
 		contentH += 3 // gap + two prose lines
 	}
@@ -569,11 +589,17 @@ func renderEmptyWorkspace(b *screenBuf, m *psModel, x, y, w, h int, colorless bo
 		b.text(ox+(innerW-len(runes))/2, ry, sgr, s)
 	}
 
-	center(startY, ansiDim, status)
+	if markH > 0 {
+		markW := logoWidth(logoStar)
+		for i, row := range logoStar {
+			b.text(ox+(innerW-markW)/2, startY+i, ansiMagenta, row)
+		}
+	}
+	center(startY+markH, ansiDim, status)
 
 	cardX := ox + (innerW-cardW)/2
-	cardY := startY + 2
-	b.box(cardX, cardY, cardW, cardH, ansiDim, ansiDim, "GET STARTED")
+	cardY := startY + markH + 2
+	b.box(cardX, cardY, cardW, cardH, ansiBorder, ansiDim, "GET STARTED")
 	itemY := cardY + 1
 	step := 1
 	if spacious {
@@ -596,9 +622,75 @@ func renderEmptyWorkspace(b *screenBuf, m *psModel, x, y, w, h int, colorless bo
 	}
 }
 
-// renderPsHeader paints row 0: identity left, live CPU/MEM right. A quiet
-// engine keeps the load readout (it is real data) but drops the run counts.
+// renderPsHeader paints the header: a bordered identity card when the frame
+// affords it, else the legacy one-line readout.
 func renderPsHeader(b *screenBuf, m *psModel) {
+	if psHeaderRows(b.h) == psHeaderCardH {
+		renderPsHeaderCard(b, m)
+		return
+	}
+	renderPsHeaderLine(b, m)
+}
+
+// renderPsHeaderCard paints rows 0..3: a full-width bordered card — brand mark
+// and identity on the first content row with the live CPU/MEM readout right-
+// aligned, pid and run counts on the second. A quiet engine keeps the load
+// readout (real data) but drops the run counts (the hollow part).
+func renderPsHeaderCard(b *screenBuf, m *psModel) {
+	e := m.snap.Ps.Engine
+	b.box(0, 0, b.w, psHeaderCardH, ansiBorder, "", "")
+
+	left := 2
+	if b.w >= psRailMinWidth && len(logoMark) > 0 {
+		rows := logoMark
+		if len(rows) > 2 {
+			rows = rows[:2]
+		}
+		for i, row := range rows {
+			b.text(2, 1+i, ansiMagenta, row)
+		}
+		left = 2 + logoWidth(logoMark) + 2
+	}
+
+	x := left
+	put := func(y int, sgr, s string) {
+		b.text(x, y, sgr, s)
+		x += len([]rune(s))
+	}
+
+	put(1, ansiMagenta, "IRIS")
+	if e.Version != "" {
+		put(1, ansiDim, "  ")
+		put(1, ansiDim, e.Version)
+	}
+	put(1, ansiDim, "  ·  ")
+	put(1, psRoleSGR(e.Role), strings.ToUpper(orDefault(e.Role, "engine")))
+	if e.Uptime != "" {
+		put(1, ansiDim, "  ·  up ")
+		put(1, "", e.Uptime)
+	}
+	renderHeaderLoad(b, m, 1, x, b.w-3, 0)
+
+	x = left
+	put(2, ansiDim, fmt.Sprintf("pid %d", e.PID))
+	if !psIsEmptyWorkspace(m) {
+		rc, qc := ansiCyan, ansiYellow
+		if e.RunningRuns == 0 {
+			rc = ansiDim
+		}
+		if e.QueuedRuns == 0 {
+			qc = ansiDim
+		}
+		put(2, ansiDim, "  ·  ")
+		put(2, rc, fmt.Sprintf("%d running", e.RunningRuns))
+		put(2, ansiDim, "  ·  ")
+		put(2, qc, fmt.Sprintf("%d queued", e.QueuedRuns))
+	}
+}
+
+// renderPsHeaderLine paints the one-line header: identity left, live CPU/MEM
+// right. A quiet engine keeps the load readout but drops the run counts.
+func renderPsHeaderLine(b *screenBuf, m *psModel) {
 	e := m.snap.Ps.Engine
 	x := 1
 	put := func(sgr, s string) {
@@ -620,7 +712,7 @@ func renderPsHeader(b *screenBuf, m *psModel) {
 			put(ansiDim, "  ·  up ")
 			put("", e.Uptime)
 		}
-		renderHeaderLoad(b, m, x, 0)
+		renderHeaderLoad(b, m, 0, x, b.w-1, 0)
 		return
 	}
 
@@ -634,7 +726,7 @@ func renderPsHeader(b *screenBuf, m *psModel) {
 	// The right side: CPU heat strip, MEM, run counts, sized to fit and shed
 	// leftmost-first when the terminal narrows.
 	counts := fmt.Sprintf(" · %d running · %d queued", e.RunningRuns, e.QueuedRuns)
-	nx, ok := renderHeaderLoad(b, m, idEnd, len([]rune(counts)))
+	nx, ok := renderHeaderLoad(b, m, 0, idEnd, b.w-1, len([]rune(counts)))
 	if !ok {
 		return // identity row only; the panes still carry the numbers
 	}
@@ -653,16 +745,17 @@ func renderPsHeader(b *screenBuf, m *psModel) {
 }
 
 // renderHeaderLoad right-aligns the CPU heat strip and CPU/MEM readout on
-// row 0, reserving extraW cells after MEM for the caller's tail; the strip
-// shrinks, then the whole block sheds, when the identity block leaves no
-// room. Returns the x after MEM and whether anything was drawn.
-func renderHeaderLoad(b *screenBuf, m *psModel, idEnd, extraW int) (int, bool) {
+// row y ending at column right, reserving extraW cells after MEM for the
+// caller's tail; the strip shrinks, then the whole block sheds, when the
+// identity block leaves no room. Returns the x after MEM and whether anything
+// was drawn.
+func renderHeaderLoad(b *screenBuf, m *psModel, y, idEnd, right, extraW int) (int, bool) {
 	e := m.snap.Ps.Engine
 	cpu := " " + cpuText(e.Load)
 	mem := " · MEM " + memText(e.Load)
 	stripW := 30
 	fixed := len("CPU ") + len([]rune(cpu+mem)) + extraW
-	if avail := b.w - 1 - idEnd - 3; fixed+stripW > avail {
+	if avail := right - idEnd - 3; fixed+stripW > avail {
 		stripW = avail - fixed
 		if stripW < 8 {
 			stripW = 0
@@ -671,14 +764,14 @@ func renderHeaderLoad(b *screenBuf, m *psModel, idEnd, extraW int) (int, bool) {
 			return 0, false
 		}
 	}
-	x := b.w - 1 - (fixed + stripW)
-	b.text(x, 0, ansiDim, "CPU ")
+	x := right - (fixed + stripW)
+	b.text(x, y, ansiDim, "CPU ")
 	x += len("CPU ")
-	b.renderHeatStrip(x, 0, stripW, m.stripCPU("", stripW))
+	b.renderHeatStrip(x, y, stripW, m.stripCPU("", stripW))
 	x += stripW
-	b.text(x, 0, "", cpu)
+	b.text(x, y, "", cpu)
 	x += len([]rune(cpu))
-	b.text(x, 0, ansiDim, mem)
+	b.text(x, y, ansiDim, mem)
 	x += len([]rune(mem))
 	return x, true
 }
@@ -709,13 +802,32 @@ type footerHint struct {
 func renderPsFooter(b *screenBuf, m *psModel) {
 	y := b.h - 1
 	target := m.target
-	tx := b.w - 1 - len([]rune(target))
+	// Bracketed role tag after the target, receding further than the dim
+	// target itself; sheds first when the bar tightens.
+	tag := ""
+	if role := m.snap.Ps.Engine.Role; role != "" && target != "" {
+		tag = " [" + strings.ToLower(role) + "]"
+	}
+	tx := b.w - 1 - len([]rune(target+tag))
+	if tx < 1+8+2 && tag != "" {
+		tag = ""
+		tx = b.w - 1 - len([]rune(target))
+	}
 	if tx < 1 {
 		tx = 1
 	}
 	maxHints := tx - 2
 	if maxHints < 8 {
 		maxHints = b.w - 2
+	}
+	paintTarget := func() {
+		if target == "" || tx <= 1 {
+			return
+		}
+		b.text(tx, y, ansiDim, target)
+		if tag != "" {
+			b.text(tx+len([]rune(target)), y, ansiBorder, tag)
+		}
 	}
 
 	if m.command != nil {
@@ -735,16 +847,12 @@ func renderPsFooter(b *screenBuf, m *psModel) {
 	}
 	if advisory != "" {
 		b.text(1, y, ansiYellow, clipCells(advisory, maxHints))
-		if target != "" && tx > 1 {
-			b.text(tx, y, ansiDim, target)
-		}
+		paintTarget()
 		return
 	}
 
 	paintFooterHints(b, 1, y, maxHints, psFooterHints(m))
-	if target != "" && tx > 1 {
-		b.text(tx, y, ansiDim, target)
-	}
+	paintTarget()
 }
 
 // paintFooterHints draws "key desc · key desc …" with accent keys, clipping
@@ -1164,7 +1272,7 @@ func renderCommandOverlay(b *screenBuf, m *psModel) {
 	listH := oh - promptH
 
 	// Left: COMMANDS list.
-	b.box(ox, oy, leftW, listH, ansiCyan, ansiCyan, "COMMANDS")
+	b.box(ox, oy, leftW, listH, ansiBorder, ansiCyan, "COMMANDS")
 	// Right: ABOUT / detail for the selection.
 	px := ox + leftW + 1
 	pw := ow - leftW - 1
@@ -1218,7 +1326,7 @@ func renderCommandOverlay(b *screenBuf, m *psModel) {
 		}
 		if pw > 0 {
 			title := "ABOUT · logs"
-			b.box(px, oy, pw, listH, ansiDim, ansiCyan, title)
+			b.box(px, oy, pw, listH, ansiBorder, ansiCyan, title)
 			if spec, ok := lookupCmd("logs"); ok {
 				body := commandDetailBody(spec, pw-4)
 				for i, ln := range body {
@@ -1259,7 +1367,7 @@ func renderCommandOverlay(b *screenBuf, m *psModel) {
 			if spec, ok = c.selected(); ok {
 				title = "ABOUT · " + spec.name
 			}
-			b.box(px, oy, pw, listH, ansiDim, ansiCyan, title)
+			b.box(px, oy, pw, listH, ansiBorder, ansiCyan, title)
 			if ok {
 				body := commandDetailBody(spec, pw-4)
 				for i, ln := range body {
@@ -1280,7 +1388,7 @@ func renderCommandOverlay(b *screenBuf, m *psModel) {
 	}
 
 	// Prompt bar spanning the full overlay width.
-	b.box(ox, oy+listH, ow, promptH, ansiCyan, ansiCyan, "")
+	b.box(ox, oy+listH, ow, promptH, ansiBorder, ansiCyan, "")
 	b.text(ox+2, oy+listH+1, ansiCyan, ":")
 	b.text(ox+3, oy+listH+1, "", string(c.input)+"█")
 	if c.err != "" {
@@ -1326,8 +1434,8 @@ func renderSearchOverlay(b *screenBuf, m *psModel) {
 	promptH := 3
 	resultsH := oh - promptH
 
-	b.box(ox, oy, leftW, resultsH, ansiDim, ansiDim, "results")
-	b.box(ox, oy+resultsH, leftW, promptH, ansiDim, ansiDim, "")
+	b.box(ox, oy, leftW, resultsH, ansiBorder, ansiDim, "results")
+	b.box(ox, oy+resultsH, leftW, promptH, ansiBorder, ansiDim, "")
 	b.text(ox+2, oy+resultsH+1, ansiCyan, "> ")
 	b.text(ox+4, oy+resultsH+1, "", string(s.query)+"▏")
 
@@ -1357,7 +1465,7 @@ func renderSearchOverlay(b *screenBuf, m *psModel) {
 	if s.sel < len(s.hits) {
 		title = "preview · " + s.hits[s.sel].label
 	}
-	b.box(px, oy, pw, oh, ansiDim, ansiDim, title)
+	b.box(px, oy, pw, oh, ansiBorder, ansiDim, title)
 	if s.sel < len(s.hits) {
 		renderSearchPreview(b, m, s.hits[s.sel], px+2, oy+1, pw-4, oh-2)
 	}
@@ -1441,7 +1549,7 @@ func renderCatalogOverlay(b *screenBuf, m *psModel) {
 	footH := 3
 	listH := oh - footH
 
-	b.box(ox, oy, leftW, listH, ansiDim, ansiDim, "catalog")
+	b.box(ox, oy, leftW, listH, ansiBorder, ansiDim, "catalog")
 
 	// Pack list, selection inverted; installed and shadowed badges plus tags ride
 	// the row. The list windows over the packs so a selection moved past the pane
@@ -1485,7 +1593,7 @@ func renderCatalogOverlay(b *screenBuf, m *psModel) {
 	if p := c.selected(); p != nil {
 		title = "preview · " + p.Name
 	}
-	b.box(px, oy, pw, listH, ansiDim, ansiDim, title)
+	b.box(px, oy, pw, listH, ansiBorder, ansiDim, title)
 	if p := c.selected(); p != nil {
 		tx, ty, tw := px+2, oy+1, pw-4
 		line := func(sgr, s string) {
@@ -1522,7 +1630,7 @@ func renderCatalogOverlay(b *screenBuf, m *psModel) {
 	}
 
 	// Bottom band: banner (yellow) above the key hints.
-	b.box(ox, oy+listH, ow, footH, ansiDim, ansiDim, "")
+	b.box(ox, oy+listH, ow, footH, ansiBorder, ansiDim, "")
 	hint := "⏎ install · a install+apply · esc close"
 	switch {
 	case c.busy != "":
