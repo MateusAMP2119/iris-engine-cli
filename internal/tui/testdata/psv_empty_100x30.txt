@@ -1,29 +1,29 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⠠⢀⣀⣸⣧⣀⡀   IRIS  dev  ·  LEADER  ·  up 12s          CPU                                - · MEM -  │
-│ ⠐⠊⠉⢻⡟⠉⠑⠂  pid 7                                                                                  │
+│ IRIS  dev  ·  LEADER  ·  up 12s  ·  pid 7          CPU                                - · MEM -  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
-                                                 ⣿
-                                              ⢤⣀⡀⣿⣄⣀⡤
-                                               ⣹⣿⣿⣿⣏
-                                              ⠚⠉⠙⣿⠋⠉⠓
-                                                 ⣿
 
-                          engine is quiet · dev · LEADER · pid 7 · up 12s
 
-             ╭─ GET STARTED ──────────────────────────────────────────────────────────╮
-             │                                                                        │
-             │   c                     browse the pack catalog, install a pipeline    │
-             │                                                                        │
-             │   :logs <id>            pin any run's log tail                         │
-             │                                                                        │
-             │   iris declare apply    register your own pipeline from YAML           │
-             │                                                                        │
-             ╰────────────────────────────────────────────────────────────────────────╯
 
-                    This view is your live ops board — lanes, runs, load, logs.
-                         It lights up the moment work lands on the engine.
+               ╭────────────────────────────────────────────────────────────────────╮
+               │                                                                    │
+               │         ⢰⡆          IRIS Engine  dev                               │
+               │         ⢸⡇                                                         │
+               │         ⢸⡇          Engine is quiet.                               │
+               │  ⣀      ⢸⣷⡀     ⣀   It lights up when work lands.                  │
+               │  ⠈⠙⢶⣦⣤⣄⡀⢸⣿⣿⣶⣦⣴⡶⠋⠁                                                  │
+               │     ⢹⣿⣿⣿⣼⣿⣿⣿⣿⡏      Browse the pack catalog                     c  │
+               │     ⣸⣿⣿⣿⣿⣿⣿⣿⣿⣇      Pin a run's log tail               :logs <id>  │
+               │  ⢀⣠⡴⠿⠿⢿⣿⣿⣿⣿⡿⠿⠿⢶⣄⡀   Register your pipeline     iris declare apply  │
+               │  ⠉     ⠈⢿⡿⠁    ⠈⠉   Quit                                        q  │
+               │         ⢸⡇                                                         │
+               │         ⢸⡇                                                         │
+               │         ⠸⠇                                                         │
+               │                                                                    │
+               ╰────────────────────────────────────────────────────────────────────╯
+
+
 
 
 

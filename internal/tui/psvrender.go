@@ -32,7 +32,7 @@ const (
 	// The bordered header card needs vertical room; short terminals keep the
 	// one-line header.
 	psHeaderCardMinH = 16
-	psHeaderCardH    = 4
+	psHeaderCardH    = 3
 )
 
 // psHeaderRows is the header's row budget at the given frame height.
@@ -517,19 +517,28 @@ func renderPsFrame(m *psModel, w, h int, colorless bool) *screenBuf {
 	return b
 }
 
-// emptyActions are the guided-card rows: the three concrete moves a fresh
-// engine wants, key/command in accent, effect in dim.
-var emptyActions = []struct{ key, desc string }{
-	{"c", "browse the pack catalog, install a pipeline"},
-	{":logs <id>", "pin any run's log tail"},
-	{"iris declare apply", "register your own pipeline from YAML"},
+// emptyActions are the welcome-card rows: the concrete moves a fresh engine
+// wants, label left, key/command right-aligned in accent.
+var emptyActions = []struct{ label, key string }{
+	{"Browse the pack catalog", "c"},
+	{"Pin a run's log tail", ":logs <id>"},
+	{"Register your pipeline", "iris declare apply"},
+	{"Quit", "q"},
 }
 
+// Grok-card geometry: the dot mark on the left, an identity-and-actions
+// column on the right, one bordered card centered in the body.
+const (
+	emptyCardW    = 70
+	emptyCardH    = 16 // border + blank + 12 logo rows + blank + border
+	emptyCardMinW = 56
+)
+
 // renderEmptyWorkspace paints the zero-state: engine is alive, nothing is
-// registered yet. No brand art — the header wordmark carries the identity;
-// the body is a status line, a bordered GET STARTED card, and two prose lines,
-// centered with soft margins. Short terminals shed prose and the card's
-// breathing rows, then fall back to a one-line nudge.
+// registered yet. Roomy terminals get the Grok-style welcome card — the dot
+// star on the left, IRIS + version, the quiet-engine note, and an action menu
+// with right-aligned keys. Tighter terminals keep a compact GET STARTED box,
+// then fall back to a one-line nudge.
 func renderEmptyWorkspace(b *screenBuf, m *psModel, x, y, w, h int, colorless bool) {
 	if h < 3 || w < 20 {
 		b.text(x+2, y+1, ansiDim, "no pipelines yet · press c for catalog")
@@ -547,78 +556,86 @@ func renderEmptyWorkspace(b *screenBuf, m *psModel, x, y, w, h int, colorless bo
 	}
 	_ = colorless // accent/dim SGR apply; a disabled painter drops them at emit
 
-	e := m.snap.Ps.Engine
-	status := fmt.Sprintf("engine is quiet · %s · %s · pid %d · up %s",
-		e.Version, strings.ToUpper(e.Role), e.PID, e.Uptime)
-	if e.Version == "" {
-		status = "engine is quiet"
+	if innerW >= emptyCardMinW && innerH >= emptyCardH {
+		renderWelcomeCard(b, m, ox, oy, innerW, innerH)
+		return
 	}
+	renderCompactEmpty(b, ox, oy, innerW, innerH)
+}
 
-	// Card geometry: lead + key column + widest effect, clamped to the body.
-	const lead, keyW = 3, 22
-	cardW := 74
+// renderWelcomeCard is the roomy zero-state: one bordered card, logo left,
+// identity and actions right.
+func renderWelcomeCard(b *screenBuf, m *psModel, ox, oy, innerW, innerH int) {
+	e := m.snap.Ps.Engine
+
+	cardW := emptyCardW
 	if cardW > innerW {
 		cardW = innerW
 	}
-	spacious := innerH >= 15 // breathing rows inside the card + prose below
-	cardH := 2 + len(emptyActions)
-	if spacious {
-		cardH = 4 + 2*len(emptyActions) - 1
-	}
-
-	// The star mark leads the card in the roomy tier — the Grok welcome shape.
-	markH := 0
-	if spacious {
-		markH = len(logoStar) + 1
-	}
-
-	contentH := markH + 2 + cardH // mark + status + gap + card
-	if spacious {
-		contentH += 3 // gap + two prose lines
-	}
-	startY := oy
-	if contentH < innerH {
-		startY = oy + (innerH-contentH)/2
-	}
-	center := func(ry int, sgr, s string) {
-		runes := []rune(s)
-		if len(runes) > innerW {
-			s = string(runes[:innerW-1]) + "…"
-			runes = []rune(s)
-		}
-		b.text(ox+(innerW-len(runes))/2, ry, sgr, s)
-	}
-
-	if markH > 0 {
-		markW := logoWidth(logoStar)
-		for i, row := range logoStar {
-			b.text(ox+(innerW-markW)/2, startY+i, ansiMagenta, row)
-		}
-	}
-	center(startY+markH, ansiDim, status)
-
 	cardX := ox + (innerW-cardW)/2
-	cardY := startY + markH + 2
-	b.box(cardX, cardY, cardW, cardH, ansiBorder, ansiDim, "GET STARTED")
-	itemY := cardY + 1
-	step := 1
-	if spacious {
-		itemY++
-		step = 2
-	}
-	for i, a := range emptyActions {
-		ry := itemY + i*step
-		b.text(cardX+1+lead, ry, ansiCyan, a.key)
-		desc := a.desc
-		if room := cardW - 2 - lead - keyW - 1; len([]rune(desc)) > room && room > 0 {
-			desc = string([]rune(desc)[:room-1]) + "…"
-		}
-		b.text(cardX+1+lead+keyW, ry, ansiDim, desc)
+	cardY := oy + (innerH-emptyCardH)/2
+	b.box(cardX, cardY, cardW, emptyCardH, ansiBorder, "", "")
+
+	logoW := logoWidth(logoSplash)
+	for i, row := range logoSplash {
+		b.text(cardX+3, cardY+2+i, ansiMagenta, row)
 	}
 
-	if spacious {
-		center(cardY+cardH+1, ansiDim, "This view is your live ops board — lanes, runs, load, logs.")
-		center(cardY+cardH+2, ansiDim, "It lights up the moment work lands on the engine.")
+	rx := cardX + 3 + logoW + 3
+	rEnd := cardX + cardW - 3
+	roomFor := func(used int) int { return rEnd - rx - used }
+	put := func(ry int, segs []struct{ sgr, s string }) {
+		px := rx
+		for _, seg := range segs {
+			b.text(px, cardY+ry, seg.sgr, seg.s)
+			px += len([]rune(seg.s))
+		}
+	}
+
+	version := e.Version
+	if room := roomFor(len("IRIS Engine  ")); len([]rune(version)) > room && room > 3 {
+		version = string([]rune(version)[:room-1]) + "…"
+	}
+	put(2, []struct{ sgr, s string }{
+		{ansiMagenta, "IRIS"}, {"", " Engine"}, {ansiDim, "  " + version},
+	})
+	put(4, []struct{ sgr, s string }{{ansiAccent, "Engine is quiet."}})
+	put(5, []struct{ sgr, s string }{{ansiDim, "It lights up when work lands."}})
+
+	actionY := 7
+	for i, a := range emptyActions {
+		ry := cardY + actionY + i
+		b.text(rx, ry, "", a.label)
+		kx := rEnd - len([]rune(a.key))
+		if kx >= rx+len([]rune(a.label))+2 {
+			b.text(kx, ry, ansiAccent, a.key)
+		}
+	}
+}
+
+// renderCompactEmpty is the tight zero-state: a small GET STARTED box, key
+// column left, label right.
+func renderCompactEmpty(b *screenBuf, ox, oy, innerW, innerH int) {
+	const lead, keyW = 3, 20
+	cardW := 60
+	if cardW > innerW {
+		cardW = innerW
+	}
+	cardH := 2 + len(emptyActions)
+	cardX := ox + (innerW-cardW)/2
+	cardY := oy
+	if cardH < innerH {
+		cardY = oy + (innerH-cardH)/2
+	}
+	b.box(cardX, cardY, cardW, cardH, ansiBorder, ansiDim, "GET STARTED")
+	for i, a := range emptyActions {
+		ry := cardY + 1 + i
+		b.text(cardX+1+lead, ry, ansiCyan, a.key)
+		label := a.label
+		if room := cardW - 2 - lead - keyW - 1; len([]rune(label)) > room && room > 0 {
+			label = string([]rune(label)[:room-1]) + "…"
+		}
+		b.text(cardX+1+lead+keyW, ry, ansiDim, label)
 	}
 }
 
@@ -632,60 +649,55 @@ func renderPsHeader(b *screenBuf, m *psModel) {
 	renderPsHeaderLine(b, m)
 }
 
-// renderPsHeaderCard paints rows 0..3: a full-width bordered card — brand mark
-// and identity on the first content row with the live CPU/MEM readout right-
-// aligned, pid and run counts on the second. A quiet engine keeps the load
-// readout (real data) but drops the run counts (the hollow part).
+// renderPsHeaderCard paints rows 0..2: a full-width bordered card with one
+// content row — identity left, live CPU/MEM (and run counts when work exists)
+// right-aligned. A quiet engine keeps the load readout (real data) but drops
+// the run counts (the hollow part).
 func renderPsHeaderCard(b *screenBuf, m *psModel) {
 	e := m.snap.Ps.Engine
 	b.box(0, 0, b.w, psHeaderCardH, ansiBorder, "", "")
 
-	left := 2
-	if b.w >= psRailMinWidth && len(logoMark) > 0 {
-		rows := logoMark
-		if len(rows) > 2 {
-			rows = rows[:2]
-		}
-		for i, row := range rows {
-			b.text(2, 1+i, ansiMagenta, row)
-		}
-		left = 2 + logoWidth(logoMark) + 2
-	}
-
-	x := left
-	put := func(y int, sgr, s string) {
-		b.text(x, y, sgr, s)
+	x := 2
+	put := func(sgr, s string) {
+		b.text(x, 1, sgr, s)
 		x += len([]rune(s))
 	}
 
-	put(1, ansiMagenta, "IRIS")
+	put(ansiMagenta, "IRIS")
 	if e.Version != "" {
-		put(1, ansiDim, "  ")
-		put(1, ansiDim, e.Version)
+		put(ansiDim, "  ")
+		put(ansiDim, e.Version)
 	}
-	put(1, ansiDim, "  ·  ")
-	put(1, psRoleSGR(e.Role), strings.ToUpper(orDefault(e.Role, "engine")))
+	put(ansiDim, "  ·  ")
+	put(psRoleSGR(e.Role), strings.ToUpper(orDefault(e.Role, "engine")))
 	if e.Uptime != "" {
-		put(1, ansiDim, "  ·  up ")
-		put(1, "", e.Uptime)
+		put(ansiDim, "  ·  up ")
+		put("", e.Uptime)
 	}
-	renderHeaderLoad(b, m, 1, x, b.w-3, 0)
+	put(ansiDim, fmt.Sprintf("  ·  pid %d", e.PID))
+	idEnd := x
 
-	x = left
-	put(2, ansiDim, fmt.Sprintf("pid %d", e.PID))
-	if !psIsEmptyWorkspace(m) {
-		rc, qc := ansiCyan, ansiYellow
-		if e.RunningRuns == 0 {
-			rc = ansiDim
-		}
-		if e.QueuedRuns == 0 {
-			qc = ansiDim
-		}
-		put(2, ansiDim, "  ·  ")
-		put(2, rc, fmt.Sprintf("%d running", e.RunningRuns))
-		put(2, ansiDim, "  ·  ")
-		put(2, qc, fmt.Sprintf("%d queued", e.QueuedRuns))
+	if psIsEmptyWorkspace(m) {
+		renderHeaderLoad(b, m, 1, idEnd, b.w-3, 0)
+		return
 	}
+	counts := fmt.Sprintf(" · %d running · %d queued", e.RunningRuns, e.QueuedRuns)
+	nx, ok := renderHeaderLoad(b, m, 1, idEnd, b.w-3, len([]rune(counts)))
+	if !ok {
+		return // identity only; the panes still carry the numbers
+	}
+	x = nx
+	rc, qc := ansiCyan, ansiYellow
+	if e.RunningRuns == 0 {
+		rc = ansiDim
+	}
+	if e.QueuedRuns == 0 {
+		qc = ansiDim
+	}
+	put(ansiDim, " · ")
+	put(rc, fmt.Sprintf("%d running", e.RunningRuns))
+	put(ansiDim, " · ")
+	put(qc, fmt.Sprintf("%d queued", e.QueuedRuns))
 }
 
 // renderPsHeaderLine paints the one-line header: identity left, live CPU/MEM
