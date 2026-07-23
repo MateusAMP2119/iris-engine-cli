@@ -26,12 +26,18 @@ var (
 	// ansiOrange is the heat ramp's third tone. Basic palette has no orange;
 	// 256-color index 208 is the fallback, truecolor uses a soft amber.
 	ansiOrange = "\033[38;5;208m"
+	// ansiBorder paints pane/card chrome one step darker than dim text so
+	// borders recede behind content; bright black is the 16-color gray.
+	ansiBorder = "\033[90m"
+	// ansiAccent is the warm emphasis tone (focused pane chrome); the basic
+	// fallback keeps today's bold-cyan focus look.
+	ansiAccent = "\033[1;36m"
 )
 
 // grokNight is the truecolor (RGB) face of the live view: magenta brand,
 // cyan actions, soft status hues. Tuned for dark terminal backgrounds.
 var grokNight = struct {
-	magenta, cyan, green, yellow, red, blue, orange, dim string
+	magenta, cyan, green, yellow, red, blue, orange, dim, border, accent string
 }{
 	magenta: rgb(192, 132, 252), // soft violet — brand / focus accent
 	cyan:    rgb(34, 211, 238),  // action keys, running state
@@ -40,7 +46,9 @@ var grokNight = struct {
 	red:     rgb(248, 113, 113), // hot heat / dead-lettered
 	blue:    rgb(96, 165, 250),  // secondary accent
 	orange:  rgb(251, 146, 60),  // mid heat
-	dim:     rgb(107, 114, 128), // muted chrome (truecolor dim; no faint bit)
+	dim:     rgb(120, 116, 110), // muted chrome, warm stone (no faint bit)
+	border:  rgb(75, 85, 99),    // pane chrome, darker than dim
+	accent:  rgb(222, 179, 134), // warm tan — focused chrome
 }
 
 func rgb(r, g, b int) string {
@@ -71,6 +79,8 @@ func applyPalette(truecolor bool) {
 		ansiOrange = grokNight.orange
 		// Prefer a true gray over faint: faint multiplies poorly with RGB.
 		ansiDim = grokNight.dim
+		ansiBorder = grokNight.border
+		ansiAccent = grokNight.accent
 		return
 	}
 	ansiReset = "\033[0m"
@@ -83,6 +93,8 @@ func applyPalette(truecolor bool) {
 	ansiBlue = "\033[1;34m"
 	ansiMagenta = "\033[1;35m"
 	ansiOrange = "\033[38;5;208m"
+	ansiBorder = "\033[90m"
+	ansiAccent = "\033[1;36m"
 }
 
 func init() {

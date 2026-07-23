@@ -30,6 +30,8 @@ func TestPaletteTruecolor(t *testing.T) {
 			"red":     ansiRed,
 			"orange":  ansiOrange,
 			"dim":     ansiDim,
+			"border":  ansiBorder,
+			"accent":  ansiAccent,
 		} {
 			if !strings.Contains(code, "38;2;") {
 				t.Errorf("%s = %q, want truecolor 38;2;R;G;B", name, code)
