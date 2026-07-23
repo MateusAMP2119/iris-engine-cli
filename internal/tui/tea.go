@@ -88,8 +88,6 @@ type teaProgram struct {
 	help     help.Model
 	cmdInput textinput.Model
 
-	splash *splashState
-
 	focusCh    chan<- string
 	cancelCh   chan<- string
 	runCatalog func(psCatalogReq)
@@ -122,16 +120,14 @@ func newTeaProgram(m *psModel, color bool) *teaProgram {
 		keys:     newPsKeyMap(),
 		help:     h,
 		cmdInput: ti,
-		splash:   &splashState{},
 	}
 }
 
 func (t teaProgram) Init() tea.Cmd {
 	// No textinput.Blink here: the blink tick re-renders the whole frame and
 	// would wipe a terminal text selection every half-second. Blink starts only
-	// while the COMMANDS palette is open (see Update). The splash tick chain is
-	// the one exception, and it dies with the splash.
-	return tea.Batch(tea.EnterAltScreen, splashTickCmd())
+	// while the COMMANDS palette is open (see Update).
+	return tea.EnterAltScreen
 }
 
 func (t *teaProgram) pushFocus() {
@@ -174,35 +170,8 @@ func (t teaProgram) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.w, t.h = msg.Width, msg.Height
 		t.help.Width = msg.Width
 		t.cmdInput.Width = maxInt(8, msg.Width/2-4)
-		// Too small mid-splash: skip straight to the dashboard.
-		if t.splash != nil && (t.w < splashMinW || t.h < splashMinH) {
-			t.splash = nil
-		}
-		return t, nil
-	case splashTickMsg:
-		if t.splash == nil {
-			return t, nil // splash skipped; drop the in-flight tick
-		}
-		t.splash.frame++
-		if t.splash.frame < splashRevealFrames {
-			return t, splashTickCmd()
-		}
-		return t, splashHoldCmd()
-	case splashDoneMsg:
-		t.splash = nil
 		return t, nil
 	case tea.KeyMsg:
-		// Any key skips the splash; quit keys quit. The key never reaches the
-		// dashboard grammar.
-		if t.splash != nil {
-			k := teaKeyToPs(msg)
-			if k.kind == psKeyCtrlC || (k.kind == psKeyRune && k.r == 'q') {
-				t.quitting = true
-				return t, tea.Quit
-			}
-			t.splash = nil
-			return t, nil
-		}
 		// When the COMMANDS palette is open, prefer textinput for printable
 		// editing so paste and wide runes work; map structural keys through
 		// the pure model so Esc/Enter/Tab/arrows stay one code path.
@@ -329,9 +298,6 @@ func (t teaProgram) View() string {
 	}
 	if h <= 0 {
 		h = 24
-	}
-	if t.splash != nil && w >= splashMinW && h >= splashMinH {
-		return string(renderSplashFrame(t.m, t.splash.frame, w, h, !t.p.enabled).render(t.p))
 	}
 	frame := renderPsFrame(t.m, w, h, !t.p.enabled)
 	return string(frame.render(t.p))

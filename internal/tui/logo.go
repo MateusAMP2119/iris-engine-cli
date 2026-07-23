@@ -7,7 +7,7 @@ package tui
 // Blank cells stay ' ' (never U+2800) and rows are right-trimmed so plain
 // frames golden cleanly. Treated as immutable.
 
-// logoSplash is the 16x12 splash-card mark (threshold 128).
+// logoSplash is the 16x12 welcome-card mark (threshold 128).
 var logoSplash = []string{
 	"       ⢰⡆",
 	"       ⢸⡇",
@@ -21,21 +21,6 @@ var logoSplash = []string{
 	"       ⢸⡇",
 	"       ⢸⡇",
 	"       ⠸⠇",
-}
-
-// logoMark is the 8x2 header-card mark (threshold 64).
-var logoMark = []string{
-	"⠠⢀⣀⣸⣧⣀⡀",
-	"⠐⠊⠉⢻⡟⠉⠑⠂",
-}
-
-// logoStar is the 7x5 empty-workspace mark (threshold 64).
-var logoStar = []string{
-	"   ⣿",
-	"⢤⣀⡀⣿⣄⣀⡤",
-	" ⣹⣿⣿⣿⣏",
-	"⠚⠉⠙⣿⠋⠉⠓",
-	"   ⣿",
 }
 
 // logoWidth is the widest rune count across the art's rows.

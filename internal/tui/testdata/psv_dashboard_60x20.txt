@@ -1,6 +1,5 @@
 ╭──────────────────────────────────────────────────────────╮
-│ IRIS  dev  ·  LEADER  ·  up 2h13m                        │
-│ pid 42  ·  1 running  ·  1 queued                        │
+│ IRIS  dev  ·  LEADER  ·  up 2h13m  ·  pid 42             │
 ╰──────────────────────────────────────────────────────────╯
 ╭─ PIPELINES · ingest ─────────────────────────────────────╮
 │                                                          │
@@ -8,6 +7,7 @@
 │ ▌ extract      queued   1  0  -      -                   │
 │   hello_iris   -        0  0  -      -                   │
 │   load_orders  running  0  1  51.0%  24.0MiB             │
+│                                                          │
 │                                                          │
 │                                                          │
 │                                                          │

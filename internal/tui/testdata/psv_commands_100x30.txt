@@ -1,19 +1,19 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⠠⢀⣀⣸⣧⣀⡀   IRIS  dev  ·  LEADER  ·  up 2h13m   CPU                         ░ 3.2% · MEM 126.0MiB  │
-│ ⠐⠊⠉⢻⡟⠉⠑⠂  pid 42  ·  1 running  ·  1 queued                                                      │
-╰────╭─ COMMANDS ───────────────────────╮─╭─ ABOUT · catalog ─────────────────────────────────╮────╯
-╭─ LA│▌▸ catalog · Browse and install … │i│ Browse and install pipeline packs                 │────╮
-│▌▾ i│   logs · Pin the logs pane on a… │ │                                                   │    │
-│   5│   search · Fuzzy-find lanes, pi… │ │ Opens the catalog overlay over the dashboard:     │    │
+│ IRIS  dev  ·  LEADER  ·  up 2h13m  ·  pid 42    CPU  3.2% · MEM 126.0MiB · 1 running · 1 queued  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ LA╭─ COMMANDS ───────────────────────╮i╭─ ABOUT · catalog ─────────────────────────────────╮────╮
+│▌▾ i│▌▸ catalog · Browse and install … │ │ Browse and install pipeline packs                 │    │
+│   5│   logs · Pin the logs pane on a… │ │                                                   │    │
+│   ●│   search · Fuzzy-find lanes, pi… │ │ Opens the catalog overlay over the dashboard:     │    │
 │   ●│   all · Toggle full run history… │ │ pack list on the left, README and tree on the     │    │
 │   ●│   follow · Toggle log-tail foll… │ │ right. Install and apply without leaving iris ps. │    │
-│   ●│   history · Toggle hours-deep l… │ │                                                   │    │
-│    │   cancel · Cancel the watched r… │ │ Usage  :catalog                                   │    │
-│ ▸ r│   help · Keyboard reference      │─│ Keys   :catalog                                   │────╯
-│   -│   q · Quit iris ps               │o│ Group  navigate                                   │────╮
-│    │                                  │ │                                                   │    │
+│    │   history · Toggle hours-deep l… │ │                                                   │    │
+│ ▸ r│   cancel · Cancel the watched r… │─│ Usage  :catalog                                   │────╯
+│   -│   help · Keyboard reference      │o│ Keys   :catalog                                   │────╮
+│    │   q · Quit iris ps               │ │ Group  navigate                                   │    │
 │ ▸ s│                                  │ │                                                   │    │
 │   -│                                  │ │                                                   │    │
+│    │                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │
 │    │                                  │ │                                                   │    │
