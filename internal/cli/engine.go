@@ -176,6 +176,10 @@ type startResult struct {
 // guidance (exit 4); otherwise the candidate it runs (daemon.Run) brings Postgres
 // up itself -- the managed subprocess, or the external cluster's DSN -- and
 // connects meta before it serves.
+//
+// Before starting (outer CLI only, never the daemonized re-exec child), any
+// prior local engine processes are stopped via StopAllEngines so a second
+// start never stacks orphans on the same socket.
 func (a *app) engineStart() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
@@ -192,11 +196,50 @@ func (a *app) engineStart() runE {
 				message: `the engine's managed Postgres is not installed; run "iris engine install" first`,
 			}
 		}
+		// The re-exec'd daemon child must not kill itself (or siblings mid-handoff).
+		if !daemonized {
+			if err := a.replacePriorEngines(cmd, settings); err != nil {
+				return err
+			}
+		}
 		if detach && !daemonized {
 			return a.startDetached(cmd, settings)
 		}
 		return a.startForeground(cmd, settings, daemonized)
 	}
+}
+
+// replacePriorEngines stops every local iris engine before a new start so only
+// one candidate owns the socket and managed Postgres. No-op when none are live.
+func (a *app) replacePriorEngines(cmd *cobra.Command, settings config.Settings) error {
+	base := cmd.Context()
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, stopGraceTimeout)
+	defer cancel()
+
+	pids, err := daemon.StopAllEngines(ctx, settings)
+	if err != nil {
+		a.logger.Error("engine start: stop prior engines failed", "err", err)
+		return &fault{
+			code:    exitOpFailed,
+			codeStr: "engine_start_failed",
+			message: fmt.Sprintf("engine start failed: could not stop prior engine process(es): %v", err),
+		}
+	}
+	if len(pids) == 0 {
+		return nil
+	}
+	a.logger.Info("engine start: stopped prior engines", "pids", pids)
+	if jsonMode, _ := cmd.Flags().GetBool("json"); !jsonMode {
+		if len(pids) == 1 {
+			fmt.Fprintf(a.out, "stopped prior iris engine (pid %d)\n", pids[0])
+		} else {
+			fmt.Fprintf(a.out, "stopped %d prior iris engine processes\n", len(pids))
+		}
+	}
+	return nil
 }
 
 // startForeground runs the daemon attached in the current process, cancelling on
@@ -301,24 +344,18 @@ func detachChildArgs(cmd *cobra.Command) []string {
 // stopResult is the machine-readable outcome of `iris engine stop`.
 type stopResult struct {
 	Status string `json:"status"`
-	PID    int    `json:"pid"`
+	PIDs   []int  `json:"pids"`
 }
 
-// engineStop is the handler for `iris engine stop`: it stops a detached daemon by
-// the pid it recorded, signalling SIGTERM and waiting for it to exit. With no
-// recorded daemon there is nothing to stop, so it reports no-daemon (exit 3) with
-// start guidance. The stop is graceful: SIGTERM lands on the daemon's signal
-// context, which drains the listeners, releases the leader lock and tears the
-// managed Postgres down; daemon.StopDaemon waits out the grace window, escalating
-// to SIGKILL only if the daemon overruns it, and reaps the pidfile either way.
+// engineStop is the handler for `iris engine stop`: it stops every local iris
+// engine process (the pidfile daemon and any orphan `iris engine start`
+// processes), the same kill-all path `iris uninstall` uses. With none running
+// it reports no-daemon (exit 3) with start guidance. Stop is graceful: SIGTERM
+// first, then SIGKILL if a process outruns the grace window; the pidfile is
+// reaped either way.
 func (a *app) engineStop() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		settings := a.resolveTarget(cmd)
-		pid, err := daemon.ReadPIDFile(settings)
-		if err != nil {
-			a.logger.Debug("no detached iris daemon to stop", "err", err)
-			return a.noDaemon(cmd, "engine stop")
-		}
 		base := cmd.Context()
 		if base == nil {
 			base = context.Background()
@@ -326,7 +363,8 @@ func (a *app) engineStop() runE {
 		ctx, cancel := context.WithTimeout(base, stopGraceTimeout)
 		defer cancel()
 
-		if err := daemon.StopDaemon(ctx, settings, pid); err != nil {
+		pids, err := daemon.StopAllEngines(ctx, settings)
+		if err != nil {
 			a.logger.Error("engine stop failed", "err", err)
 			return &fault{
 				code:    exitOpFailed,
@@ -334,12 +372,20 @@ func (a *app) engineStop() runE {
 				message: fmt.Sprintf("engine stop failed: %v", err),
 			}
 		}
-		a.logger.Info("engine stopped", "pid", pid)
-		res := stopResult{Status: "stopped", PID: pid}
+		if len(pids) == 0 {
+			a.logger.Debug("no iris engine process to stop")
+			return a.noDaemon(cmd, "engine stop")
+		}
+		a.logger.Info("engine stopped", "pids", pids)
+		res := stopResult{Status: "stopped", PIDs: pids}
 		if jsonMode, _ := cmd.Flags().GetBool("json"); jsonMode {
 			return json.NewEncoder(a.out).Encode(dataEnvelope{Data: res})
 		}
-		fmt.Fprintf(a.out, "iris engine stopped (pid %d)\n", pid)
+		if len(pids) == 1 {
+			fmt.Fprintf(a.out, "iris engine stopped (pid %d)\n", pids[0])
+		} else {
+			fmt.Fprintf(a.out, "iris engine stopped (%d processes)\n", len(pids))
+		}
 		return nil
 	}
 }

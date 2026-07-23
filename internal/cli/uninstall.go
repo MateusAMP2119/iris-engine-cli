@@ -52,15 +52,18 @@ type uninstallCmdResult struct {
 	Steps   []uninstallStep `json:"steps,omitempty"`
 }
 
-// uninstallCmd builds `iris uninstall`: the staged complete uninstall (stop engine, remove engine state, remove binary), gated by --yes/--force.
+// uninstallCmd builds `iris uninstall`: the staged complete uninstall (stop every
+// local engine process, remove engine state, remove the binary), gated by --yes
+// or an interactive y/N. There is no --force leave-running path: confirmed
+// uninstall always kills every `iris engine start` process on the machine.
 func (a *app) uninstallCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Completely uninstall iris: stop the engine, remove engine state, remove the binary",
+		Short: "Completely uninstall iris: stop every local engine, remove engine state, remove the binary",
 		Args:  cobra.NoArgs,
 		RunE:  a.uninstallSelf(),
 	}
-	addConfirmFlags(c)
+	c.Flags().Bool("yes", false, "proceed without prompting")
 	return daemonless(c)
 }
 
@@ -68,7 +71,6 @@ func (a *app) uninstallCmd() *cobra.Command {
 func (a *app) uninstallSelf() runE {
 	return func(cmd *cobra.Command, _ []string) error {
 		yes, _ := cmd.Flags().GetBool("yes")
-		force, _ := cmd.Flags().GetBool("force")
 		jsonMode, _ := cmd.Flags().GetBool("json")
 		p := a.newPainter(jsonMode)
 		settings := a.resolveTarget(cmd)
@@ -117,40 +119,30 @@ func (a *app) uninstallSelf() runE {
 		say("  🔧 Starting complete uninstallation sequence...")
 		say("")
 
-		// Step 1/3: stop a recorded detached daemon; nothing recorded and nothing reachable passes clean.
+		// Step 1/3: stop every local iris engine via the same kill-all path as
+		// `iris engine stop` (pidfile + orphans). Confirmed uninstall never
+		// leaves a daemon running.
 		say("  %s", p.cyan("[1/3] Stopping Iris Engine"))
 		say("  • Checking for running processes...")
-		stopped := false
-		if pid, perr := daemon.ReadPIDFile(settings); perr == nil {
-			sctx, cancel := context.WithTimeout(ctx, stopGraceTimeout)
-			serr := daemon.StopDaemon(sctx, settings, pid)
-			cancel()
-			if serr != nil {
-				a.logger.Error("uninstall: engine stop failed", "err", serr)
-				return &fault{
-					code:    exitOpFailed,
-					codeStr: "stop_failed",
-					message: fmt.Sprintf("iris uninstall: step 1/%d (stop engine) failed: %v", uninstallSteps, serr),
-				}
+		sctx, cancel := context.WithTimeout(ctx, stopGraceTimeout)
+		stoppedPIDs, serr := daemon.StopAllEngines(sctx, settings)
+		cancel()
+		if serr != nil {
+			a.logger.Error("uninstall: engine stop failed", "err", serr)
+			return &fault{
+				code:    exitOpFailed,
+				codeStr: "stop_failed",
+				message: fmt.Sprintf("iris uninstall: step 1/%d (stop engine) failed: %v", uninstallSteps, serr),
 			}
-			stopped = true
 		}
-		switch {
-		case a.probeDaemon(ctx, settings) == nil:
-			// Still reachable means no pid to signal (foreground daemon, or not the recorded one); only --force proceeds past it.
-			if !force {
-				return &fault{
-					code:    exitOpFailed,
-					codeStr: "daemon_reachable",
-					message: fmt.Sprintf(`iris uninstall: step 1/%d (stop engine) failed: a running iris daemon is reachable but was not started detached, so it cannot be stopped here; stop it where it runs (Ctrl-C, or "iris engine stop"), or re-run with --force to leave it running`, uninstallSteps),
-				}
-			}
-			steps = append(steps, uninstallStep{Step: 1, Name: stepStopEngine, Status: "left_running"})
-			done("Daemon left running (--force).")
-		case stopped:
+		if len(stoppedPIDs) > 0 {
 			steps = append(steps, uninstallStep{Step: 1, Name: stepStopEngine, Status: "stopped"})
-			done("Iris engine stopped successfully.")
-		default:
+			if len(stoppedPIDs) == 1 {
+				done(fmt.Sprintf("Stopped iris engine (pid %d).", stoppedPIDs[0]))
+			} else {
+				done(fmt.Sprintf("Stopped %d iris engine processes.", len(stoppedPIDs)))
+			}
+		} else {
 			steps = append(steps, uninstallStep{Step: 1, Name: stepStopEngine, Status: "nothing_to_stop"})
 			done("No running engine; nothing to stop.")
 		}
@@ -166,7 +158,7 @@ func (a *app) uninstallSelf() runE {
 			if settings.Socket != "" {
 				where = " under " + filepath.Dir(settings.Socket)
 			}
-			ok, cerr := a.uninstallConsent(fmt.Sprintf("Remove engine state%s?", where), yes, force)
+			ok, cerr := a.uninstallConsent(fmt.Sprintf("Remove engine state%s?", where), yes)
 			if cerr != nil {
 				return cerr
 			}
@@ -200,7 +192,7 @@ func (a *app) uninstallSelf() runE {
 
 		// Step 3/3: remove the running binary itself.
 		say("  %s", p.cyan("[3/3] Uninstalling Iris CLI"))
-		ok, cerr := a.uninstallConsent(fmt.Sprintf("Uninstall cli %s from %s?", buildinfo.Version, path), yes, force)
+		ok, cerr := a.uninstallConsent(fmt.Sprintf("Uninstall cli %s from %s?", buildinfo.Version, path), yes)
 		if cerr != nil {
 			return cerr
 		}
@@ -256,9 +248,10 @@ func (a *app) uninstallSelf() runE {
 	}
 }
 
-// uninstallConsent gates one step: --yes/--force pass, otherwise one y/N through the confirm seam; no terminal maps to the standard consent-required refusal.
-func (a *app) uninstallConsent(question string, yes, force bool) (bool, error) {
-	if yes || force {
+// uninstallConsent gates one step: --yes passes, otherwise one y/N through the
+// confirm seam; no terminal maps to the standard consent-required refusal.
+func (a *app) uninstallConsent(question string, yes bool) (bool, error) {
+	if yes {
 		return true, nil
 	}
 	confirmFn := a.confirm

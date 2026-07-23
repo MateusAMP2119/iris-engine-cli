@@ -309,7 +309,7 @@ func (a *app) engineCmd() *cobra.Command {
 	start.Flags().String("tls-key", "", "TLS key for the TCP listener")
 
 	stop := &cobra.Command{
-		Use: "stop", Short: "Stop a detached daemon (graceful SIGTERM)",
+		Use: "stop", Short: "Stop every local iris engine (pidfile + orphans)",
 		Args: cobra.NoArgs, RunE: a.engineStop(),
 	}
 	install := &cobra.Command{

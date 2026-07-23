@@ -92,10 +92,11 @@ type app struct {
 	// when neither --yes nor --force was supplied. The name is the target of the
 	// operation (pipeline name, or "engine" for uninstall); isTeardown chooses the
 	// prompt style. It is nil in production: `iris uninstall` then falls back to
-	// terminalConfirm (a real y/N read off the terminal), while the ops gated through
-	// confirmOrFlags -- declare destroy, deadletter drain, workload wipe, engine
-	// uninstall -- refuse without --yes/--force rather than prompt. Tests inject it to
-	// simulate TTY answers without a real terminal.
+	// terminalConfirm (a real y/N read off the terminal) and only accepts --yes
+	// (no --force), while the ops gated through confirmOrFlags -- declare destroy,
+	// deadletter drain, workload wipe, engine uninstall -- refuse without
+	// --yes/--force rather than prompt. Tests inject it to simulate TTY answers
+	// without a real terminal.
 	confirm func(name string, isTeardown bool) (bool, error)
 	// executablePath resolves the running iris binary's real on-disk path (through
 	// its symlinks), the file `iris uninstall` removes. It is nil in production
