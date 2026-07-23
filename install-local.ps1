@@ -24,6 +24,7 @@ git -C $Root diff --quiet
 $Dirty = if ($LASTEXITCODE -ne 0) { '-dirty' } else { '' }
 $Version = "local.$(Get-Date -Format yyyyMMdd).$Sha$Dirty"
 Write-Host "- Building $Version (windows/$Arch)"
+$PriorCgo = $env:CGO_ENABLED
 $env:CGO_ENABLED = '0'
 go build -trimpath `
     -ldflags="-s -w -X github.com/MateusAMP2119/iris-lakehouse/internal/buildinfo.Version=$Version" `
@@ -36,6 +37,15 @@ $Hash = (Get-FileHash -Algorithm SHA256 (Join-Path $Dev $Asset)).Hash.ToLowerInv
 "$Hash  $Asset" | Out-File -Encoding ascii (Join-Path $Dev 'checksums.txt')
 
 # file:// URL for Invoke-WebRequest: forward slashes, three-slash prefix.
+$PriorBase = $env:IRIS_BASE_URL
 $env:IRIS_BASE_URL = 'file:///' + ($Dev -replace '\\', '/')
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'install.ps1')
-exit $LASTEXITCODE
+# In-process (call operator, not a child powershell.exe): the installer's
+# session-PATH update then lands in the invoking shell, so `iris` works
+# immediately after this script returns. Restore the knobs this script set —
+# same process means they would otherwise leak into the caller's shell.
+try {
+    & (Join-Path $Root 'install.ps1')
+} finally {
+    if ($null -eq $PriorBase) { Remove-Item Env:IRIS_BASE_URL -ErrorAction SilentlyContinue } else { $env:IRIS_BASE_URL = $PriorBase }
+    if ($null -eq $PriorCgo) { Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue } else { $env:CGO_ENABLED = $PriorCgo }
+}

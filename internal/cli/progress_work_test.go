@@ -75,6 +75,42 @@ func TestWorkProgressCreepsThenCompletes(t *testing.T) {
 	}
 }
 
+func TestWorkProgressShowsElapsedOnLongJobs(t *testing.T) {
+	m := newWorkProgressModel("• Installing engine", make(chan error, 1))
+	// Fresh job: no elapsed suffix yet.
+	if v := m.View(); strings.Contains(v, "(") {
+		t.Fatalf("fresh view already shows elapsed: %q", v)
+	}
+	// A job past the threshold ticks elapsed time beside the label.
+	m.start = time.Now().Add(-70 * time.Second)
+	if v := m.View(); !strings.Contains(v, "(1m10s)") {
+		t.Fatalf("view = %q, want elapsed (1m10s)", v)
+	}
+	// A settled bar drops the counter.
+	m.quitting = true
+	m.percent = 1
+	if v := m.View(); strings.Contains(v, "1m10s") {
+		t.Fatalf("settled view still shows elapsed: %q", v)
+	}
+}
+
+func TestFormatWorkElapsed(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{7 * time.Second, "7s"},
+		{59 * time.Second, "59s"},
+		{65 * time.Second, "1m05s"},
+		{3 * time.Minute, "3m00s"},
+	}
+	for _, tc := range cases {
+		if got := formatWorkElapsed(tc.d); got != tc.want {
+			t.Errorf("formatWorkElapsed(%v) = %q, want %q", tc.d, got, tc.want)
+		}
+	}
+}
+
 func TestWaitWorkReturnsResultOrPoll(t *testing.T) {
 	done := make(chan error, 1)
 	// Empty channel → poll after timeout.

@@ -237,6 +237,7 @@ type workProgressModel struct {
 	quitting bool
 	err      error
 	done     <-chan error
+	start    time.Time
 }
 
 func newWorkProgressModel(label string, done <-chan error) workProgressModel {
@@ -249,7 +250,23 @@ func newWorkProgressModel(label string, done <-chan error) workProgressModel {
 		label: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(label), "•")),
 		bar:   bar,
 		done:  done,
+		start: time.Now(),
 	}
+}
+
+// workElapsedAfter is how long a job runs before the ceremony line starts
+// showing elapsed time. Short jobs stay clean; a long one (engine install can
+// run minutes on a cold machine) gains a ticking counter so the bar parked
+// near its crawl cap never reads as frozen.
+const workElapsedAfter = 5 * time.Second
+
+// formatWorkElapsed renders a compact elapsed suffix: "42s", then "1m05s".
+func formatWorkElapsed(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	return fmt.Sprintf("%dm%02ds", s/60, s%60)
 }
 
 func (m workProgressModel) Init() tea.Cmd {
@@ -309,9 +326,17 @@ func (m workProgressModel) View() string {
 	if pct > 100 {
 		pct = 100
 	}
+	label := m.label
+	// While the job is still in flight past workElapsedAfter, tick elapsed time
+	// beside the label — the visible sign of life once the bar reaches its cap.
+	if !m.quitting && !m.start.IsZero() {
+		if elapsed := time.Since(m.start); elapsed >= workElapsedAfter {
+			label += " " + lipgloss.NewStyle().Faint(true).Render("("+formatWorkElapsed(elapsed)+")")
+		}
+	}
 	// Reuse progressModel.mark math via a throwaway model with the same bar state.
-	pm := progressModel{label: m.label, bar: m.bar, percent: m.percent}
-	line := formatCeremonyLine(m.label, pm.mark(pct))
+	pm := progressModel{label: label, bar: m.bar, percent: m.percent}
+	line := formatCeremonyLine(label, pm.mark(pct))
 	if m.quitting && m.percent >= 1 {
 		return line + "\n"
 	}
