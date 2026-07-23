@@ -212,6 +212,9 @@ func (a *app) startForeground(cmd *cobra.Command, settings config.Settings, daem
 	}
 	ctx, stop := signal.NotifyContext(base, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// On Windows a detached daemon is unreachable by signal, so `engine stop`
+	// signals a named stop event instead; watching it feeds the same ctx.
+	daemon.WatchStopEvent(stop)
 
 	logger := a.logger
 	if daemonized {

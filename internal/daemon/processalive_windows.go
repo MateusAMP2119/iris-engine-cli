@@ -29,10 +29,23 @@ func processAlive(pid int) bool {
 	return code == stillActive
 }
 
-// signalStop stops the daemon process on Windows. There is no cross-console
-// SIGTERM equivalent for a detached process, so stop is a hard kill; the wait
-// loop in StopDaemon still confirms the process is gone before the pidfile is
-// reaped. Graceful drain on Windows is deferred to a control-plane shutdown.
+// signalStop asks the daemon to shut down gracefully by signalling its named
+// stop event (see WatchStopEvent), the Windows stand-in for SIGTERM: the daemon
+// drains and stops its managed postmaster cleanly instead of leaving it to
+// crash recovery. A daemon without the event (or a failed signal) is killed
+// outright; StopDaemon's grace deadline still escalates to Kill either way.
 func signalStop(proc *os.Process) error {
-	return proc.Kill()
+	name, err := stopEventName(proc.Pid)
+	if err != nil {
+		return proc.Kill()
+	}
+	h, err := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, name)
+	if err != nil {
+		return proc.Kill()
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	if err := windows.SetEvent(h); err != nil {
+		return proc.Kill()
+	}
+	return nil
 }

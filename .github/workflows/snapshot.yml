@@ -97,4 +97,4 @@ jobs:
             --prerelease \
             --latest=false \
             --notes-file notes.md \
-            dist/*.tar.gz dist/checksums.txt install.sh
+            dist/*.tar.gz dist/*.zip dist/checksums.txt install.sh install.ps1

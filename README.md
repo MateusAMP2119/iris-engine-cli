@@ -30,6 +30,12 @@ One command, no dependencies. Installs the latest prebuilt static binary.
 curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+irm https://install.iris-lakehouse.bymarreco.com/install.ps1 | iex
+```
+
 The installer ends by printing the first commands of a real session — see [Getting started](#getting-started).
 
 ### Snapshot channel (bleeding edge)
@@ -38,6 +44,10 @@ Want the newest code before it ships? Every merge to `development` automatically
 
 ```sh
 curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash
+```
+
+```powershell
+irm https://install.iris-lakehouse.bymarreco.com/snapshot.ps1 | iex   # Windows
 ```
 
 Already have iris installed? Switch channels in place — no installer needed:

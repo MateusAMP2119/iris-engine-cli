@@ -177,4 +177,3 @@ func (s *ObjectStore) Delete(hash string) error {
 	}
 	return nil
 }
-

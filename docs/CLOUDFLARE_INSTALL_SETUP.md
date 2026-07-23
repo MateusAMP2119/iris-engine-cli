@@ -7,6 +7,15 @@ curl -fsSL https://install.iris-lakehouse.bymarreco.com | bash            # stab
 curl -fsSL https://install.iris-lakehouse.bymarreco.com/snapshot | bash   # rolling development build
 ```
 
+```powershell
+irm https://install.iris-lakehouse.bymarreco.com/install.ps1 | iex    # stable (Windows)
+irm https://install.iris-lakehouse.bymarreco.com/snapshot.ps1 | iex   # rolling development build (Windows)
+```
+
+> **Note:** the Worker code is pasted by hand in the Cloudflare UI. When the
+> routes below change in this doc (e.g. the `/install.ps1` + `/snapshot.ps1`
+> Windows routes), the Worker must be redeployed manually with the updated code.
+
 ## Current accurate steps (as of the latest Cloudflare UI)
 
 ### 1. Create the Worker
@@ -56,6 +65,12 @@ export default {
       return Response.redirect(target, 302);
     }
 
+    // Windows (PowerShell): irm … | iex
+    if (path === '/install.ps1') {
+      const target = `${base}/install.ps1`;
+      return Response.redirect(target, 302);
+    }
+
     // Served inline (not a redirect) so the version pin line can be prepended
     if (path === '/snapshot') {
       const res = await fetch(`${snap}/install.sh`);
@@ -69,7 +84,20 @@ export default {
       });
     }
 
-    return new Response('Not found. Supported paths: /, /install.sh, /snapshot', {
+    // Windows snapshot: pin the version with an env line iex will honor
+    if (path === '/snapshot.ps1') {
+      const res = await fetch(`${snap}/install.ps1`);
+      if (!res.ok) {
+        return new Response('Upstream fetch of install.ps1 failed', { status: 502 });
+      }
+      const script = await res.text();
+      const pinned = "if (-not $env:IRIS_VERSION) { $env:IRIS_VERSION = 'snapshot' }\n" + script;
+      return new Response(pinned, {
+        headers: { 'content-type': 'text/plain; charset=utf-8' }
+      });
+    }
+
+    return new Response('Not found. Supported paths: /, /install.sh, /install.ps1, /snapshot, /snapshot.ps1', {
       status: 404,
       headers: { 'content-type': 'text/plain' }
     });

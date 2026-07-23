@@ -114,5 +114,5 @@ jobs:
             gh release create "$VERSION" \
               --title "$VERSION" \
               --generate-notes \
-              dist/*.tar.gz dist/checksums.txt
+              dist/*.tar.gz dist/*.zip dist/checksums.txt
           fi

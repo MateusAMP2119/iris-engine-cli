@@ -138,6 +138,11 @@ case "$arch" in
 esac
 case "$os" in
   linux | darwin) ;;
+  mingw* | msys* | cygwin*)
+    echo "iris: this is the linux/macOS installer. On Windows, run in PowerShell:" >&2
+    echo "  irm https://install.iris-lakehouse.bymarreco.com/install.ps1 | iex" >&2
+    exit 1
+    ;;
   *)
     echo "iris: unsupported OS: $os (linux and macOS only)" >&2
     exit 1

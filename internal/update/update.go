@@ -10,6 +10,7 @@ package update
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -209,7 +210,12 @@ func (u *Updater) runSnapshot(ctx context.Context, current string) (Result, erro
 // verifies the archive's SHA-256, and returns the extracted iris binary. It
 // reports the download and verify stages; the caller owns resolve and replace.
 func (u *Updater) fetchVerifiedBinary(ctx context.Context, tag string) ([]byte, error) {
-	asset := fmt.Sprintf("iris_%s_%s.tar.gz", u.goos, u.goarch)
+	// The release ships tar.gz everywhere except Windows, which ships zip.
+	ext := "tar.gz"
+	if u.goos == "windows" {
+		ext = "zip"
+	}
+	asset := fmt.Sprintf("iris_%s_%s.%s", u.goos, u.goarch, ext)
 	downloadBase := u.baseURL + "/releases/download/" + tag + "/"
 
 	archive, err := u.download(ctx, downloadBase+asset)
@@ -225,6 +231,9 @@ func (u *Updater) fetchVerifiedBinary(ctx context.Context, tag string) ([]byte, 
 		return nil, err
 	}
 	u.report(StageVerify, "OK")
+	if ext == "zip" {
+		return extractIrisZip(archive)
+	}
 	return extractIris(archive)
 }
 
@@ -418,6 +427,34 @@ func extractIris(archive []byte) ([]byte, error) {
 	return nil, errors.New("release archive contains no iris binary")
 }
 
+// extractIrisZip returns the bytes of the iris.exe member of a zip archive (the
+// Windows release shape), or an error when the member is absent.
+func extractIrisZip(archive []byte) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, fmt.Errorf("open zip: %w", err)
+	}
+	for _, f := range zr.File {
+		if filepath.Base(f.Name) != "iris.exe" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open iris member: %w", err)
+		}
+		body, err := io.ReadAll(io.LimitReader(rc, maxDownloadBytes+1))
+		_ = rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read iris member: %w", err)
+		}
+		if int64(len(body)) > maxDownloadBytes {
+			return nil, fmt.Errorf("iris member exceeds %d bytes", maxDownloadBytes)
+		}
+		return body, nil
+	}
+	return nil, errors.New("release archive contains no iris binary")
+}
+
 // resolveExecutable returns the running executable's path with symlinks resolved,
 // so the atomic replace writes the real file rather than a symlink.
 func (u *Updater) resolveExecutable() (string, error) {
@@ -463,7 +500,7 @@ func replaceExecutable(path string, binary []byte) error {
 	if err := tmp.Close(); err != nil {
 		return cleanup(fmt.Errorf("close new binary: %w", err))
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := renameOver(tmpName, path); err != nil {
 		if os.IsPermission(err) {
 			return cleanup(permissionGuidance(path, err))
 		}
